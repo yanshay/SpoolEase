@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpoolEase Flashing Tool</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: "Poppins", sans-serif;
+        background: url("assets/background.jpg")
+          no-repeat center center fixed;
+        background-size: cover;
+        margin: 0;
+        padding: 0;
+        color: #333;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        flex-direction: column;
+      }
+
+      .container {
+        text-align: center;
+        background-color: #fff;
+        background-color: rgba(255, 255, 255, 0.8);
+        padding: 40px;
+        padding-top: 30px;
+        border-radius: 15px;
+        box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.1);
+        width: 90%;
+        max-width: 800px;
+      }
+
+      .hero-title {
+        font-size: 40px;
+        color: #1a1a1a;
+        font-weight: 600;
+        margin-bottom: 20px;
+        margin-top: 0px;
+      }
+
+      .hero-description {
+        font-size: 18px;
+        color: #666;
+        margin-bottom: 30px;
+        line-height: 1.5;
+      }
+
+      .hero-description strong {
+        color: #007bff;
+      }
+
+      .hero-image-container {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 30px;
+      }
+
+      .hero-image {
+        max-width: 100%;
+        height: auto;
+        border-radius: 10px;
+        box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.1);
+      }
+
+      .start-button {
+        padding: 20px 40px;
+        background-color: #007bff;
+        color: white;
+        font-size: 20px;
+        font-weight: 600;
+        border: none;
+        border-radius: 30px;
+        cursor: pointer;
+        transition: background-color 0.3s;
+        box-shadow: 0px 4px 15px rgba(0, 123, 255, 0.3);
+        margin-top: 10px;
+        margin-left: 5px;
+        margin-right: 5px;
+      }
+
+      .start-button:hover {
+        background-color: #0056b3;
+        box-shadow: 0px 6px 20px rgba(0, 123, 255, 0.5);
+      }
+
+      .features {
+        display: flex;
+        justify-content: space-around;
+        flex-wrap: wrap;
+        margin-top: 40px;
+      }
+
+      .feature-item {
+        background-color: #f5f7fa;
+        padding: 15px;
+        width: 320px;
+        border-radius: 10px;
+        box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.05);
+        margin: 15px;
+        transition: transform 0.3s;
+      }
+
+      .feature-item:hover {
+        transform: translateY(-10px);
+        box-shadow: 0px 8px 20px rgba(0, 0, 0, 0.15);
+      }
+
+      .feature-item h3 {
+        font-size: 22px;
+        color: #1a1a1a;
+        margin-bottom: 10px;
+      }
+
+      .feature-item p {
+        font-size: 16px;
+        color: #555;
+        line-height: 1.4;
+      }
+    </style>
+    <script
+      type="module"
+      src = "scripts/esp-web-tools/install-button.js"
+      <!-- src="https://unpkg.com/esp-web-tools@10.1.0/dist/web/install-button.js?module" -->
+    ></script>
+    <!-- <script type="module" src="scripts/improv-wifi/serial-launch-button.js"></script> -->
+  </head>
+  <body>
+    <div class="container">
+      <h1 class="hero-title">SpoolEase - Spool Handling Made Easy</h1>
+      <p class="hero-description">
+        Enjoy easy AMS filament setup with SpoolEase. Just a few clicks, and
+        you're ready to go! <strong>Start the process</strong> now to see how
+        simple it is.
+      </p>
+
+      <!-- Hero Image Section -->
+      <div class="hero-image-container">
+        <img
+          width="600"
+          src="assets/SpoolEase.jpg"
+          alt="Microcontroller Product"
+          class="hero-image"
+        />
+      </div>
+      <!-- <improv-wifi-serial-launch-button supported=""> -->
+      <!--   <span slot="unsupported"> -->
+      <!--     Your browser is not supported. To try it out, visit this page with Google -->
+      <!--     Chrome or Microsoft Edge<span class="not-supported-i hidden"> -->
+      <!--       (but not on your iOS device)</span>. -->
+      <!--   </span -->
+      <!-- </improv-wifi-serial-launch-button> -->
+      <esp-web-install-button
+        manifest="https://raw.githubusercontent.com/yanshay/spoolease-bin/refs/heads/main/bins/web-install/manifest.json"
+      >
+      <button
+        slot="activate"
+        class="start-button"
+      >Web Flash Firmware<br/>(Chrome / Edge Only)</button>
+      </esp-web-install-button>
+
+      <button
+        slot="activate"
+        class="start-button"
+      >Command Line Flasher<br/>Download</button>
+      <!-- Features Section -->
+      <div class="features">
+        <div class="feature-item">
+          <h3>Easy Filament Swaps</h3>
+          <p>
+            SpoolEase lets you use NFC with any filament to configure the printer
+            when you swap filaments
+          </p>
+        </div>
+        <div class="feature-item">
+          <h3>Visibility</h3>
+          <p>SpoolEase provides complete visibility to filaments inside your AMS's</p>
+        </div>
+        <div class="feature-item">
+          <h3>More Features to Come</h3>
+          <p>
+            More features are planned to simplify dealing with filaments, think
+            of a problem - if it's solvable we'll get to it
+          </p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+.DS_Store
+boot-loader.bin
+manifest.json
+partition-table.bin
+SpoolEase*.bin
