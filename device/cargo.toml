@@ -32,8 +32,8 @@ radium = { git = "https://github.com/arctic-alpaca/ferrilab" }
 slint-build = "1.9.1"
 
 [dependencies]
-# framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/" }
-framework = { package = "esp-hal-app-framework", path = "../../esp-hal-app/esp-hal-app-framework/" }
+framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/" }
+# framework = { package = "esp-hal-app-framework", path = "../../esp-hal-app/esp-hal-app-framework/" }
 esp32s3 = { version = "0.30.0" }
 
 # Esp-Hal Crates
