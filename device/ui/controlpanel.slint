@@ -1,0 +1,282 @@
+import { FrameworkBackend, FrameworkState } from "framework/framework.slint";
+import { MyButton } from "framework/widgets.slint";
+import { AppBackend, AppState, StatusType, ControlState, SpoolStagingState } from "app.slint";
+import { Utils } from "utils.slint";
+import { SpoolStaging } from "spoolstaging.slint";
+
+
+export component ControlPanelBase inherits HorizontalLayout {
+    in-out property <string> message-text;
+    in-out property <StatusType> message-type: StatusType.Normal;
+    in-out property <color> message-color: black;
+    in-out property <string> button1-text;
+    in-out property <string> button2-text;
+    callback clicked1;
+    callback timeout-clicked1;
+    callback manual-clicked1;
+    callback clicked2;
+    callback timeout-clicked2;
+    callback manual-clicked2;
+    in-out property <int> button1-timeout: 0;
+    in-out property <int> button2-timeout: 0;
+    in-out property <length> buttons-width;
+    in-out property <length> text-border-width: 1px;
+
+    utils := Utils { }
+
+    private property <int> button1-timer-count: button1-timeout;
+    button1-timer := Timer {
+        interval: 1s;
+        running: button1-timeout > 0;
+        triggered() => {
+            if button1-timer-count > 1 {
+                button1-timer-count -= 1;
+            } else {
+                timeout-clicked1();
+                clicked1();
+            }
+        }
+    }
+
+    private property <int> button2-timer-count: button2-timeout;
+    button2-timer := Timer {
+        interval: 1s;
+        running: button2-timeout > 0;
+        triggered() => {
+            if button2-timer-count > 1 {
+                button2-timer-count -= 1;
+            } else {
+                timeout-clicked2();
+                clicked2();
+            }
+        }
+    }
+
+    spacing: 4px;
+    Rectangle {
+        background: message-type == StatusType.Success ? green.brighter(1.0) : message-type == StatusType.Error ? red : white;
+        preferred-width: 480px;
+        border-width: text-border-width;
+        border-color: black;
+        Text {
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            font-size: 20px;
+            wrap: word-wrap;
+            text: message-text;
+            color: message-color == black ? utils.contrasting_color(parent.background) : message-color;
+        }
+    }
+
+    if button1-text != "": MyButton {
+        width: buttons-width;
+        text: button1-text + ((button1-timeout != 0) ? "\n(\{button1-timer_count})" : "");
+        clicked => {
+            // Note: Don't add code here since it won't run on the case of timeout triggering a press
+            manual-clicked1();
+            clicked1();
+        }
+    }
+
+    if button2-text != "": MyButton {
+        width: buttons-width;
+        text: button2-text + ((button2-timeout != 0) ? "\n(\{button2-timer_count})" : "");
+        clicked => {
+            // Note: Don't add code here since it won't run on the case of timeout triggering a press
+            manual-clicked2();
+            clicked2();
+        }
+    }
+}
+
+export component Booting inherits ControlPanelBase {
+    message-text: "Booting";
+}
+
+export component BootFailed inherits ControlPanelBase {
+    message-text: "Boot Failed";
+    message-type: StatusType.Error;
+    button1-text: "Reboot";
+}
+
+export component Ready inherits ControlPanelBase {
+    color-timer := Timer {
+        property <int> x: 100;
+        property <float> h: 0;
+        property <float> s: 0;
+        property <float> v: 0;
+        property <color> color: #ff0;
+        interval: 0.2s;
+        running: true;
+        triggered() => {
+            x = x + 3;
+            x = x > 100 ? 27 : x;
+            h = 360 * Math.mod(x, 50) / 50;
+            s = 1;
+            v = x >= 50 ? 1 - (x - 50) / 50 : 1;
+            color-timer.color = hsv(h,s,v);
+        }
+    }
+
+    message-color: color-timer.color;
+    message-text: (AppState.spool-staging-state == SpoolStagingState.Empty) ? "Scanning for Tagged Spool..." : "Load Spool\nor\nRescan Tag";
+    button1-text: (AppState.spool-staging-state == SpoolStagingState.Loaded) ? "Clear Staging" : "";
+    button1-timeout: (AppState.spool-staging-state == SpoolStagingState.Loaded) ? 60 : 0;
+    button2-text: "Encode Tag";
+    clicked1() => {
+        AppBackend.clear-staging();
+    }
+    clicked2() => {
+        AppState.control-state = ControlState.EncodeSelected;
+    }
+}
+
+export component EncodeSelected inherits ControlPanelBase {
+    message-text: (AppState.spool-staging-state == SpoolStagingState.Empty) ? "Press Slot to Encode" : "Press\nSlot or Staging\nto Encode";
+    button2-text: "Cancel";
+    button2-timeout: 10;
+    clicked2() => {
+        AppState.control-state = ControlState.Ready;
+    }
+}
+
+export component StagingSelected inherits ControlPanelBase {
+    message-text: "Press Slot\nto Configure";
+    button1-text: "Clear Staging";
+    button2-text: "Cancel";
+    button2-timeout: 10;
+    clicked1() => {
+        AppBackend.clear-staging();
+    }
+    clicked2() => {
+        AppState.control-state = ControlState.Ready;
+    }
+}
+
+export component OperationBase inherits ControlPanelBase {
+    message-text: AppState.user-message;
+    button1-text: "Cancel";
+}
+
+export component Encoding inherits OperationBase {
+    text-border-timer := Timer {
+        property <length> text-border-width: 1px;
+        interval: 0.3s;
+        running: true;
+        triggered() => {
+            if text-border-width == 1px {
+                text-border-width = 4px;
+            } else {
+                text-border-width = 1px;
+            }
+        }
+    }
+
+    text-border-width: text-border-timer.text-border-width;
+    button1-timeout: AppState.encode-timeout;
+    timeout-clicked1 => {
+        AppState.encoding-timeout()
+    }
+    manual-clicked1 => {
+        AppState.control-state = ControlState.Ready;
+    }
+    clicked1 => {
+        AppBackend.cancel-encode();
+    }
+}
+
+export component Reading inherits OperationBase {
+    clicked1 => {
+    }
+}
+
+export component PostAction inherits ControlPanelBase {
+    message-text: AppState.user-message;
+    message-type: AppState.user-message-type;
+    button1-text: "Ok";
+    button1-timeout: 10;
+    clicked1 => {
+        AppState.control-state = ControlState.Ready;
+    }
+}
+
+export component ControlPanel inherits HorizontalLayout {
+    in property <length> right-section-width;
+    padding-top: 5px;
+    staging := SpoolStaging {}
+
+    if AppState.control-state == ControlState.Booting: 
+                      Booting {
+        buttons-width: right-section-width;
+    }
+    if AppState.control-state == ControlState.BootFailed:
+                      BootFailed {
+        buttons-width: right-section-width;
+    }
+    if AppState.control-state == ControlState.Ready:
+                      Ready {
+        buttons-width: right-section-width;
+    }
+    if AppState.control-state == ControlState.EncodeSelected:
+                      EncodeSelected {
+        buttons-width: right-section-width;
+    }
+    if AppState.control-state == ControlState.StagingSelected:
+                      StagingSelected {
+        buttons-width: right-section-width;
+    }
+    if AppState.control-state == ControlState.Encoding: 
+                      Encoding {
+        buttons-width: right-section-width;
+    }
+    if AppState.control-state == ControlState.Reading: 
+                      Reading {
+        buttons-width: right-section-width;
+    }
+    if AppState.control-state == ControlState.PostAction:
+                      PostAction {
+        buttons-width: right-section-width;
+    }
+
+    trays-timer := Timer {
+        interval: 0.3s;
+        running: AppState.control-state == ControlState.EncodeSelected || AppState.control-state == ControlState.StagingSelected;
+        changed running => {
+            AppState.highlight-trays = false;
+            AppState.highlight-staging = false;
+        }
+        triggered() => {
+            if AppState.control-state == ControlState.EncodeSelected {
+                AppState.highlight-trays = !AppState.highlight-trays;
+                if AppState.spool-staging-state == SpoolStagingState.Loaded {
+                    AppState.highlight-staging = AppState.highlight-trays;
+                }
+            } else if AppState.control-state == ControlState.StagingSelected {
+                AppState.highlight-trays = !AppState.highlight-trays;
+            }
+        }
+    }
+
+    single-tray-timer := Timer {
+        interval: 0.3s;
+        running: AppState.highlight-tray != -1;
+        triggered() => {
+            AppState.highlight-tray-counter = AppState.highlight-tray-counter - 1;
+            AppState.highlight-tray-flash = Math.mod(AppState.highlight-tray-counter, 2) == 0;
+            if AppState.highlight-tray-counter == 0 {
+                AppState.highlight-tray = -1;
+                AppState.highlight-tray-flash = false;
+                AppState.highlight-tray-counter = AppState.highlight-tray-counter-length;
+            }
+        }
+    }
+
+    staging-to-tray-timer := Timer {
+        interval: 0.1s;
+        running: AppState.staging-to-tray != -1;
+        triggered() => {
+            AppBackend.set-staging-to-tray(AppState.staging-to-tray);
+            AppState.staging-to-tray = -1;
+        }
+    }
+}

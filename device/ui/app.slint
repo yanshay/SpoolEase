@@ -1,0 +1,463 @@
+import { FrameworkState } from "framework/framework.slint";
+
+// Types
+
+export enum UiTrayState { Unknown, Empty, Spool, Reading, Ready, Loading, Unloading, Loaded }
+// Spool - Spool entered the slot but not yet processed by AMS, so not ready yet
+// Ready - there is a spool, it is not loaded to the extruder now
+// Loading - during the process of loading into the extruder
+// Loaded - in the extruder
+// Unloading - during the process of unloading from the extruder
+export enum UiFilamentState { Unknown, Known }
+
+export struct UiFilament {
+  state: UiFilamentState,
+  color: color,
+  material: string,
+}
+
+export struct UiTray {
+  id: int,
+  external: bool,
+  spool-state: UiTrayState,
+  filament: UiFilament,
+  k: string,
+}
+
+export struct UiSpoolInfo {
+  color: color,
+  material: string,
+  k: string,
+}
+
+// Consts
+
+export global AppConsts {
+    out property <length> trays-spacing: 4px;
+    out property <length> external-tray-separator: 2px;
+    out property <brush> no-color: @linear-gradient(45deg, #fff 0%, #333 100%);
+    out property <brush> title-gradient: @linear-gradient(180deg, #09009B 0%, #0000CA 39%, #001dff 100%);
+    // out property <brush> no-color: @linear-gradient(45deg, #fff 0%, #AAA 54%, #333 100%);
+    // out property <brush> no-color: @linear-gradient(180deg, #fff 0%, #666 50%, #333 100%);
+}
+
+export enum ControlState {
+  Booting,
+  BootFailed,
+  Ready,
+  EncodeSelected,
+  StagingSelected,
+  Encoding,
+  Reading,
+  PostAction,
+}
+
+export enum StatusType {
+  Normal,
+  Success,
+  Error
+}
+
+export enum SpoolStagingState {
+  Empty,
+  Loaded,
+}
+
+// Functions to call rust
+export global AppBackend {
+    callback clear-staging();
+    callback set-staging-to-tray(tray-id: int);
+    callback encode-tray-to-tag(tray-id: int) -> int; // returns how long it will try to encode, for timer
+    callback cancel-encode();
+}
+
+export global AppState {
+    in-out property <ControlState> control-state: ControlState.Booting;
+
+    in-out property <SpoolStagingState> spool-staging-state: SpoolStagingState.Empty;
+    in-out property <UiSpoolInfo> spool-staging-info;
+    in-out property <int> staging-to-tray: -1; // tray that needs to be updated with filament when recognizing on backend tray is reading
+
+    in-out property <string> user-message: "Booting ...";
+    in-out property <StatusType> user-message-type: StatusType.Normal;
+    in-out property <int> encode-timeout: 999;
+
+    in-out property <int> curr-ams-id: 0;
+    in-out property <[int]> ams-exists: [0];
+
+    in-out property <bool> highlight-trays: false;
+    in-out property <bool> highlight-staging: false;
+    in-out property <int> highlight-tray: -1;
+    in-out property <bool> highlight-tray-flash: false;
+       out property <int> highlight-tray-counter-length: 20;
+    in-out property <int> highlight-tray-counter: highlight-tray-counter-length;
+
+    public function start-highlight-tray(tray-id: int) {
+        self.highlight-tray = tray-id;
+        self.highlight-tray-counter = highlight-tray-counter-length;
+    }
+
+// Functions called locally fom Rust
+
+    public function boot-succeeded() {
+        self.control-state = ControlState.Ready;
+    }
+
+    public function boot-failed(status: string) {
+        self.control-state = ControlState.BootFailed;
+        self.user-message = status;
+        self.user-message-type = StatusType.Error;
+    }
+
+    public function read-tag-found() {
+        if self.control-state == ControlState.Ready {
+            self.control-state = ControlState.Reading;
+            self.user-message = "Tag to Read Found, Reading ...";
+            self.user-message-type = StatusType.Normal;
+        }
+    }
+    public function read-tag-failed(err-txt: string) {
+        if self.control-state == ControlState.Reading {
+            self.control-state = ControlState.PostAction;
+            self.user-message = "Scanning Tag Failed\n\{err-txt}";
+            self.user-message-type = StatusType.Error;
+        }
+    }
+    public function read-tag-succeeded(ui-spool-info: UiSpoolInfo) {
+        self.spool-staging-state = SpoolStagingState.Loaded;
+        self.spool-staging-info = ui-spool-info;
+        self.control-state = ControlState.PostAction;
+        self.user-message = "Tag Scanned to Staging";
+        self.user-message-type = StatusType.Success;
+        start-highlight-tray(999);
+    }
+
+    public function update-spool-staging(ui-spool-info: UiSpoolInfo) {
+        self.spool-staging-state = SpoolStagingState.Loaded;
+        self.spool-staging-info = ui-spool-info;
+        start-highlight-tray(999);
+    }
+
+    public function empty-spool-staging() {
+        self.spool-staging-state = SpoolStagingState.Empty;
+    }
+
+    public function encode-tag-found() {
+        self.control-state = ControlState.Encoding;
+        self.user-message = "Tag to Encode Found, Encoding ...";
+        self.user-message-type = StatusType.Normal;
+    }
+    // Called from UI in case of UI timeout, can also be called from backend for timeout case
+    public function encoding-timeout() {
+        self.control-state = ControlState.PostAction;
+        self.user-message = "Encoding Tag Timed Out";
+        self.user-message-type = StatusType.Error
+    }
+
+    public function encoding-failed() {
+        self.control-state = ControlState.PostAction;
+        self.user-message = "Encoding Tag Failed";
+        self.user-message-type = StatusType.Error;
+    }
+    public function encoding-succeeded(ams-id: int, tray-id: int) {
+      // 254 - External Tray
+      // 999 - Staging
+        self.control-state = ControlState.PostAction;
+        self.user-message = ( tray-id == 999 ? "Encoding\nStaging Filament\nSucceeded" :
+                              tray-id == 254 ? "Encoding\nExternal Tray Filament\nSucceeded" : 
+                              "Encoding\nAMS \{ams-id+1}, Slot \{tray-id+1} Filament\nSucceeded");
+        self.user-message-type = StatusType.Success;
+    }
+
+    public function tray-update-failed(ams-id: int, tray-id: int, err-txt: string) {
+        self.control-state = ControlState.PostAction;
+        self.user-message = ( tray-id == 254 ? "Configuring\nExternal Spool Filament\nFailed" : 
+                              "Configuring\nAMS \{ams-id+1}, Slot \{tray-id+1} Filament\nFailed");
+        self.user-message-type = StatusType.Error;
+    }
+    public function tray-update-succeeded(ams-id: int, tray-id: int) {
+        self.control-state = ControlState.PostAction;
+        self.user-message = ( tray-id == 254 ? "Configuring\nExternal Spool Filament\nSucceeded" : 
+                              "Configuring\nAMS \{ams-id+1}, Slot \{tray-id+1} Filament\nSucceeded");
+        self.user-message-type = StatusType.Success;
+        start-highlight-tray((tray-id == 254) ? 254 : tray-id + ams-id*4);
+    }
+
+    public function encode-start(tray-id: int) {
+        self.encode-timeout = AppBackend.encode-tray-to-tag(tray-id);
+        self.control-state = ControlState.Encoding;
+        user-message = "Place Spool Tag to Encode";
+        user-message-type = StatusType.Normal;
+    }
+
+    public function new_single_tray_loading(tray_id: int) {
+        if self.spool-staging-state == SpoolStagingState.Loaded {
+          self.staging-to-tray = tray_id;        
+        }
+    }
+
+    in-out property <[UiTray]> trays-state: [
+  // External
+        {
+            id: 254,
+            external: true,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+
+  // AMS: 0
+        {
+            id: 0,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+        {
+            id: 1,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+        {
+            id: 2,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+        {
+            id: 3,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+
+  // AMS 1
+        {
+            id: 4,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+        {
+            id: 5,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+        {
+            id: 6,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+        {
+            id: 7,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+  // AMS 2
+        {
+            id: 8,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+        {
+            id: 9,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+        {
+            id: 10,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+        {
+            id: 11,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+  // AMS 3
+        {
+            id: 12,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+        {
+            id: 13,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+        {
+            id: 14,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+        {
+            id: 15,
+            external: false,
+            spool-state: UiTrayState.Unknown,
+            filament: {
+                state: UiFilamentState.Unknown,
+                color: #000,
+                material: "???",
+            },
+            workflowState: {
+                during_encode: false,
+                during_scan: false,
+            },
+            k: -1.0,
+        },
+    ];
+}

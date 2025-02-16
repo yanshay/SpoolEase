@@ -1,0 +1,26 @@
+export component Utils {
+    public pure function double(x: int) -> int {
+        return x * 2;
+    }
+
+    function norm_c(c:float) -> float {
+        return c <= 0.03928 ? c/12.92 : pow((c+0.055)/1.055, 2.4);
+    }
+
+    function luminance (c: color) -> float {
+            return (0.2126*norm_c(c.red)+0.7152*norm_c(c.green)+0.0722*norm_c(c.blue));
+    }
+    function contrast_ratio(l1: float, l2: float) -> float {
+      return l2<l1 ? (l1+0.05)/(l2+0.05) : (l2+0.05)/(l1+0.05);
+    }
+    function contrast_black(c:color) -> float {
+      return contrast_ratio(luminance(c), luminance(#000000));
+    }
+    function contrast_white(c:color) -> float {
+      return contrast_ratio(luminance(c), luminance(#ffffff));
+    }
+
+    public pure function contrasting_color(c: color) -> color {
+        return contrast_white(c) >= 4.5 ? #ffffff : #000000;
+    }
+}

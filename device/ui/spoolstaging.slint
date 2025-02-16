@@ -1,0 +1,77 @@
+import { MyButton } from "framework/widgets.slint";
+import { Utils } from "utils.slint"; 
+import { AppState, AppConsts, AppBackend, SpoolStagingState, ControlState, UiSpoolInfo } from "app.slint";
+
+export component SpoolStaging inherits Window {
+    utils := Utils { }
+
+    VerticalLayout {
+        spacing: AppConsts.trays-spacing;
+        title := Rectangle {
+            background: AppConsts.title-gradient;
+            height: 30px;
+            Text {
+                color: utils.contrasting_color(title.background);
+                text: "Staging";
+                font-size: 20px;
+            }
+
+            title-border := Rectangle {
+                border-color: black;
+                border-width: 1px;
+            }
+        }
+
+        filament-box := Rectangle {
+            background: (AppState.spool-staging-state == SpoolStagingState.Loaded) ? AppState.spool-staging-info.color : AppConsts.no-color;
+
+            if AppState.spool-staging-state == SpoolStagingState.Loaded: 
+            VerticalLayout {
+                alignment: center;
+                spacing: 10px;
+                material := Text {
+                    horizontal-alignment: center;
+                    font-size: 20px;
+                    text: AppState.spool-staging-info.material;
+                    color: utils.contrasting_color(filament-box.background);
+                }
+
+                // K Value
+                k-value := Text {
+                    horizontal-alignment: center;
+                    font-size: 20px;
+                    text: "K " + ((AppState.spool-staging-info.k != "") ? AppState.spool-staging-info.k : "N/A");
+                    color: utils.contrasting_color(filament-box.background);
+                }
+            }
+
+            filament-box-border := Rectangle {
+                width: parent.width;
+                height: parent.height;
+                border-color: black;
+                border-width: 1px;
+            }
+        }
+    }
+
+    if (AppState.highlight-tray == 999 && AppState.highlight-tray-flash) || (AppState.highlight-staging && AppState.spool-staging-state == SpoolStagingState.Loaded) : highlight-border := Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-width: 4px;
+        border-color: utils.contrasting_color(filament-box.background);
+    }
+
+    area := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => {
+            if AppState.spool-staging-state == SpoolStagingState.Loaded {
+                if AppState.control-state == ControlState.EncodeSelected {
+                    AppState.encode-start(999);
+                } else {
+                    AppState.control-state = ControlState.StagingSelected;
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,36 @@
+export component MyButton {
+    in property <string> text;
+    in property <bool> enabled: true;
+    callback clicked;
+    Rectangle {
+        background: enabled ? @linear-gradient(20deg, #3559E0 0%, #c2cdf6 100%) : @linear-gradient(20deg, #5C5C5C 0%, #CFCFCF 100%);
+        width: root.width;
+        height: root.height;
+        Text {
+            width: parent.width;
+            horizontal-alignment: center;
+            text: root.text;
+            font-size: 20px;
+            font-weight: 400 + (enabled && area.pressed ? 500 : 0);
+            wrap: word-wrap;
+            color: enabled ? black : #666666;
+        }
+
+        area := TouchArea {
+            width: parent.width;
+            height: parent.height;
+            clicked => {
+                if enabled {
+                  root.clicked();
+                }
+            }
+        }
+    }
+    Rectangle {
+        // to add the border - slint software renderer doen't do gradents with border
+        width: root.width;
+        height: root.height;
+        border-color: black;
+        border-width: 1px + (enabled && area.pressed ? 2px : 0px);
+    }
+}

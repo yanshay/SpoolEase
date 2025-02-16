@@ -1,0 +1,22 @@
+import { ScrollView } from "std-widgets.slint";
+import { FrameworkState } from "framework.slint";
+
+export component Terminal inherits Rectangle {
+    scroller := ScrollView {
+        height: root.height;
+        width: root.width;
+        viewport-height: child-text.height + 40px;
+        viewport-width: child-text.width;
+        child-text := Text {
+            width: parent.width - 10px;
+            wrap: char-wrap;
+            vertical-alignment: bottom;
+            font-size: 20px;
+            color: white;
+                        text: FrameworkState.term-text;
+            changed text => {
+                scroller.viewport-y = root.height - child-text.height - 36px;
+            }
+        }
+    }
+}

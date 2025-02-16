@@ -1,0 +1,90 @@
+export enum OtaState {
+  NotStarted,
+  Started,
+  Completed,
+  Failed
+}
+
+export enum WebConfigState {
+  Stopped,
+  Starting,
+  Started-AP,
+  Started-STA,
+  Stopping,
+}
+
+export global FrameworkBackend {
+    callback reset-flash-wifi-credentials();
+    callback start-web-config();
+    callback stop-web-config();
+    callback reset-device();
+    callback update-firmware-ota();
+}
+
+struct AppInfo {
+    name: string,
+    version: string,
+}
+
+struct OtaInfo {
+    version: string,
+    newer: bool}
+
+export global FrameworkState {
+    in-out property <AppInfo> app-info: { name: "AppName", version: "?.?.?" };
+    in-out property <string> term-text: "Initializing...";
+
+    in-out property <WebConfigState> web-config-state: WebConfigState.Stopped;
+    in-out property <string> web-config-url: "Initializing ...";
+    in-out property <string> web-config-ssid: "Initializing ...";
+    in-out property <string> web-config-key: "";
+
+    in-out property <OtaState> ota-state: OtaState.NotStarted;
+    in-out property <string> ota-message: "";
+    out property <OtaInfo> ota-info: { version: "Unknown", newer: false };
+
+    // Public Functions called from backend to alter state
+
+    // Terminal 
+
+    public function add-term-text(line: string) {
+        term-text = term-text + line;
+    }
+
+    // Ota
+
+    public function set-ota-info(ota-info: OtaInfo) {
+        self.ota-info = ota-info;
+      // potentially trigger notification
+    }
+    public function ota-started() {
+        self.ota-state = OtaState.Started;
+        self.ota-message = "Started Firmware Update";
+    }
+    public function ota-status(text: string) {
+        self.ota-message = text;
+    }
+    public function ota-completed(text: string) {
+        self.ota-state = OtaState.Completed;
+        self.ota-message = text;
+    }
+    public function ota-failed(text: string) {
+        self.ota-state = OtaState.Failed;
+        self.ota-message = text;
+    }
+
+    // Web Config
+
+    public function set-web-config-url(url: string, ssid: string) {
+        self.web-config-url = url;
+        self.web-config-ssid = ssid;
+    }
+    public function web-config-started(key: string, mode: WebConfigState) {
+        self.web-config-key = key;
+        self.web-config-state = mode;
+    }
+    public function web-config-stopped() {
+        self.web-config-key = "";
+        self.web-config-state = WebConfigState.Stopped;
+    }
+}

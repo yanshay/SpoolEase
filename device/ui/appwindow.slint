@@ -1,0 +1,96 @@
+import { GridBox, VerticalBox, HorizontalBox, Button, ComboBox, SpinBox, ScrollView } from "std-widgets.slint";
+
+import { FrameworkBackend, FrameworkState, OtaState, WebConfigState } from "framework/framework.slint";
+import { Terminal } from "framework/terminal.slint";
+import { Settings } from "framework/settings.slint";
+import { MyButton } from "framework/widgets.slint";
+
+import { Utils } from "utils.slint";
+import { Trays } from "trays.slint";
+import { AppBackend, AppState, AppConsts, ControlState, SpoolStagingState, UiTray, UiTrayState, UiFilamentState, UiSpoolInfo } from "app.slint";
+import { SpoolStaging } from "spoolstaging.slint";
+import { ControlPanel } from "controlpanel.slint";
+
+// reexport to rust
+
+export { FrameworkState, FrameworkBackend }
+export { AppState, AppBackend } 
+
+export component AppWindow inherits Window {
+    width: 480px;
+    height: 320px;
+
+    property <int> current-page: FrameworkState.web-config-state == WebConfigState.Started-AP ? 2 : (AppState.control-state == ControlState.Booting || AppState.control-state == ControlState.BootFailed) ? 0 : 1;
+
+    sgr := SwipeGestureHandler {
+        width: parent.width;
+        height: parent.height;
+        handle-swipe-up: current-page < 2;
+        handle-swipe-down: current-page > 0;
+        swiped => {
+            if FrameworkState.ota-state == OtaState.NotStarted {
+                if self.current-position.y > self.pressed-position.y + (self.height / 8) {
+                    current-page -= 1;
+                } else if self.current-position.y < self.pressed-position.y - (self.height / 8) {
+                    current-page += 1;
+                }
+            }
+        }
+
+        VerticalLayout {
+            y: - current-page * 320px;
+            animate y {
+                duration: 1000ms;
+                easing: ease-in-out;
+            }
+
+            // Page 0 - Terminal
+            page0 := Terminal {
+                height: root.height;
+                width: root.width;
+                background: #16161e;
+            }
+
+            // Page 1 :  App Window
+            page1 := VerticalLayout {
+                height: parent.height;
+                width: parent.width;
+                alignment: stretch;
+                top := HorizontalLayout {
+                    spacing: AppConsts.trays-spacing;
+                    external := Trays {
+                        is_ams: false;
+                        title: "External"; //"\{AppState.highlight-box}";
+                        tray_numbers: [0];
+                        trays-state: AppState.trays-state;
+                    }
+
+                    // Separating the external tray from the ams trays so can scroll the ams trays in case of several ams's
+                if AppState.ams-exists.length > 0: 
+                  ams := Trays {
+                        is_ams: true;
+                        title: "AMS - " + (AppState.curr-ams-id + 1);
+                        include-paging-left: false;
+                        include-paging-right: false;
+                        tray_numbers: [
+                            AppState.curr-ams-id * 4 + 1,
+                            AppState.curr-ams-id * 4 + 2,
+                            AppState.curr-ams-id * 4 + 3,
+                            AppState.curr-ams-id * 4 + 4
+                        ];
+                        trays-state: AppState.trays-state;
+                    }
+                }
+
+                bottom := ControlPanel {
+                    right-section-width: external.width;
+                }
+            }
+
+            page3 := Settings {
+                width: root.width;
+                height: root.height;
+            }
+        }
+    }
+}

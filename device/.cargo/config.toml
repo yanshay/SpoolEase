@@ -1,0 +1,20 @@
+[target.xtensa-esp32s3-none-elf]
+runner = "espflash flash --flash-size 16mb --flash-mode dio --flash-freq 80mhz --monitor --baud 921600 --partition-table ./partitions.csv"
+
+[env]
+ESP_LOG="info,SpoolEase=trace"
+ESP_WIFI_CONFIG_RX_QUEUE_SIZE="6"
+ESP_WIFI_CONFIG_MAX_BURST_SIZE="12"
+
+[build]
+rustflags = [
+  "-C", "link-arg=-Tlinkall.x",
+  "-C", "link-arg=-nostartfiles",
+  "--cfg", "getrandom_backend=\"custom\"",
+  # "-Z", "stack-protector=all",
+]
+
+target = "xtensa-esp32s3-none-elf"
+
+[unstable]
+build-std = ["alloc", "core"]

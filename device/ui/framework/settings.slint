@@ -1,0 +1,149 @@
+import { MyButton } from "widgets.slint";
+import { FrameworkState, FrameworkBackend, OtaState, WebConfigState } from "framework.slint";
+
+export component MyText inherits Text {
+    height: 22px;
+    font-size: 20px;
+}
+
+export component WebConfigButton inherits MyButton {
+    height: 60px;
+    enabled: FrameworkState.web-config-state == WebConfigState.Stopped || FrameworkState.web-config-state == WebConfigState.Started-STA;
+    text: (FrameworkState.web-config-state == WebConfigState.Stopped ? "Enable Web Config" : "Disable Web Config");
+    clicked => {
+        if FrameworkState.web-config-state == WebConfigState.Stopped {
+            // Order is important
+            FrameworkState.web-config-state = WebConfigState.Starting;
+            FrameworkBackend.start-web-config();
+        } else {
+            // Order is important
+            FrameworkState.web-config-state = WebConfigState.Stopping;
+            FrameworkBackend.stop-web-config();
+        }
+    }
+}
+
+export component RestartDeviceButton inherits MyButton {
+    height: 60px;
+    text: "Restart Device";
+    clicked => {
+        FrameworkBackend.reset-device();
+    }
+}
+
+export component ResetWifiCredentialsButton inherits MyButton {
+    height: 60px;
+    text: "Reset Wifi Credentials (Flash) and Restart";
+    clicked => {
+        FrameworkBackend.reset-flash-wifi-credentials();
+    }
+}
+
+export component OtaButton inherits MyButton {
+    height: 60px;
+    text: "Update Firmware Over Network" + (FrameworkState.ota-info.newer ? " to \{FrameworkState.ota-info.version}" : "");
+    clicked => {
+        FrameworkBackend.update-firmware-ota();
+    }
+}
+
+////////////////////////////////////
+
+export component Settings inherits Rectangle {
+    if FrameworkState.ota-state == OtaState.NotStarted && FrameworkState.web-config-state == WebConfigState.Stopped: buttons := VerticalLayout {
+        height: parent.height;
+        width: parent.width;
+
+        Rectangle {
+          height: 40px;
+          background: green.brighter(1.0);
+          border-color: black;
+          border-width: 1px;
+          Text {
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            height: 40px;
+            text: "  Installed firmware: \{FrameworkState.app-info.name} \{ FrameworkState.app-info.version }";
+            font-size: 20px;
+          }
+        }
+
+        WebConfigButton { }
+
+        ResetWifiCredentialsButton { }
+
+        RestartDeviceButton { }
+
+        OtaButton {}
+    }
+
+    if FrameworkState.ota-state != OtaState.NotStarted: ota := VerticalLayout {
+        alignment: stretch;
+        Rectangle {
+            vertical-stretch: 1;
+            width: parent.width;
+            background: FrameworkState.ota-state == OtaState.Failed ? red : FrameworkState.ota-state == OtaState.Completed ? green : white;
+            border-color: black;
+            border-width: 1px;
+            Text {
+                horizontal-alignment: center;
+                color: black;
+                text: FrameworkState.ota-message;
+                font-size: 20px;
+            }
+        }
+
+        MyButton {
+            enabled: FrameworkState.ota-state == OtaState.Failed || FrameworkState.ota-state == OtaState.Completed;
+            height: 60px;
+            text: "Ok";
+            clicked => {
+                FrameworkState.ota-state = OtaState.NotStarted;
+            }
+        }
+    }
+
+    if (FrameworkState.web-config-state == WebConfigState.Started-STA || FrameworkState.web-config-state == WebConfigState.Started-AP): web-config := VerticalLayout {
+        alignment: stretch;
+        Rectangle {
+            height: 320px - 60px; // TODO: why need to specify height? should be automatic by layout
+            background: white;
+            vertical-stretch: 1;
+            width: parent.width;
+            border-color: black;
+            border-width: 1px;
+            VerticalLayout {
+                padding: 10px;
+                spacing: 10px;
+                preferred-height: 500px;
+                MyText {
+                    text: "1. Connect to the WiFi network";
+                }
+                MyText {
+                    text: "    WiFi Network: \{FrameworkState.web-config-ssid}";
+                }
+                MyText {
+                    text: "2. Browse to the URL" + (FrameworkState.web-config-state == WebConfigState.Started-AP ? " (if not shown automatically)" : "");
+                }
+                MyText {
+                    text: "    URL: \{FrameworkState.web-config-url}";
+                }
+                MyText {
+                    text: "3. On the web page fill the Security Key";
+                }
+                MyText {
+                    text: "    Security Key: \{FrameworkState.web-config-key}";
+                }
+                MyText {
+                    text: "4. Press Verify Key button and continue";
+                }
+                MyText {
+                    text: "    with configurations. When done restart device";
+                }
+            }
+        }
+
+        if FrameworkState.web-config-state != WebConfigState.Started-AP: WebConfigButton { }
+        if FrameworkState.web-config-state == WebConfigState.Started-AP: RestartDeviceButton { }
+    }
+}

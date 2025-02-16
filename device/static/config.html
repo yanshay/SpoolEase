@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Application Configuration</title>
+    <style>
+      body { display: none; } /* Hide content initially */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: Arial, sans-serif;
+        background-size: cover;
+        color: #333;
+        /* display: flex; */ /* Set in Script after wasm initialized */ 
+        justify-content: center;
+        padding: 20px;
+        margin: 20px;
+      }
+      .container {
+        background: rgba(255, 255, 255, 0.9);
+        padding: 20px;
+        max-width: 500px;
+        width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      }
+      h1 {
+        text-align: center;
+        font-size: 1.8em;
+        margin-bottom: 20px;
+        color: #333;
+      }
+      .section {
+        margin-bottom: 20px;
+      }
+      .section h2 {
+        font-size: 1.2em;
+        color: #444;
+        margin-bottom: 10px;
+      }
+      .field {
+        margin-bottom: 15px;
+        position: relative;
+      }
+      .field label {
+        display: block;
+        font-weight: bold;
+        margin-bottom: 5px;
+      }
+      .field input[type="text"],
+      .field input[type="password"],
+      .field input[type="number"],
+      .field input[type="range"] {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 1em;
+      }
+      .password-toggle {
+        display: inline-block;
+        margin-left: 10px;
+        font-size: 0.9em;
+        color: #007bff;
+        cursor: pointer;
+      }
+      .apply-button {
+        display: block;
+        width: 100%;
+        padding: 10px;
+        font-size: 1em;
+        color: #fff;
+        background-color: #28a745;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-top: 10px;
+      }
+      .apply-button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+      .apply-button:hover:enabled {
+        background-color: #218838;
+      }
+      /* IP input styling */
+      .ip-input {
+        display: flex;
+        gap: 5px;
+      }
+      .ip-input input {
+        width: 50px;
+        text-align: center;
+      }
+      /* Tooltip styling */
+      .tooltip {
+        position: relative;
+        display: inline-block;
+        cursor: pointer;
+        margin-left: 5px;
+        color: #888;
+        font-size: 0.9em;
+      }
+      .tooltip .tooltip-text {
+        visibility: hidden;
+        width: 200px;
+        background-color: #333;
+        color: #fff;
+        text-align: center;
+        padding: 5px;
+        border-radius: 4px;
+        position: absolute;
+        z-index: 1;
+        bottom: 125%; /* Position above the icon */
+        left: 50%;
+        margin-left: -100px; /* Center the tooltip */
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+      .tooltip:hover .tooltip-text {
+        visibility: visible;
+        opacity: 1;
+      }
+      /* Dimming percent display */
+      #dimming-percent-display {
+        font-weight: bold;
+        margin-left: 10px;
+        color: #007bff;
+      }
+      /* Grouped settings */
+      .grouped-section {
+        border-top: 1px solid #ddd;
+        padding-top: 10px;
+      }
+      .feedback-label {
+        display: block;
+        text-align: center;
+        margin: 10px auto 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Application Configuration</h1>
+      <!-- Encryption Key Section -->
+      <div class="section grouped-section" id="security-key-section">
+        <h2>Security Key</h2>
+        <div class="field">
+          <label for="security-key"
+            >Key
+            <span class="tooltip"
+              >ⓘ
+              <span class="tooltip-text">The key to secure communication, get it from the device screen</span>
+            </span>
+          </label>
+          <input
+            type="text"
+            maxlength="20"
+            id="security-key"
+            name="security-key"
+            placeholder="Enter Security Key"
+          />
+        </div>
+        <button
+          class="apply-button"
+          id="security-key-apply"
+          onclick="applyKeyFetchConfigs()"
+          disabled
+        >
+          Verify Key
+        </button>
+        <label class="feedback-label" id="security-key-feedback"></label>
+      </div>
+
+      <!-- WiFi Credentias Section -->
+      <div class="section grouped-section" id="wifi-section">
+        <h2>WiFi Credentials</h2>
+        <div class="field">
+          <label for="ssid"
+            >SSID
+            <span class="tooltip"
+              >ⓘ
+              <span class="tooltip-text">The network name for WiFi.</span>
+            </span>
+          </label>
+          <input
+            type="text"
+            maxlength="32"
+            id="ssid"
+            name="ssid"
+            placeholder="Enter WiFi SSID"
+          />
+        </div>
+        <div class="field">
+          <label for="password"
+            >Password
+            <span class="tooltip"
+              >ⓘ
+              <span class="tooltip-text">Password for WiFi access.</span>
+            </span>
+          </label>
+          <input
+            type="password"
+            maxlength="32"
+            id="password"
+            name="password"
+            placeholder="Enter WiFi Password"
+          />
+          <span class="password-toggle" onclick="togglePassword()">Show</span>
+        </div>
+        <button
+          class="apply-button"
+          id="wifi-apply"
+          onclick="applyWiFiSettings()"
+          disabled
+        >
+          Apply
+        </button>
+      </div>
+
+      <!-- Display Settings Section -->
+      <div class="section grouped-section" id="display-section">
+        <h2>Display Settings</h2>
+        <div class="field">
+          <label for="dimming-timeout"
+            >Dimming Timeout (in seconds)
+            <span class="tooltip"
+              >ⓘ
+              <span class="tooltip-text">Duration before screen dims.</span>
+            </span>
+          </label>
+          <input
+            type="number"
+            id="dimming-timeout"
+            name="dimming-timeout"
+            min="0"
+            placeholder="Enter dimming timeout"
+          />
+        </div>
+        <div class="field">
+          <label for="dimming-percent"
+            >Dimming Percent (0-100)
+            <span class="tooltip"
+              >ⓘ
+              <span class="tooltip-text">Percentage to which screen dims.</span>
+            </span>
+          </label>
+          <input
+            type="range"
+            id="dimming-percent"
+            name="dimming-percent"
+            min="0"
+            max="100"
+            value="15"
+            oninput="updateDimmingPercent(this.value)"
+            onchange="updateDimmingPercent(this.value)"
+          />
+          <span id="dimming-percent-display">15%</span>
+        </div>
+        <div class="field">
+          <label for="blackout-timeout"
+            >Blackout Timeout (in seconds)
+            <span class="tooltip"
+              >ⓘ
+              <span class="tooltip-text"
+                >Duration before screen turns off.</span
+              >
+            </span>
+          </label>
+          <input
+            type="number"
+            id="blackout-timeout"
+            name="blackout-timeout"
+            min="0"
+            placeholder="Enter blackout timeout"
+          />
+        </div>
+        <button
+          class="apply-button"
+          id="display-apply"
+          onclick="applyDisplaySettings()"
+          disabled
+        >
+          Apply
+        </button>
+      </div>
+
+      <!-- Printer & Tag Scanning Settings Section -->
+      <div class="section grouped-section" id="printer-section">
+        <h2>Printer Settings</h2>
+        <div class="field">
+          <label for="printer-ip"
+            >Printer IP (Optional)
+            <span class="tooltip"
+              >ⓘ
+              <span class="tooltip-text">IP address of the printer.</span>
+            </span>
+          </label>
+          <div class="ip-input">
+            <input
+              type="number"
+              min="0"
+              max="255"
+              id="printer-ip-a"
+              oninput="nextInput(this)"
+            />
+            <input
+              type="number"
+              min="0"
+              max="255"
+              id="printer-ip-b"
+              oninput="nextInput(this)"
+            />
+            <input
+              type="number"
+              min="0"
+              max="255"
+              id="printer-ip-c"
+              oninput="nextInput(this)"
+            />
+            <input
+              type="number"
+              min="0"
+              max="255"
+              id="printer-ip-d"
+              oninput="nextInput(this)"
+            />
+          </div>
+        </div>
+        <div class="field">
+          <label for="printer-serial"
+            >Printer Serial Number
+            <span class="tooltip"
+              >ⓘ
+              <span class="tooltip-text">Serial number of the printer.</span>
+            </span>
+          </label>
+          <input
+            type="text"
+            id="printer-serial"
+            name="printer-serial"
+            placeholder="Enter serial number"
+          />
+        </div>
+        <div class="field">
+          <label for="printer-access-code"
+            >Printer Access Code
+            <span class="tooltip"
+              >ⓘ
+              <span class="tooltip-text">Access code for secure printing.</span>
+            </span>
+          </label>
+          <input
+            type="text"
+            id="printer-access-code"
+            name="printer-access-code"
+            placeholder="Enter access code"
+          />
+        </div>
+        <button
+          class="apply-button"
+          id="printer-apply"
+          onclick="applyPrinterSettings()"
+          disabled
+        >
+          Apply
+        </button>
+      </div>
+
+      <div class="section grouped-section" id="tag-section">
+        <h2>Tag Settings</h2>
+        <div class="field">
+          <label for="tag-scan-timeout"
+            >Tag Scan Timeout (in seconds)
+            <span class="tooltip"
+              >ⓘ
+              <span class="tooltip-text"
+                >Timeout duration for tag scanning.</span
+              >
+            </span>
+          </label>
+          <input
+            type="number"
+            id="tag-scan-timeout"
+            name="tag-scan-timeout"
+            min="0"
+            placeholder="Enter scan timeout"
+          />
+        </div>
+        <button
+          class="apply-button"
+          id="tag-apply"
+          onclick="applyTagSettings()"
+          disabled
+        >
+          Apply
+        </button>
+      </div>
+
+      <div class="section grouped-section" id="general-section">
+        <h2>General</h2>
+        <button class="apply-button" id="reset-device" onclick="resetDevice()">
+          Restart/Reset Device
+        </button>
+      </div>
+    </div>
+
+    <script type="module">
+      // Importing WASM as a JS module requires us to call an init function provided by the default export.
+      // This is planned to be changed in the future.
+      import {
+        default as wasm,
+        derive_key,
+        encrypt,
+        decrypt,
+      } from "./pkg/device_wasm.js";
+      // initialize wasm
+      await wasm();
+      window.securityKeyOnDerive = "";
+      window.encryptionKey = derive_key("", "example_salt");
+      window.derive_key = derive_key;
+      window.decrypt = decrypt;
+      window.encrypt = encrypt;
+      document.body.style.display = "flex";
+    </script>
+    <script>
+      // Enable button on any input change
+      function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
+        const section = document.getElementById(sectionId);
+        const applyButton = document.getElementById(buttonId);
+        section.addEventListener("input", () => {
+          applyButton.disabled = false;
+          if (feedbackLabelId) {
+            const feedbackLabel = document.getElementById(feedbackLabelId);
+            feedbackLabel.textContent = "";
+          } 
+        });
+      }
+
+      function togglePassword() {
+        const passwordField = document.getElementById("password");
+        const toggleText = document.querySelector(".password-toggle");
+        if (passwordField.type === "password") {
+          passwordField.type = "text";
+          toggleText.textContent = "Hide";
+        } else {
+          passwordField.type = "password";
+          toggleText.textContent = "Show";
+        }
+      }
+
+      function updateDimmingPercent(value) {
+        document.getElementById("dimming-percent-display").textContent =
+          value + "%";
+      }
+      function nextInput(currentInput) {
+        if (
+          currentInput.value.length === 3 &&
+          currentInput.nextElementSibling
+        ) {
+          currentInput.nextElementSibling.focus();
+        }
+      }
+
+      async function sendData(url, data) {
+        let encryptionKey = getEncryptionKey();
+        const response = await retryOperation(() =>
+          fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/text" },
+            body: encrypt(encryptionKey, JSON.stringify(data)),
+          }),
+        );
+        return response;
+      }
+
+      // Utility function to collect form data and send to the server
+      async function sendConfigData(
+        url,
+        data,
+        applyButton,
+      ) {
+        try {
+          let response = await sendData(url, data);
+          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+          const encryptedText = await response.text();
+          const decryptedText = decrypt(encryptionKey, encryptedText);
+          const result = JSON.parse(decryptedText);
+          alert(`Settings applied successfully`);
+          if (applyButton) {
+            applyButton.disabled = true;
+          }
+        } catch (error) {
+          console.error("Failed to apply settings:", error);
+          alert(`Failed to apply settings: ${error.message}`);
+        }
+      }
+
+      function getEncryptionKey() {
+        const securityKey = document.getElementById("security-key").value.trim();
+        if (securityKey != window.securityKeyOnDerive) {
+          window.encryptionKey = derive_key(securityKey, "example_salt");
+          window.securityKeyOnDerive = securityKey;
+        }
+        return window.encryptionKey;
+      }
+      // Function to test key
+      async function applyKeyFetchConfigs() {
+        const data = { test: "Hello" };
+        try {
+          let response = await sendData("/api/test-key", data); // Replace with actual server endpoint
+          if (response.status == 403) {
+            document.getElementById('security-key-feedback').textContent = 'Security Key is incorrect';
+          } else if (response.ok) {
+            document.getElementById('security-key-feedback').textContent = 'Security Key validated';
+            document.getElementById("security-key-apply").diabled = true;
+            await fetchSectionConfigs();
+          }
+
+        } catch (error) {
+          console.error("Failed to apply settings:", error);
+          document.getElementById('security-key-feedback').textContent = `Failed to check key, try again (${error.message})`;
+        }
+      }
+
+      // Function to reset the device
+      function resetDevice() {
+        const data = {};
+        sendData("/api/reset-device", data);
+        alert(
+          "Device restarted. Reactivate Web Config from device and refresh page to continue configuration",
+        );
+      }
+
+      // Function to collect WiFi settings and send them as JSON
+      function applyWiFiSettings() {
+        const ssid = document.getElementById("ssid").value;
+        const password = document.getElementById("password").value;
+        const data = { ssid, password };
+        const applyButton = document.getElementById("wifi-apply");
+        sendConfigData("/api/wifi-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      // Function to collect Display settings and send them as JSON
+      function applyDisplaySettings() {
+        const dimming_timeout = parseInt(
+          document.getElementById("dimming-timeout").value,
+        );
+        const dimming_percent = parseInt(
+          document.getElementById("dimming-percent").value,
+        );
+        const blackout_timeout = parseInt(
+          document.getElementById("blackout-timeout").value,
+        );
+        const data = { dimming_timeout, dimming_percent, blackout_timeout };
+        const applyButton = document.getElementById("printer-apply");
+        sendConfigData("/api/display-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      // Function to collect Printer settings and send them as JSON
+      function applyPrinterSettings() {
+        // Collect Printer IP as an array of octets
+        const ip = [
+          document.getElementById("printer-ip-a").value,
+          document.getElementById("printer-ip-b").value,
+          document.getElementById("printer-ip-c").value,
+          document.getElementById("printer-ip-d").value,
+        ].join(".");
+
+        // Collect other Printer settings
+        // const name = document.getElementById("printer-name").value;
+        const serial = document.getElementById("printer-serial").value;
+        const access_code = document.getElementById(
+          "printer-access-code",
+        ).value;
+
+        const data = {
+          ip,
+          name,
+          serial,
+          access_code,
+        };
+        const applyButton = document.getElementById("printer-apply");
+        sendConfigData("/api/printer-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      // Function to collect Tag settings and send them as JSON
+      function applyTagSettings() {
+        // Tag scanning timeout setting
+        const tag_scan_timeout = parseInt(
+          document.getElementById("tag-scan-timeout").value,
+        );
+
+        const data = {
+          tag_scan_timeout,
+        };
+        const applyButton = document.getElementById("printer-apply");
+        sendConfigData("/api/tag-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      // Fetch initial configuration data and populate fields
+      async function fetchInitialSectionConfig(section) {
+        try {
+          const response = await fetch(`/api/${section}-config`); // Replace with actual endpoint
+          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+          const encryptedText = await response.text();
+          const decryptedText = decrypt(encryptionKey, encryptedText);
+          const data = JSON.parse(decryptedText);
+
+          // Populate WiFi credentials
+          return data;
+        } catch (error) {
+          console.error(`Failed to fetch ${section} configuration:`, error);
+          return null;
+        }
+      }
+
+      async function fetchWifiInitialConfig() {
+        const data = await fetchInitialSectionConfig("wifi");
+
+        if (data) {
+          document.getElementById("ssid").value = data.ssid;
+          document.getElementById("password").value = data.password;
+        }
+      }
+
+      async function fetchDisplayInitialConfig() {
+        const data = await fetchInitialSectionConfig("display");
+
+        if (data) {
+          document.getElementById("dimming-timeout").value =
+            data.dimming_timeout;
+          document.getElementById("dimming-percent").value =
+            data.dimming_percent;
+          document.getElementById("blackout-timeout").value =
+            data.blackout_timeout;
+          document.getElementById("dimming-percent-display").textContent =
+            `${data.dimming_percent}%`;
+        }
+      }
+
+      async function fetchPrinterInitialConfig() {
+        const data = await fetchInitialSectionConfig("printer");
+
+        if (data) {
+          const printerIP = data.ip ? data.ip.split(".") : "...".split(".");
+          // document.getElementById("printer-name").value = data.name;
+          document.getElementById("printer-ip-a").value = printerIP[0];
+          document.getElementById("printer-ip-b").value = printerIP[1];
+          document.getElementById("printer-ip-c").value = printerIP[2];
+          document.getElementById("printer-ip-d").value = printerIP[3];
+          document.getElementById("printer-serial").value = data.serial;
+          document.getElementById("printer-access-code").value =
+            data.access_code;
+        }
+      }
+
+      async function fetchTagInitialConfig() {
+        const data = await fetchInitialSectionConfig("tag");
+
+        if (data) {
+          // Populate Tag scanning settings
+          document.getElementById("tag-scan-timeout").value =
+            data.tag_scan_timeout;
+        }
+      }
+
+      async function retryOperation(operation, retries = 5) {
+        for (let i = 0; i < retries; i++) {
+          try {
+            return await operation();
+          } catch (error) {
+            if (i === retries - 1) throw error; // Throw error if it's the last retry
+          }
+        }
+      }
+
+      async function fetchSectionConfigs() {
+        await retryOperation(() => fetchWifiInitialConfig());
+        await retryOperation(() => fetchDisplayInitialConfig());
+        await retryOperation(() => fetchPrinterInitialConfig());
+        await retryOperation(() => fetchTagInitialConfig());
+      }
+
+      // Initialize listeners for each section
+      window.addEventListener("DOMContentLoaded", async () => {
+        // await fetchFormConfigFromServer()
+        // await retryOperation(() => fetchWifiInitialConfig());
+        // await retryOperation(() => fetchDisplayInitialConfig());
+        // await retryOperation(() => fetchPrinterInitialConfig());
+        // await retryOperation(() => fetchTagInitialConfig());
+        setupChangeListeners("wifi-section", "wifi-apply");
+        setupChangeListeners("display-section", "display-apply");
+        setupChangeListeners("printer-section", "printer-apply");
+        setupChangeListeners("tag-section", "tag-apply");
+        setupChangeListeners("security-key-section", "security-key-apply", "security-key-feedback");
+      });
+    </script>
+  </body>
+</html>

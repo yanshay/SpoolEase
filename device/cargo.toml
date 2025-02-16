@@ -1,0 +1,159 @@
+[package]
+name = "SpoolEase"
+homepage = "SpoolEase.io"
+version = "0.1.2"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+rust-version = "1.84"
+
+[profile.release]
+codegen-units = 1
+debug = 2
+debug-assertions = false
+incremental = false
+opt-level = 's'
+lto = 'fat'
+overflow-checks = false
+
+[profile.release.package.esp-wifi]
+opt-level = 3
+
+[profile.dev]
+lto = false
+
+[profile.dev.package.esp-wifi]
+opt-level = 3
+
+[patch.crates-io]
+bitvec = { git = "https://github.com/arctic-alpaca/ferrilab" }
+radium = { git = "https://github.com/arctic-alpaca/ferrilab" }
+
+[build-dependencies]
+slint-build = "1.9.1"
+
+[dependencies]
+# framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/" }
+framework = { package = "esp-hal-app-framework", path = "../../esp-hal-app/esp-hal-app-framework/" }
+esp32s3 = { version = "0.30.0" }
+
+# Esp-Hal Crates
+xtensa-lx-rt = { version = "0.18.0", features = ["float-save-restore"] }
+esp-hal = { version = "0.23.1", features = ["quad-psram"] }
+esp-backtrace = { version = "0.15.0", features = [ "panic-handler", "println", "exception-handler"] }
+esp-println = { version = "0.13.0", default-features = false, features = ["critical-section", "colors", "auto", "log"] }
+esp-hal-embassy = { version = "0.6.0" }
+esp-partition-table = { version = "0.1.2" }
+esp-wifi = { version = "0.12.0", features = [ "wifi", "utils", "esp-alloc"] }
+esp-mbedtls = { git = "https://github.com/esp-rs/esp-mbedtls.git", features = [ "async" ], rev = "1806f8f622b08a9b54de91814eea13c6b3d9ff1c" }
+esp-alloc = { version = "0.6.0" }
+esp-storage = { version = "0.4.0", features = [ "nor-flash" ] }
+
+esp-hal-ota = { version = "0.3.2" }
+
+# Embedded crates
+embedded-hal = { version = "1.0.0" }
+embedded-hal-async = { version = "1.0.0" }
+embedded-hal-bus = { version = "0.2.0", features = ["async"] }
+embedded-storage = { version = "0.3.1" }
+embedded-storage-async = { version = "0.4.1" }
+embedded-io = "0.6.1"
+embedded-io-async = { version = "0.6.1" }
+
+# Embassy & Async crates
+embassy-embedded-hal = { version = "0.3.0" }
+embassy-time = { version = "0.4.0", features = ["generic-queue-8"] }
+embassy-executor = { version = "0.7.0", features = ["nightly"] }
+embassy-net = { version = "0.6.0", features = [ "tcp", "udp", "dhcpv4", "medium-ethernet", "multicast" ] }
+embassy-futures = { version = "0.1.1" }
+embassy-sync = { version = "0.6.2" }
+futures = { version = "0.3.31", features = ["alloc"], default-features = false }
+futures-util = { version = "0.3.31", default-features = false }
+
+# Storage crates
+embedded-sdmmc = { version = "0.8.0" }
+sequential-storage = { git = "https://github.com/tweedegolf/sequential-storage", features = [ "alloc", ], rev = "b6f7da77b7f3d66bc1ac36992a6a7b399b5ba030" }
+
+# Display & Touch crates
+display-interface = { version = "0.5.0" }
+display-interface-parallel-gpio = { version = "0.7.0" }
+mipidsi = { version = "0.8.0" }
+slint = { version = "1.9.2", default-features = false, features = [ "libm", "unsafe-single-threaded", "compat-1-2", "renderer-software" ] }
+ft6x36 = { version = "0.6.1" }
+
+# Networking crates
+smoltcp = { version = "0.11.0", default-features = false, features = [ "proto-igmp", "proto-ipv4", "socket-tcp", "socket-icmp", "socket-udp", "medium-ethernet", "proto-dhcpv4", "socket-raw", "socket-dhcpv4"] }
+
+edge-nal-embassy = "0.5.0"
+edge-dhcp = "0.5.0"
+edge-nal = "0.5.0"
+edge-captive = "0.5.0"
+edge-http = "0.5.0"
+picoserve = {version = "0.14.1", git = "https://github.com/sammhicks/picoserve", rev = "5d40ea410efa4c2e313cfaa19f62f844ece1fd55", features = ["alloc", "embassy"] }
+
+# Utility crates
+cfg-if = "1.0.0"
+no_std_io = { version = "0.6.0", default-features = false, features = [ "alloc" ] }
+log = "0.4.22"
+heapless = "0.8.0"
+critical-section = "1.2.0"
+static_cell = { version = "2.1", features = ["nightly"] }
+once_cell = { version = "1.20.2", default-features = false, features = ["alloc"] }
+deku = { version = "0.17.0", default-features = false, features = ["alloc"] }
+anyhow = { version = "1.0.91", default-features = false }
+hashbrown = { version = "0.15.0", features = ["serde"] }
+serde = { version = "1.0.213", default-features = false, features = [ "derive", "alloc", ] }
+serde_json = { version = "1.0.132", default-features = false, features = [ "alloc", ] }
+pasetors = { version = "0.7.0", default-features = false, features = ["v4"] }
+base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
+getrandom = { version = "0.2.15", features = ["custom"] }
+semver = { version = "1.0.25", default-features = false }
+
+# Security/Crypto crates
+aes-gcm = { version = "0.10" }  # AES-GCM encryption/decryption
+# getrandom = { version = "0.3.0", default-features = false }
+rand = { version = "0.8", default-features = false }
+aes="0.8.4"
+ctr = "0.9.2"
+pbkdf2 = { version = "0.12", features = ["simple"] }
+sha2 = { version = "0.10.8", default-features = false}
+hmac = { version = "0.12.1", default-features = false}
+
+# Application specific crates
+mqttrust = { version = "0.6.0" }
+pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_async_full", default-features = false }
+
+[features]
+default = ["esp32s3"]
+
+esp32s3 = [
+  "esp-hal/esp32s3",
+  "esp-backtrace/esp32s3",
+  "esp-println/esp32s3",
+  "esp-wifi/esp32s3",
+  "esp-mbedtls/esp32s3",
+  "esp-hal-embassy/esp32s3",
+  "esp-storage/esp32s3",
+  "esp-hal-ota/esp32s3"
+]
+
+esp32 = [
+  "esp-hal/esp32",
+  "esp-backtrace/esp32",
+  "esp-println/esp32",
+  "esp-wifi/esp32",
+  "esp-mbedtls/esp32",
+]
+esp32c3 = [
+  "esp-hal/esp32c3",
+  "esp-backtrace/esp32c3",
+  "esp-println/esp32c3",
+  "esp-wifi/esp32c3",
+  "esp-mbedtls/esp32c3",
+]
+esp32s2 = [
+  "esp-hal/esp32s2",
+  "esp-backtrace/esp32s2",
+  "esp-println/esp32s2",
+  "esp-wifi/esp32s2",
+  "esp-mbedtls/esp32s2",
+]

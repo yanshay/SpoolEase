@@ -1,0 +1,184 @@
+import { Utils } from "utils.slint";
+import { AppConsts, AppState, ControlState, AppBackend, UiTray, UiFilamentState, UiTrayState } from "app.slint";
+
+/////////////////////////////////////////////
+
+component AmsButton inherits Window {
+    in property <int> ams-id;
+    in property <bool> active;
+    in property <[UiTray]> trays-state;
+
+    if ams-id != -1: Rectangle {
+        height: parent.height;
+        width: parent.width;
+        // background: active ? @linear-gradient(180deg, #09009B 0%, #0000CA 39%, #001dff 100%) : white;
+        background: active ? #bbb : white;
+        border-width: active ? 4px : 1px;
+        border-color: #001dff;
+        HorizontalLayout {
+            padding-top: 6px + (active ? 0px : 3px);
+            padding-bottom: 0px + (active ? 0px : 3px);
+            padding-left: 6px;
+            padding-right: 6px;
+            spacing: 3px + (active ? 0px : 3px);
+            for tray-id in [0, 1, 2, 3]: Rectangle {
+                height: parent.height - parent.padding-top - parent.padding-bottom - 3px * 2;
+                background: trays-state[ams-id * 4 + tray-id + 1].filament.state == UiFilamentState.Unknown ? AppConsts.no-color : trays-state[ams-id * 4 + tray-id + 1].filament.color;
+                Rectangle {
+                    height: parent.height;
+                    width: parent.width;
+                    border-color: black;
+                    border-width: 1px;
+                }
+            }
+        }
+
+        area := TouchArea {
+            width: parent.width;
+            height: parent.height;
+            clicked => {
+                AppState.curr-ams-id = ams-id;
+            }
+        }
+    }
+}
+
+component Spool inherits Rectangle {
+    callback clicked;
+    in-out property <UiTray> tray-state;
+
+    background: tray-state.filament.state == UiFilamentState.Unknown ? AppConsts.no-color : tray-state.filament.color;
+    VerticalLayout {
+        padding-left: (self.width - circle.width) / 2;
+        padding-right: self.padding-left;
+        padding-top: 5px;
+        padding-bottom: self.padding-top + 2px;
+        spacing: 4px;
+
+        circle := Rectangle {
+            width: parent.width - 8px;
+            height: self.width;
+            background: tray-state.spool-state == UiTrayState.Unknown || tray-state.spool-state == UiTrayState.Empty || tray-state.spool-state == UiTrayState.Spool || tray-state.spool-state == UiTrayState.Reading || tray-state.filament.state == UiFilamentState.Unknown ? #fff : tray-state.filament.color;
+            border-radius: root.width / 2;
+            border-color: utils.contrasting_color(root.background);
+            border-width: area.pressed ? 4px : 2px;
+
+            utils := Utils { }
+
+            Text {
+                text: tray-state.spool-state == UiTrayState.Unknown ? "?" : tray-state.spool-state == UiTrayState.Empty ? "" : tray-state.spool-state == UiTrayState.Spool ? "!" : tray-state.spool-state == UiTrayState.Reading ? "..." : "✓";
+                color: utils.contrasting_color(parent.background);
+                font-size: 60px;
+            }
+        }
+
+        // Text below circle
+
+        material := Text {
+            height: 18px;
+            horizontal-alignment: center;
+            font-size: 20px;
+            text: tray-state.filament.state == UiFilamentState.Unknown ? "???" : tray-state.filament.material;
+            color: utils.contrasting_color(root.background);
+        }
+
+        k-value := Text {
+            height: 20px;
+            horizontal-alignment: center;
+            font-size: 20px;
+            text: tray-state.filament.state == UiFilamentState.Unknown ? "" : "K " + tray-state.k;
+            color: utils.contrasting_color(root.background);
+        }
+    }
+
+    tray-border := Rectangle {
+        border-width: area.pressed || AppState.highlight-trays || (AppState.highlight-tray == tray-state.id && AppState.highlight-tray-flash)  ? 4px 
+                      : 1px;
+        border-color: self.border-width == 1px ? black : utils.contrasting_color(root.background);
+    }
+
+    area := TouchArea {
+        // touch area is shifted (by 20px) from the top to not accidentally press AMS and hit a tray
+        y: parent.y + 20px;
+        width: parent.width;
+        height: parent.height - 20px;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component Tray inherits Window {
+    in-out property <UiTray> tray-state;
+    callback clicked();
+    // Not clear why, but VerticalLayout (with single item inside?) stretches it to the correct height
+    VerticalLayout {
+        padding: 0px;
+        spacing: 4px;
+        Spool {
+            tray-state: tray_state;
+            clicked => {
+                root.clicked();
+            }
+            width: (480px - 4 * AppConsts.trays-spacing) / 5;
+        }
+    }
+}
+
+export component Trays {
+    in-out property <[int]> tray_numbers;
+    in-out property <[UiTray]> trays-state;
+    in property <string> title: "External";
+    in property <bool> include-paging-left: false;
+    in property <bool> include-paging-right: false;
+    in property <bool> is_ams: false;
+
+    VerticalLayout {
+        spacing: AppConsts.trays-spacing;
+        title := HorizontalLayout {
+            height: 50px;
+            spacing: 2px;
+
+            Rectangle {
+                background: @linear-gradient(180deg, #09009B 0%, #0000CA 39%, #001dff 100%);
+                Text {
+                    text: root.title;
+                    font-size: 20px;
+                    color: white;
+                }
+
+                Rectangle {
+                    border-width: 1px;
+                    border-color: black;
+                }
+
+                if is_ams: HorizontalLayout {
+                    for ams-id in AppState.ams-exists: AmsButton {
+                        height: parent.height;
+                        // width: self.height;
+                        ams-id: ams-id;
+                        trays-state: trays-state;
+                        active: AppState.curr-ams-id == ams-id;
+                    }
+                }
+            }
+        }
+
+        trays := HorizontalLayout {
+            spacing: AppConsts.trays-spacing;
+            padding-left: 0px;
+            padding-right: 0px;
+            for index in tray_numbers: Tray {
+                // visible: AppState.selected-tray-index == -1 || AppState.selected-tray-index == index;
+                tray-state: trays-state[index];
+                clicked() => { // ? TODO: Think if to move into the tray component
+                    if AppState.control-state == ControlState.StagingSelected {
+                        AppBackend.set-staging-to-tray(trays-state[index].id);
+                    } else if AppState.control-state == ControlState.EncodeSelected {
+                        AppState.encode-start(trays-state[index].id);
+                    }
+                }
+            }
+        }
+    }
+}
