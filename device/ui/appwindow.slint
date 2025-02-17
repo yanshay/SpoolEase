@@ -20,7 +20,7 @@ export component AppWindow inherits Window {
     width: 480px;
     height: 320px;
 
-    property <int> current-page: FrameworkState.web-config-state == WebConfigState.Started-AP ? 2 : (AppState.control-state == ControlState.Booting || AppState.control-state == ControlState.BootFailed) ? 0 : 1;
+    property <int> current-page: ( FrameworkState.web-config-state == WebConfigState.Started-AP || FrameworkState.web-config-state == WebConfigState.Started-STA) ? 2 : (AppState.control-state == ControlState.Booting || AppState.control-state == ControlState.BootFailed) ? 0 : 1;
 
     sgr := SwipeGestureHandler {
         width: parent.width;
