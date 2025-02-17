@@ -163,7 +163,7 @@
       <!--       (but not on your iOS device)</span>. -->
       <!--   </span -->
       <!-- </improv-wifi-serial-launch-button> -->
-      <esp-web-install-button
+      <esp-web-install-button id="install-button"
         manifest="https://raw.githubusercontent.com/yanshay/spoolease-bin/refs/heads/main/bins/web-install/manifest.json"
       >
       <button
@@ -198,5 +198,14 @@
         </div>
       </div>
     </div>
+    <script>
+        // for local debugging case
+        window.addEventListener("DOMContentLoaded", () => {
+            const installButton = document.getElementById("install-button");
+            if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+                installButton.setAttribute("manifest", "/web-install/manifest.json");
+            }
+        });
+    </script>
   </body>
 </html>
