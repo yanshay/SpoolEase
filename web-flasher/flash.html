@@ -78,21 +78,23 @@
         cursor: pointer;
         transition: background-color 0.3s;
         box-shadow: 0px 4px 15px rgba(0, 123, 255, 0.3);
-        margin-top: 10px;
+        margin-top: 20px;
         margin-left: 5px;
         margin-right: 5px;
+        margin-bottom: 0px;
       }
 
       .start-button:hover {
         background-color: #0056b3;
         box-shadow: 0px 6px 20px rgba(0, 123, 255, 0.5);
+        margin
       }
 
       .features {
         display: flex;
         justify-content: space-around;
         flex-wrap: wrap;
-        margin-top: 40px;
+        margin-top: 20px;
       }
 
       .feature-item {
@@ -142,8 +144,7 @@
       <h1 class="hero-title">SpoolEase - Spool Handling Made Easy</h1>
       <p class="hero-description">
         Enjoy easy AMS filament setup with SpoolEase. Just a few clicks, and
-        you're ready to go! <strong>Start the process</strong> now to see how
-        simple it is.
+        you're ready to go!
       </p>
 
       <!-- Hero Image Section -->
@@ -163,19 +164,21 @@
       <!--       (but not on your iOS device)</span>. -->
       <!--   </span -->
       <!-- </improv-wifi-serial-launch-button> -->
-      <esp-web-install-button id="install-button"
-        manifest="https://raw.githubusercontent.com/yanshay/spoolease-bin/refs/heads/main/bins/web-install/manifest.json"
-      >
-      <button
-        slot="activate"
-        class="start-button"
-      >Web Flash Firmware<br/>(Chrome / Edge Only)</button>
-      </esp-web-install-button>
+      <div>
+        <esp-web-install-button id="install-button"
+          manifest="https://raw.githubusercontent.com/yanshay/spoolease-bin/refs/heads/main/bins/web-install/manifest.json"
+        >
+        <button
+          slot="activate"
+          class="start-button"
+        >Web Flash Firmware<br/>(Chrome / Edge Only)</button>
+        </esp-web-install-button>
 
-      <button
-        slot="activate"
-        class="start-button"
-      >Command Line Flasher<br/>Download</button>
+        <button
+          slot="activate"
+          class="start-button"
+        >Command Line Flasher<br/>Download</button>
+      </div>
       <!-- Features Section -->
       <div class="features">
         <div class="feature-item">
