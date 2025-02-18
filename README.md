@@ -1,3 +1,8 @@
+# SpoolEase
+
+This project enables a device to interface with Bambulab 3D printers to encode and decode NFC tags attached to filament spools. The tags store filament information, which can be used to automatically configure printer settings when loading spools, whether through AMS or an external spool. This is a new project currently in its early stages, with testing limited to personal use.
+
+Users should be aware that there are no warranties, liabilities, or guarantees, and they assume all risks involved.
 ## Press below for video demonstration
 
 [![SpoolEase](https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg)](https://www.youtube.com/watch?v=WKIBzVbrhOg)
