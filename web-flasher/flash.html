@@ -56,9 +56,8 @@
       }
 
       .hero-image-container {
-        display: flex;
-        justify-content: center;
-        margin-bottom: 30px;
+        position: relative;
+        display: inline-block;
       }
 
       .hero-image {
@@ -122,6 +121,14 @@
         color: #555;
         line-height: 1.4;
       }
+
+      #slint-img {
+          position: absolute;
+          bottom: 12px;
+          right: 5px;
+          width: 150px;
+          height: auto;
+      }
     </style>
     <script
       type="module"
@@ -147,6 +154,7 @@
           alt="Microcontroller Product"
           class="hero-image"
         />
+         <img src="assets/MadeWithSlint-logo-dark-large.png" id="slint-img" alt="Logo">
       </div>
       <!-- <improv-wifi-serial-launch-button supported=""> -->
       <!--   <span slot="unsupported"> -->
