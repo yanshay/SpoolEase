@@ -1,12 +1,14 @@
 # SpoolEase
 
-This project enables a device to interface with Bambulab 3D printers to encode and decode NFC tags attached to filament spools. The tags store filament information, which can be used to automatically configure printer settings when loading spools, whether through AMS or an external spool. This is a new project currently in its early stages, with testing limited to personal use.
+This project is an ESP32S3 based add-on device for Bambulab 3D printers to encode and decode NFC tags attached to filament spools. The tags store filament information, which can be used to automatically configure printer settings when loading spools, whether through AMS or an external spool. It also provides visibility to the filaments currently loaded into the AMS's and the External Spool. 
 
-Users should be aware that there are no warranties, liabilities, or guarantees, and they assume all risks involved.
+This is a new project currently in its early stages, with testing limited to personal use. It is tested on a P1S printer but it reslies on the same protocols for X1C and probably also the A1 line. Users should be aware that there are no warranties, liabilities, or guarantees, and they assume all risks involved.
+
+This project is intended for personal use only. Commercial use, distribution, or any alteration of the device or its components for commercial purposes is strictly prohibited. This includes modifying the hardware or software to create derivative works or using the project in any commercial product. By using this project, you agree to use it solely for non-commercial purposes.
+
 ## Press below for video demonstration
 
 [![SpoolEase](https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg)](https://www.youtube.com/watch?v=WKIBzVbrhOg)
-
 ## Required Components
 
 - [WT32-SC01 Plus](https://www.aliexpress.com/item/3256805864064800.html) (**make sure to pick the board and not accessories**)
@@ -14,7 +16,6 @@ Users should be aware that there are no warranties, liabilities, or guarantees, 
 - [PN532 NFC reader module](https://www.aliexpress.com/item/3256806852006648.html) (**make sure to pick the module and not accessories**)
 - [8-wire cable with JST 1.25mm connector](https://www.aliexpress.com/item/1005007079265201.html) - Optional but recommended in case of cable fault/soldering/different WT32-SC01 Plus packaging, instead of the 7-wire that's supposed to come with the WT32-SC01 Plus (**make sure to pick the 1.25mm connector size and 8 pins**)
 - Soldering tools
-
 
 ## Follow these steps:
 - [Build](documentation/build.md)
