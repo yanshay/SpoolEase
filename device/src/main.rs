@@ -23,8 +23,18 @@ mod spool_tag;
 mod view_model;
 mod web_app;
 
-use alloc::{boxed::Box, format, rc::Rc, string::ToString};
+use alloc::{format, rc::Rc, string::ToString};
+use esp_hal::dma::DmaChannel0;
+use core::cell::RefCell;
+use core::net::Ipv4Addr;
+use esp_alloc as _;
+use esp_backtrace as _;
+use esp_hal_ota::Ota;
+use esp_mbedtls::Tls;
+use esp_storage::FlashStorage;
+use esp_wifi::EspWifiController;
 use framework::framework::FrameworkSettings;
+use rand::RngCore;
 use settings::OTA_DOMAIN;
 use settings::OTA_PATH;
 use settings::OTA_TOML_FILENAME;
@@ -37,15 +47,6 @@ use settings::WEB_SERVER_HTTPS;
 use settings::WEB_SERVER_PORT;
 use settings::WEB_SERVER_TLS_CERTIFICATE;
 use settings::WEB_SERVER_TLS_PRIVATE_KEY;
-use core::cell::RefCell;
-use core::net::Ipv4Addr;
-use esp_alloc as _;
-use esp_backtrace as _;
-use esp_hal_ota::Ota;
-use esp_mbedtls::Tls;
-use esp_storage::FlashStorage;
-use esp_wifi::EspWifiController;
-use rand::RngCore;
 
 extern crate alloc;
 
@@ -62,7 +63,6 @@ use esp_hal::{
     dma::DmaTxBuf,
     dma_buffers,
     gpio::{Input, Level, Output, Pull},
-    ledc::timer::TimerIFace,
     psram,
     rng::Rng,
     rtc_cntl::Rtc,
@@ -74,11 +74,9 @@ use esp_hal::{
 
 use esp_wifi::init;
 
-use mipidsi::models::ST7796;
 
+use framework::display::{GWT32SC01PlusPeripherals, WT32SC01Plus, WT32SC01PlusRunner};
 use framework::prelude::*;
-use framework::display::SC01DislpayOutputBus;
-use framework::slint_ext::McuWindow;
 
 use app_config::AppConfig;
 use settings::AP_ADDR;
@@ -157,141 +155,18 @@ async fn main(spawner: Spawner) {
 
     // == Setup timers & delay ========================================================
 
-    let mut delay = esp_hal::delay::Delay::new();
-    let rtc = Rtc::new(peripherals.LPWR);
+    let delay = esp_hal::delay::Delay::new();
+    let _rtc: Rtc<'static> = Rtc::new(peripherals.LPWR); // don't move from here, will cause all kinds of timer/embassy
     let timg0 = TimerGroup::new(peripherals.TIMG0);
 
     // == Create Tls ==================================================================
+
     let tls = mk_static!(Tls<'static>, Tls::new(peripherals.SHA).unwrap().with_hardware_rsa(peripherals.RSA));
     tls.set_debug(0);
 
     // == Initialize Embassy ==========================================================
 
     esp_hal_embassy::init(timg0.timer1);
-
-    // == Setup Display Interface (di) ================================================
-
-    debug!("Setting up display interface");
-
-    let di_wr = Output::new(&mut peripherals.GPIO47, Level::High);
-    let di_dc = Output::new(&mut peripherals.GPIO0, Level::High);
-    let di_bl = peripherals.GPIO45;
-    let di_rst = Output::new(peripherals.GPIO4, Level::High);
-
-    let fastbus = SC01DislpayOutputBus::new();
-    let di = display_interface_parallel_gpio::PGPIO8BitInterface::new(fastbus, di_dc, di_wr);
-
-    // Initialize display using standard mipidsi dislay driver, then switch to faster display method for screen data
-    let display = mipidsi::Builder::new(ST7796, di)
-        .display_size(320, 480)
-        .invert_colors(mipidsi::options::ColorInversion::Inverted)
-        .color_order(mipidsi::options::ColorOrder::Bgr)
-        .orientation(
-            mipidsi::options::Orientation::new()
-                .rotate(mipidsi::options::Rotation::Deg270)
-                .flip_horizontal(),
-        )
-        .reset_pin(di_rst)
-        .init(&mut delay)
-        .unwrap();
-
-    let (di, _model, _rst) = display.release();
-    let (_bus, _di_dc, _di_wr) = di.release();
-
-    // Display initialization is done, now switch to LCD_CAM/DMA for driving data fast to the display
-
-    let lcd_cam = esp_hal::lcd_cam::LcdCam::new(peripherals.LCD_CAM);
-
-    let tx_pins = esp_hal::lcd_cam::lcd::i8080::TxEightBits::new(
-        peripherals.GPIO9,
-        peripherals.GPIO46,
-        peripherals.GPIO3,
-        peripherals.GPIO8,
-        peripherals.GPIO18,
-        peripherals.GPIO17,
-        peripherals.GPIO16,
-        peripherals.GPIO15,
-    );
-
-    let di_wr = peripherals.GPIO47;
-    let di_dc = peripherals.GPIO0;
-
-    let mut i8080_config = esp_hal::lcd_cam::lcd::i8080::Config::default();
-    i8080_config.frequency = 40.MHz();
-
-    let mut i8080 = esp_hal::lcd_cam::lcd::i8080::I8080::new(lcd_cam.lcd, peripherals.DMA_CH0, tx_pins, i8080_config)
-        .unwrap()
-        .with_ctrl_pins(di_dc, di_wr);
-    i8080.set_8bits_order(esp_hal::lcd_cam::ByteOrder::Inverted);
-
-    let (_, _, tx_buffer0, tx_descriptors0) = dma_buffers!(0, 480 * core::mem::size_of::<slint::platform::software_renderer::Rgb565Pixel>());
-    let (_, _, tx_buffer1, tx_descriptors1) = dma_buffers!(0, 480 * core::mem::size_of::<slint::platform::software_renderer::Rgb565Pixel>());
-    let dma_buf0 = DmaTxBuf::new(tx_descriptors0, tx_buffer0).unwrap();
-    let dma_buf1 = DmaTxBuf::new(tx_descriptors1, tx_buffer1).unwrap();
-
-    let (_, _, tx_buffer_cmd, tx_descriptors_cmd) = dma_buffers!(0, 4);
-    let dma_buf_cmd = DmaTxBuf::new(tx_descriptors_cmd, tx_buffer_cmd).unwrap();
-
-    let buffer_provider = framework::display::DrawBuffer {
-        i8080: Some(i8080),
-        dma_buf0: Some(dma_buf0),
-        dma_buf1: Some(dma_buf1),
-        dma_buf_cmd: Some(dma_buf_cmd),
-        transfer: None,
-        curr_buffer: 0,
-        prev_range: core::ops::Range::<usize> { start: 10000, end: 10000 },
-        prev_line: 0,
-    };
-
-    // Initialize backlight pwm control
-    let mut ledc = esp_hal::ledc::Ledc::new(peripherals.LEDC);
-    ledc.set_global_slow_clock(esp_hal::ledc::LSGlobalClkSource::APBClk);
-    let lstimer0: &mut esp_hal::ledc::timer::Timer<esp_hal::ledc::LowSpeed> = mk_static!(
-        esp_hal::ledc::timer::Timer<esp_hal::ledc::LowSpeed>,
-        ledc.timer::<esp_hal::ledc::LowSpeed>(esp_hal::ledc::timer::Number::Timer0)
-    );
-    lstimer0
-        .configure(esp_hal::ledc::timer::config::Config {
-            duty: esp_hal::ledc::timer::config::Duty::Duty5Bit,
-            clock_source: esp_hal::ledc::timer::LSClockSource::APBClk,
-            frequency: 24u32.kHz(),
-        })
-        .unwrap();
-    let channel0 = ledc.channel(esp_hal::ledc::channel::Number::Channel0, di_bl);
-
-    // == Setup the Slint Bacdkend ====================================================
-
-    let size = slint::PhysicalSize::new(480, 320);
-    let window = McuWindow::new(slint::platform::software_renderer::RepaintBufferType::ReusedBuffer);
-    window.set_size(size);
-    let rtc = Rc::new(rtc); // using Rc so we'll have access to the rtc later if needed
-    slint::platform::set_platform(Box::new(framework::display::EspBackend {
-        window: window.clone(),
-        rtc: rtc.clone(),
-    }))
-    .expect("backend already initialized");
-
-    // == Setup Touch Interface =======================================================
-
-    debug!("Setting up touch interface");
-
-    let ti_sda = peripherals.GPIO6; //.into_push_pull_output();
-    let ti_scl = peripherals.GPIO5; //.into_push_pull_output();
-    let ti_irq = Input::new(peripherals.GPIO7, Pull::Down); //.into_push_pull_output();
-
-    // TODO: Check the option of switching to async I2C instead of my own interrupt approach
-    // let _ti_i2c = esp_hal::i2c::master::I2c::new(peripherals.I2C0, {
-    //     let mut config = esp_hal::i2c::master::Config::default();
-    //     config.frequency = 400u32.kHz();
-    //     config
-    // });
-
-    let ti_i2c = esp_hal::i2c::master::I2c::new(peripherals.I2C0, esp_hal::i2c::master::Config::default().with_frequency(400.kHz()))
-        .unwrap()
-        .with_sda(ti_sda)
-        .with_scl(ti_scl);
-
-    esp_hal::interrupt::enable(esp_hal::peripherals::Interrupt::GPIO, esp_hal::interrupt::Priority::Priority3).unwrap();
 
     // == Setup Flash Storage =========================================================
 
@@ -380,15 +255,38 @@ async fn main(spawner: Spawner) {
         app_cargo_pkg_version: env!("CARGO_PKG_VERSION"),
     };
 
-    let framework = Framework::new(
-        framework_settings,
-        flash_map.clone(),
-        spawner,
-        sta_stack,
-        tls.reference(),
-    );
+    let framework = Framework::new(framework_settings, flash_map.clone(), spawner, sta_stack, tls.reference());
 
-    let app_config = Rc::new(RefCell::new(AppConfig::new(framework.clone())));
+    // == Setup Display Interface (di) ================================================
+
+    let display_peripherals = GWT32SC01PlusPeripherals {
+        GPIO47: peripherals.GPIO47,
+        GPIO0: peripherals.GPIO0,
+        GPIO45: peripherals.GPIO45,
+        GPIO4: peripherals.GPIO4,
+        LCD_CAM: peripherals.LCD_CAM,
+        GPIO9: peripherals.GPIO9,
+        GPIO46: peripherals.GPIO46,
+        GPIO3: peripherals.GPIO3,
+        GPIO8: peripherals.GPIO8,
+        GPIO18: peripherals.GPIO18,
+        GPIO17: peripherals.GPIO17,
+        GPIO16: peripherals.GPIO16,
+        GPIO15: peripherals.GPIO15,
+        LEDC: peripherals.LEDC,
+        GPIO5: peripherals.GPIO5,
+        GPIO6: peripherals.GPIO6,
+        GPIO7: peripherals.GPIO7,
+        DMA_CHx: peripherals.DMA_CH0,
+        I2Cx: peripherals.I2C0,
+    };
+
+    let display_orientation = mipidsi::options::Orientation::new().rotate(mipidsi::options::Rotation::Deg270).flip_horizontal();
+    let (display,temp_runner) = WT32SC01Plus::new(display_peripherals, display_orientation, framework.clone());
+    let runner : WT32SC01PlusRunner<DmaChannel0, esp_hal::peripherals::I2C0> = temp_runner;
+
+    spawner.spawn(display_runner(runner)).ok();
+    let _ = display.wait_init_done().await; // important to wait for init stage to complete before moving on
 
     // == Configure the App UI ========================================================
     // (need to be done after the call to slint::platform::set_platform)
@@ -396,18 +294,8 @@ async fn main(spawner: Spawner) {
     debug!("Configuring App UI");
 
     let ui: &mut crate::app::AppWindow = mk_static!(crate::app::AppWindow, crate::app::create_slint_app());
-    spawner
-        .spawn(framework::display::event_loop(
-            ti_i2c,
-            ti_irq,
-            window,
-            buffer_provider,
-            channel0,
-            lstimer0,
-            size,
-            framework.clone(),
-        ))
-        .ok();
+
+    let app_config = Rc::new(RefCell::new(AppConfig::new(framework.clone())));
 
     // == Setup Web Application and Run Web Server ====================================
 
@@ -433,7 +321,14 @@ async fn main(spawner: Spawner) {
 
     let web_server_runner = mk_static!(
         framework::web_server::Runner<NestedAppBuilder>,
-        framework::web_server::Runner::new(framework.clone(), web_app_router, web_app_state, spawner, framework.borrow().web_server_commands, tls.reference())
+        framework::web_server::Runner::new(
+            framework.clone(),
+            web_app_router,
+            web_app_state,
+            spawner,
+            framework.borrow().web_server_commands,
+            tls.reference()
+        )
     );
 
     for id in 0..WEB_SERVER_NUM_LISTENERS {
@@ -517,14 +412,7 @@ async fn main(spawner: Spawner) {
     debug!("Setting up Wifi");
 
     spawner
-        .spawn(framework::wifi::connection(
-            controller,
-            sta_stack,
-            ap_stack,
-            rx,
-            tx,
-            framework.clone(),
-        ))
+        .spawn(framework::wifi::connection(controller, sta_stack, ap_stack, rx, tx, framework.clone()))
         .ok();
     spawner.spawn(framework::wifi::sta_net_task(sta_runner)).ok();
     spawner.spawn(framework::wifi::ap_net_task(ap_runner)).ok(); // TODO: Maybe move this to run only when needed (in wifi.rs)
@@ -583,7 +471,9 @@ async fn main(spawner: Spawner) {
         .ok();
 
     Timer::after(Duration::from_millis(200)).await;
-    framework.borrow().notify_initialization_completed(app_config.borrow().initialization_ok());
+    framework
+        .borrow()
+        .notify_initialization_completed(app_config.borrow().initialization_ok());
 
     loop {
         Timer::after(Duration::from_secs(60)).await;
@@ -593,4 +483,9 @@ async fn main(spawner: Spawner) {
 #[embassy_executor::task(pool_size = WEB_SERVER_NUM_LISTENERS)]
 async fn web_server_task(runner: &'static framework::web_server::Runner<NestedAppBuilder>, id: usize) {
     runner.run(id).await;
+}
+
+#[embassy_executor::task]
+pub async fn display_runner(mut runner: WT32SC01PlusRunner<esp_hal::dma::DmaChannel0, esp_hal::peripherals::I2C0>) {
+    runner.run().await;
 }
