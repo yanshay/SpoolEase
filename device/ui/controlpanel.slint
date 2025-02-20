@@ -19,7 +19,7 @@ export component ControlPanelBase inherits HorizontalLayout {
     callback manual-clicked2;
     in-out property <int> button1-timeout: 0;
     in-out property <int> button2-timeout: 0;
-    in-out property <length> buttons-width;
+    in-out property <length> button-width;
     in-out property <length> text-border-width: 1px;
 
     utils := Utils { }
@@ -69,7 +69,7 @@ export component ControlPanelBase inherits HorizontalLayout {
     }
 
     if button1-text != "": MyButton {
-        width: buttons-width;
+        width: button-width;
         text: button1-text + ((button1-timeout != 0) ? "\n(\{button1-timer_count})" : "");
         clicked => {
             // Note: Don't add code here since it won't run on the case of timeout triggering a press
@@ -79,7 +79,7 @@ export component ControlPanelBase inherits HorizontalLayout {
     }
 
     if button2-text != "": MyButton {
-        width: buttons-width;
+        width: button-width;
         text: button2-text + ((button2-timeout != 0) ? "\n(\{button2-timer_count})" : "");
         clicked => {
             // Note: Don't add code here since it won't run on the case of timeout triggering a press
@@ -201,41 +201,36 @@ export component PostAction inherits ControlPanelBase {
 }
 
 export component ControlPanel inherits HorizontalLayout {
-    in property <length> right-section-width;
+    in property <length> staging-section-width;
+    in property <length> button-width;
     padding-top: 5px;
-    staging := SpoolStaging {}
+    staging := SpoolStaging {
+        width: staging-section-width;
+    }
 
-    if AppState.control-state == ControlState.Booting: 
-                      Booting {
-        buttons-width: right-section-width;
+    if AppState.control-state == ControlState.Booting: Booting {
+        button-width: button-width;
     }
-    if AppState.control-state == ControlState.BootFailed:
-                      BootFailed {
-        buttons-width: right-section-width;
+    if AppState.control-state == ControlState.BootFailed: BootFailed {
+        button-width: button-width;
     }
-    if AppState.control-state == ControlState.Ready:
-                      Ready {
-        buttons-width: right-section-width;
+    if AppState.control-state == ControlState.Ready: Ready {
+        button-width: button-width;
     }
-    if AppState.control-state == ControlState.EncodeSelected:
-                      EncodeSelected {
-        buttons-width: right-section-width;
+    if AppState.control-state == ControlState.EncodeSelected: EncodeSelected {
+        button-width: button-width;
     }
-    if AppState.control-state == ControlState.StagingSelected:
-                      StagingSelected {
-        buttons-width: right-section-width;
+    if AppState.control-state == ControlState.StagingSelected: StagingSelected {
+        button-width: button-width;
     }
-    if AppState.control-state == ControlState.Encoding: 
-                      Encoding {
-        buttons-width: right-section-width;
+    if AppState.control-state == ControlState.Encoding: Encoding {
+        button-width: button-width;
     }
-    if AppState.control-state == ControlState.Reading: 
-                      Reading {
-        buttons-width: right-section-width;
+    if AppState.control-state == ControlState.Reading: Reading {
+        button-width: button-width;
     }
-    if AppState.control-state == ControlState.PostAction:
-                      PostAction {
-        buttons-width: right-section-width;
+    if AppState.control-state == ControlState.PostAction: PostAction {
+        button-width: button-width;
     }
 
     trays-timer := Timer {
