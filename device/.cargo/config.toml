@@ -2,7 +2,7 @@
 runner = "espflash flash --flash-size 16mb --flash-mode dio --flash-freq 80mhz --monitor --baud 921600 --partition-table ./partitions.csv"
 
 [env]
-ESP_LOG="info,SpoolEase=trace"
+ESP_LOG="info,SpoolEase=trace,esp_hal_app_framework=trace"
 ESP_WIFI_CONFIG_RX_QUEUE_SIZE="6"
 ESP_WIFI_CONFIG_MAX_BURST_SIZE="12"
 
