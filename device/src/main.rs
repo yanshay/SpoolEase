@@ -24,28 +24,15 @@ mod view_model;
 mod web_app;
 
 use alloc::{format, rc::Rc, string::ToString};
-use core::cell::RefCell;
-use core::net::Ipv4Addr;
+use core::{cell::RefCell, net::Ipv4Addr};
 use esp_alloc as _;
 use esp_backtrace as _;
 use esp_hal_ota::Ota;
 use esp_mbedtls::Tls;
 use esp_storage::FlashStorage;
-use esp_wifi::EspWifiController;
+use esp_wifi::{init, EspWifiController};
 use framework::framework::FrameworkSettings;
 use rand::RngCore;
-use settings::OTA_DOMAIN;
-use settings::OTA_PATH;
-use settings::OTA_TOML_FILENAME;
-use settings::WEB_APP_DOMAIN;
-use settings::WEB_APP_KEY_DERIVATION_ITERATIONS;
-use settings::WEB_APP_SALT;
-use settings::WEB_APP_SECURITY_KEY_LENGTH;
-use settings::WEB_SERVER_CAPTIVE;
-use settings::WEB_SERVER_HTTPS;
-use settings::WEB_SERVER_PORT;
-use settings::WEB_SERVER_TLS_CERTIFICATE;
-use settings::WEB_SERVER_TLS_PRIVATE_KEY;
 
 extern crate alloc;
 
@@ -71,12 +58,14 @@ use esp_hal::{
     Blocking,
 };
 
-use esp_wifi::init;
 
-
-use framework::wt32_sc01_plus::{WT32SC01PlusPeripherals, WT32SC01Plus, WT32SC01PlusRunner};
 use framework::prelude::*;
+use framework::wt32_sc01_plus::{WT32SC01Plus, WT32SC01PlusPeripherals, WT32SC01PlusRunner};
 
+use settings::{
+    OTA_DOMAIN, OTA_PATH, OTA_TOML_FILENAME, WEB_APP_DOMAIN, WEB_APP_KEY_DERIVATION_ITERATIONS, WEB_APP_SALT, WEB_APP_SECURITY_KEY_LENGTH,
+    WEB_SERVER_CAPTIVE, WEB_SERVER_HTTPS, WEB_SERVER_PORT, WEB_SERVER_TLS_CERTIFICATE, WEB_SERVER_TLS_PRIVATE_KEY,
+};
 use app_config::AppConfig;
 use settings::AP_ADDR;
 use settings::WEB_SERVER_NUM_LISTENERS;
@@ -280,8 +269,10 @@ async fn main(spawner: Spawner) {
         I2Cx: peripherals.I2C0,
     };
 
-    let display_orientation = mipidsi::options::Orientation::new().rotate(mipidsi::options::Rotation::Deg270).flip_horizontal();
-    let (display,runner) = WT32SC01Plus::new(display_peripherals, display_orientation, framework.clone());
+    let display_orientation = mipidsi::options::Orientation::new()
+        .rotate(mipidsi::options::Rotation::Deg270)
+        .flip_horizontal();
+    let (display, runner) = WT32SC01Plus::new(display_peripherals, display_orientation, framework.clone());
 
     spawner.spawn(display_runner(runner)).ok();
     let _ = display.wait_init_done().await; // important to wait for init stage to complete before moving on
