@@ -24,7 +24,6 @@ mod view_model;
 mod web_app;
 
 use alloc::{format, rc::Rc, string::ToString};
-use esp_hal::dma::DmaChannel0;
 use core::cell::RefCell;
 use core::net::Ipv4Addr;
 use esp_alloc as _;
@@ -75,7 +74,7 @@ use esp_hal::{
 use esp_wifi::init;
 
 
-use framework::display::{GWT32SC01PlusPeripherals, WT32SC01Plus, WT32SC01PlusRunner};
+use framework::wt32_sc01_plus::{WT32SC01PlusPeripherals, WT32SC01Plus, WT32SC01PlusRunner};
 use framework::prelude::*;
 
 use app_config::AppConfig;
@@ -257,9 +256,9 @@ async fn main(spawner: Spawner) {
 
     let framework = Framework::new(framework_settings, flash_map.clone(), spawner, sta_stack, tls.reference());
 
-    // == Setup Display Interface (di) ================================================
+    // == Setup Display Interface =====================================================
 
-    let display_peripherals = GWT32SC01PlusPeripherals {
+    let display_peripherals = WT32SC01PlusPeripherals {
         GPIO47: peripherals.GPIO47,
         GPIO0: peripherals.GPIO0,
         GPIO45: peripherals.GPIO45,
@@ -282,8 +281,7 @@ async fn main(spawner: Spawner) {
     };
 
     let display_orientation = mipidsi::options::Orientation::new().rotate(mipidsi::options::Rotation::Deg270).flip_horizontal();
-    let (display,temp_runner) = WT32SC01Plus::new(display_peripherals, display_orientation, framework.clone());
-    let runner : WT32SC01PlusRunner<DmaChannel0, esp_hal::peripherals::I2C0> = temp_runner;
+    let (display,runner) = WT32SC01Plus::new(display_peripherals, display_orientation, framework.clone());
 
     spawner.spawn(display_runner(runner)).ok();
     let _ = display.wait_init_done().await; // important to wait for init stage to complete before moving on
