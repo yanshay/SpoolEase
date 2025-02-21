@@ -17,6 +17,8 @@ This project is intended for personal use only. Commercial use, distribution, or
 - [8-wire cable with JST 1.25mm connector](https://www.aliexpress.com/item/1005007079265201.html) - Optional but recommended in case of cable fault/soldering/different WT32-SC01 Plus packaging, instead of the 7-wire that's supposed to come with the WT32-SC01 Plus (**make sure to pick the 1.25mm connector size and 8 pins**)
 - Soldering tools
 
+- NFC Tags (Ntag215) – Available in different types and qualities, including paper and PET stickers, typically round with a 25mm diameter. It’s recommended to test a few before purchasing in bulk. If using a dryer, ensure the adhesive is durable enough to prevent the stickers from peeling off. 
+
 ## Follow these steps:
 - [Build](documentation/build.md)
 - [Setup](documentation/setup.md)
