@@ -98,3 +98,7 @@ This option simply reboots SpoolEase. It is helpful when applying new settings o
 This feature allows SpoolEase to download and install the latest firmware updates directly over the network. When selected, the device will check for updates, download them if available, and proceed with the installation. During this process, the device may become temporarily unresponsive. After the update is complete, SpoolEase will automatically restart with the latest firmware.
 
 > **Note:** During an OTA update, navigation between screens will be disabled until the process is complete.
+
+## Additional Usage Tips
+
+You may find it convenient to use the “Synchronize Filament List from AMS” feature in the slicer after loading tagged spools into the AMS, rather than manually selecting them in the slicer.
