@@ -63,3 +63,7 @@ Add the wiring diagram image here:
 - Fit the USB cable into the slot of the WT32-SC01-Plus. Depending on the stiffness of your cable, it may be tricky due to the board design. If it’s difficult to connect while the board is in place, try connecting the cable before placing the board.  
 
 ![Components Placement inside Case](components-placement.jpg)
+
+## Congratulations! You are Done With the Build
+
+![SpoolEase Fully Built](build-complete.jpg)
