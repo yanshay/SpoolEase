@@ -27,6 +27,10 @@ This project is intended for personal use only. Commercial use, distribution, or
 - [Setup](documentation/setup.md)
 - [Usage](documentation/usage.md)
 
+## Discussions 
+
+For questions, feedback, comments, etc. please use the [repo discussions area](https://github.com/yanshay/SpoolEase/discussions)
+
 ## Licensing
 This software is licensed under Apache License, Version 2.0  **with Commons Clause** - see [LICENSE.md](LICENSE.md).
 - ✅ Free for personal/non-commercial use
