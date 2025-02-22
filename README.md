@@ -18,7 +18,7 @@ This project is intended for personal use only. Commercial use, distribution, or
 - Soldering tools
 - Power adapter capable of 2A current at 5V + USBC Cable (don't use the USB port on the printer!)
 - 3D Model of SpoolEase case - TBD
-- (Optional) 3D Model of spool with place for NFC sticker tags - TBD
+- (Optional) 3D Model of spool with place for NFC sticker tags - [https://makerworld.com/en/models/1138678](https://makerworld.com/en/models/1138678)
 
 - NFC Tags (Ntag215) – Available in different types and qualities, including paper and PET stickers, typically round with a 25mm diameter. It’s recommended to test a few before purchasing in bulk. If using a dryer, ensure the adhesive is durable enough or choose a mounting method that prevents the stickers from falling off.
 
