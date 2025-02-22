@@ -28,8 +28,7 @@ This project is intended for personal use only. Commercial use, distribution, or
 - [Usage](documentation/usage.md)
 
 ## Licensing
-This software is licensed under Apache License, Version 2.0  with Commons Clause - see [LICENSE.md](LICENSE.md).
+This software is licensed under Apache License, Version 2.0  **with Commons Clause** - see [LICENSE.md](LICENSE.md).
 - ✅ Free for personal/non-commercial use
 - ❌ Commercial use requires a separate license
 - 📧 Contact **SpoolEase at Gmail dot Com** for commercial licensing options
-- 💼 See [COMMERCIAL.md](COMMERCIAL.md) for commercial terms
