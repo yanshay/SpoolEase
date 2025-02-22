@@ -26,7 +26,7 @@ After building SpoolEase, you’ll need to set it up for your 3D printer. Follow
 The easiest way to flash the firmware is through Chrome or Edge (other browsers are not supported).
 
 1. Connect the device to your computer using a USB-C cable.
-2. Visit [https://spoolease.io/flash.html](https://spoolease.io/flash.html).
+2. Visit [https://spoolease.io/flash.html](https://spoolease.io/flash.html) (or [https://yanshay.github.io/SpoolEase-Web/flash.html](https://yanshay.github.io/SpoolEase-Web/flash.html)).
 3. Click **"Web Flash Firmware"**.
 4. Select the correct port (it may contain “JTag” in its name) and click **Connect**.
 5. A dialog titled "SpoolEase" should appear. Click **Install SpoolEase** and confirm by pressing **Install**.
