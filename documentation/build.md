@@ -48,3 +48,18 @@ The provided 7-wire cable has connectors on both ends. However, since the PN532 
 Add the wiring diagram image here:
 
 ![WT32-SC01-Plus to PN532 Wiring Diagram](spoolease-wiring.png)
+
+## Installing the Case
+
+- Print the 3D model from [this link](https://makerworld.com/en/models/1138678).  
+  - While printing, feel free to boost the model :smile:  
+  - Optionally, glue the small pieces forming the antenna icon on the side, indicating where to place the tag. Ensure correct orientation before gluing, so check for fit first.
+- Place the WT32-SC01-Plus and PN532 in the positions shown in the image below.  
+  - Make sure the antenna faces outward from the case.  
+  - There is a hidden slot on the opposite side of the visible slot where the other end of the PN532 module fits.  
+  - Arrange the wires to avoid interfering with the PN532 antenna or the WT32-SC01-Plus board (to minimize Wi-Fi interference).  
+  - Secure the WT32-SC01-Plus with M2x10 screws. If you don’t have them, the board remains stable without screws.  
+- Carefully place the cover so the PN532 slides into the slots on the cover.
+- Fit the USB cable into the slot of the WT32-SC01-Plus. Depending on the stiffness of your cable, it may be tricky due to the board design. If it’s difficult to connect while the board is in place, try connecting the cable before placing the board.  
+
+![Components Placement inside Case](components-placement.jpg)
