@@ -6,7 +6,7 @@ This is a new project currently in its early stages, with testing limited to per
 
 This project is intended for personal use only. Commercial use, distribution, or any alteration of the device or its components for commercial purposes is strictly prohibited. This includes modifying the hardware or software to create derivative works or using the project in any commercial product. By using this project, you agree to use it solely for non-commercial purposes.
 
-## Press below for Video Demonstration
+## Press Below for Video Demonstration
 
 [![SpoolEase](https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg)](https://www.youtube.com/watch?v=WKIBzVbrhOg)
 ## Required Components
