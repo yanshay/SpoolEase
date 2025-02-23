@@ -34,5 +34,5 @@ For questions, feedback, comments, etc. please use the [repo discussions area](h
 ## Licensing
 This software is licensed under Apache License, Version 2.0  **with Commons Clause** - see [LICENSE.md](LICENSE.md).
 - ✅ Free for personal/non-commercial use
-- ❌ Cannot be sold, offered as a service, or used for consulting, see [LICENSE](LICENSE.md) for more details
+- ❌ Cannot be sold, offered as a service, or used for consulting, see [LICENSE.md](LICENSE.md) for more details
 - 📧 For commercial licensing inquiries about restricted uses, contact: **SpoolEase at Gmail dot Com** 
