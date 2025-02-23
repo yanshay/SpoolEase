@@ -906,17 +906,18 @@ impl FilamentInfo {
         for calibration_kv in self.calibrations.iter() {
             if let Some(cal_nozzle_diameter_char) = calibration_kv.0.chars().nth(2) {
                 let calibration = calibration_kv.1;
+                let chars_to_replace =['/', '&', '?'];
                 calibrations_part += &format!(
-                    "/K{}={}~{}~{}",
+                    "&K{}={}~{}~{}",
                     cal_nozzle_diameter_char,
                     calibration.k_value.trim_end_matches('0'),
                     &calibration.setting_id,
-                    &calibration.name,
+                    &calibration.name.chars().map(|c| if chars_to_replace.contains(&c) { '-' } else { c }).collect::<String>()
                 );
             }
         }
         format!(
-            "{FILAMENT_URL_PREFIX}V=1/{TAG_PLACEHOLDER}/M={}/C={}/NN={}/NX={}{}/FI={}",
+            "{FILAMENT_URL_PREFIX}V1?ID={TAG_PLACEHOLDER}&M={}&C={}&NN={}&NX={}{}&FI={}",
             self.tray_type, self.tray_color, self.nozzle_temp_min, self.nozzle_temp_max, calibrations_part, self.tray_info_idx
         )
     }
@@ -931,6 +932,7 @@ impl FilamentInfo {
             calibrations: HashMap::new(),
         }
     }
+
     pub fn from_descriptor(descriptor: &str, bambu_printer: &BambuPrinter) -> Result<Self, Error> {
         let mut filament_info_result = FilamentInfo::new();
         if !(descriptor.starts_with(FILAMENT_URL_PREFIX)) {
@@ -938,17 +940,25 @@ impl FilamentInfo {
         }
         let descriptor = descriptor.trim_start_matches(FILAMENT_URL_PREFIX);
 
+        let mut id = false;
         let mut v = false;
         let mut m = false;
         let mut fi = false;
         let mut c = false;
         let mut nn = false;
         let mut nx = false;
-        for param in descriptor.split('/') {
+        for param in descriptor.split(['&', '/', '?']) {
+            if param == "V1" {
+                v = true;
+                continue
+            }
             if let Some((param_name, param_value)) = param.split_once("=") {
+                // note that this process only values of name=value. Others are currently not processed here (like V1, and TagId)
                 match param_name {
-                    // Version (currently value ignored, supporting only '1')
-                    "V" => v = true,
+                    // Tag ID
+                    "ID" => {
+                        id = true;
+                    }
                     // Material / Tray Type (material code in some other form)
                     "M" => {
                         filament_info_result.tray_type = String::from(param_value);
@@ -989,7 +999,7 @@ impl FilamentInfo {
         }
 
         // Second pass on parts that need to be processed after the first
-        for param in descriptor.split('/') {
+        for param in descriptor.split(&['/', '&', '?']) {
             if let Some((param_name, param_value)) = param.split_once("=") {
                 match param_name {
                     // K - Pressure Advance Factor for Nozzle Diameter 0.4, 0.2, 0.6, 0.8
@@ -1046,7 +1056,7 @@ impl FilamentInfo {
                 }
             }
         }
-        if v && m && fi && c && nn && nx {
+        if v && id && m && fi && c && nn && nx {
             Ok(filament_info_result)
         } else {
             Err(Error::MissingFields)
