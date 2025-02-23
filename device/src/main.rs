@@ -427,7 +427,7 @@ async fn main(spawner: Spawner) {
     let spi = Spi::new(
         peripherals.SPI2,
         esp_hal::spi::master::Config::default()
-            .with_frequency(100.kHz())
+            .with_frequency(2000.kHz())
             .with_mode(spi::Mode::_0)
             .with_read_bit_order(spi::BitOrder::LsbFirst)
             .with_write_bit_order(spi::BitOrder::LsbFirst),

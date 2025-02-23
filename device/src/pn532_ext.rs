@@ -1,6 +1,7 @@
 use embassy_time::with_deadline;
 use embassy_time::Duration;
 use embassy_time::Instant;
+use embassy_time::Timer;
 
 use core::cmp::min;
 use core::future::Future;
@@ -57,6 +58,7 @@ pub async fn process_ntag_write_long<I>(
 where
     I: pn532::Interface,
 {
+    Timer::after_millis(10).await; // wait for stable RF field
     assert!(buf.len() % 4 == 0);
     let num_pages = buf.len() / 4;
 
@@ -87,8 +89,8 @@ where
                 // first byte signals if read was ok
                 last_err = res[0];
                 trace!("Error {} during NFC write of page {page_offset}, retrying", last_err);
-                // Timer::after_micros(50).await;
-                continue 'retries;
+                // continue 'retries; retries on write might be causing tag bricking? or was it a faulty PN532?
+                return Err(Error::Pn532ExtError(last_err));
             }
             break 'retries;
         }
