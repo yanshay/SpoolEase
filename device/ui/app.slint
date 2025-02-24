@@ -96,6 +96,15 @@ export global AppState {
         self.highlight-tray = tray-id;
         self.highlight-tray-counter = highlight-tray-counter-length;
     }
+    public function start-highlight-tray-forever(tray-id: int) {
+        self.highlight-tray = tray-id;
+        self.highlight-tray-counter = -1; // number even/odd to sync this tray flashing with other flashings
+    }
+    public function stop-highlight-tray() {
+        AppState.highlight-tray = -1;
+        AppState.highlight-tray-flash = false;
+        AppState.highlight-tray-counter = AppState.highlight-tray-counter-length;
+    }
 
 // Functions called locally fom Rust
 
@@ -112,7 +121,7 @@ export global AppState {
     public function read-tag-found() {
         if self.control-state == ControlState.Ready {
             self.control-state = ControlState.Reading;
-            self.user-message = "Tag to Read Found, Reading ...";
+            self.user-message = "Tag to Read Found,\nReading ...";
             self.user-message-type = StatusType.Normal;
         }
     }
@@ -144,7 +153,7 @@ export global AppState {
 
     public function encode-tag-found() {
         self.control-state = ControlState.Encoding;
-        self.user-message = "Tag to Encode Found, Encoding ...";
+        self.user-message = "Tag to Encode Found,\nEncoding ...";
         self.user-message-type = StatusType.Normal;
     }
     // Called from UI in case of UI timeout, can also be called from backend for timeout case
@@ -167,6 +176,7 @@ export global AppState {
                               tray-id == 254 ? "Encoding\nExternal Tray Filament\nSucceeded" : 
                               "Encoding\nAMS \{ams-id+1}, Slot \{tray-id+1} Filament\nSucceeded");
         self.user-message-type = StatusType.Success;
+        self.stop-highlight-tray();
     }
 
     public function tray-update-failed(ams-id: int, tray-id: int, err-txt: string) {
@@ -185,6 +195,7 @@ export global AppState {
 
     public function encode-start(tray-id: int) {
         self.encode-timeout = AppBackend.encode-tray-to-tag(tray-id);
+        AppState.start-highlight-tray-forever(tray-id);
         self.control-state = ControlState.Encoding;
         user-message = "Place Spool Tag to Encode";
         user-message-type = StatusType.Normal;

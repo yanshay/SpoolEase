@@ -175,13 +175,16 @@ export component Encoding inherits OperationBase {
     text-border-width: text-border-timer.text-border-width;
     button1-timeout: AppState.encode-timeout;
     timeout-clicked1 => {
-        AppState.encoding-timeout()
+        AppState.encoding-timeout();
+        AppState.stop-highlight-tray();
     }
     manual-clicked1 => {
         AppState.control-state = ControlState.Ready;
+        AppState.stop-highlight-tray();
     }
     clicked1 => {
         AppBackend.cancel-encode();
+        AppState.stop-highlight-tray();
     }
 }
 
@@ -197,6 +200,7 @@ export component PostAction inherits ControlPanelBase {
     button1-timeout: 10;
     clicked1 => {
         AppState.control-state = ControlState.Ready;
+        AppState.stop-highlight-tray();
     }
 }
 
@@ -257,11 +261,9 @@ export component ControlPanel inherits HorizontalLayout {
         running: AppState.highlight-tray != -1;
         triggered() => {
             AppState.highlight-tray-counter = AppState.highlight-tray-counter - 1;
-            AppState.highlight-tray-flash = Math.mod(AppState.highlight-tray-counter, 2) == 0;
+            AppState.highlight-tray-flash = Math.mod(AppState.highlight-tray-counter, 2) == 1;
             if AppState.highlight-tray-counter == 0 {
-                AppState.highlight-tray = -1;
-                AppState.highlight-tray-flash = false;
-                AppState.highlight-tray-counter = AppState.highlight-tray-counter-length;
+                AppState.stop-highlight-tray();
             }
         }
     }

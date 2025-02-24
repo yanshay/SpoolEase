@@ -385,7 +385,7 @@ fn filament_info_to_ui_spool_info(bambu_printer_model: core::cell::Ref<'_, Bambu
 
 fn k_value_for_ui(k: &str) -> String {
     if k.is_empty() {
-        "".to_string();
+        return "".to_string();
     }
     let k_value_for_ui = if k.starts_with("(") {
         let k = k.trim_matches(['(', ')']);
