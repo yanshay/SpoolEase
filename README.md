@@ -17,8 +17,8 @@ This project is intended for personal use only. Commercial use, distribution, or
 - [8-wire cable with JST 1.25mm connector](https://www.aliexpress.com/item/1005007079265201.html) - Optional but recommended in case of cable fault/soldering/different WT32-SC01 Plus packaging, instead of the 7-wire that's supposed to come with the WT32-SC01 Plus (**make sure to pick the 1.25mm connector size and 8 pins**)
 - Soldering tools
 - Power adapter capable of 2A current at 5V + USBC Cable (don't use the USB port on the printer!)
-- 3D Model of SpoolEase case - TBD
-- (Optional) 3D Model of spool with place for NFC sticker tags - [https://makerworld.com/en/models/1138678](https://makerworld.com/en/models/1138678)
+- 3D Model of SpoolEase case - [https://makerworld.com/en/models/1138678](https://makerworld.com/en/models/1138678)
+- (Optional) 3D Model of spool with place for NFC sticker tags - TBD
 
 - NFC Tags (Ntag215) – Available in different types and qualities, including paper and PET stickers, typically round with a 25mm diameter. It’s recommended to test a few before purchasing in bulk. If using a dryer, ensure the adhesive is durable enough or choose a mounting method that prevents the stickers from falling off.
 
