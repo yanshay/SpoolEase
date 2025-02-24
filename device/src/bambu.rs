@@ -906,13 +906,12 @@ impl FilamentInfo {
         for calibration_kv in self.calibrations.iter() {
             if let Some(cal_nozzle_diameter_char) = calibration_kv.0.chars().nth(2) {
                 let calibration = calibration_kv.1;
-                let chars_to_replace =['/', '&', '?'];
                 calibrations_part += &format!(
                     "&K{}={}~{}~{}",
                     cal_nozzle_diameter_char,
                     calibration.k_value.trim_end_matches('0'),
                     &calibration.setting_id,
-                    &calibration.name.chars().map(|c| if chars_to_replace.contains(&c) { '-' } else { c }).collect::<String>()
+                    &calibration.name.replace("/", "%2F").replace("&", "%26").replace("?", "%3F")
                 );
             }
         }
@@ -1014,6 +1013,7 @@ impl FilamentInfo {
                         let k_value = k_parts.next().ok_or(Error::ParseError)?.trim_end_matches("0");
                         let setting_id = k_parts.next().ok_or(Error::ParseError)?;
                         let name = k_parts.next().ok_or(Error::ParseError)?;
+                        let name = name.replace( "%2F","/").replace("%26", "&" ).replace("%3F", "?");
 
                         // Here there is room for flexibility.
                         // We have K, filament_id (from filament info as tray_info_idx), setting_id and name
