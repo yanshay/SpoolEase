@@ -45,7 +45,7 @@ The provided 7-wire cable has connectors on both ends. However, since the PN532 
 
 ## Tips/Recommendations
 
-- Solder the wires to pass on the opposite side of the antenna to prevent interference with NFC reception. The antenna is the thick white line around the board.
+- Solder the wires to pass on the opposite side of the antenna to prevent interference with NFC reception. The antenna is the thick white line around the board (note that the photo does not follow this guideline).
 - Keep the wires to the necessary length. Consider the required length to assemble everything (including the ability to remove the display with the PN532 inside), how to route them within the case to avoid interfering with the WiFi antenna, and other factors. Excessively long wires can cause electrical interference.
 
 ## Reference Image
