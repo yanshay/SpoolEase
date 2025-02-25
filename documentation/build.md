@@ -43,6 +43,12 @@ The provided 7-wire cable has connectors on both ends. However, since the PN532 
 | 6      | ⚪ **White** |                 | SCK              |
 | 7      | 🟧 **Orange** |                 | IRQ              |
 
+
+## Configuring the PN532
+
+The PN532 has two small dip switches that must be set to SPI mode.
+With the board oriented so that the dip switches are at the bottom right, set the left switch down and the right switch up.
+
 ## Tips/Recommendations
 
 - Solder the wires to pass on the opposite side of the antenna to prevent interference with NFC reception. The antenna is the thick white line around the board (note that the photo does not follow this guideline).
