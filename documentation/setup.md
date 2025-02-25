@@ -75,6 +75,8 @@ The easiest way to flash the firmware is through Chrome or Edge (other browsers 
 
 After rebooting, the terminal screen will display an IP address, indicating successful WiFi setup.
 
+You may also encounter an error about a missing SDCard. An SDCard is not required; it’s only supported for cases where an alternative configuration method is needed for specific reasons.
+
 ---
 
 ## Alternative Printer Information Setup
