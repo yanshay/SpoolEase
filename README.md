@@ -4,7 +4,8 @@ This project is an ESP32S3 based add-on device for Bambulab 3D printers to encod
 
 This is a new project currently in its early stages, with testing limited to personal use. It is tested on a P1S printer but it reslies on the same protocols for X1C and probably also the A1 line. Users should be aware that there are no warranties, liabilities, or guarantees, and they assume all risks involved.
 
-> [!Status]
+> [!Note]
+> *Status Update*
 > P1S: OK - Validated to work
 > X1C: Issues - progress made in resolving them. After install you'll see communication errors which were identified and resolved (not released yet). Then other logical issues due to X1C behaving differently than P1S. Will issue an update once fully working on X1C.
 > A1: Not tested yet. 
