@@ -43,4 +43,6 @@ Temporary Items
 # End of https://www.toptal.com/developers/gitignore/api/macos
 
 src/certs
+!src/certs/bambulab.pem
+!src/certs/ota-certs.pem
 .envrc
