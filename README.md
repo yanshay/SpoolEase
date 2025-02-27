@@ -9,9 +9,9 @@ This is a new project currently in its early stages, with testing limited to per
 >
 > P1S: OK - Validated to work
 >
-> X1C: Issues - progress made in resolving them. After install you'll see communication errors which were identified and resolved (not released yet). Then other logical issues due to X1C behaving differently than P1S. Will issue an update once fully working on X1C.
+> X1C: Current version doesn't work, but all issues resolved and will be release soon.
 >
-> A1: Not tested yet. 
+> A1: Partially tested, what was tested worked. Either way, will be released soon officially as well.
 
 This project is intended for personal use only. Commercial use, distribution, or any alteration of the device or its components for commercial purposes is strictly prohibited. This includes modifying the hardware or software to create derivative works or using the project in any commercial product. By using this project, you agree to use it solely for non-commercial purposes.
 
