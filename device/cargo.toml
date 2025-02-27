@@ -121,6 +121,7 @@ hmac = { version = "0.12.1", default-features = false}
 # Application specific crates
 mqttrust = { version = "0.6.0" }
 pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_async_full", default-features = false }
+regex = { version = "1.11.1", default-features = false }
 
 [features]
 default = ["esp32s3"]

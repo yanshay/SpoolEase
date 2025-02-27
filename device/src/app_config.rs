@@ -3,7 +3,8 @@ use core::{cell::RefCell, str::FromStr};
 use alloc::{
     format,
     rc::Rc,
-    string::{String, ToString}, vec::Vec,
+    string::{String, ToString},
+    vec::Vec,
 };
 use embassy_net::Ipv4Address;
 use serde::{Deserialize, Deserializer, Serializer};
@@ -46,7 +47,7 @@ where
 struct PrinterConfig {
     #[serde(serialize_with = "serialize_option_ipv4", deserialize_with = "deserialize_option_ipv4")]
     pub ip: Option<Ipv4Address>,
-    // pub name: Option<String>,
+    pub name: Option<String>,
     pub serial: Option<String>,
     pub access_code: Option<String>,
 }
@@ -58,8 +59,12 @@ struct TagConfig {
 pub struct AppConfig {
     observers: Vec<alloc::rc::Weak<RefCell<dyn AppControlObserver>>>,
     framework: Rc<RefCell<Framework>>,
+    // configured are what configured
+    pub configured_printer_ip: Option<Ipv4Address>,
+    pub configured_printer_name: Option<String>,
+    // w/o configured is also if learnt
     pub printer_ip: Option<Ipv4Address>,
-    // pub printer_name: Option<String>,
+    pub printer_name: Option<String>,
     pub printer_serial: Option<String>,
     pub printer_access_code: Option<String>,
     pub tag_scan_timeout: u64,
@@ -88,14 +93,14 @@ impl AppConfig {
         missing
     }
 
-    pub fn new(
-        framework: Rc<RefCell<Framework>>,
-    ) -> Self {
+    pub fn new(framework: Rc<RefCell<Framework>>) -> Self {
         Self {
             observers: Vec::new(),
             framework,
+            configured_printer_ip: None,
+            configured_printer_name: None,
             printer_ip: None,
-            // printer_name: None,
+            printer_name: None,
             printer_serial: None,
             printer_access_code: None,
             tag_scan_timeout: 10,
@@ -109,8 +114,10 @@ impl AppConfig {
     pub fn load_config_flash_then_toml(&mut self, toml_str: &str) -> Result<(), String> {
         if let Ok(Some(printer_store)) = self.framework.borrow_mut().fetch(String::from(PRINTER_CONFIG_KEY)) {
             if let Ok(printer_config) = serde_json::from_str::<PrinterConfig>(&printer_store) {
-                self.printer_ip = printer_config.ip;
-                // self.printer_name = printer_config.name;
+                self.configured_printer_ip = printer_config.ip;
+                self.configured_printer_name = printer_config.name;
+                self.printer_ip = self.configured_printer_ip;
+                self.printer_name = self.configured_printer_name.clone();
                 self.printer_serial = printer_config.serial;
                 self.printer_access_code = printer_config.access_code;
             }
@@ -148,13 +155,20 @@ impl AppConfig {
                 match expanded_key.as_str() {
                     "printer_ip" => {
                         if let Ok(addr) = Ipv4Address::from_str(value) {
-                            self.printer_ip = Some(addr);
+                            self.configured_printer_ip = Some(addr);
+                            self.printer_ip = self.configured_printer_ip;
                         } else {
                             parse_errors = true;
                             term_error!("config file format error at printer ip");
                         }
                     }
-                    "printer_serial" => self.printer_serial = Some(String::from(value)),
+                    "printer_name" => {
+                        self.configured_printer_name = Some(String::from(value));
+                        self.printer_name = self.configured_printer_name.clone();
+                    }
+                    "printer_serial" => {
+                        self.printer_serial = Some(String::from(value));
+                    }
                     "printer_access_code" => self.printer_access_code = Some(String::from(value)),
                     "tag_timeout" => {
                         if let Ok(tag_timeout) = value.parse::<u64>() {
@@ -192,24 +206,27 @@ impl AppConfig {
     }
 
     pub fn initialization_ok(&self) -> bool {
-        self.framework.borrow().initialization_ok() && 
-        matches!(self.config_processed_ok, Some(true)) && matches!(self.pn532_ok, Some(true)) && self.printer_serial != None && self.printer_access_code != None
+        self.framework.borrow().initialization_ok()
+            && matches!(self.config_processed_ok, Some(true))
+            && matches!(self.pn532_ok, Some(true))
+            && self.printer_serial != None
+            && self.printer_access_code != None
     }
 
     #[allow(dead_code)]
     pub fn boot_completed(&self) -> bool {
-        self.framework.borrow().boot_completed() &&
-        self.initialization_ok() && matches!(self.printer_connectivity_ok, Some(true))
+        self.framework.borrow().boot_completed() && self.initialization_ok() && matches!(self.printer_connectivity_ok, Some(true))
     }
 
     pub fn set_printer_config(
         &mut self,
         printer_ip: String,
+        printer_name: String,
         printer_serial: String,
         printer_access_code: String,
     ) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
         self.printer_ip = Ipv4Address::from_str(&printer_ip).ok();
-        // self.printer_name = if printer_name.is_empty() { None } else { Some(printer_name) };
+        self.printer_name = if printer_name.is_empty() { None } else { Some(printer_name) };
         self.printer_serial = if printer_serial.is_empty() { None } else { Some(printer_serial) };
         self.printer_access_code = if printer_access_code.is_empty() {
             None
@@ -218,7 +235,7 @@ impl AppConfig {
         };
         let printer_config = PrinterConfig {
             ip: self.printer_ip,
-            // name: self.printer_name.clone(),
+            name: self.printer_name.clone(),
             serial: self.printer_serial.clone(),
             access_code: self.printer_access_code.clone(),
         };
@@ -235,7 +252,7 @@ impl AppConfig {
         self.framework.borrow().store(String::from(TAG_CONFIG_KEY), tag_store)
     }
 
-    // Events 
+    // Events
 
     pub fn subscribe(&mut self, observer: alloc::rc::Weak<RefCell<dyn AppControlObserver>>) {
         self.observers.push(observer);
@@ -249,7 +266,6 @@ impl AppConfig {
     }
 }
 
-
 pub trait AppControlObserver {
-    fn on_printer_connect_status(&self, status: bool); 
+    fn on_printer_connect_status(&self, status: bool);
 }

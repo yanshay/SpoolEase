@@ -13,6 +13,7 @@ use embassy_time::{with_deadline, Duration, Instant, Timer};
 use esp_mbedtls::TlsReference;
 use hashbrown::HashMap;
 use mqttrust::QoS;
+use regex::Regex;
 
 use framework::prelude::*;
 
@@ -235,9 +236,6 @@ impl BambuPrinter {
                     }
                     if tray_read_done {
                         new_tray.state = TrayState::Ready;
-                    }
-                    if tray_id == 0 {
-                        debug!("returned tray {new_tray:?}");
                     }
                     return Some(new_tray);
                 } else {
@@ -709,9 +707,11 @@ impl BambuPrinter {
         }
     }
 
-    // TODO: Unify sending messages
+    // TODO: Unify sending messages, no need for two functions
 
     pub fn publish_payload(&self, payload: String) {
+        debug!("MQTT Publish: {}", payload);
+
         let topic_name = format!("device/{}/request", self.app_config.borrow().printer_serial.as_ref().unwrap());
         let topic_name = topic_name.as_str();
 
@@ -727,6 +727,8 @@ impl BambuPrinter {
         let _ = self.write_packets.try_send(message);
     }
 
+    // TODO: Unify sending messages, no need for two functions
+
     pub async fn publish_payload_async(
         printer_serial: &String,
         write_packets: &'static embassy_sync::channel::Channel<
@@ -736,6 +738,7 @@ impl BambuPrinter {
         >,
         payload: String,
     ) {
+        debug!("MQTT Publish: {}", payload);
         let topic_name = format!("device/{}/request", printer_serial);
         let topic_name = topic_name.as_str();
 
@@ -901,20 +904,36 @@ pub struct FilamentInfo {
 }
 
 impl FilamentInfo {
-    pub fn to_descriptor(&self) -> String {
-        let mut calibrations_part = String::new();
+    pub fn to_descriptor(&self, printer_name: &Option<String>) -> String {
+        let mut inner_calibrations_part = String::new();
+        let printer_name = printer_name.as_ref();
+
+        let empty = "".to_string();
+        let k_prefix = printer_name.unwrap_or(&empty);
+        let k_prefix = if !k_prefix.is_empty() {
+            format!("&{}(", my_encode_to_url_part(k_prefix))
+        } else {
+            "&".to_string()
+        };
+        let k_postfix = if !k_prefix.is_empty() { ")" } else { "" };
+
         for calibration_kv in self.calibrations.iter() {
             if let Some(cal_nozzle_diameter_char) = calibration_kv.0.chars().nth(2) {
                 let calibration = calibration_kv.1;
-                calibrations_part += &format!(
-                    "&K{}={}~{}~{}",
+                inner_calibrations_part += &format!(
+                    "K{}={}~{}~{}",
                     cal_nozzle_diameter_char,
                     calibration.k_value.trim_end_matches('0'),
                     &calibration.setting_id,
-                    &calibration.name.replace("/", "%2F").replace("&", "%26").replace("?", "%3F")
+                    &my_encode_to_url_part(&calibration.name)
                 );
             }
         }
+        let calibrations_part = if inner_calibrations_part.is_empty() {
+            inner_calibrations_part
+        } else {
+            format!("{k_prefix}{inner_calibrations_part}{k_postfix}")
+        };
         format!(
             "{FILAMENT_URL_PREFIX}V1?ID={TAG_PLACEHOLDER}&M={}&C={}&NN={}&NX={}{}&FI={}",
             self.tray_type, self.tray_color, self.nozzle_temp_min, self.nozzle_temp_max, calibrations_part, self.tray_info_idx
@@ -949,7 +968,7 @@ impl FilamentInfo {
         for param in descriptor.split(['&', '/', '?']) {
             if param == "V1" {
                 v = true;
-                continue
+                continue;
             }
             if let Some((param_name, param_value)) = param.split_once("=") {
                 // note that this process only values of name=value. Others are currently not processed here (like V1, and TagId)
@@ -986,19 +1005,29 @@ impl FilamentInfo {
                         }
                         nx = true;
                     }
-                    "K4" | "K2" | "K6" | "K8" => (),
-                    // Filament Id/ Tray Index (material code in some form) - looks like Bambu specific
+                    // "K4" | "K2" | "K6" | "K8" => (),
+                    // // Filament Id/ Tray Index (material code in some form) - looks like Bambu specific
                     "FI" => {
                         filament_info_result.tray_info_idx = String::from(param_value);
                         fi = true;
                     }
-                    _ => return Err(Error::ParseError),
+                    _ => (), //return Err(Error::ParseError), TODO: verify match to pattern, or even run what's coming next inside here
                 }
             }
         }
 
         // Second pass on parts that need to be processed after the first
         for param in descriptor.split(&['/', '&', '?']) {
+            let mut param = param;
+            let re = Regex::new(r"^(.*)\((K.*)\)$").unwrap();
+            if let Some(captures) = re.captures(param) {
+                // to get k data use match 2
+                if let Some(param_match) = captures.get(2) {
+                    param = param_match.as_str();
+                }
+                // to get the printer name use match 1 and don't forget to my_decode_from_url_part the data
+                // currently not used, could compare to current printer name and ignore
+            }
             if let Some((param_name, param_value)) = param.split_once("=") {
                 match param_name {
                     // K - Pressure Advance Factor for Nozzle Diameter 0.4, 0.2, 0.6, 0.8
@@ -1013,7 +1042,7 @@ impl FilamentInfo {
                         let k_value = k_parts.next().ok_or(Error::ParseError)?.trim_end_matches("0");
                         let setting_id = k_parts.next().ok_or(Error::ParseError)?;
                         let name = k_parts.next().ok_or(Error::ParseError)?;
-                        let name = name.replace( "%2F","/").replace("%26", "&" ).replace("%3F", "?");
+                        let name = my_decode_from_url_part(name);
 
                         // Here there is room for flexibility.
                         // We have K, filament_id (from filament info as tray_info_idx), setting_id and name
@@ -1023,6 +1052,7 @@ impl FilamentInfo {
                         // But K may have changed on another spool for same filament, in such I select it based on the name.
                         // This means K is prioritized over name. Here is reasoning for either priorities
                         // I could also ignore K, or force only K and find something that match the K
+                        // I can also check what to do exactly based on printer name - if its the original printer or not - see belo comment
 
                         if let Some(nozzle_calibrations) = bambu_printer.calibrations.get(&nozzle_diameter) {
                             if let Some(calibration) = nozzle_calibrations.values().find(|v| {
@@ -1039,6 +1069,10 @@ impl FilamentInfo {
                                 );
                                 filament_info_result.calibrations.insert(nozzle_diameter, calibration);
                             } else if let Some(calibration) = nozzle_calibrations.values().find(|v| {
+                                // TODO: Key note for multiprinter support
+                                // if I'll remove the setting_id check it will allow tag from one printer to match another if PA profile named the same
+                                // if I make similarity on name, it will be more flexible, maybe be flexible around color names 
+                                // I can also check what to do exactly based on printer name - if its the original printer or not
                                 v.name.trim() == name.trim() && v.filament_id == filament_info_result.tray_info_idx && v.setting_id == setting_id
                             }) {
                                 let calibration = Calibration::new_minimal(
@@ -1062,6 +1096,16 @@ impl FilamentInfo {
             Err(Error::MissingFields)
         }
     }
+}
+
+fn my_decode_from_url_part(name: &str) -> String {
+    let name = name.replace("%2F", "/").replace("%26", "&").replace("%3F", "?").replace("%20", " ");
+    name
+}
+
+fn my_encode_to_url_part(name: &str) -> String {
+    let name = name.replace("/", "%2F").replace("&", "%26").replace("?", "%3F").replace(" ", "%20");
+    name
 }
 
 impl From<bambu_api::PrintTray> for FilamentInfo {
@@ -1244,6 +1288,7 @@ pub async fn incoming_messages_task(
                 }) => {
                     let parse_res = serde_json::from_slice::<bambu_api::Print>(payload);
                     if let Ok(print) = parse_res {
+                        debug!("MQTT Receive: {:?}", print);
                         let previous_reading_bits = bambu_printer.borrow().tray_reading_bits;
                         let change_made = (*bambu_printer.borrow_mut()).process_print_message(&print.print);
                         let updated_reading_bits = bambu_printer.borrow().tray_reading_bits;
@@ -1319,6 +1364,7 @@ pub async fn bambu_mqtt_task(
     Timer::after(Duration::from_millis(250)).await; // So log will come after wifi log
 
     let printer_ip: Ipv4Address;
+    let printer_name: String;
 
     if app_config.borrow().printer_ip.is_none() {
         term_info!("No Printer IP configured, discovering Printer");
@@ -1388,12 +1434,10 @@ pub async fn bambu_mqtt_task(
                             }
                         }
                         if found_printer_ip.is_some() {
-                            term_info!("Discovered Printer at {}", found_printer_ip.unwrap(),);
-                            term_info!(
-                                "Printer named '{}'",
-                                &found_printer_name.as_ref().unwrap_or(&String::from("Unknown"))
-                            );
                             printer_ip = found_printer_ip.unwrap();
+                            printer_name = found_printer_name.as_ref().unwrap_or(&String::from("Unknown")).to_string();
+                            term_info!("Discovered Printer at {}", printer_ip);
+                            term_info!("Printer named '{}'", &printer_name);
                             break 'outer_loop;
                         }
                     }
@@ -1402,7 +1446,12 @@ pub async fn bambu_mqtt_task(
         }
     } else {
         printer_ip = app_config.borrow().printer_ip.unwrap();
+        printer_name = app_config.borrow().printer_name.as_ref().unwrap_or(&String::from("Unknown")).to_string();
     }
+
+    // Final name, theoretically if name explicitly supplied and IP not,  this could override the supplied name
+    app_config.borrow_mut().printer_ip = Some(printer_ip);
+    app_config.borrow_mut().printer_name = Some(printer_name);
 
     let remote_endpoint = (printer_ip, 8883);
     let password = {
@@ -1423,7 +1472,7 @@ pub async fn bambu_mqtt_task(
         &printer_serial,
         Some("bblp"),
         password,
-        10,
+        0,
         &subscribe_topics,
         stack,
         write_packets,

@@ -53,8 +53,8 @@ impl AppWithStateBuilder for NestedAppBuilder {
         let router = router.route(
             "/api/printer-config",
             post(
-                move |State(Encryption(key)): State<Encryption>, PrinterConfigDTO { ip, serial, access_code }| {
-                    ready(match app_config_clone_post.borrow_mut().set_printer_config(ip, serial, access_code) {
+                move |State(Encryption(key)): State<Encryption>, PrinterConfigDTO { ip, serial, name, access_code }| {
+                    ready(match app_config_clone_post.borrow_mut().set_printer_config(ip, name, serial, access_code) {
                         Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
                         Err(e) => SetConfigResponseDTO {
                             error_text: Some(format!("{e:?}")),
@@ -66,12 +66,8 @@ impl AppWithStateBuilder for NestedAppBuilder {
             .get(move |State(Encryption(key)): State<Encryption>| {
                 ready(
                     PrinterConfigDTO {
-                        ip: app_config_clone_get
-                            .borrow()
-                            .printer_ip
-                            .map(|v| v.to_string())
-                            .unwrap_or(String::from("")),
-                        // name: app_config_clone2.borrow().printer_name.clone().unwrap_or(String::from("")),
+                        ip: app_config_clone_get.borrow().configured_printer_ip.map(|v| v.to_string()) .unwrap_or(String::from("")),
+                        name: app_config_clone_get.borrow().configured_printer_name.clone().unwrap_or(String::from("")),
                         serial: app_config_clone_get.borrow().printer_serial.clone().unwrap_or(String::from("")),
                         access_code: app_config_clone_get.borrow().printer_access_code.clone().unwrap_or(String::from("")),
                     }
@@ -110,7 +106,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
 #[derive(serde::Deserialize, serde::Serialize)]
 struct PrinterConfigDTO {
     ip: String,
-    // name: String,
+    name: String,
     serial: String,
     access_code: String,
 }

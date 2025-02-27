@@ -64,6 +64,7 @@ dependencies = [
  "picoserve",
  "pn532",
  "rand",
+ "regex",
  "semver",
  "sequential-storage",
  "serde",
@@ -1898,7 +1899,7 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework"
 version = "0.1.0"
-source = "git+https://github.com/yanshay/esp-hal-app/#c85bf293d9f8ffb4599f47d2d197d5b07fa2c35c"
+source = "git+https://github.com/yanshay/esp-hal-app/#ae56677fcecd740b22ccfccabc5229cba70f297f"
 dependencies = [
  "aes",
  "aes-gcm",

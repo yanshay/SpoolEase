@@ -64,7 +64,7 @@ where
     T: embedded_io_async::Read + embedded_io_async::Write,
 {
     tls: esp_mbedtls::asynch::Session<'a, T>,
-    buf: [u8; 8192],
+    buf: [u8; 16384],
     write_timeout: Duration,
 }
 
@@ -75,17 +75,22 @@ where
     pub fn new(tls: esp_mbedtls::asynch::Session<'a, T>, write_timeout: Duration) -> MyMqtt<'a, T> {
         MyMqtt {
             tls,
-            buf: [0u8; 8192],
+            buf: [0u8; 16384],
             write_timeout,
         }
     }
 
     pub async fn connect(&mut self, keep_alive_secs: u16, username: Option<&'a str>, password: Option<&'a [u8]>) -> Result<(), MyMqttError> {
         // Connect MQTT
+
+        // let mac: [u8;6] = esp_hal::efuse::Efuse::mac_address();
+        // let _mac_hex = alloc::format!("{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        //                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
         let connect = Packet::Connect(Connect {
             protocol: Protocol::MQTT311,
             keep_alive: keep_alive_secs,
-            client_id: "", //self.client_id(),
+            client_id: "", // &mac_hex
             clean_session: true,
             last_will: None,
             username,
@@ -148,6 +153,7 @@ where
                 return Err(MyMqttError::TlsError(e));
             }
         };
+        debug!("---- Read 1 : {len} bytes");
 
         // TODO: Fix this ugly code ...
         // The code as it is now handles up to two tls/tcp read packets for larger packets
@@ -170,8 +176,42 @@ where
             }
         };
 
-        let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len + len2])?;
-        Ok(decode_val)
+        debug!("---- Read 2 : {len} bytes");
+
+        let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len+len2])?;
+        if decode_val.is_some() {
+            let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len + len2])?;
+            return Ok(decode_val)
+        }
+
+        let len3 = match self.tls.read(&mut self.buf[len+len2..]).await {
+            Ok(n) => n,
+            Err(e) => {
+                warn!("TLS Error {:?}", e);
+                return Err(MyMqttError::TlsError(e));
+            }
+        };
+
+        debug!("---- Read 3 : {len} bytes");
+
+        let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len+len2+len3])?;
+        if decode_val.is_some() {
+            let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len + len2 + len3])?;
+            return Ok(decode_val)
+        }
+
+        let len4 = match self.tls.read(&mut self.buf[len+len2+len3..]).await {
+            Ok(n) => n,
+            Err(e) => {
+                warn!("TLS Error {:?}", e);
+                return Err(MyMqttError::TlsError(e));
+            }
+        };
+
+        debug!("---- Read 4 : {len} bytes");
+
+        let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len + len2 + len3+len4])?;
+        return Ok(decode_val)
     }
 }
 
@@ -393,13 +433,23 @@ pub async fn generic_mqtt_task<
         let publisher = read_packets.immediate_publisher();
 
         loop {
-            let res = embassy_futures::select::select3(my_mqtt.read(), write_packets.receive(), Timer::after_secs(keep_alive_secs.into())).await;
+            let res = if keep_alive_secs != 0 {
+                embassy_futures::select::select3(my_mqtt.read(), write_packets.receive(), Timer::after_secs(keep_alive_secs.into())).await
+            } else {
+                let res = embassy_futures::select::select(my_mqtt.read(), write_packets.receive()).await;
+                let res_as_select3_res = match res {
+                    Either::First(v) => Either3::First(v),
+                    Either::Second(v) => Either3::Second(v)
+                };
+                res_as_select3_res
+            };
 
             match res {
                 // First : Receive
                 Either3::First(res) => match res {
                     Ok(Some(packet)) => match BufferedMqttPacket::try_from(packet) {
                         Ok(p) => {
+                            // publish internally the received packet
                             publisher.publish_immediate(p);
                         }
                         Err(e) => {
@@ -407,14 +457,14 @@ pub async fn generic_mqtt_task<
                         }
                     },
                     Ok(None) => {
-                        term_error!("Received a None Packet");
+                        term_error!("MQTT Receive:  None Packet");
                     }
                     Err(MyMqttError::TlsError(e)) => {
                         term_error!("TLS Error on receive {:?}", e);
                         continue 'establish_communication;
                     }
                     Err(e) => {
-                        term_error!("Mqtt Receive Error {:?}", e);
+                        term_error!("MQTT Receive: Error in receive {:?}", e);
                     }
                 },
                 // Second: Write Request
@@ -432,7 +482,7 @@ pub async fn generic_mqtt_task<
                 },
                 Either3::Third(()) => {
                     if let Err(e) = my_mqtt.write_pingreq().await {
-                        term_error!("Error writing ping message, error: {:?}", e);
+                        term_error!("MQTT: Error writing ping message, error: {:?}", e);
                         // any point retrying?
                         continue 'establish_communication;
                     }

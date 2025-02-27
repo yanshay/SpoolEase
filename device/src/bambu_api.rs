@@ -259,6 +259,7 @@ pub struct AmsFilamentSetting {
     // #[serde(serialize_with = "u32_as_str_se", deserialize_with = "u32_as_str_de")]
     pub nozzle_temp_max: u32,
     pub tray_type: String,
+    pub sequence_id: String,
 }
 
 impl AmsFilamentSettingCommand {
@@ -283,6 +284,7 @@ impl AmsFilamentSettingCommand {
                 nozzle_temp_min,
                 nozzle_temp_max,
                 tray_type: String::from(tray_type),
+                sequence_id: String::from("1"),
             },
         }
     }
@@ -345,6 +347,7 @@ pub struct ExtrusionCaliGet {
     pub command: String,     // extrusion_cali_get
     pub filament_id: String, // always empty
     pub nozzle_diameter: String,
+    pub sequence_id: String,
 }
 
 impl ExtrusionCaliGetCommand {
@@ -354,6 +357,7 @@ impl ExtrusionCaliGetCommand {
                 command: String::from("extrusion_cali_get"),
                 filament_id: String::from(""),
                 nozzle_diameter: String::from(nozzle_diameter),
+                sequence_id: String::from("1"),
             },
         }
     }
@@ -380,6 +384,7 @@ pub struct ExtrusionCaliSel {
     pub filament_id: String, // always empty
     pub nozzle_diameter: String,
     pub tray_id: i32,
+    pub sequence_id: String,
 }
 
 impl ExtrusionCaliSelCommand {
@@ -391,6 +396,7 @@ impl ExtrusionCaliSelCommand {
                 filament_id: String::from(filament_id),
                 nozzle_diameter: String::from(nozzle_diameter),
                 tray_id,
+                sequence_id: String::from("1"),
             },
         }
     }

@@ -139,7 +139,7 @@ pub async fn nfc_task(
         app_config.borrow_mut().report_pn532(false);
         return;
     } else {
-        info!("Initialized Tag Reader successfuly");
+        info!("Initialized Tag Reader successfully");
     }
 
     if let Ok(fw) = pn532

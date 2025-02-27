@@ -167,6 +167,7 @@ impl ViewModel {
         let moved_bambu_printer = self.bambu_printer_model.clone();
         let moved_spool_tag = self.spool_tag_model.clone();
         let moved_ui = self.ui_weak.clone();
+        let moved_app_config = self.app_config.clone();
         moved_ui
             .unwrap()
             .global::<crate::app::AppBackend>()
@@ -185,7 +186,7 @@ impl ViewModel {
                     &bambu_printer.ams_trays[tray_id].filament
                 };
                 if let Filament::Known(f) = filament {
-                    spool_tag.write_tag(&f.to_descriptor(), tray_id);
+                    spool_tag.write_tag(&f.to_descriptor(&moved_app_config.borrow().printer_name), tray_id);
                     info!("Sent the write request of tray {} over signal", tray_id);
                 }
                 // TODO: Get proper timeout fron config and pass it in the write_tag to spool_tag
@@ -273,15 +274,8 @@ impl BambuPrinterObserver for ViewModel {
             } else {
                 ui_tray.filament.state = crate::app::UiFilamentState::Unknown;
             }
-            let k_value_for_ui = curr_tray.k.as_ref().unwrap_or(&String::new()).clone();
-            let k_value_for_ui = if k_value_for_ui.starts_with("(") {
-                let k_value_for_ui = k_value_for_ui.trim_matches(['(', ')']);
-                let k_value = f32::from_str(&k_value_for_ui).unwrap_or_default();
-                format!("({:.3})", k_value)
-            } else {
-                let k_value = f32::from_str(&k_value_for_ui).unwrap_or_default();
-                format!("{:.3}", k_value)
-            };
+            let k_value_unformatted = curr_tray.k.as_ref().unwrap_or(&"(0.020)".to_string()).clone();
+            let k_value_for_ui = k_value_for_ui(&k_value_unformatted);
             ui_tray.k = SharedString::from(k_value_for_ui);
             trays_state.set_row_data(tray_row, ui_tray);
         }
@@ -462,7 +456,7 @@ impl FrameworkObserver for ViewModel {
     fn on_initialization_completed(&self, status: bool) {
         if status {
             term_info!(&"-".repeat(66));
-            term_info!("Initialization completed successfuly");
+            term_info!("Initialization completed successfully");
             term_info!(&"-".repeat(66));
         } else {
             // TODO: This event here goes to the AppState and not to Framework, think about that.
@@ -486,7 +480,7 @@ impl AppControlObserver for ViewModel {
             //       So here I know it arrives here only if boot is successful, but in other applications this might not be enough
             // if self.app_config.borrow().boot_completed() {
             term_info!(&"-".repeat(66));
-            term_info!("Startup completed successfuly");
+            term_info!("Startup completed successfully");
             term_info!(&"-".repeat(66));
             self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_boot_succeeded();
             // }

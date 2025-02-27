@@ -184,7 +184,7 @@
             >SSID
             <span class="tooltip"
               >ⓘ
-              <span class="tooltip-text">The network name for WiFi.</span>
+              <span class="tooltip-text">The network name for WiFi</span>
             </span>
           </label>
           <input
@@ -200,7 +200,7 @@
             >Password
             <span class="tooltip"
               >ⓘ
-              <span class="tooltip-text">Password for WiFi access.</span>
+              <span class="tooltip-text">Password for WiFi access</span>
             </span>
           </label>
           <input
@@ -230,7 +230,7 @@
             >Dimming Timeout (in seconds)
             <span class="tooltip"
               >ⓘ
-              <span class="tooltip-text">Duration before screen dims.</span>
+              <span class="tooltip-text">Duration before screen dims</span>
             </span>
           </label>
           <input
@@ -246,7 +246,7 @@
             >Dimming Percent (0-100)
             <span class="tooltip"
               >ⓘ
-              <span class="tooltip-text">Percentage to which screen dims.</span>
+              <span class="tooltip-text">Percentage to which screen dims</span>
             </span>
           </label>
           <input
@@ -267,7 +267,7 @@
             <span class="tooltip"
               >ⓘ
               <span class="tooltip-text"
-                >Duration before screen turns off.</span
+                >Duration before screen turns off</span
               >
             </span>
           </label>
@@ -297,8 +297,9 @@
             >Printer IP (Optional)
             <span class="tooltip"
               >ⓘ
-              <span class="tooltip-text">IP address of the printer.</span>
+              <span class="tooltip-text">IP address of the printer<br>if provided must provide also printer name</br></span>
             </span>
+            <br/><span>IMPORTANT: if set must also set printer name</span>
           </label>
           <div class="ip-input">
             <input
@@ -320,7 +321,7 @@
               min="0"
               max="255"
               id="printer-ip-c"
-              oninput="nextInput(this)"
+              oninput=Partially tested, what was tested worked. Either way, will be released soon officially as well."nextInput(this)"
             />
             <input
               type="number"
@@ -330,6 +331,22 @@
               oninput="nextInput(this)"
             />
           </div>
+        </div>
+        <div class="field">
+          <label for="printer-name"
+            >Printer Name
+            <span class="tooltip"
+              >ⓘ
+              <span class="tooltip-text">Printer name (Optional)</span>
+            </span>
+            <br/><span>IMPORTANT: if set without printer ip will be overriden by discovered name</span>
+          </label>
+          <input
+            type="text"
+            id="printer-name"
+            name="printer-name"
+            placeholder="Enter printer name"
+          />
         </div>
         <div class="field">
           <label for="printer-serial"
@@ -570,6 +587,11 @@
           document.getElementById("printer-ip-c").value,
           document.getElementById("printer-ip-d").value,
         ].join(".");
+        const name = document.getElementById("printer-name").value;
+        if (ip !== "..." & name == "") {
+          alert("If printer IP is set, must set also printer name");
+          return;
+        }
 
         // Collect other Printer settings
         // const name = document.getElementById("printer-name").value;
@@ -653,6 +675,7 @@
           document.getElementById("printer-ip-b").value = printerIP[1];
           document.getElementById("printer-ip-c").value = printerIP[2];
           document.getElementById("printer-ip-d").value = printerIP[3];
+          document.getElementById("printer-name").value = data.name;
           document.getElementById("printer-serial").value = data.serial;
           document.getElementById("printer-access-code").value =
             data.access_code;
