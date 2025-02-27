@@ -1,5 +1,6 @@
 [workspace]
 resolver = "2"
 
-exclude = ["device"]
+members = ["xtask"]
 
+exclude = ["device"]

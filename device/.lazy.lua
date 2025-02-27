@@ -11,9 +11,9 @@ return {
           },
           cargo = {
             allFeatures = false, -- important
-            extraArgs = {"--release"}, -- probably not required, but better since used for building
+            extraArgs = {"--release"} -- , "-p", "device"}, -- probably not required, but better since used for building
             -- allTargets = false,  -- Not required
-            target = "xtensa-esp32-none-elf", -- can be avoided if using .cargo/config.toml as described below. CAN'T be a list even if in rust-analyzer doc it says otherwise
+            -- target = "xtensa-esp32-none-elf", -- can be avoided if using .cargo/config.toml as described below. CAN'T be a list even if in rust-analyzer doc it says otherwise
           },
         },
       },
