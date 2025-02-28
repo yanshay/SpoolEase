@@ -1,2 +1,8 @@
 blank_issues_enabled: false
-contact_links: []
+contact_links:
+  - name: Ask questions in GitHub Discussions (Recommended if not Urgent)
+    url: https://github.com/yanshay/SpoolEase/discussions
+    about: Post your questions and engage in discussions via GitHub.
+  - name: Ask questions in Discord channel
+    url: https://discord.com/channels/1344027434571272252/1344027676461105234
+    about: Ask any questions directly in our Discord channel.
