@@ -4,8 +4,6 @@ use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
-use esp_mbedtls::TlsReference;
-use esp_mbedtls::X509;
 use core::cell::RefCell;
 use embassy_futures::select::select;
 use embassy_futures::select::Either;
@@ -21,6 +19,8 @@ use embassy_time::Duration;
 use embassy_time::Timer;
 use embedded_io_async::Write;
 use esp_mbedtls::TlsError;
+use esp_mbedtls::TlsReference;
+use esp_mbedtls::X509;
 use mqttrust::encoding::v4::decode_slice;
 use mqttrust::{
     encoding::v4::{encode_slice, Connect, Pid, Protocol},
@@ -64,7 +64,9 @@ where
     T: embedded_io_async::Read + embedded_io_async::Write,
 {
     tls: esp_mbedtls::asynch::Session<'a, T>,
-    buf: [u8; 16384],
+    buf: Vec<u8>,
+    message_bytes_in_buf: usize,
+    data_bytes_in_buf: usize,
     write_timeout: Duration,
 }
 
@@ -75,7 +77,9 @@ where
     pub fn new(tls: esp_mbedtls::asynch::Session<'a, T>, write_timeout: Duration) -> MyMqtt<'a, T> {
         MyMqtt {
             tls,
-            buf: [0u8; 16384],
+            buf: vec![0u8; 32768],
+            message_bytes_in_buf: 0,
+            data_bytes_in_buf: 0,
             write_timeout,
         }
     }
@@ -146,30 +150,38 @@ where
     }
 
     pub async fn read(&mut self) -> Result<Option<Packet>, MyMqttError> {
-        let mut round = 1;
-        let mut read_len_so_far = 0;
+        self.buf.copy_within(self.message_bytes_in_buf.., 0);
+        self.data_bytes_in_buf -= self.message_bytes_in_buf;
+        self.message_bytes_in_buf = 0;
+
         loop {
-            let read_len = match self.tls.read(&mut self.buf[read_len_so_far..]).await {
+            // Start by checking if there's data from previous round (unlikely, but theoretically could)
+
+            let mut offset = 0;
+            if self.data_bytes_in_buf >= 4 { // minimal size is 4 bytes, so no point waisting time on less
+                if let Some((_header, remaining_len)) =
+                    mqttrust::encoding::v4::decoder::read_header(&self.buf[..self.data_bytes_in_buf], &mut offset)?
+                {
+                    let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..self.data_bytes_in_buf])?;
+                    self.message_bytes_in_buf = offset + remaining_len;
+                    return Ok(decode_val);
+                }            }
+
+            // increase buffer if no room
+            if self.data_bytes_in_buf == self.buf.len() {
+                self.buf.resize(self.buf.len() + 8192, 0);
+            }
+            
+            // read data, theoretically if we are stuck waiting for data for some time and datat exists but not valid
+            // then probably need to throw it a way, but so far didn't encounter situations to susect this happened
+            let read_len = match self.tls.read(&mut self.buf[self.data_bytes_in_buf..]).await {
                 Ok(n) => n,
                 Err(e) => {
                     error!("TLS Error {:?}", e);
                     return Err(MyMqttError::TlsError(e));
                 }
             };
-            read_len_so_far += read_len;
-            debug!("---- Read {round} : {read_len} bytes,  read_so_far: {read_len_so_far}");
-
-            let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..read_len_so_far])?;
-
-            if decode_val.is_some() {
-                // due to a limitation in rust borrow checker, need to decode again and return the new value
-                // otherwise it reports a false borrow checker isue
-                // with RUSTFLAGS="-Zpolonius" cargo check --release  , it compiles ok also w/o this line
-                let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..read_len_so_far])?;
-                debug!("----- Completed a read cycle after {round} rounds");
-                return Ok(decode_val);
-            }
-            round += 1;
+            self.data_bytes_in_buf += read_len;
         }
     }
 }
@@ -291,7 +303,7 @@ pub async fn generic_mqtt_task<
     // mut rsa: esp_hal::peripherals::RSA,
     app_config: Rc<RefCell<AppConfig>>,
     // mut sha: impl esp_hal::peripheral::Peripheral<P = esp_hal::peripherals::SHA>,
-    tls: TlsReference<'static>
+    tls: TlsReference<'static>,
 ) -> ! {
     // let tls = Tls::new(&mut sha)
     //     .unwrap()
@@ -339,7 +351,7 @@ pub async fn generic_mqtt_task<
         let mut session = match esp_mbedtls::asynch::Session::new(
             socket,
             esp_mbedtls::Mode::Client {
-                servername: &servername.as_c_str()
+                servername: &servername.as_c_str(),
             },
             esp_mbedtls::TlsVersion::Tls1_2,
             esp_mbedtls::Certificates {
@@ -364,7 +376,7 @@ pub async fn generic_mqtt_task<
             Timer::after(Duration::from_millis(500)).await;
             continue;
         }
-    
+
         term_info!("TLS connection with Printer established");
 
         term_info!("Establishing MQTT connection with Printer");
@@ -398,7 +410,7 @@ pub async fn generic_mqtt_task<
                 let res = embassy_futures::select::select(my_mqtt.read(), write_packets.receive()).await;
                 let res_as_select3_res = match res {
                     Either::First(v) => Either3::First(v),
-                    Either::Second(v) => Either3::Second(v)
+                    Either::Second(v) => Either3::Second(v),
                 };
                 res_as_select3_res
             };
