@@ -2,7 +2,7 @@ use core::cell::RefCell;
 
 use alloc::{rc::Rc, string::String, vec::Vec};
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
-use embassy_time::{Duration, Instant};
+use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
 
 use framework::prelude::*;
@@ -127,19 +127,37 @@ pub async fn nfc_task(
 
     info!("Configuring pn532");
 
-    if let Err(e) = pn532
-        .process(
-            &pn532::Request::sam_configuration(pn532::requests::SAMMode::Normal, true),
-            0,
-            embassy_time::Duration::from_millis(1000),
-        )
-        .await
-    {
-        term_error!("Error initializing Tag Reader {:?}", e);
+    let mut initialization_succeeded = false;
+    let mut successful_retry = 0;
+    let retries = 5;
+    for retry in 1..=retries {
+        if let Err(e) = pn532
+            .process(
+                &pn532::Request::sam_configuration(pn532::requests::SAMMode::Normal, true),
+                0,
+                embassy_time::Duration::from_millis(1000),
+            )
+            .await
+        {
+            // Error, just wait before retrying
+            if retry != retries {
+                Timer::after(Duration::from_millis(100)).await;
+            } else {
+                term_error!("Error initializing Tag Reader {e:?}");
+            }
+        } else {
+            info!("Initialized Tag Reader successfully");
+            initialization_succeeded = true;
+            successful_retry = retry;
+            break;
+        }
+    }
+
+    if !initialization_succeeded {
         app_config.borrow_mut().report_pn532(false);
         return;
     } else {
-        info!("Initialized Tag Reader successfully");
+        app_config.borrow_mut().report_pn532(true);
     }
 
     if let Ok(fw) = pn532
@@ -147,7 +165,7 @@ pub async fn nfc_task(
         .await
     {
         trace!("PN532 Firmware Version response: {:?}", fw);
-        term_info!("Established communication with Tag Reader");
+        term_info!("Established communication with Tag Reader ({})", successful_retry);
         app_config.borrow_mut().report_pn532(true);
     } else {
         term_error!("Failed to communicate with Tag Reader");

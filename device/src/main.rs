@@ -58,17 +58,16 @@ use esp_hal::{
     Blocking,
 };
 
-
 use framework::prelude::*;
 use framework::wt32_sc01_plus::{WT32SC01Plus, WT32SC01PlusPeripherals, WT32SC01PlusRunner};
 
+use app_config::AppConfig;
+use settings::AP_ADDR;
+use settings::WEB_SERVER_NUM_LISTENERS;
 use settings::{
     OTA_DOMAIN, OTA_PATH, OTA_TOML_FILENAME, WEB_APP_DOMAIN, WEB_APP_KEY_DERIVATION_ITERATIONS, WEB_APP_SALT, WEB_APP_SECURITY_KEY_LENGTH,
     WEB_SERVER_CAPTIVE, WEB_SERVER_HTTPS, WEB_SERVER_PORT, WEB_SERVER_TLS_CERTIFICATE, WEB_SERVER_TLS_PRIVATE_KEY,
 };
-use app_config::AppConfig;
-use settings::AP_ADDR;
-use settings::WEB_SERVER_NUM_LISTENERS;
 use web_app::NestedAppBuilder;
 
 const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 4; // web-config listeners + potentially https captive + mqtt + USDP(?) + ota + captive dns
@@ -459,7 +458,13 @@ async fn main(spawner: Spawner) {
         ))
         .ok();
 
-    Timer::after(Duration::from_millis(200)).await;
+    for _i in 1..10 {
+        if app_config.borrow().initialization_ok() {
+            break;
+        }
+        Timer::after(Duration::from_millis(250)).await;
+    }
+
     framework
         .borrow()
         .notify_initialization_completed(app_config.borrow().initialization_ok());
