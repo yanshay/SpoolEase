@@ -7,11 +7,11 @@ This is a new project currently in its early stages, with testing limited to per
 > [!Note]
 > *Status Update*
 >
-> P1S: OK - Validated to work
+> P1S: OK - Tested to work
 >
-> X1C: Tested to work - to be released soon
+> X1C: OK - Tested to work
 >
-> A1/A1 Mini: Tested to work - to be released soon
+> A1/A1 Mini: OK - Tested to work
 
 This project is intended for personal use only. Commercial use, distribution, or any alteration of the device or its components for commercial purposes is strictly prohibited. This includes modifying the hardware or software to create derivative works or using the project in any commercial product. By using this project, you agree to use it solely for non-commercial purposes.
 
