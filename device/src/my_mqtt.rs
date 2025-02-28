@@ -146,72 +146,31 @@ where
     }
 
     pub async fn read(&mut self) -> Result<Option<Packet>, MyMqttError> {
-        let len = match self.tls.read(&mut self.buf).await {
-            Ok(n) => n,
-            Err(e) => {
-                error!("TLS Error {:?}", e);
-                return Err(MyMqttError::TlsError(e));
-            }
-        };
-        debug!("---- Read 1 : {len} bytes");
+        let mut round = 1;
+        let mut read_len_so_far = 0;
+        loop {
+            let read_len = match self.tls.read(&mut self.buf[read_len_so_far..]).await {
+                Ok(n) => n,
+                Err(e) => {
+                    error!("TLS Error {:?}", e);
+                    return Err(MyMqttError::TlsError(e));
+                }
+            };
+            read_len_so_far += read_len;
+            debug!("---- Read {round} : {read_len} bytes,  read_so_far: {read_len_so_far}");
 
-        // TODO: Fix this ugly code ...
-        // The code as it is now handles up to two tls/tcp read packets for larger packets
-        // This is enough for now for bambu messages, but may not be with more AMS's
-        // But need to make it more generic to handle larger mqtt messages
-        let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len])?;
-        if decode_val.is_some() {
-            // due to a limitation in rust borrow checker, need to decode again and return the new value
-            // otherwise it reports a false borrow checker isue
-            // with RUSTFLAGS="-Zpolonius" cargo check --release  , it compiles ok also w/o this line
-            let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len])?;
-            return Ok(decode_val);
+            let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..read_len_so_far])?;
+
+            if decode_val.is_some() {
+                // due to a limitation in rust borrow checker, need to decode again and return the new value
+                // otherwise it reports a false borrow checker isue
+                // with RUSTFLAGS="-Zpolonius" cargo check --release  , it compiles ok also w/o this line
+                let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..read_len_so_far])?;
+                debug!("----- Completed a read cycle after {round} rounds");
+                return Ok(decode_val);
+            }
+            round += 1;
         }
-
-        let len2 = match self.tls.read(&mut self.buf[len..]).await {
-            Ok(n) => n,
-            Err(e) => {
-                warn!("TLS Error {:?}", e);
-                return Err(MyMqttError::TlsError(e));
-            }
-        };
-
-        debug!("---- Read 2 : {len} bytes");
-
-        let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len+len2])?;
-        if decode_val.is_some() {
-            let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len + len2])?;
-            return Ok(decode_val)
-        }
-
-        let len3 = match self.tls.read(&mut self.buf[len+len2..]).await {
-            Ok(n) => n,
-            Err(e) => {
-                warn!("TLS Error {:?}", e);
-                return Err(MyMqttError::TlsError(e));
-            }
-        };
-
-        debug!("---- Read 3 : {len} bytes");
-
-        let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len+len2+len3])?;
-        if decode_val.is_some() {
-            let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len + len2 + len3])?;
-            return Ok(decode_val)
-        }
-
-        let len4 = match self.tls.read(&mut self.buf[len+len2+len3..]).await {
-            Ok(n) => n,
-            Err(e) => {
-                warn!("TLS Error {:?}", e);
-                return Err(MyMqttError::TlsError(e));
-            }
-        };
-
-        debug!("---- Read 4 : {len} bytes");
-
-        let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..len + len2 + len3+len4])?;
-        return Ok(decode_val)
     }
 }
 
