@@ -1,5 +1,6 @@
 import { ScrollView } from "std-widgets.slint";
 import { FrameworkState } from "framework.slint";
+import { MyButton } from "widgets.slint";
 
 export component Terminal inherits Rectangle {
     scroller := ScrollView {
@@ -18,5 +19,25 @@ export component Terminal inherits Rectangle {
                 scroller.viewport-y = root.height - child-text.height - 36px;
             }
         }
+    }
+    up-button := MyButton {
+      x: root.width - self.width+1px;
+      y: -1px;
+      text: "▲";
+      width: 40px;
+      height: 40px;
+      clicked => {
+          scroller.viewport-y = scroller.viewport-y + 22px;
+      }
+    }
+    down-button := MyButton {
+      x: root.width - self.width+1px;
+      y: root.height - self.height;
+      text: "▼";
+      width: 40px;
+      height: 40px;
+      clicked => {
+          scroller.viewport-y = scroller.viewport-y - 22px;
+      }
     }
 }
