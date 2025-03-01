@@ -2,6 +2,10 @@
 
 This project is an ESP32S3 based add-on device for Bambulab 3D printers to encode and decode NFC tags attached to filament spools. The tags store filament information, which can be used to automatically configure printer settings when loading spools, whether through AMS or an external spool. It also provides visibility to the filaments currently loaded into the AMS's and the External Spool. 
 
+## Press Below for Video Demonstration
+
+[![SpoolEase](https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg)](https://www.youtube.com/watch?v=WKIBzVbrhOg)
+
 This is a new project currently in its early stages, with testing limited to personal use. It is tested on a P1S printer but it reslies on the same protocols for X1C and probably also the A1 line. Users should be aware that there are no warranties, liabilities, or guarantees, and they assume all risks involved.
 
 > [!Note]
@@ -25,9 +29,6 @@ To be clear: You CAN use this device in your business operations, even if those 
 
 If you're interested in commercial licensing, redistribution rights, or other activities not permitted under these terms, please contact spoolease@gmail.com for potential partnership opportunities.
 
-## Press Below for Video Demonstration
-
-[![SpoolEase](https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg)](https://www.youtube.com/watch?v=WKIBzVbrhOg)
 ## Required Components
 
 - [WT32-SC01 Plus](https://www.aliexpress.com/item/3256805864064800.html) (**make sure to pick the board and not accessories**)
