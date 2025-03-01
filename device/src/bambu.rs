@@ -1390,7 +1390,7 @@ pub async fn incoming_messages_task(
     bambu_printer: Rc<RefCell<BambuPrinter>>,
 ) {
     let mut subscriber = read_packets.subscriber().unwrap();
-    const KEEP_ALIVE_SEC: u32 = 10;
+    const KEEP_ALIVE_SEC: u32 = 20;
 
     let mut printer_known_to_be_up = false;
     loop {
@@ -1620,7 +1620,7 @@ pub async fn bambu_mqtt_task(
         read_packets,
         socket_rx_buffer,
         socket_tx_buffer,
-        Duration::from_secs(5),
+        Duration::from_secs(10),
         app_config,
         tls,
     )

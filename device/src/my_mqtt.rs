@@ -148,7 +148,7 @@ where
             Ok(write_res) => {
                 match write_res {
                     Ok(_) => {
-                        let flush_res = with_timeout(Duration::from_secs(5), self.tls.flush()).await;
+                        let flush_res = with_timeout(self.write_timeout, self.tls.flush()).await;
                         match flush_res {
                             Ok(v) => {
                                 return Ok(v?);
