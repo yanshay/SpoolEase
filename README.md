@@ -11,11 +11,11 @@ This is a new project currently in its early stages, with testing limited to per
 > [!Note]
 > *Status Update*
 >
-> P1S: OK - Tested to work
+> ✅ P1S: OK - Tested to work
 >
-> X1C: OK - Tested to work
+> ✅ X1C: OK - Tested to work
 >
-> A1/A1 Mini: OK - Tested to work
+> ✅ A1/A1 Mini: OK - Tested to work
 
 This project (including hardware designs, software, and case files) is freely available for you to build and use for any purpose, including within commercial environments. However, you may not profit from redistributing or commercializing the project itself. Specifically prohibited activities include:
 
@@ -27,7 +27,7 @@ This project (including hardware designs, software, and case files) is freely av
 
 To be clear: You CAN use this device in your business operations, even if those operations generate revenue. You CANNOT make money by selling, distributing, or providing services specifically related to this project or its components.
 
-If you're interested in commercial licensing, redistribution rights, or other activities not permitted under these terms, please contact spoolease@gmail.com for potential partnership opportunities.
+If you're interested in commercial licensing, redistribution rights, or other activities not permitted under these terms, please contact SpoolEase at gmail dot com for potential partnership opportunities.
 
 ## Required Components
 
@@ -57,6 +57,6 @@ If you're interested in commercial licensing, redistribution rights, or other ac
 - It would be real cool if you post your build in the [Introduce Your Build Discussion](https://github.com/yanshay/SpoolEase/discussions/8) 
 ## Licensing
 This software is licensed under Apache License, Version 2.0  **with Commons Clause** - see [LICENSE.md](LICENSE.md).
-- ✅ Free for personal/non-commercial use
+- ✅ Free for use
 - ❌ Cannot be sold, offered as a service, or used for consulting, see [LICENSE.md](LICENSE.md) for more details
 - 📧 For commercial licensing inquiries about restricted uses, contact: **SpoolEase at Gmail dot Com** 
