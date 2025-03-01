@@ -13,7 +13,17 @@ This is a new project currently in its early stages, with testing limited to per
 >
 > A1/A1 Mini: OK - Tested to work
 
-This project is intended for personal use only. Commercial use, distribution, or any alteration of the device or its components for commercial purposes is strictly prohibited. This includes modifying the hardware or software to create derivative works or using the project in any commercial product. By using this project, you agree to use it solely for non-commercial purposes.
+This project (including hardware designs, software, and case files) is freely available for you to build and use for any purpose, including within commercial environments. However, you may not profit from redistributing or commercializing the project itself. Specifically prohibited activities include:
+
+- Selling assembled devices based on this project
+- Selling kits or components packaged for this project
+- Charging for the software or hardware designs
+- Selling modified versions or derivatives
+- Offering paid installation, configuration, or support services specific to this project
+
+To be clear: You CAN use this device in your business operations, even if those operations generate revenue. You CANNOT make money by selling, distributing, or providing services specifically related to this project or its components.
+
+If you're interested in commercial licensing, redistribution rights, or other activities not permitted under these terms, please contact spoolease@gmail.com for potential partnership opportunities.
 
 ## Press Below for Video Demonstration
 
