@@ -5,6 +5,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefCell;
+use core::cmp::min;
 use embassy_futures::select::select;
 use embassy_futures::select::Either;
 use embassy_futures::select::Either3;
@@ -39,6 +40,7 @@ pub enum MyMqttError {
     TlsError(TlsError),
     EncodingError(mqttrust::encoding::v4::Error),
     WriteTimeoutError,
+    RecvMessageTooLarge(usize),
 }
 
 impl From<TlsError> for MyMqttError {
@@ -59,6 +61,10 @@ impl From<mqttrust::encoding::v4::utils::Error> for MyMqttError {
     }
 }
 
+const INITIAL_MQTT_BUFFER_SIZE: usize = 32768;
+const MAX_MQTT_BUFFER_SIZE: usize = 49152;
+const MQTT_BUFFER_SIZE_GROW_STEPS: usize = 8192;
+
 pub struct MyMqtt<'a, T>
 where
     T: embedded_io_async::Read + embedded_io_async::Write,
@@ -77,7 +83,7 @@ where
     pub fn new(tls: esp_mbedtls::asynch::Session<'a, T>, write_timeout: Duration) -> MyMqtt<'a, T> {
         MyMqtt {
             tls,
-            buf: vec![0u8; 32768],
+            buf: vec![0u8; INITIAL_MQTT_BUFFER_SIZE],
             message_bytes_in_buf: 0,
             data_bytes_in_buf: 0,
             write_timeout,
@@ -158,20 +164,50 @@ where
             // Start by checking if there's data from previous round (unlikely, but theoretically could)
 
             let mut offset = 0;
-            if self.data_bytes_in_buf >= 4 { // minimal size is 4 bytes, so no point waisting time on less
-                if let Some((_header, remaining_len)) =
-                    mqttrust::encoding::v4::decoder::read_header(&self.buf[..self.data_bytes_in_buf], &mut offset)?
-                {
-                    let decode_val = mqttrust::encoding::v4::decode_slice(&self.buf[..self.data_bytes_in_buf])?;
-                    self.message_bytes_in_buf = offset + remaining_len;
-                    return Ok(decode_val);
-                }            }
+            if self.data_bytes_in_buf >= 4 {
+                // minimal size is 4 bytes, so no point waisting time on less
+                let read_header_res = mqttrust::encoding::v4::decoder::read_header(&self.buf[..self.data_bytes_in_buf], &mut offset);
+                // read_header returns Some only if we have a full packet
+                // but will return error if invalid header
+                match read_header_res {
+                    Ok(Some((_header, remaining_len))) =>  {
+                        let decode_val_res = mqttrust::encoding::v4::decode_slice(&self.buf[..self.data_bytes_in_buf]);
+                        match decode_val_res {
+                            Ok(decode_val) => {
+                                self.message_bytes_in_buf = offset + remaining_len;
+                                return Ok(decode_val);
+                            }
+                            Err(decode_err) =>  {
+                                error!("MQTT body parse issues, throwing read data, {} bytes", self.data_bytes_in_buf);
+                                self.message_bytes_in_buf = 0;
+                                self.data_bytes_in_buf = 0;
+                                return Err(decode_err.into());
+                            }
+                        } 
+                    }
+                    Ok(None) => (),
+                    Err(e) => {
+                        error!("MQTT header parse issues, throwing read data, {} bytes", self.data_bytes_in_buf);
+                        self.message_bytes_in_buf = 0;
+                        self.data_bytes_in_buf = 0;
+                        return Err(e.into());
+                    }
+                }
+            }
 
             // increase buffer if no room
-            if self.data_bytes_in_buf == self.buf.len() {
-                self.buf.resize(self.buf.len() + 8192, 0);
+            if self.data_bytes_in_buf >= self.buf.len() {
+                if self.buf.len() < MAX_MQTT_BUFFER_SIZE {
+                    let add_capacity = min(MQTT_BUFFER_SIZE_GROW_STEPS, MAX_MQTT_BUFFER_SIZE - self.buf.len());
+                    debug!("Adding {add_capacity} to MQTT Buffer, from {} to {}", self.buf.len(), self.buf.len()+add_capacity);
+                    self.buf.resize(self.buf.len() + add_capacity, 0);
+                } else {
+                    let data_thrown = self.data_bytes_in_buf;
+                    self.data_bytes_in_buf = 0;
+                    self.message_bytes_in_buf = 0;
+                    return Err(MyMqttError::RecvMessageTooLarge(data_thrown));
+                }
             }
-            
             // read data, theoretically if we are stuck waiting for data for some time and datat exists but not valid
             // then probably need to throw it a way, but so far didn't encounter situations to susect this happened
             let read_len = match self.tls.read(&mut self.buf[self.data_bytes_in_buf..]).await {
@@ -428,14 +464,14 @@ pub async fn generic_mqtt_task<
                         }
                     },
                     Ok(None) => {
-                        term_error!("MQTT Receive:  None Packet");
+                        term_error!("MQTT Recv:  None Packet");
                     }
                     Err(MyMqttError::TlsError(e)) => {
                         term_error!("TLS Error on receive {:?}", e);
                         continue 'establish_communication;
                     }
                     Err(e) => {
-                        term_error!("MQTT Receive: Error in receive {:?}", e);
+                        term_error!("MQTT Recv: Error {:?}", e);
                     }
                 },
                 // Second: Write Request
@@ -453,7 +489,7 @@ pub async fn generic_mqtt_task<
                 },
                 Either3::Third(()) => {
                     if let Err(e) = my_mqtt.write_pingreq().await {
-                        term_error!("MQTT: Error writing ping message, error: {:?}", e);
+                        term_error!("MQTT Send: ping message error: {:?}", e);
                         // any point retrying?
                         continue 'establish_communication;
                     }
