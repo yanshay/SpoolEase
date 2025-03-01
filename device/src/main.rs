@@ -458,7 +458,7 @@ async fn main(spawner: Spawner) {
         ))
         .ok();
 
-    for _i in 1..10 {
+    for _i in 1..20 {
         if app_config.borrow().initialization_ok() {
             break;
         }

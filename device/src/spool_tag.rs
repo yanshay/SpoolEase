@@ -123,14 +123,18 @@ pub async fn nfc_task(
     let timer = crate::pn532_ext::Esp32TimerAsync::new();
 
     let mut pn532: pn532::Pn532<_, _, 32> = pn532::Pn532::new(interface, timer);
-    pn532.wake_up().await.unwrap();
+    // pn532.wake_up().await.unwrap();
 
     info!("Configuring pn532");
 
     let mut initialization_succeeded = false;
     let mut successful_retry = 0;
-    let retries = 5;
-    for retry in 1..=retries {
+    let retries = 10;
+    for retry in 0..=retries {
+        if retry % 5 == 0 {
+            pn532.wake_up().await.unwrap();
+            Timer::after(Duration::from_millis(30)).await;
+        }
         if let Err(e) = pn532
             .process(
                 &pn532::Request::sam_configuration(pn532::requests::SAMMode::Normal, true),
@@ -143,7 +147,7 @@ pub async fn nfc_task(
             if retry != retries {
                 Timer::after(Duration::from_millis(100)).await;
             } else {
-                term_error!("Error initializing Tag Reader {e:?}");
+                term_error!("Error initializing Tag Reader {:?}", e);
             }
         } else {
             info!("Initialized Tag Reader successfully");
