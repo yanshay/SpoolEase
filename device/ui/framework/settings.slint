@@ -6,8 +6,11 @@ export component MyText inherits Text {
     font-size: 20px;
 }
 
-export component WebConfigButton inherits MyButton {
-    height: 60px;
+export component SettingsButton inherits MyButton {
+  height: 56px;
+}
+
+export component WebConfigButton inherits SettingsButton {
     enabled: FrameworkState.web-config-state == WebConfigState.Stopped || FrameworkState.web-config-state == WebConfigState.Started-STA;
     text: (FrameworkState.web-config-state == WebConfigState.Stopped ? "Enable Web Config" : "Disable Web Config");
     clicked => {
@@ -23,24 +26,28 @@ export component WebConfigButton inherits MyButton {
     }
 }
 
-export component RestartDeviceButton inherits MyButton {
-    height: 60px;
+export component RestartDeviceButton inherits SettingsButton {
     text: "Restart Device";
     clicked => {
         FrameworkBackend.reset-device();
     }
 }
 
-export component ResetWifiCredentialsButton inherits MyButton {
-    height: 60px;
+export component ResetWifiCredentialsButton inherits SettingsButton {
     text: "Reset Wifi Credentials (Flash) and Restart";
     clicked => {
         FrameworkBackend.reset-flash-wifi-credentials();
     }
 }
 
-export component OtaButton inherits MyButton {
-    height: 60px;
+export component ResetFixedKeyButton inherits SettingsButton {
+    text: "Reset Fixed Security Key (If set)";
+    clicked => {
+        FrameworkBackend.reset-fixed-security-key();
+    }
+}
+
+export component OtaButton inherits SettingsButton {
     text: "Update Firmware Over Network" + (FrameworkState.ota-info.newer ? " to \{FrameworkState.ota-info.version}" : "");
     clicked => {
         FrameworkBackend.update-firmware-ota();
@@ -71,6 +78,8 @@ export component Settings inherits Rectangle {
         WebConfigButton { }
 
         ResetWifiCredentialsButton { }
+
+        ResetFixedKeyButton {}
 
         RestartDeviceButton { }
 

@@ -6,6 +6,7 @@
 #![feature(async_closure)]
 #![no_main]
 #![feature(associated_type_defaults)]
+#![recursion_limit = "256"] // due to picoserve complex types & embassy
 
 slint::include_modules!();
 

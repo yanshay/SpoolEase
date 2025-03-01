@@ -175,6 +175,34 @@
         </button>
         <label class="feedback-label" id="security-key-feedback"></label>
       </div>
+      <div class="section grouped-section" id="fixed-security-key-section">
+        <div class="field">
+          <label for="fixed-security-key"
+            >Set a Fixed Security Key (Optional)
+            <span class="tooltip"
+              >ⓘ
+              <span class="tooltip-text">Set a fixed security key if required</span>
+            </span>
+            <br/>IMPORTANT: takes effect only after web-config restart
+          </label>
+          <input
+            type="text"
+            maxlength="20"
+            id="fixed-security-key"
+            name="fixed-security-key"
+            placeholder="Enter a Fixed Security Key"
+          />
+        </div>
+        <button
+          class="apply-button"
+          id="fixed-security-key-apply"
+          onclick="applyFixedSecurityKeySettings()"
+          disabled
+        >
+          Apply
+        </button>
+        <label class="feedback-label" id="fixed-security-key-feedback"></label>
+      </div>
 
       <!-- WiFi Credentias Section -->
       <div class="section grouped-section" id="wifi-section">
@@ -421,7 +449,7 @@
       <div class="section grouped-section" id="general-section">
         <h2>General</h2>
         <button class="apply-button" id="reset-device" onclick="resetDevice()">
-          Restart/Reset Device
+          Restart Device
         </button>
       </div>
     </div>
@@ -560,6 +588,13 @@
         const data = { ssid, password };
         const applyButton = document.getElementById("wifi-apply");
         sendConfigData("/api/wifi-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      function applyFixedSecurityKeySettings() {
+        const key = document.getElementById("fixed-security-key").value;
+        const data = { key };
+        const applyButton = document.getElementById("fixed-security-key-apply");
+        sendConfigData("/api/fixed-key-config", data, applyButton); // Replace with actual server endpoint
       }
 
       // Function to collect Display settings and send them as JSON
@@ -721,6 +756,7 @@
         setupChangeListeners("printer-section", "printer-apply");
         setupChangeListeners("tag-section", "tag-apply");
         setupChangeListeners("security-key-section", "security-key-apply", "security-key-feedback");
+        setupChangeListeners("fixed-security-key-section", "fixed-security-key-apply", "fixed-security-key-feedback");
       });
     </script>
   </body>

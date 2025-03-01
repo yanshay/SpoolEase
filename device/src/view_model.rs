@@ -111,6 +111,14 @@ impl ViewModel {
             });
 
         let framework = self.framework.clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::FrameworkBackend>()
+            .on_reset_fixed_security_key(move || {
+                let _ = framework.borrow_mut().set_fixed_key("");
+            });
+
+        let framework = self.framework.clone();
         let stack = self.stack;
         self.ui_weak
             .unwrap()
