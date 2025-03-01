@@ -5,10 +5,11 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+use once_cell::sync::Lazy;
 use core::{cell::RefCell, str::FromStr};
 use embassy_futures::select::{select, Either};
 use embassy_net::{Ipv4Address, Stack};
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, pubsub::PubSubChannel};
+use embassy_sync::{blocking_mutex::{raw::{CriticalSectionRawMutex, NoopRawMutex}, Mutex}, channel::Channel, pubsub::PubSubChannel};
 use embassy_time::{with_deadline, Duration, Instant, Timer};
 use esp_mbedtls::TlsReference;
 use hashbrown::HashMap;
@@ -1098,14 +1099,125 @@ impl FilamentInfo {
     }
 }
 
-fn my_decode_from_url_part(name: &str) -> String {
-    let name = name.replace("%2F", "/").replace("%26", "&").replace("%3F", "?").replace("%20", " ");
-    name
+const ENCODING_TABLE: [(char, &str); 8] = [
+    ('%', "%25"),
+    ('/', "%2F"),
+    ('&', "%26"),
+    ('?', "%3F"),
+    (' ', "%20"),
+    ('(', "%28"),
+    (')', "%29"),
+    ('~', "%7E"),
+];
+
+static ENCODING_MAP: Lazy<Mutex<CriticalSectionRawMutex, HashMap<char, &str>>> = Lazy::new(|| {
+    let char_hashmap: HashMap<char, &str> = ENCODING_TABLE.into_iter().collect();
+    Mutex::new(char_hashmap)
+});
+
+fn my_decode_from_url_part(text: &str) -> String {
+    // % must be last (because some originated from encodings and will need to be replaced first)
+    // let name = name.replace("%7E", "/").replace("%2F", "/").replace("%28", "(").replace("%29", ")").replace("%26", "&").replace("%3F", "?").replace("%20", " ").replace("%25", "%");
+    efficient_decode(text, &ENCODING_TABLE)
 }
 
-fn my_encode_to_url_part(name: &str) -> String {
-    let name = name.replace("/", "%2F").replace("&", "%26").replace("?", "%3F").replace(" ", "%20");
-    name
+fn my_encode_to_url_part(text: &str) -> String {
+    // % must be first (because later added) 
+    // let name = name.replace("%", "%25").replace("/", "%2F").replace("&", "%26").replace("?", "%3F").replace(" ", "%20").replace("(", "%28").replace(")", "%29").replace( "~","%7E");
+    ENCODING_MAP.lock(|encoding_map| efficient_encode(text, encoding_map))
+}
+
+/// Encodes specific characters in a string based on a provided mapping.
+/// Minimizes allocations while still returning a String.
+/// 
+/// # Arguments
+/// * `input` - The string to encode
+/// * `char_map` - A mapping of characters to their encoded string representation
+/// 
+/// # Returns
+/// The encoded string
+pub fn efficient_encode(input: &str, char_map: &HashMap<char, &str>) -> String {
+    // Pre-calculate output size to avoid reallocations
+    let mut capacity = 0;
+    for c in input.chars() {
+        capacity += match char_map.get(&c) {
+            Some(replacement) => replacement.len(),
+            None => c.len_utf8(),
+        };
+    }
+    
+    // Pre-allocate output string with exact capacity needed
+    let mut result = String::with_capacity(capacity);
+    
+    // Process each character
+    for c in input.chars() {
+        match char_map.get(&c) {
+            Some(replacement) => result.push_str(replacement),
+            None => result.push(c),
+        }
+    }
+    
+    result
+} 
+
+/// Decodes a string by replacing encoded sequences with their original characters.
+/// Minimizes allocations while still returning a String.
+/// 
+/// # Arguments
+/// * `input` - The string to decode
+/// * `char_map` - A mapping of characters to their encoded string representation
+/// 
+/// # Returns
+/// The decoded string
+pub fn efficient_decode(input: &str, char_table: &[(char, &str)]) -> String {
+    // Pre-allocate with input size (likely sufficient since decoding usually results in shorter strings)
+    let mut result = String::with_capacity(input.len());
+    
+    // Use slice for efficient substring comparison
+    let input_bytes = input.as_bytes();
+    let mut i = 0;
+    
+    while i < input_bytes.len() {
+        let mut found = false;
+        
+        // Try to match each encoded sequence at current position
+        for (original, encoded) in char_table {
+            let encoded_bytes = encoded.as_bytes();
+            
+            if i + encoded_bytes.len() <= input_bytes.len() && 
+               &input_bytes[i..i + encoded_bytes.len()] == encoded_bytes {
+                result.push(*original);
+                i += encoded_bytes.len();
+                found = true;
+                break;
+            }
+        }
+        
+        // If no encoded sequence matches, copy original character
+        if !found {
+            // Get one complete UTF-8 character
+            let char_len = if (input_bytes[i] & 0x80) == 0 {
+                1  // ASCII
+            } else if (input_bytes[i] & 0xE0) == 0xC0 {
+                2  // 2-byte UTF-8
+            } else if (input_bytes[i] & 0xF0) == 0xE0 {
+                3  // 3-byte UTF-8
+            } else {
+                4  // 4-byte UTF-8
+            };
+            
+            // Safe because we're checking bounds and copying valid UTF-8 sequences
+            if i + char_len <= input_bytes.len() {
+                result.push_str(core::str::from_utf8(&input_bytes[i..i + char_len]).unwrap());
+                i += char_len;
+            } else {
+                // Handle truncated UTF-8 at end of string (shouldn't happen with valid UTF-8)
+                i += 1;
+            }
+        }
+    }
+    
+    result
 }
 
 impl From<bambu_api::PrintTray> for FilamentInfo {
