@@ -48,9 +48,12 @@ If you're interested in commercial licensing, redistribution rights, or other ac
 - [Setup](documentation/setup.md)
 - [Usage](documentation/usage.md)
 
-## Discussions 
+## Collaboration
 
 For questions, feedback, comments, etc. please use the [repo discussions area](https://github.com/yanshay/SpoolEase/discussions)
+For getting notified on important updates, subscribe to the [Announcements Discussion](https://github.com/yanshay/SpoolEase/discussions/7)
+If you want to try your luck with immediate online response, try the [Discord Channel](https://discord.com/channels/1344027434571272252/1344027676461105234)
+It would be real cool if you post your build in the [Introduce Your Build Discussion](https://github.com/yanshay/SpoolEase/discussions/8) 
 
 ## Licensing
 This software is licensed under Apache License, Version 2.0  **with Commons Clause** - see [LICENSE.md](LICENSE.md).
