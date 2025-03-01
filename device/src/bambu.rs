@@ -5,15 +5,22 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use once_cell::sync::Lazy;
 use core::{cell::RefCell, str::FromStr};
 use embassy_futures::select::{select, Either};
 use embassy_net::{Ipv4Address, Stack};
-use embassy_sync::{blocking_mutex::{raw::{CriticalSectionRawMutex, NoopRawMutex}, Mutex}, channel::Channel, pubsub::PubSubChannel};
-use embassy_time::{with_deadline, Duration, Instant, Timer};
+use embassy_sync::{
+    blocking_mutex::{
+        raw::{CriticalSectionRawMutex, NoopRawMutex},
+        Mutex,
+    },
+    channel::Channel,
+    pubsub::PubSubChannel,
+};
+use embassy_time::{with_deadline, with_timeout, Duration, Instant, Timer};
 use esp_mbedtls::TlsReference;
 use hashbrown::HashMap;
 use mqttrust::QoS;
+use once_cell::sync::Lazy;
 use regex::Regex;
 
 use framework::prelude::*;
@@ -1072,7 +1079,7 @@ impl FilamentInfo {
                             } else if let Some(calibration) = nozzle_calibrations.values().find(|v| {
                                 // TODO: Key note for multiprinter support
                                 // if I'll remove the setting_id check it will allow tag from one printer to match another if PA profile named the same
-                                // if I make similarity on name, it will be more flexible, maybe be flexible around color names 
+                                // if I make similarity on name, it will be more flexible, maybe be flexible around color names
                                 // I can also check what to do exactly based on printer name - if its the original printer or not
                                 v.name.trim() == name.trim() && v.filament_id == filament_info_result.tray_info_idx && v.setting_id == setting_id
                             }) {
@@ -1122,18 +1129,18 @@ fn my_decode_from_url_part(text: &str) -> String {
 }
 
 fn my_encode_to_url_part(text: &str) -> String {
-    // % must be first (because later added) 
+    // % must be first (because later added)
     // let name = name.replace("%", "%25").replace("/", "%2F").replace("&", "%26").replace("?", "%3F").replace(" ", "%20").replace("(", "%28").replace(")", "%29").replace( "~","%7E");
     ENCODING_MAP.lock(|encoding_map| efficient_encode(text, encoding_map))
 }
 
 /// Encodes specific characters in a string based on a provided mapping.
 /// Minimizes allocations while still returning a String.
-/// 
+///
 /// # Arguments
 /// * `input` - The string to encode
 /// * `char_map` - A mapping of characters to their encoded string representation
-/// 
+///
 /// # Returns
 /// The encoded string
 pub fn efficient_encode(input: &str, char_map: &HashMap<char, &str>) -> String {
@@ -1145,10 +1152,10 @@ pub fn efficient_encode(input: &str, char_map: &HashMap<char, &str>) -> String {
             None => c.len_utf8(),
         };
     }
-    
+
     // Pre-allocate output string with exact capacity needed
     let mut result = String::with_capacity(capacity);
-    
+
     // Process each character
     for c in input.chars() {
         match char_map.get(&c) {
@@ -1156,56 +1163,55 @@ pub fn efficient_encode(input: &str, char_map: &HashMap<char, &str>) -> String {
             None => result.push(c),
         }
     }
-    
+
     result
-} 
+}
 
 /// Decodes a string by replacing encoded sequences with their original characters.
 /// Minimizes allocations while still returning a String.
-/// 
+///
 /// # Arguments
 /// * `input` - The string to decode
 /// * `char_map` - A mapping of characters to their encoded string representation
-/// 
+///
 /// # Returns
 /// The decoded string
 pub fn efficient_decode(input: &str, char_table: &[(char, &str)]) -> String {
     // Pre-allocate with input size (likely sufficient since decoding usually results in shorter strings)
     let mut result = String::with_capacity(input.len());
-    
+
     // Use slice for efficient substring comparison
     let input_bytes = input.as_bytes();
     let mut i = 0;
-    
+
     while i < input_bytes.len() {
         let mut found = false;
-        
+
         // Try to match each encoded sequence at current position
         for (original, encoded) in char_table {
             let encoded_bytes = encoded.as_bytes();
-            
-            if i + encoded_bytes.len() <= input_bytes.len() && 
-               &input_bytes[i..i + encoded_bytes.len()] == encoded_bytes {
+
+            if i + encoded_bytes.len() <= input_bytes.len() && &input_bytes[i..i + encoded_bytes.len()] == encoded_bytes {
                 result.push(*original);
                 i += encoded_bytes.len();
                 found = true;
                 break;
             }
         }
-        
+
         // If no encoded sequence matches, copy original character
         if !found {
             // Get one complete UTF-8 character
             let char_len = if (input_bytes[i] & 0x80) == 0 {
-                1  // ASCII
+                1 // ASCII
             } else if (input_bytes[i] & 0xE0) == 0xC0 {
-                2  // 2-byte UTF-8
+                2 // 2-byte UTF-8
             } else if (input_bytes[i] & 0xF0) == 0xE0 {
-                3  // 3-byte UTF-8
+                3 // 3-byte UTF-8
             } else {
-                4  // 4-byte UTF-8
+                4 // 4-byte UTF-8
             };
-            
+
             // Safe because we're checking bounds and copying valid UTF-8 sequences
             if i + char_len <= input_bytes.len() {
                 result.push_str(core::str::from_utf8(&input_bytes[i..i + char_len]).unwrap());
@@ -1216,7 +1222,7 @@ pub fn efficient_decode(input: &str, char_table: &[(char, &str)]) -> String {
             }
         }
     }
-    
+
     result
 }
 
@@ -1384,38 +1390,61 @@ pub async fn incoming_messages_task(
     bambu_printer: Rc<RefCell<BambuPrinter>>,
 ) {
     let mut subscriber = read_packets.subscriber().unwrap();
+    const KEEP_ALIVE_SEC: u32 = 10;
 
+    let mut printer_known_to_be_up = false;
     loop {
-        let packet = subscriber.next_message_pure().await;
-        if let Ok(p) = mqttrust::Packet::try_from(&packet) {
-            #[allow(clippy::single_match)]
-            match p {
-                mqttrust::Packet::Publish(mqttrust::Publish {
-                    dup: _,
-                    qos: _,
-                    pid: _,
-                    retain: _,
-                    topic_name: _,
-                    payload,
-                }) => {
-                    let parse_res = serde_json::from_slice::<bambu_api::Print>(payload);
-                    if let Ok(print) = parse_res {
-                        debug!("MQTT Receive: {:?}", print);
-                        let previous_reading_bits = bambu_printer.borrow().tray_reading_bits;
-                        let change_made = (*bambu_printer.borrow_mut()).process_print_message(&print.print);
-                        let updated_reading_bits = bambu_printer.borrow().tray_reading_bits;
-                        if change_made {
-                            (*bambu_printer.borrow()).update_ams_trays_done(previous_reading_bits, updated_reading_bits);
+        let wait_res = with_timeout(Duration::from_secs(KEEP_ALIVE_SEC as u64), subscriber.next_message_pure()).await;
+        match wait_res {
+            Ok(packet) => {
+                printer_known_to_be_up = true;
+                if let Ok(p) = mqttrust::Packet::try_from(&packet) {
+                    #[allow(clippy::single_match)]
+                    match p {
+                        mqttrust::Packet::Publish(mqttrust::Publish {
+                            dup: _,
+                            qos: _,
+                            pid: _,
+                            retain: _,
+                            topic_name: _,
+                            payload,
+                        }) => {
+                            let parse_res = serde_json::from_slice::<bambu_api::Print>(payload);
+                            if let Ok(print) = parse_res {
+                                debug!("MQTT Receive: {:?}", print);
+                                let previous_reading_bits = bambu_printer.borrow().tray_reading_bits;
+                                let change_made = (*bambu_printer.borrow_mut()).process_print_message(&print.print);
+                                let updated_reading_bits = bambu_printer.borrow().tray_reading_bits;
+                                if change_made {
+                                    (*bambu_printer.borrow()).update_ams_trays_done(previous_reading_bits, updated_reading_bits);
+                                }
+                            } else {
+                                warn!("Unprocessed message {:?} : {:?}", parse_res, core::str::from_utf8(payload));
+                            }
                         }
-                    } else {
-                        warn!("Unprocessed message {:?} : {:?}", parse_res, core::str::from_utf8(payload));
-                    }
-                }
 
-                _ => (),
+                        _ => (),
+                    }
+                } else {
+                    error!("Unparsable MQTT message, this means an internal bug");
+                }
             }
-        } else {
-            error!("Unparsable MQTT message, this means an internal bug");
+            Err(_) => {
+                if printer_known_to_be_up {
+                    warn!("Printer connectivity issues suspected (uncertain), checking");
+                    let write_packets = bambu_printer.borrow().write_packets;
+                    let printer_serial = bambu_printer
+                        .borrow()
+                        .app_config
+                        .borrow()
+                        .printer_serial
+                        .as_ref()
+                        .unwrap_or(&"NO-SERIAL".to_string())
+                        .clone();
+                    BambuPrinter::request_full_update(&printer_serial, write_packets).await;
+                    printer_known_to_be_up = false;
+                }
+            }
         }
     }
 }

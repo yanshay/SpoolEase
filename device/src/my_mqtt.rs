@@ -4,9 +4,9 @@ use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
+use embassy_time::with_timeout;
 use core::cell::RefCell;
 use core::cmp::min;
-use embassy_futures::select::select;
 use embassy_futures::select::Either;
 use embassy_futures::select::Either3;
 use embassy_net::tcp::State;
@@ -143,10 +143,25 @@ where
     async fn write(&mut self, packet: mqttrust::Packet<'_>) -> Result<(), MyMqttError> {
         let mut buf = [0u8; 1024];
         let len = encode_slice(&packet, &mut buf)?;
-        let res = select(self.tls.write_all(&buf[..len]), Timer::after(self.write_timeout)).await;
-        match res {
-            Either::First(write_res) => Ok(write_res?),
-            Either::Second(_) => Err(MyMqttError::WriteTimeoutError),
+        let write_timeout_res = with_timeout(self.write_timeout, self.tls.write_all(&buf[..len])).await;
+        match write_timeout_res {
+            Ok(write_res) => {
+                match write_res {
+                    Ok(_) => {
+                        let flush_res = with_timeout(Duration::from_secs(5), self.tls.flush()).await;
+                        match flush_res {
+                            Ok(v) => {
+                                return Ok(v?);
+                            }
+                            Err(_) => {
+                                return Err(MyMqttError::WriteTimeoutError)
+                            }
+                        }
+                    }
+                    Err(e) => return Err(e.into())
+                }
+            }
+            Err(_) => return Err(MyMqttError::WriteTimeoutError),
         }
     }
 
@@ -478,7 +493,7 @@ pub async fn generic_mqtt_task<
                 Either3::Second(packet) => match mqttrust::Packet::try_from(&packet) {
                     Ok(p) => {
                         if let Err(e) = my_mqtt.write(p).await {
-                            term_error!("Error writing mqtt message, error: {:?}", e);
+                            term_error!("MQTT write error: {:?}\nReconnecting...", e);
                             // any point retrying?
                             continue 'establish_communication;
                         }
