@@ -1620,7 +1620,7 @@ pub async fn bambu_mqtt_task(
         read_packets,
         socket_rx_buffer,
         socket_tx_buffer,
-        Duration::from_secs(10),
+        Duration::from_secs(20),
         app_config,
         tls,
     )
