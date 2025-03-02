@@ -1,8 +1,24 @@
 export enum OtaState {
   NotStarted,
+  UserInput,
   Started,
   Completed,
   Failed
+}
+
+export enum ResetWifiCredentialsState {
+  NotStarted,
+  UserInput
+}
+
+export enum ResetFixedSecurityKeyState {
+  NotStarted,
+  UserInput
+}
+
+export enum RestartDeviceState {
+  NotStarted,
+  UserInput
 }
 
 export enum WebConfigState {
@@ -41,6 +57,9 @@ export global FrameworkState {
     in-out property <string> web-config-key: "";
 
     in-out property <OtaState> ota-state: OtaState.NotStarted;
+    in-out property <ResetWifiCredentialsState> reset-wifi-credentials-state: ResetWifiCredentialsState.NotStarted;
+    in-out property <ResetFixedSecurityKeyState> reset-fixed-security-key-state: ResetFixedSecurityKeyState.NotStarted;
+    in-out property <RestartDeviceState> restart-device-state: RestartDeviceState.NotStarted;
     in-out property <string> ota-message: "";
     out property <OtaInfo> ota-info: { version: "Unknown", newer: false };
 

@@ -1,5 +1,5 @@
 import { MyButton } from "widgets.slint";
-import { FrameworkState, FrameworkBackend, OtaState, WebConfigState } from "framework.slint";
+import { FrameworkState, FrameworkBackend, OtaState, WebConfigState, ResetWifiCredentialsState, ResetFixedSecurityKeyState, RestartDeviceState } from "framework.slint";
 
 export component MyText inherits Text {
     height: 22px;
@@ -7,7 +7,7 @@ export component MyText inherits Text {
 }
 
 export component SettingsButton inherits MyButton {
-  height: 56px;
+    height: 56px;
 }
 
 export component WebConfigButton inherits SettingsButton {
@@ -29,64 +29,160 @@ export component WebConfigButton inherits SettingsButton {
 export component RestartDeviceButton inherits SettingsButton {
     text: "Restart Device";
     clicked => {
-        FrameworkBackend.reset-device();
+        FrameworkState.restart-device-state = RestartDeviceState.UserInput;
     }
 }
 
 export component ResetWifiCredentialsButton inherits SettingsButton {
     text: "Reset Wifi Credentials (Flash) and Restart";
     clicked => {
-        FrameworkBackend.reset-flash-wifi-credentials();
+        FrameworkState.reset-wifi-credentials-state = ResetWifiCredentialsState.UserInput;
     }
 }
 
 export component ResetFixedKeyButton inherits SettingsButton {
     text: "Reset Fixed Security Key (If set)";
     clicked => {
-        FrameworkBackend.reset-fixed-security-key();
+        FrameworkState.reset-fixed-security-key-state = ResetFixedSecurityKeyState.UserInput;
     }
 }
 
 export component OtaButton inherits SettingsButton {
     text: "Update Firmware Over Network" + (FrameworkState.ota-info.newer ? " to \{FrameworkState.ota-info.version}" : "");
     clicked => {
-        FrameworkBackend.update-firmware-ota();
+        FrameworkState.ota-state = OtaState.UserInput;
+    }
+}
+
+export component SettingsTitle inherits Rectangle {
+    in-out property <string> text;
+    height: 40px;
+    background: green.brighter(1.0);
+    border-color: black;
+    border-width: 1px;
+    Text {
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        height: 40px;
+        text: text;
+        font-size: 20px;
+    }
+}
+
+export component SettingsConfirm inherits VerticalLayout {
+    in-out property <string> title;
+    in-out property <string> text;
+    in-out property <string> positive-text: "Yes / Ok";
+    in-out property <string> negative-text: "No / Cancel";
+    callback clicked-positive;
+    callback clicked-negative;
+    alignment: space-between;
+    VerticalLayout {
+
+        SettingsTitle {
+            text: title;
+        }
+
+        Text {
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            height: 100px;
+            text: text;
+            font-size: 20px;
+        }
+
+        SettingsButton {
+            text: positive-text;
+            clicked => {
+                root.clicked-positive()
+            }
+        }
+    }
+
+    SettingsButton {
+        text: negative-text;
+        clicked => {
+            root.clicked-negative()
+        }
     }
 }
 
 ////////////////////////////////////
 
 export component Settings inherits Rectangle {
-    if FrameworkState.ota-state == OtaState.NotStarted && FrameworkState.web-config-state == WebConfigState.Stopped: buttons := VerticalLayout {
+    property <bool> buttons-visible:  FrameworkState.restart-device-state == RestartDeviceState.NotStarted && FrameworkState.reset-fixed-security-key-state == ResetFixedSecurityKeyState.NotStarted && FrameworkState.ota-state == OtaState.NotStarted && FrameworkState.web-config-state == WebConfigState.Stopped && FrameworkState.reset-wifi-credentials-state == ResetWifiCredentialsState.NotStarted;
+    if buttons-visible: buttons := VerticalLayout {
         height: parent.height;
         width: parent.width;
 
-        Rectangle {
-          height: 40px;
-          background: green.brighter(1.0);
-          border-color: black;
-          border-width: 1px;
-          Text {
-            vertical-alignment: center;
-            horizontal-alignment: center;
-            height: 40px;
-            text: "  Installed firmware: \{FrameworkState.app-info.name} \{ FrameworkState.app-info.version }";
-            font-size: 20px;
-          }
+        SettingsTitle {
+            text: "  Installed firmware: \{FrameworkState.app-info.name} \{ FrameworkState.app-info.version}";
         }
 
         WebConfigButton { }
 
         ResetWifiCredentialsButton { }
 
-        ResetFixedKeyButton {}
+        ResetFixedKeyButton { }
 
         RestartDeviceButton { }
 
-        OtaButton {}
+        OtaButton { }
     }
 
-    if FrameworkState.ota-state != OtaState.NotStarted: ota := VerticalLayout {
+// Reset Wifi Credentials
+    if FrameworkState.reset-wifi-credentials-state == ResetWifiCredentialsState.UserInput: 
+        SettingsConfirm {
+        title: "Reset Wifi Credentials";
+        text: "Are you sure you want to erase\nthe stored WiFi credentials?\n\nDevice will Restart immediately";
+        clicked-positive => {
+            FrameworkBackend.reset-flash-wifi-credentials();
+        }
+        clicked-negative => {
+            FrameworkState.reset-wifi-credentials-state = ResetWifiCredentialsState.NotStarted;
+        }
+    }
+
+// Reset Fixed Security Key
+    if FrameworkState.reset-fixed-security-key-state == ResetFixedSecurityKeyState.UserInput: 
+        SettingsConfirm {
+        title: "Reset Fixed Security Key";
+        text: "Are you sure you want to erase\nthe fixed custom security key?\n\nThis is relevant only if one is currently set";
+        clicked-positive => {
+            FrameworkBackend.reset-fixed-security-key();
+            FrameworkState.reset-fixed-security-key-state = ResetFixedSecurityKeyState.NotStarted;
+        }
+        clicked-negative => {
+            FrameworkState.reset-fixed-security-key-state = ResetFixedSecurityKeyState.NotStarted;
+        }
+    }
+
+// Restart Device
+    if FrameworkState.restart-device-state == RestartDeviceState.UserInput: 
+        SettingsConfirm {
+        title: "Restart Device";
+        text: "Are you sure you want to restart \{FrameworkState.app-info.name}?";
+        clicked-positive => {
+            FrameworkBackend.reset-device();
+        }
+        clicked-negative => {
+            FrameworkState.restart-device-state = RestartDeviceState.NotStarted;
+        }
+    }
+// OTA
+    if FrameworkState.ota-state == OtaState.UserInput: 
+        SettingsConfirm {
+        title: "Over the Air Network Update";
+        text: "Do you want to check for an updated firmware update and install if available?\n\nThe whole process may take a couple of minutes";
+        clicked-positive => {
+            FrameworkBackend.update-firmware-ota();
+        }
+        clicked-negative => {
+            FrameworkState.ota-state = OtaState.NotStarted;
+        }
+    }
+
+    if FrameworkState.ota-state != OtaState.NotStarted && FrameworkState.ota-state != OtaState.UserInput: ota-run := VerticalLayout {
         alignment: stretch;
         Rectangle {
             vertical-stretch: 1;
@@ -102,9 +198,8 @@ export component Settings inherits Rectangle {
             }
         }
 
-        MyButton {
+        SettingsButton {
             enabled: FrameworkState.ota-state == OtaState.Failed || FrameworkState.ota-state == OtaState.Completed;
-            height: 60px;
             text: "Ok";
             clicked => {
                 FrameworkState.ota-state = OtaState.NotStarted;
@@ -112,10 +207,12 @@ export component Settings inherits Rectangle {
         }
     }
 
+// Web Config
+
     if (FrameworkState.web-config-state == WebConfigState.Started-STA || FrameworkState.web-config-state == WebConfigState.Started-AP): web-config := VerticalLayout {
         alignment: stretch;
         Rectangle {
-            height: 320px - 60px; // TODO: why need to specify height? should be automatic by layout
+            height: 320px - 56px; // TODO: why need to specify height? should be automatic by layout
             background: white;
             vertical-stretch: 1;
             width: parent.width;
@@ -128,31 +225,38 @@ export component Settings inherits Rectangle {
                 MyText {
                     text: "1. Connect to the WiFi network";
                 }
+
                 MyText {
                     text: "    WiFi Network: \{FrameworkState.web-config-ssid}";
                 }
+
                 MyText {
                     text: "2. Browse to the URL" + (FrameworkState.web-config-state == WebConfigState.Started-AP ? " (if not shown automatically)" : "");
                 }
+
                 MyText {
                     text: "    URL: \{FrameworkState.web-config-url}";
                 }
+
                 MyText {
                     text: "3. On the web page fill the Security Key";
                 }
+
                 MyText {
                     text: "    Security Key: \{FrameworkState.web-config-key}";
                 }
+
                 MyText {
                     text: "4. Press Verify Key button and continue";
                 }
+
                 MyText {
                     text: "    with configurations. When done restart device";
                 }
             }
         }
 
-        if FrameworkState.web-config-state != WebConfigState.Started-AP: WebConfigButton { }
-        if FrameworkState.web-config-state == WebConfigState.Started-AP: RestartDeviceButton { }
+        if FrameworkState.web-config-state != WebConfigState.Started-AP: WebConfigButton { } // when STA - Will show disable button
+        if FrameworkState.web-config-state == WebConfigState.Started-AP: RestartDeviceButton { } // when AP - Will show restart device button
     }
 }
