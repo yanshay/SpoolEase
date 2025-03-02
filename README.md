@@ -2,20 +2,27 @@
 
 This project is an ESP32S3 based add-on device for Bambulab 3D printers to encode and decode NFC tags attached to filament spools. The tags store filament information, which can be used to automatically configure printer settings when loading spools, whether through AMS or an external spool. It also provides visibility to the filaments currently loaded into the AMS's and the External Spool. 
 
-## Press Below for Video Demonstration
-
-[![SpoolEase](https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg)](https://www.youtube.com/watch?v=WKIBzVbrhOg)
-
-This is a new project currently in its early stages, with testing limited to personal use. Users should be aware that there are no warranties, liabilities, or guarantees, and they assume all risks involved.
-
 > [!Note]
-> *Status Update*
+> This device coverage question keeps coming up, so I leave this update here for some time:
 >
 > ✅ P1S: OK - Tested to work
 >
 > ✅ X1C: OK - Tested to work
 >
 > ✅ A1/A1 Mini: OK - Tested to work
+
+## Press Below for Video Demonstration
+
+[![SpoolEase](https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg)](https://www.youtube.com/watch?v=WKIBzVbrhOg)
+
+Notice: This is a new project currently in its early stages, with testing limited to personal use. Users should be aware that there are no warranties, liabilities, or guarantees, and they assume all risks involved.
+
+## Recommendations for Use at This Stage
+- Please ensure you read through this page fully before building or using the device—several important guidelines and tips are provided.
+Since the project is still in its early stages with only a few users, I recommend using it with filaments you regularly work with. As the project gains more exposure, the NFC tag data format may need adjustments. Re-encoding a large number of tags could be inconvenient, and addressing backward compatibility at this stage may slow development. It’s best to wait a couple of weeks for stabilization and to address non-critical data format issues before using it on a large number of spools. Eventually, the project will transition to a state where tags are always backward compatible, but patience is advised until then.
+- If you encounter issues, please report them. If you believe it’s a bug, use the issues section; if you’re unsure about the behavior, raise it in the discussions section.
+- Bambulab printers are not without their quirks, particularly with K Factor handling. The X1C behaves differently than the P1S, and even the P1S has been observed to experience issues that require a restart. While slicer-only use may obscure these problems, SpoolEase makes them more visible. If you notice issues, try restarting the printer to see if they persist.
+Understanding the K Factor / Flow Dynamic Calibrations / Pressure Advance (all referring to the same concept) is crucial for achieving quality prints, but configuring it on Bambulab printers (especially with Bambu Studio) is not very intuitive. You can read more about it here. It’s important to focus on this if you want to get the best performance from your printer and maximize the value of SpoolEase, which offers an advantage over other solutions in this regard, including Bambulab filaments own RFID tags.
 
 This project (including hardware designs, software, and case files) is freely available for you to build and use for any purpose, including within commercial environments. However, you may not profit from redistributing or commercializing the project itself. Specifically prohibited activities include:
 
