@@ -24,6 +24,7 @@ Notice: This is a new project currently in its early stages, with testing limite
 - Bambulab printers are not without their quirks, particularly with K Factor handling. The X1C behaves differently than the P1S, and even the P1S has been observed to experience issues that require a restart. While slicer-only use may obscure these problems, SpoolEase makes them more visible. If you notice issues, try restarting the printer to see if they persist.
 - Understanding the K Factor / Flow Dynamic Calibrations / Pressure Advance (all referring to the same concept) is crucial for achieving quality prints, but configuring it on Bambulab printers (especially with Bambu Studio) is not very intuitive. You can read more about it here. It’s important to focus on this if you want to get the best performance from your printer and maximize the value of SpoolEase, which offers an advantage over other solutions in this regard, including Bambulab filaments own RFID tags.
 
+## Licensing Information
 This project (including hardware designs, software, and case files) is freely available for you to build and use for any purpose, including within commercial environments. However, you may not profit from redistributing or commercializing the project itself. Specifically prohibited activities include:
 
 - Selling assembled devices based on this project
