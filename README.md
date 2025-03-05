@@ -56,6 +56,7 @@ If you're interested in commercial licensing, redistribution rights, or other ac
 - [Build](documentation/build.md)
 - [Setup](documentation/setup.md)
 - [Usage](documentation/usage.md)
+- [Troubleshooting](documentation/troubleshooting.md)
 
 ## Collaboration
 
