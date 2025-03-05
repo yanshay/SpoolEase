@@ -129,11 +129,14 @@ pub async fn nfc_task(
 
     let mut initialization_succeeded = false;
     let mut successful_retry = 0;
-    let retries = 10;
+    let retries = 59;
     for retry in 0..=retries {
-        if retry % 5 == 0 {
+        if retry % 20 == 0 {
+            if retry != 0 {
+                term_error!("Challenging PN532 Initialization ({})", retries);
+            }
             pn532.wake_up().await.unwrap();
-            Timer::after(Duration::from_millis(30)).await;
+            Timer::after(Duration::from_millis(100)).await
         }
         if let Err(e) = pn532
             .process(
