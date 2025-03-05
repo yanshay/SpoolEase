@@ -25,6 +25,7 @@ mod view_model;
 mod web_app;
 
 use alloc::{format, rc::Rc, string::ToString};
+use embassy_futures::yield_now;
 use core::{cell::RefCell, net::Ipv4Addr};
 use esp_alloc as _;
 use esp_backtrace as _;
@@ -326,11 +327,16 @@ async fn main(spawner: Spawner) {
     }
 
     // == Mark current app ota is working =============================================
+    let boot_partition;
     {
         // where should this be located?  as early as possible or only after initialization worked?
         let mut ota = Ota::new(FlashStorage::new()).expect("Cannot create ota");
         ota.ota_mark_app_valid().unwrap();
-        term_info!("Booted from partition : {:?}", ota.get_currently_booted_partition());
+        if let Some(partition) = ota.get_currently_booted_partition() {
+            boot_partition = format!("{partition}");
+        } else {
+            boot_partition = "default".to_string();
+        }
     }
 
     // ==================================================================================================================================================
@@ -459,7 +465,14 @@ async fn main(spawner: Spawner) {
         ))
         .ok();
 
-    for _i in 1..20 {
+    // yields for term initialization to complete until term is fixed to not require this
+    yield_now().await;
+    yield_now().await;
+    yield_now().await;
+    yield_now().await;
+    term_info!("Booting from partition {}", boot_partition);
+
+    for _i in 1..30 {
         if app_config.borrow().initialization_ok() {
             break;
         }
