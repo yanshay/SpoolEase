@@ -380,6 +380,7 @@ pub async fn generic_mqtt_task<
         let octets = addr.octets();
 
         term_info!("Connecting to Printer {}.{}.{}.{}:{}", octets[0], octets[1], octets[2], octets[3], port);
+        let mut socket_error_count = 0;
         match socket.connect(remote_endpoint).await {
             Ok(()) => (),
             Err(e) => {
@@ -389,8 +390,11 @@ pub async fn generic_mqtt_task<
                 //     ConnectError::TimedOut => (),
                 //     ConnectError::NoRoute => (),
                 // }
-                term_error!("Unexpected error connecting socket {:?}", e);
-                Timer::after(Duration::from_millis(500)).await;
+                socket_error_count += 1;
+                if socket_error_count % 10 == 0 {
+                    term_error!("Unexpected error connecting socket {:?}", e);
+                }
+                Timer::after(Duration::from_millis(1000)).await;
                 continue;
             }
         }
