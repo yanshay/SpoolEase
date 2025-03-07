@@ -1,7 +1,7 @@
 [package]
 name = "SpoolEase"
 homepage = "SpoolEase.io"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 rust-version = "1.84"
@@ -33,7 +33,7 @@ slint-build = "1.9.1"
 
 [dependencies]
 framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/" }
-# framework = { package = "esp-hal-app-framework", path = "../../esp-hal-app/esp-hal-app-framework/" }
+# framework = { package = "esp-hal-app-framework", path = "../../esp32-support/esp-hal-app-framework/", features = ["esp32s3", "wt32-sc01-plus"] }
 esp32s3 = { version = "0.30.0" }
 
 # Esp-Hal Crates
@@ -120,7 +120,8 @@ hmac = { version = "0.12.1", default-features = false}
 
 # Application specific crates
 mqttrust = { version = "0.6.0" }
-pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_async_full", default-features = false }
+# pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_async_full", default-features = false }
+pn532 = { path="../../../../../OpenSourceProj/forked/pn532/", default-features = false }
 regex = { version = "1.11.1", default-features = false }
 
 [features]

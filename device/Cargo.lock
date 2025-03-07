@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "SpoolEase"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2013,7 +2013,7 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework"
 version = "0.1.0"
-source = "git+https://github.com/yanshay/esp-hal-app/#08f9442a9e611e95d7ddb796a44be24fdb5c8f73"
+source = "git+https://github.com/yanshay/esp-hal-app/#95e04ebccb24a371b3f0d57450989acec655c5c6"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -4795,7 +4795,6 @@ checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
 [[package]]
 name = "pn532"
 version = "0.5.0"
-source = "git+https://github.com/yanshay/pn532?branch=yanshay_async_full#3313e1358b4738b5c0403da8231aeb9aec7d9a1d"
 dependencies = [
  "embassy-time",
  "embedded-hal 1.0.0",
