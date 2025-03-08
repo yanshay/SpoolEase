@@ -72,7 +72,7 @@ use settings::{
 };
 use web_app::NestedAppBuilder;
 
-const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 4; // web-config listeners + potentially https captive + mqtt + USDP(?) + ota + captive dns
+const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 5; // web-config listeners + potentially https captive + mqtt + USDP(?) + ota + captive dns + ? initial firmware check if doen't complete 
 const AP_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 4;
 
 #[macro_export]
