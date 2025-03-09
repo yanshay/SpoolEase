@@ -1,0 +1,45 @@
+name: Release Desktop 
+
+on:
+  push:
+    tags:
+      - "r*.*.*"  # Matches tags like r1.2.3, r2.0.0, etc.
+
+jobs:
+  call-desktop-workflow:
+    uses: ./.github/workflows/desktop.yml
+
+  release:
+    needs: call-desktop-workflow
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download MacOS DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: SpoolEaseDesktop-MacOS-Dmg 
+          path: artifacts
+
+      - name: Download MacOS App Folder
+        uses: actions/download-artifact@v4
+        with:
+          name: SpoolEaseDesktop-MacOS-App-Folder
+          path: artifacts
+
+      - name: Download Windows Msi
+        uses: actions/download-artifact@v4
+        with:
+          name: SpoolEaseDesktop-Windows-Msi
+          path: artifacts
+
+      - name: Download Windows Nsis Setup
+        uses: actions/download-artifact@v4
+        with:
+          name: SpoolEaseDesktop-Windows-Nsis-Setup
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          tag_name: ${{ github.ref_name }}
+          body: "Automated release for ${{ github.ref_name }}"

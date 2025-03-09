@@ -10,6 +10,20 @@ on:
     paths:
       - 'desktop/**'
   workflow_dispatch:  # Allows manual trigger
+  workflow_call:
+    outputs:
+      artifact_Mac1:
+        description: "MacOS DMG"
+        value: SpoolEaseDesktop-MacOS-Dmg
+      artifact_Mac2:
+        description: "MacOS App Folder"
+        value: SpoolEaseDesktop-MacOS-App-Folder
+      artifact_Win1:
+        description: "Windows Msi"
+        value: SpoolEaseDesktop-Windows-Msi
+      artifact_Win2:
+        description: "Windows Nsis Setup"
+        value: SpoolEaseDesktop-Windows-Nsis-Setup
 
 env:
   CARGO_TERM_COLOR: always
@@ -70,8 +84,8 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: SpoolEaseDesktop-Windows-Msi
-        path: D:\a\SpoolEase\SpoolEase\target\dx\SpoolEaseDesktop\bundle\windows\bundle/msi/*.msi
-    - name: Upload Windows Setup
+        path: D:\a\SpoolEase\SpoolEase\target\dx\SpoolEaseDesktop\bundle\windows\bundle\msi\*.msi
+    - name: Upload Windows Nsis Setup
       uses: actions/upload-artifact@v4
       with:
         name: SpoolEaseDesktop-Windows-Nsis-Setup
