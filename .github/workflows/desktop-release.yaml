@@ -6,7 +6,7 @@ permissions:
 on:
   push:
     tags:
-      - "SpoolEase-Deskop-r*.*.*"  # Matches tags like r1.2.3, r2.0.0, etc.
+      - "SpoolEase-Desktop-r*.*.*"  # Matches tags like r1.2.3, r2.0.0, etc.
 
 jobs:
   call-desktop-workflow:
