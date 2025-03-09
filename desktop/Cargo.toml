@@ -1,0 +1,23 @@
+[package]
+name = "desktop"
+version = "0.1.0"
+authors = ["yanshay <yanshay>"]
+edition = "2021"
+
+[dependencies]
+dioxus = { version = "0.6.0", features = ["router"] }
+dioxus-desktop = "0.6.3"
+dioxus-sdk = { version = "0.6", features = ["clipboard"] }
+rfd = { version = "0.15.2" }
+tokio = { version ="1.44.0" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+regex = "1.7"
+toml = "0.8.20"
+dirs = "6.0.0"
+
+[features]
+default = ["desktop"]
+web = ["dioxus/web"]
+desktop = ["dioxus/desktop"]
+mobile = ["dioxus/mobile"]
