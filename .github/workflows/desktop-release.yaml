@@ -44,5 +44,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
-          tag_name: ${{ github.ref_name }}
-          body: "Automated release for ${{ github.ref_name }}"
+          tag_name: SpoolEaseDesktop ${{ github.ref_name }}
+          body: "Automated SpoolEase Desktop release ${{ github.ref_name }}"

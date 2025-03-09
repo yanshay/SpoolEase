@@ -39,7 +39,7 @@ jobs:
       run: rustup update
     - uses: cargo-bins/cargo-binstall@main
     - name: Get dioxus
-      run: cargo binstall -y dioxus-cli
+      run: cargo binstall --github-token ${{ secrets.GITHUB_TOKEN }} -y dioxus-cli
     - name: Environment details
       run: |
         rustup toolchain list
@@ -53,11 +53,13 @@ jobs:
       with:
         name: SpoolEaseDesktop-MacOS-Dmg
         path: /Users/runner/work/SpoolEase/SpoolEase/desktop/bundle/*.dmg
+    - name Zip macOS Bundle Folder
+      run zip -r SpoolEaseDesktopAppFolder.zip /Users/runner/work/SpoolEase/SpoolEase/desktop/bundle/SpoolEaseDesktop.app
     - name: Upload macOS Bundle Folder
       uses: actions/upload-artifact@v4
       with:
         name: SpoolEaseDesktop-MacOS-App-Folder
-        path: /Users/runner/work/SpoolEase/SpoolEase/desktop/bundle/SpoolEaseDesktop.app
+        path: SpoolEaseDesktopAppFolder.zip
 
   buildWindows:
 
@@ -69,7 +71,7 @@ jobs:
       run: rustup update
     - uses: cargo-bins/cargo-binstall@main
     - name: Get dioxus
-      run: cargo binstall -y dioxus-cli
+      run: cargo binstall --github-token ${{ secrets.GITHUB_TOKEN }} -y dioxus-cli
     - name: Environment details
       run: |
         rustup toolchain list
