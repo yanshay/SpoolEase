@@ -46,3 +46,4 @@ jobs:
           files: artifacts/*
           tag_name: ${{ github.ref_name }}
           body: "Automated ${{ github.ref_name }}"
+          prerelease: true  # Mark as a pre-release
