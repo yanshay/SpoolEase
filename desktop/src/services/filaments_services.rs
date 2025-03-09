@@ -32,30 +32,59 @@ struct FilamentFile {
 
 pub async fn get_custom_filaments_index() -> Result<String, Box<dyn std::error::Error>> {
     let mut unique_filaments = HashMap::new();
+    let bambu_input_path_under_home;
+    let orca_input_path_under_home;
     if cfg!(target_os = "windows") {
         println!("Running on Windows!");
-        if let Some(home_dir) = dirs::home_dir() {
-            let bambu_input_path = home_dir.join("AppData\\Roaming\\BambuStudio\\user");
-            visit_dirs_custom(&bambu_input_path, &mut unique_filaments).await?;
-            let orca_input_path = home_dir.join("AppData\\Roaming\\OrcaSlicer\\user");
-            visit_dirs_custom(&orca_input_path, &mut unique_filaments).await?;
-        } else {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "User home directory not identified")));
-        }
+        bambu_input_path_under_home = "AppData\\Roaming\\BambuStudio\\user";
+        orca_input_path_under_home = "AppData\\Roaming\\OrcaSlicer\\user";
     } else if cfg!(target_os = "macos") {
         println!("Running on macOS!");
-        if let Some(home_dir) = dirs::home_dir() {
-            let bambu_input_path = home_dir.join("Library/Application Support/BambuStudio/user");
-            visit_dirs_custom(&bambu_input_path, &mut unique_filaments).await?;
-            let orca_input_path = home_dir.join("Library/Application Support/OrcaSlicer/user");
-            visit_dirs_custom(&orca_input_path, &mut unique_filaments).await?;
-        } else {
-            return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, "User home directory not identified")));
-        }
+        bambu_input_path_under_home = "Library/Application Support/BambuStudio/user";
+        orca_input_path_under_home = "Library/Application Support/OrcaSlicer/user";
     } else if cfg!(target_os = "linux") {
         println!("Running on Linux!");
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Linux is currently not supported",
+        )));
+    } else {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Unknown Operating System",
+        )));
     }
 
+    let bambu_input_path;
+    let orca_input_path;
+    let mut bambu_or_orca_found = false;
+    if let Some(home_dir) = dirs::home_dir() {
+        bambu_input_path = home_dir.join(bambu_input_path_under_home);
+        if fs::metadata(&bambu_input_path).await.is_ok() {
+            bambu_or_orca_found = true;
+            visit_dirs_custom(&bambu_input_path, &mut unique_filaments).await?;
+        }
+        orca_input_path = home_dir.join(orca_input_path_under_home);
+        if fs::metadata(&orca_input_path).await.is_ok() {
+            bambu_or_orca_found = true;
+            visit_dirs_custom(&orca_input_path, &mut unique_filaments).await?;
+        }
+    } else {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "User home directory not identified",
+        )));
+    }
+    if !bambu_or_orca_found {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!(
+                "Neither OrcaSlicer nor BambuStudio folders found:\n{}\n{}",
+                bambu_input_path.display(),
+                orca_input_path.display()
+            ),
+        )));
+    }
     file_info_string(unique_filaments).await
 }
 
@@ -137,7 +166,6 @@ async fn visit_dirs_custom(
     }
     Ok(())
 }
-
 
 async fn file_info_string(
     unique_filaments: HashMap<String, FilamentInfo>,
