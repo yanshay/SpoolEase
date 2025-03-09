@@ -1,0 +1,78 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'desktop/**'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'desktop/**'
+  workflow_dispatch:  # Allows manual trigger
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  buildMac:
+
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Update Rust
+      run: rustup update
+    - uses: cargo-bins/cargo-binstall@main
+    - name: Get dioxus
+      run: cargo binstall -y dioxus-cli
+    - name: Environment details
+      run: |
+        rustup toolchain list
+        dx --version
+    - name: Build
+      run: |
+        cd desktop
+        dx bundle
+    - name: Upload macOS DMG
+      uses: actions/upload-artifact@v4
+      with:
+        name: dx-desktop-macOS-dmg
+        path: /Users/runner/work/dx-desktop/dx-desktop/target/dx/dx-desktop/bundle/macos/bundle/dmg/DxDesktop_0.1.0_aarch64.dmg
+    - name: Upload macOS Bundle Folder
+      uses: actions/upload-artifact@v4
+      with:
+        name: dx-desktop-macOS-folder
+        path: /Users/runner/work/dx-desktop/dx-desktop/target/dx/dx-desktop/bundle/macos/bundle/macos/DxDesktop.app
+
+  buildWindows:
+
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Update Rust
+      run: rustup update
+    - uses: cargo-bins/cargo-binstall@main
+    - name: Get dioxus
+      run: cargo binstall -y dioxus-cli
+    - name: Environment details
+      run: |
+        rustup toolchain list
+        dx --version
+    - name: list files
+      run: tree /F
+    - name: Build
+      run: |
+        cd desktop
+        dx bundle
+    - name: Upload Windows Msi
+      uses: actions/upload-artifact@v4
+      with:
+        name: dx-desktop-windows-msi
+        path: D:\a\dx-desktop\dx-desktop\target\dx\dx-desktop\bundle\windows\bundle/msi/DxDesktop_0.1.0_x64_en-US.msi
+    - name: Upload Windows Setup
+      uses: actions/upload-artifact@v4
+      with:
+        name: dx-desktop-windows-setup
+        path: D:\a\dx-desktop\dx-desktop\target\dx\dx-desktop\bundle\windows\bundle/nsis/DxDesktop_0.1.0_x64-setup.exe
