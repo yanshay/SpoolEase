@@ -1,5 +1,8 @@
 name: Release Desktop 
 
+permissions:
+  contents: write  # Allows creating releases
+
 on:
   push:
     tags:
