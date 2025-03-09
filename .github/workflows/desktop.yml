@@ -70,7 +70,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: SpoolEaseDesktop-Windows-Msi
-        path: DD:\a\SpoolEase\SpoolEase\target\dx\SpoolEaseDesktop\bundle\windows\bundle/msi/*.msi
+        path: D:\a\SpoolEase\SpoolEase\target\dx\SpoolEaseDesktop\bundle\windows\bundle/msi/*.msi
     - name: Upload Windows Setup
       uses: actions/upload-artifact@v4
       with:
