@@ -22,11 +22,11 @@ jobs:
           name: SpoolEaseDesktop-MacOS-Dmg 
           path: artifacts
 
-      - name: Download MacOS App Folder
-        uses: actions/download-artifact@v4
-        with:
-          name: SpoolEaseDesktop-MacOS-App-Folder
-          path: artifacts
+      # - name: Download MacOS App Folder
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: SpoolEaseDesktop-MacOS-App-Folder
+      #     path: artifacts
 
       - name: Download Windows Msi
         uses: actions/download-artifact@v4
@@ -34,11 +34,11 @@ jobs:
           name: SpoolEaseDesktop-Windows-Msi
           path: artifacts
 
-      - name: Download Windows Nsis Setup
-        uses: actions/download-artifact@v4
-        with:
-          name: SpoolEaseDesktop-Windows-Nsis-Setup
-          path: artifacts
+      # - name: Download Windows Nsis Setup
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: SpoolEaseDesktop-Windows-Nsis-Setup
+      #     path: artifacts
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
