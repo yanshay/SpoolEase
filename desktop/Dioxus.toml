@@ -1,4 +1,5 @@
 [application]
+name = "SpoolEaseDesktop"
 
 [web.app]
 

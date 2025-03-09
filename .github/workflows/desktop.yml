@@ -33,17 +33,16 @@ jobs:
     - name: Build
       run: |
         cd desktop
-        dx bundle
+        dx bundle --out-dir ./bundle
     - name: Upload macOS DMG
       uses: actions/upload-artifact@v4
       with:
-        name: dx-desktop-macOS-dmg
-        path: /Users/runner/work/dx-desktop/dx-desktop/target/dx/dx-desktop/bundle/macos/bundle/dmg/DxDesktop_0.1.0_aarch64.dmg
+        path: /Users/runner/work/SpoolEase/SpoolEase/target/dx/desktop/bundle/macos/bundle/dmg/*.dmgSpoolEaseDesktop/bundle/macos/bundle/dmg/*.dmg
     - name: Upload macOS Bundle Folder
       uses: actions/upload-artifact@v4
       with:
         name: dx-desktop-macOS-folder
-        path: /Users/runner/work/dx-desktop/dx-desktop/target/dx/dx-desktop/bundle/macos/bundle/macos/DxDesktop.app
+        path: /Users/runner/work/SpoolEase/SpoolEase/target/dx/SpoolEaseDesktop/bundle/macos/bundle/macos/SpoolEaseDesktop.app
 
   buildWindows:
 
