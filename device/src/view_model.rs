@@ -248,17 +248,23 @@ impl BambuPrinterObserver for ViewModel {
 
         if let Some(mut ams_exist_bits) = bambu_printer.ams_exist_bits {
             let mut ams_exist_vec = Vec::<i32>::new();
-            let mut ams_id = 0;
-            while ams_exist_bits != 0 {
+            let mut first_ams = -1;
+            for ams_id in 0..=3 {
                 if ams_exist_bits & 1 != 0 {
                     ams_exist_vec.push(ams_id);
-                    ams_exist_bits >>= 1;
-                    ams_id += 1;
+                    if first_ams == -1 {
+                        first_ams = ams_id;
+                    }
                 }
+                ams_exist_bits >>= 1;
             }
             let ams_exists: Rc<slint::VecModel<i32>> = Rc::new(slint::VecModel::from(ams_exist_vec));
             let ams_exists = slint::ModelRc::from(ams_exists);
             ui.global::<crate::app::AppState>().set_ams_exists(ams_exists);
+            let current_shown_ams = ui.global::<crate::app::AppState>().get_curr_ams_id();
+            if first_ams > current_shown_ams {
+                ui.global::<crate::app::AppState>().set_curr_ams_id(first_ams);
+            }
         }
 
         let trays_state_rc = ui.global::<crate::app::AppState>().get_trays_state();
