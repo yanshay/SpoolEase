@@ -37,12 +37,13 @@ jobs:
     - name: Upload macOS DMG
       uses: actions/upload-artifact@v4
       with:
-        path: /Users/runner/work/SpoolEase/SpoolEase/target/dx/desktop/bundle/macos/bundle/dmg/*.dmgSpoolEaseDesktop/bundle/macos/bundle/dmg/*.dmg
+        name: SpoolEaseDesktop-MacOS-Dmg
+        path: /Users/runner/work/SpoolEase/SpoolEase/desktop/bundle/*.dmg
     - name: Upload macOS Bundle Folder
       uses: actions/upload-artifact@v4
       with:
-        name: dx-desktop-macOS-folder
-        path: /Users/runner/work/SpoolEase/SpoolEase/target/dx/SpoolEaseDesktop/bundle/macos/bundle/macos/SpoolEaseDesktop.app
+        name: SpoolEaseDesktop-MacOS-App-Folder
+        path: /Users/runner/work/SpoolEase/SpoolEase/desktop/bundle/SpoolEaseDesktop.app
 
   buildWindows:
 
@@ -68,10 +69,10 @@ jobs:
     - name: Upload Windows Msi
       uses: actions/upload-artifact@v4
       with:
-        name: dx-desktop-windows-msi
-        path: D:\a\dx-desktop\dx-desktop\target\dx\dx-desktop\bundle\windows\bundle/msi/DxDesktop_0.1.0_x64_en-US.msi
+        name: SpoolEaseDesktop-Windows-Msi
+        path: DD:\a\SpoolEase\SpoolEase\target\dx\SpoolEaseDesktop\bundle\windows\bundle/msi/*.msi
     - name: Upload Windows Setup
       uses: actions/upload-artifact@v4
       with:
-        name: dx-desktop-windows-setup
-        path: D:\a\dx-desktop\dx-desktop\target\dx\dx-desktop\bundle\windows\bundle/nsis/DxDesktop_0.1.0_x64-setup.exe
+        name: SpoolEaseDesktop-Windows-Nsis-Setup
+        path: D:\a\SpoolEase\SpoolEase\target\dx\SpoolEaseDesktop\bundle\windows\bundle/nsis/*.exe
