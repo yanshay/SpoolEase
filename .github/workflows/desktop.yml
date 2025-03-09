@@ -54,7 +54,7 @@ jobs:
         name: SpoolEaseDesktop-MacOS-Dmg
         path: /Users/runner/work/SpoolEase/SpoolEase/desktop/bundle/*.dmg
     - name Zip macOS Bundle Folder
-      run zip -r SpoolEaseDesktopAppFolder.zip /Users/runner/work/SpoolEase/SpoolEase/desktop/bundle/SpoolEaseDesktop.app
+      run: zip -r SpoolEaseDesktopAppFolder.zip /Users/runner/work/SpoolEase/SpoolEase/desktop/bundle/SpoolEaseDesktop.app
     - name: Upload macOS Bundle Folder
       uses: actions/upload-artifact@v4
       with:
