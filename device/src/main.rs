@@ -71,9 +71,8 @@ use settings::{
     WEB_SERVER_CAPTIVE, WEB_SERVER_HTTPS, WEB_SERVER_PORT, WEB_SERVER_TLS_CERTIFICATE, WEB_SERVER_TLS_PRIVATE_KEY,
 };
 use web_app::NestedAppBuilder;
-
-const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 5; // web-config listeners + potentially https captive + mqtt + USDP(?) + ota + captive dns + ? initial firmware check if doen't complete 
-const AP_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 4;
+const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 1 + FRAMEWORK_STA_STACK_RESOURCES; // web-config listeners + (mqtt / USDP(?), not together) + from framework: potentially https captive +  ota + captive dns + ? initial firmware check if doen't complete 
+const AP_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + FRAMEWORK_AP_STACK_RESOURCES;
 
 #[macro_export]
 macro_rules! heap_dram2_allocator {

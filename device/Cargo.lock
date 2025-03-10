@@ -2013,7 +2013,7 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework"
 version = "0.1.0"
-source = "git+https://github.com/yanshay/esp-hal-app/#95e04ebccb24a371b3f0d57450989acec655c5c6"
+source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.1.0#97bdc532a208459dbb6ad16ccd4ade466378d1c4"
 dependencies = [
  "aes",
  "aes-gcm",
