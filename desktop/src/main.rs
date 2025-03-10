@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+#![cfg_attr(feature = "bundle", windows_subsystem = "windows")]
 use std::env;
 
 use dioxus::prelude::*;
