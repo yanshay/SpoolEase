@@ -45,4 +45,6 @@ Temporary Items
 src/certs
 !src/certs/bambulab.pem
 !src/certs/ota-certs.pem
+!src/certs/raw.githubuercontent.com.pem
+!src/certs/raw.githubuercontent.com.info
 .envrc

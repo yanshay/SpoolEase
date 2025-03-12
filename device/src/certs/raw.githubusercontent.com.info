@@ -1,0 +1,108 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            90:77:34:41:47:31:6e:f9:95:99:76:7a:ea:fd:f1:b9
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C=GB, ST=Greater Manchester, L=Salford, O=Sectigo Limited, CN=Sectigo RSA Domain Validation Secure Server CA
+        Validity
+            Not Before: Mar  7 00:00:00 2025 GMT
+            Not After : Mar  7 23:59:59 2026 GMT
+        Subject: CN=*.github.io
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:c4:a4:0b:12:55:66:25:82:a7:67:d7:66:28:c5:
+                    ab:6f:87:f2:e0:15:85:9b:ae:7c:11:07:a6:4b:88:
+                    49:82:bb:7e:d4:d1:69:2f:6b:46:55:a1:6e:a5:5c:
+                    95:de:f9:8a:a2:b0:97:df:37:a3:73:bf:a0:1f:c5:
+                    20:a5:e9:a6:8f:da:f9:b6:4d:4d:67:44:97:5c:02:
+                    d3:8e:f4:f6:8b:4d:e8:4a:a8:f0:0b:39:27:f9:1d:
+                    68:d1:36:20:f8:6e:cf:c9:0e:69:13:5f:00:13:e2:
+                    b7:55:47:29:72:1d:5f:e5:1c:81:4c:4b:c4:e3:e1:
+                    d4:83:8f:fa:3a:90:08:60:55:73:9c:9d:f2:93:c6:
+                    be:6e:8d:62:fc:70:69:d8:c6:ed:3f:3b:2c:4a:54:
+                    fc:98:f2:d8:ef:a4:84:4e:d2:9d:c2:02:1d:63:dd:
+                    4c:91:38:89:77:5c:74:28:90:cc:d8:63:ca:33:ba:
+                    4d:4d:cf:35:34:c4:b0:e9:60:73:b3:18:38:3c:56:
+                    d1:f8:10:98:f3:6f:ec:62:ef:22:33:2f:c0:75:87:
+                    14:cf:bd:a1:87:60:c6:5e:75:72:a7:3c:d5:fc:b2:
+                    e0:27:f5:40:3f:99:be:99:dd:25:54:7e:4a:20:6f:
+                    dc:76:e0:eb:6a:39:68:2d:0e:0b:28:99:2d:3b:85:
+                    66:c1
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Authority Key Identifier: 
+                8D:8C:5E:C4:54:AD:8A:E1:77:E9:9B:F9:9B:05:E1:B8:01:8D:61:E1
+            X509v3 Subject Key Identifier: 
+                12:F0:7E:D0:31:6F:E4:AF:35:B5:89:FB:42:D9:ED:B7:0B:93:CD:04
+            X509v3 Key Usage: critical
+                Digital Signature, Key Encipherment
+            X509v3 Basic Constraints: critical
+                CA:FALSE
+            X509v3 Extended Key Usage: 
+                TLS Web Server Authentication, TLS Web Client Authentication
+            X509v3 Certificate Policies: 
+                Policy: 1.3.6.1.4.1.6449.1.2.2.7
+                  CPS: https://sectigo.com/CPS
+                Policy: 2.23.140.1.2.1
+            Authority Information Access: 
+                CA Issuers - URI:http://crt.sectigo.com/SectigoRSADomainValidationSecureServerCA.crt
+                OCSP - URI:http://ocsp.sectigo.com
+            CT Precertificate SCTs: 
+                Signed Certificate Timestamp:
+                    Version   : v1 (0x0)
+                    Log ID    : 96:97:64:BF:55:58:97:AD:F7:43:87:68:37:08:42:77:
+                                E9:F0:3A:D5:F6:A4:F3:36:6E:46:A4:3F:0F:CA:A9:C6
+                    Timestamp : Mar  7 00:06:22.069 2025 GMT
+                    Extensions: none
+                    Signature : ecdsa-with-SHA256
+                                30:45:02:21:00:F9:82:20:B0:0A:9B:D9:CA:90:56:51:
+                                78:24:FD:84:44:85:42:1F:74:57:74:1E:C3:8C:83:DC:
+                                E8:28:79:68:AE:02:20:78:EA:52:85:7B:17:93:24:7D:
+                                C2:10:72:67:67:ED:9E:54:47:C9:D8:B4:F0:36:38:BB:
+                                D8:73:79:82:15:C2:EE
+                Signed Certificate Timestamp:
+                    Version   : v1 (0x0)
+                    Log ID    : 19:86:D4:C7:28:AA:6F:FE:BA:03:6F:78:2A:4D:01:91:
+                                AA:CE:2D:72:31:0F:AE:CE:5D:70:41:2D:25:4C:C7:D4
+                    Timestamp : Mar  7 00:06:21.966 2025 GMT
+                    Extensions: none
+                    Signature : ecdsa-with-SHA256
+                                30:46:02:21:00:8E:BC:80:6D:79:47:B1:78:FF:BF:87:
+                                FB:09:65:C9:CC:35:17:49:4B:AF:03:99:11:1F:77:68:
+                                87:85:8F:51:07:02:21:00:BE:9E:88:C2:AA:10:A7:FD:
+                                9B:A9:6E:72:39:D0:ED:53:DC:54:8A:05:0B:BF:2C:E6:
+                                77:DD:F0:29:CC:B2:56:85
+                Signed Certificate Timestamp:
+                    Version   : v1 (0x0)
+                    Log ID    : CB:38:F7:15:89:7C:84:A1:44:5F:5B:C1:DD:FB:C9:6E:
+                                F2:9A:59:CD:47:0A:69:05:85:B0:CB:14:C3:14:58:E7
+                    Timestamp : Mar  7 00:06:22.007 2025 GMT
+                    Extensions: none
+                    Signature : ecdsa-with-SHA256
+                                30:44:02:20:4B:DF:0B:D4:3D:96:F2:7C:D5:DE:D2:10:
+                                D1:1E:14:25:6C:70:C5:BE:C8:FD:34:FA:7B:D9:72:D2:
+                                70:34:42:C0:02:20:5A:65:EE:CF:D6:03:54:26:CF:55:
+                                66:F1:9B:62:86:83:45:B9:B3:BF:02:28:9A:54:66:9E:
+                                0D:08:B3:9C:71:42
+            X509v3 Subject Alternative Name: 
+                DNS:*.github.io, DNS:*.github.com, DNS:*.githubusercontent.com, DNS:github.com, DNS:github.io, DNS:githubusercontent.com, DNS:www.github.com
+    Signature Algorithm: sha256WithRSAEncryption
+    Signature Value:
+        79:2c:8d:35:42:a6:d5:bd:0a:d6:c1:5e:ef:bb:27:67:03:0e:
+        62:91:cf:f1:00:91:4c:8e:36:ea:23:3a:72:a8:23:77:76:7f:
+        90:d0:0e:4a:b3:bb:f8:12:8f:a0:76:f1:83:b7:6b:81:18:16:
+        4b:6f:c2:ad:ca:9d:70:2e:f4:ac:d2:33:57:a1:96:1b:40:97:
+        19:6f:8e:31:94:81:7b:ee:c7:b0:e3:9c:11:f8:d0:8b:4a:88:
+        4e:f6:de:8a:5e:59:56:e6:d9:61:31:75:13:d2:72:49:bf:08:
+        3c:2c:87:3d:94:dd:29:77:33:75:ad:bf:4c:4f:b9:92:6b:83:
+        5b:4c:20:be:7c:46:aa:d2:e4:fa:45:94:02:08:94:45:02:e9:
+        da:fe:c5:54:2b:c0:b3:5c:61:75:55:82:f6:6c:45:25:ff:61:
+        ba:f3:6e:82:cc:81:68:6e:0d:24:0f:71:a7:83:18:77:32:ec:
+        dc:51:64:79:a5:a4:7c:fe:fc:eb:74:eb:b5:6e:c6:31:aa:9b:
+        db:de:28:d1:99:31:47:6b:a1:2f:a8:73:10:09:05:7b:f7:67:
+        53:42:0a:8c:2f:a5:96:b3:37:12:9c:71:08:3b:8b:36:30:77:
+        a1:cb:ef:45:8c:c4:25:85:53:47:bb:d2:ec:3d:29:9a:ad:78:
+        6e:d2:55:c4

@@ -223,7 +223,7 @@ async fn main(spawner: Spawner) {
         ota_domain: OTA_DOMAIN,
         ota_path: OTA_PATH,
         ota_toml_filename: OTA_TOML_FILENAME,
-        ota_certs: concat!(include_str!("./certs/ota-certs.pem"), "\0"),
+        ota_certs: concat!(include_str!("./certs/raw.githubusercontent.com.pem"), "\0"),
 
         ap_addr: AP_ADDR,
 
