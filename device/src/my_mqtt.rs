@@ -119,7 +119,7 @@ where
 
         Ok(())
     }
-    pub async fn subscribe<'b: 'a>(&mut self, _pid: Option<Pid>, topics: &[SubscribeTopic<'_>]) -> Result<(), MyMqttError> {
+    pub async fn subscribe<'b: 'a>(&mut self, _pid: Option<Pid>, topics: &[SubscribeTopic<'_>]) -> Result<Option<Packet>, MyMqttError> {
         let subscribe = Subscribe::new(topics);
         let packet = Packet::Subscribe(subscribe);
 
@@ -137,7 +137,7 @@ where
 
         // TODO: Need to wait to response before Ok?
 
-        Ok(())
+        Ok(resp)
     }
 
     async fn write(&mut self, packet: mqttrust::Packet<'_>) -> Result<(), MyMqttError> {
@@ -327,12 +327,17 @@ impl<'a> From<&'a PacketOnChannel> for mqttrust::Packet<'a> {
     }
 }
 
+static RX_BUFFER: embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 8192]> = 
+                                embassy_sync::mutex::Mutex::new([0; 8192]);
+static TX_BUFFER: embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 4096]> = 
+                                embassy_sync::mutex::Mutex::new([0; 4096]);
+
 // Not Embassy Task since use generics
 #[allow(clippy::too_many_arguments)]
 pub async fn generic_mqtt_task<
     E: Into<IpEndpoint> + core::fmt::Debug + core::marker::Copy,
-    const SOCKET_RX_SIZE: usize,
-    const SOCKET_TX_SIZE: usize,
+    // const SOCKET_RX_SIZE: usize,
+    // const SOCKET_TX_SIZE: usize,
     M: RawMutex,
     const N: usize,
     const CAP: usize,
@@ -348,18 +353,18 @@ pub async fn generic_mqtt_task<
     stack: Stack<'static>,
     write_packets: &'static Channel<M, BufferedMqttPacket, N>,
     read_packets: &'static PubSubChannel<M, BufferedMqttPacket, CAP, SUBS, PUBS>,
-    socket_rx_buffer: &'static mut [u8; SOCKET_RX_SIZE],
-    socket_tx_buffer: &'static mut [u8; SOCKET_TX_SIZE],
+    // socket_rx_buffer: &'static mut [u8; SOCKET_RX_SIZE],
+    // socket_tx_buffer: &'static mut [u8; SOCKET_TX_SIZE],
     write_timeout: Duration,
-    // mut rsa: esp_hal::peripherals::RSA,
     app_config: Rc<RefCell<AppConfig>>,
-    // mut sha: impl esp_hal::peripheral::Peripheral<P = esp_hal::peripherals::SHA>,
     tls: TlsReference<'static>,
 ) -> ! {
     // let tls = Tls::new(&mut sha)
     //     .unwrap()
     //     .with_hardware_rsa(&mut rsa);
 
+    let socket_rx_buffer = &mut *RX_BUFFER.lock().await;
+    let socket_tx_buffer = &mut *TX_BUFFER.lock().await;
     'establish_communication: loop {
         let mut socket = TcpSocket::new(stack, socket_rx_buffer, socket_tx_buffer);
 
@@ -379,7 +384,7 @@ pub async fn generic_mqtt_task<
         let embassy_net::IpAddress::Ipv4(addr) = endpoint.addr else { todo!() }; // Ipv6 should not happen
         let octets = addr.octets();
 
-        term_info!("Connecting to Printer {}.{}.{}.{}:{}", octets[0], octets[1], octets[2], octets[3], port);
+        term_info!("Connecting to Printer {} at {}.{}.{}.{}:{}", printer_serial, octets[0], octets[1], octets[2], octets[3], port);
         let mut socket_error_count = 0;
         match socket.connect(remote_endpoint).await {
             Ok(()) => (),
@@ -445,18 +450,31 @@ pub async fn generic_mqtt_task<
         }
         term_info!("MQTT connection with Printer established");
 
+        let publisher = read_packets.immediate_publisher();
+
         term_info!("Subscribing to Printer reports");
-        if let Err(e) = my_mqtt.subscribe(None, subscribe_topics).await {
-            // any point in retrying mqtt subscribe ?
-            term_error!("Unexpected error during mqtt subscribe {:?}", e);
-            Timer::after(Duration::from_millis(500)).await;
-            continue;
+        match my_mqtt.subscribe(None, subscribe_topics).await {
+            Ok(Some(packet)) => match BufferedMqttPacket::try_from(packet) {
+                Ok(p) => {
+                    // publish internally the received packet
+                    publisher.publish_immediate(p);
+                }
+                Err(e) => {
+                    term_error!("Error converting internal packets data on read {:?}", e);
+                }
+            },
+            Ok(None) => {
+                term_error!("MQTT Recv:  None Packet");
+            },
+            Err(e) => {
+                term_error!("Unexpected error during mqtt subscribe {:?}", e);
+                Timer::after(Duration::from_millis(500)).await;
+                continue;
+            }
         }
 
         term_info!("Subscription to Printer reports confirmed");
         app_config.borrow_mut().report_printer_connectivity(true);
-
-        let publisher = read_packets.immediate_publisher();
 
         loop {
             let res = if keep_alive_secs != 0 {

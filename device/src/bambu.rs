@@ -39,6 +39,7 @@ pub struct BambuPrinter {
     pub virt_tray: Tray,
     pub calibrations: HashMap<String, HashMap<i32, Calibration>>,
     write_packets: &'static embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>,
+    restart_printer: &'static embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>,
     observers: Vec<alloc::rc::Weak<RefCell<dyn BambuPrinterObserver>>>,
     app_config: Rc<RefCell<AppConfig>>,
     tray_exist_bits: Option<u32>,
@@ -59,6 +60,7 @@ impl BambuPrinter {
             3,
         >,
         app_config: Rc<RefCell<AppConfig>>,
+        restart_printer: &'static embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>,
     ) -> Self {
         let unknown = Tray {
             state: TrayState::Unknown,
@@ -66,6 +68,7 @@ impl BambuPrinter {
             k: None,
             cali_idx: None,
         };
+
         Self {
             nozzle_diameter: None,
             ams_trays: [
@@ -95,8 +98,24 @@ impl BambuPrinter {
             tray_read_done_bits: None,
             tray_reading_bits: None,
             ams_exist_bits: None,
+            restart_printer,
         }
     }
+    pub fn select_printer(&mut self, printer: &str) {
+        if let Err(err) = self.app_config.borrow_mut().set_current_printer_by_name_then_serial(printer) {
+            term_info!("Bad printers configuration {}", err);
+        }
+        self.reset_printer();
+    }
+    pub fn reset_printer(&mut self) {
+       let empty = Self::new(self.write_packets, self.app_config.clone(), self.restart_printer);
+        *self = Self {
+            observers: self.observers.clone(),
+            ..empty
+        };
+        self.restart_printer.signal(1);
+    }
+
     pub fn subscribe(&mut self, observer: alloc::rc::Weak<RefCell<dyn BambuPrinterObserver>>) {
         self.observers.push(observer);
     }
@@ -720,7 +739,7 @@ impl BambuPrinter {
     pub fn publish_payload(&self, payload: String) {
         debug!("MQTT Publish: {}", payload);
 
-        let topic_name = format!("device/{}/request", self.app_config.borrow().printer_serial.as_ref().unwrap());
+        let topic_name = format!("device/{}/request", self.app_config.borrow().get_printer_serial().as_ref().unwrap());
         let topic_name = topic_name.as_str();
 
         let packet = mqttrust::Packet::Publish(mqttrust::Publish {
@@ -912,12 +931,13 @@ pub struct FilamentInfo {
 }
 
 impl FilamentInfo {
-    pub fn to_descriptor(&self, printer_name: &Option<String>) -> String {
+    pub fn to_descriptor(&self, printer_name: &Option<String>, printe_serial: &Option<String>) -> String {
         let mut inner_calibrations_part = String::new();
         let printer_name = printer_name.as_ref();
+        let printer_serial = printe_serial.as_ref();
 
         let empty = "".to_string();
-        let k_prefix = printer_name.unwrap_or(&empty);
+        let k_prefix = &format!("{}~{}", printer_name.unwrap_or(&empty), printer_serial.unwrap_or(&empty));
         let k_prefix = if !k_prefix.is_empty() {
             format!("&{}(", my_encode_to_url_part(k_prefix))
         } else {
@@ -1033,7 +1053,7 @@ impl FilamentInfo {
                 if let Some(param_match) = captures.get(2) {
                     param = param_match.as_str();
                 }
-                // to get the printer name use match 1 and don't forget to my_decode_from_url_part the data
+                // to get the printer name (formatted as name~serial , use match 1 and don't forget to my_decode_from_url_part the data
                 // currently not used, could compare to current printer name and ignore
             }
             if let Some((param_name, param_value)) = param.split_once("=") {
@@ -1324,6 +1344,7 @@ pub async fn init(
 ) -> Rc<RefCell<BambuPrinter>> {
     let spawner = embassy_executor::Spawner::for_current_executor().await;
 
+    debug!("Starting bambu init, should run only once");
     // == Setup MQTT ==================================================================
     let write_packets = mk_static!(
         embassy_sync::channel::Channel< embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3,>,
@@ -1334,16 +1355,21 @@ pub async fn init(
         embassy_sync::pubsub::PubSubChannel::<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 5, 2, 1,>::new()
     );
 
+    let restart_printer = mk_static!(
+        embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>,
+        embassy_sync::signal::Signal::<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>::new()
+    );
+
     spawner
-        .spawn(bambu_mqtt_task(stack, read_packets, write_packets, app_config.clone(), tls))
+        .spawn(multi_bambu_mqtt_task(stack, read_packets, write_packets, app_config.clone(), tls, restart_printer))
         .ok();
 
-    let bambu_printer_model = Rc::new(RefCell::new(BambuPrinter::new(write_packets, app_config)));
+    let bambu_printer_model = Rc::new(RefCell::new(BambuPrinter::new(write_packets, app_config, restart_printer)));
 
     let spawner = embassy_executor::Spawner::for_current_executor().await;
     spawner.spawn(incoming_messages_task(read_packets, bambu_printer_model.clone())).ok();
 
-    spawner.spawn(fetch_initial_info(bambu_printer_model.clone())).ok();
+    // spawner.spawn(fetch_initial_info(bambu_printer_model.clone())).ok();
 
     bambu_printer_model
 }
@@ -1360,9 +1386,8 @@ pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
         .borrow()
         .app_config
         .borrow()
-        .printer_serial
-        .as_ref()
-        .unwrap_or(&"NO-SERIAL".to_string())
+        .get_printer_serial().clone()
+        .unwrap_or("NO-SERIAL".to_string())
         .clone();
 
     // fetch first setting for all nozzles, need that in advance before getting filaments
@@ -1421,8 +1446,13 @@ pub async fn incoming_messages_task(
                             } else {
                                 warn!("Unprocessed message {:?} : {:?}", parse_res, core::str::from_utf8(payload));
                             }
-                        }
-
+                        },
+                        mqttrust::Packet::Suback(mqttrust::encoding::v4::Suback { pid, return_codes }) => {
+                            // Subscribed, now time to request for update
+                            let spawner = embassy_executor::Spawner::for_current_executor().await;
+                            spawner.spawn(fetch_initial_info(bambu_printer.clone())).ok();
+                            info!(">>>>Printer connected, getting initial info");
+                        },
                         _ => (),
                     }
                 } else {
@@ -1437,9 +1467,8 @@ pub async fn incoming_messages_task(
                         .borrow()
                         .app_config
                         .borrow()
-                        .printer_serial
-                        .as_ref()
-                        .unwrap_or(&"NO-SERIAL".to_string())
+                        .get_printer_serial().clone()
+                        .unwrap_or("NO-SERIAL".to_string())
                         .clone();
                     BambuPrinter::request_full_update(&printer_serial, write_packets).await;
                     printer_known_to_be_up = false;
@@ -1449,21 +1478,49 @@ pub async fn incoming_messages_task(
     }
 }
 
+#[embassy_executor::task]
+pub async fn multi_bambu_mqtt_task(
+    stack: Stack<'static>,
+    read_packets: &'static PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>,
+    write_packets: &'static Channel<NoopRawMutex, BufferedMqttPacket, 3>,
+    app_config: Rc<RefCell<AppConfig>>,
+    tls: TlsReference<'static>,
+    restart_printer: &'static embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>,
+) {
+    loop {
+        debug!(">>>>> creating bambu_mqtt_task");
+        let printer_mqtt_task = bambu_mqtt_task(stack,read_packets, write_packets, app_config.clone(), tls);
+        debug!(">>>>> awaiting bambu_mqtt_task and signal");
+        match select(printer_mqtt_task, restart_printer.wait()).await {
+            Either::First(_) => {
+                // we arrive here only if something is wrong with config, so the only thing to do
+                // is wait for printer restart
+                restart_printer.wait().await;
+            }
+            Either::Second(_) => {debug!(">>>> Signal received");},
+        }
+        write_packets.clear();
+        read_packets.clear();
+        debug!("looping again");
+    }
+}
+
 // Usage example, this should be in the client code using the generic_mqtt_task, specific per scenario
 // This indirection is because embassy can't have generic functions as tasks
 // https://github.com/embassy-rs/embassy/issues/2454#issuecomment-2336644031
 // This is specific to the hw and required detailes (buffer sizes, etc.)
-#[embassy_executor::task]
 pub async fn bambu_mqtt_task(
     stack: Stack<'static>,
+    // socket_rx_buffer: &'static mut [u8;8192],
+    // socket_tx_buffer: &'static mut [u8;4096],
     read_packets: &'static PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>,
     write_packets: &'static Channel<NoopRawMutex, BufferedMqttPacket, 3>,
     app_config: Rc<RefCell<AppConfig>>,
     tls: TlsReference<'static>,
 ) {
     let app_config_borrow = app_config.borrow();
-    let printer_serial_config = &(app_config_borrow.printer_serial);
-    let printer_access_code_config = &(app_config_borrow.printer_access_code);
+    let printer_serial_config = app_config_borrow.get_printer_serial();
+    let printer_access_code_config = app_config_borrow.get_printer_access_code();
 
     let mut printer_login_exist = false;
     if let (Some(printer_serial), Some(printer_access_code)) = (printer_serial_config, printer_access_code_config) {
@@ -1479,12 +1536,10 @@ pub async fn bambu_mqtt_task(
         return;
     }
 
-    let socket_rx_buffer = mk_static!([u8; 8192], [0; 8192]);
-    let socket_tx_buffer = mk_static!([u8; 4096], [0; 4096]);
 
     let no_serial = "NO-SERIAL".to_string();
     let app_config_borrow = app_config.borrow();
-    let printer_serial = app_config_borrow.printer_serial.as_ref().unwrap_or(&no_serial).clone();
+    let printer_serial = app_config_borrow.get_printer_serial().clone().unwrap_or(no_serial).clone();
     drop(app_config_borrow);
 
     let subscribe_topics = [mqttrust::SubscribeTopic {
@@ -1507,8 +1562,8 @@ pub async fn bambu_mqtt_task(
     let printer_ip: Ipv4Address;
     let printer_name: String;
 
-    if app_config.borrow().printer_ip.is_none() {
-        term_info!("No Printer IP configured, discovering Printer");
+    if app_config.borrow().get_printer_ip().is_none() {
+        term_info!("No Printer IP configured, discovering Printer {}", printer_serial);
         let (mut rx_buffer1, mut rx_buffer2) = ([0; 512], [0; 512]);
         let (mut tx_buffer1, mut tx_buffer2) = ([0; 0], [0; 0]);
         let (mut rx_meta1, mut rx_meta2) = (
@@ -1586,13 +1641,13 @@ pub async fn bambu_mqtt_task(
             }
         }
     } else {
-        printer_ip = app_config.borrow().printer_ip.unwrap();
-        printer_name = app_config.borrow().printer_name.as_ref().unwrap_or(&String::from("Unknown")).to_string();
+        printer_ip = app_config.borrow().get_printer_ip().unwrap();
+        printer_name = app_config.borrow().get_printer_name().clone().unwrap_or(String::from("Unknown")).to_string();
     }
 
     // Final name, theoretically if name explicitly supplied and IP not,  this could override the supplied name
-    app_config.borrow_mut().printer_ip = Some(printer_ip);
-    app_config.borrow_mut().printer_name = Some(printer_name);
+    app_config.borrow_mut().set_printer_ip(Some(printer_ip));
+    app_config.borrow_mut().set_printer_name(Some(printer_name));
 
     let remote_endpoint = (printer_ip, 8883);
     let password = {
@@ -1600,9 +1655,8 @@ pub async fn bambu_mqtt_task(
         let app_config_borrow = app_config.borrow();
         Some(
             app_config_borrow
-                .printer_access_code
-                .as_ref()
-                .unwrap_or(&"NO-ACCESS-CODE".to_string())
+                .get_printer_access_code().clone()
+                .unwrap_or("NO-ACCESS-CODE".to_string())
                 .clone()
                 .into_bytes(),
         )
@@ -1618,8 +1672,8 @@ pub async fn bambu_mqtt_task(
         stack,
         write_packets,
         read_packets,
-        socket_rx_buffer,
-        socket_tx_buffer,
+        // socket_rx_buffer,
+        // socket_tx_buffer,
         Duration::from_secs(20),
         app_config,
         tls,

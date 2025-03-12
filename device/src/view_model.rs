@@ -10,7 +10,10 @@ use embassy_net::Stack;
 use slint::{ComponentHandle, Model, SharedString, ToSharedString};
 
 use framework::prelude::*;
-use framework::{ framework::{FrameworkObserver, WebConfigMode}, terminal::{self, term_mut, TerminalObserver} };
+use framework::{
+    framework::{FrameworkObserver, WebConfigMode},
+    terminal::{self, term_mut, TerminalObserver},
+};
 
 use crate::{
     app_config::{self, AppConfig, AppControlObserver},
@@ -45,9 +48,7 @@ impl ViewModel {
         bambu_printer_model: Rc<RefCell<bambu::BambuPrinter>>,
         spool_tag_model: Rc<RefCell<spool_tag::SpoolTag>>,
     ) -> Rc<RefCell<ViewModel>> {
-        let terminal_view_model = Rc::new(RefCell::new(TerminalViewModel {
-            ui_weak: ui_weak.clone()
-        }));
+        let terminal_view_model = Rc::new(RefCell::new(TerminalViewModel { ui_weak: ui_weak.clone() }));
         let trait_for_terminal_rc: alloc::rc::Rc<core::cell::RefCell<dyn terminal::TerminalObserver>> = terminal_view_model.clone();
         let trait_for_terminal_weak: alloc::rc::Weak<core::cell::RefCell<dyn terminal::TerminalObserver>> =
             alloc::rc::Rc::downgrade(&trait_for_terminal_rc);
@@ -78,10 +79,8 @@ impl ViewModel {
         spool_tag_model.borrow_mut().subscribe(trait_for_spool_tag_weak);
 
         let trait_for_framework_rc: alloc::rc::Rc<core::cell::RefCell<dyn FrameworkObserver>> = view_model_rc.clone();
-        let trait_for_framework_weak: alloc::rc::Weak<core::cell::RefCell<dyn FrameworkObserver>> =
-            alloc::rc::Rc::downgrade(&trait_for_framework_rc);
+        let trait_for_framework_weak: alloc::rc::Weak<core::cell::RefCell<dyn FrameworkObserver>> = alloc::rc::Rc::downgrade(&trait_for_framework_rc);
         framework.borrow_mut().subscribe(trait_for_framework_weak);
-
 
         let trait_for_app_control_rc: alloc::rc::Rc<core::cell::RefCell<dyn app_config::AppControlObserver>> = view_model_rc.clone();
         let trait_for_app_control_weak: alloc::rc::Weak<core::cell::RefCell<dyn app_config::AppControlObserver>> =
@@ -153,6 +152,12 @@ impl ViewModel {
         self.init_framework(); // Initialization of framework
 
         // initialization of application (consider moving to a separate function)
+        let default_printer = self.app_config.borrow().get_default_printer_selector_text();
+        let curr_printer = self.app_config.borrow().get_curr_printer_selector_text();
+        let available_printers_vec: Vec<SharedString> = self.app_config.borrow().get_printers_selector_texts().into_iter().map(|s| s.into()).collect();
+        let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers_vec));
+        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_set_printers_info(available_printers, default_printer.into());
+        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_set_curr_printer(curr_printer.into());
 
         let moved_filament_staging = self.filament_staging.clone();
         let moved_ui = self.ui_weak.clone();
@@ -194,12 +199,27 @@ impl ViewModel {
                     &bambu_printer.ams_trays[tray_id].filament
                 };
                 if let Filament::Known(f) = filament {
-                    spool_tag.write_tag(&f.to_descriptor(&moved_app_config.borrow().printer_name), tray_id);
+                    spool_tag.write_tag(&f.to_descriptor(&moved_app_config.borrow().get_printer_name(), &moved_app_config.borrow().get_printer_serial()), tray_id);
                     info!("Sent the write request of tray {} over signal", tray_id);
                 }
                 // TODO: Get proper timeout fron config and pass it in the write_tag to spool_tag
                 10
             });
+
+        let moved_bambu_printer = self.bambu_printer_model.clone();
+        let moved_ui = self.ui_weak.clone();
+        self.ui_weak.unwrap().global::<crate::app::AppBackend>().on_reset_printer(move || {
+            moved_bambu_printer.borrow_mut().reset_printer();
+            moved_ui.unwrap().global::<crate::app::AppState>().invoke_reset_printer();
+        });
+
+        let moved_ui = self.ui_weak.clone();
+        let moved_bambu_printer = self.bambu_printer_model.clone();
+        self.ui_weak.unwrap().global::<crate::app::AppBackend>().on_select_printer(move |printer: SharedString| {
+            moved_bambu_printer.borrow_mut().select_printer(printer.as_str());
+            moved_ui.unwrap().global::<crate::app::AppState>().invoke_set_curr_printer(printer);
+            moved_ui.unwrap().global::<crate::app::AppState>().invoke_reset_printer();
+        });
 
         let moved_spool_tag = self.spool_tag_model.clone();
         let moved_ui = self.ui_weak.clone();
@@ -508,6 +528,9 @@ struct TerminalViewModel {
 
 impl TerminalObserver for TerminalViewModel {
     fn on_add_text(&self, text: &str) {
-        self.ui_weak.unwrap().global::<crate::app::FrameworkState>().invoke_add_term_text(text.to_shared_string());
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::FrameworkState>()
+            .invoke_add_term_text(text.to_shared_string());
     }
 }
