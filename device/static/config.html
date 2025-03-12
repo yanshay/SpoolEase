@@ -3,171 +3,230 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Application Configuration</title>
+    <title>SpoolEase Configuration</title>
     <style>
-      body { display: none; } /* Hide content initially */
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
+      /* General Styles */
       body {
+        display: none;
         font-family: Arial, sans-serif;
-        background-size: cover;
-        color: #333;
-        /* display: flex; */ /* Set in Script after wasm initialized */ 
-        justify-content: center;
-        padding: 20px;
-        margin: 20px;
-      }
-      .container {
-        background: rgba(255, 255, 255, 0.9);
-        padding: 20px;
         max-width: 500px;
-        width: 100%;
-        border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
       }
-      h1 {
-        text-align: center;
-        font-size: 1.8em;
+      h3 {
+        font-weight: normal;
+      }
+
+      /* Section Styles */
+      .section {
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        padding: 20px;
         margin-bottom: 20px;
+      }
+
+      .section-title {
+        margin-top: 0;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #eee;
         color: #333;
       }
-      .section {
-        margin-bottom: 20px;
-      }
-      .section h2 {
-        font-size: 1.2em;
-        color: #444;
-        margin-bottom: 10px;
-      }
-      .field {
+
+      /* Form Styles */
+      .form-row {
         margin-bottom: 15px;
-        position: relative;
       }
-      .field label {
-        display: block;
-        font-weight: bold;
-        margin-bottom: 5px;
-      }
-      .field input[type="text"],
-      .field input[type="password"],
-      .field input[type="number"],
-      .field input[type="range"] {
-        width: 100%;
-        padding: 8px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 1em;
-      }
-      .password-toggle {
-        display: inline-block;
-        margin-left: 10px;
-        font-size: 0.9em;
-        color: #007bff;
-        cursor: pointer;
-      }
-      .apply-button {
-        display: block;
-        width: 100%;
-        padding: 10px;
-        font-size: 1em;
-        color: #fff;
-        background-color: #28a745;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        margin-top: 10px;
-      }
-      .apply-button:disabled {
-        background-color: #cccccc;
-        cursor: not-allowed;
-      }
-      .apply-button:hover:enabled {
-        background-color: #218838;
-      }
-      /* IP input styling */
-      .ip-input {
+
+      label {
         display: flex;
-        gap: 5px;
-      }
-      .ip-input input {
-        width: 50px;
-        text-align: center;
-      }
-      /* Tooltip styling */
-      .tooltip {
-        position: relative;
-        display: inline-block;
-        cursor: pointer;
-        margin-left: 5px;
-        color: #888;
-        font-size: 0.9em;
-      }
-      .tooltip .tooltip-text {
-        visibility: hidden;
-        width: 200px;
-        background-color: #333;
-        color: #fff;
-        text-align: center;
-        padding: 5px;
-        border-radius: 4px;
-        position: absolute;
-        z-index: 1;
-        bottom: 125%; /* Position above the icon */
-        left: 50%;
-        margin-left: -100px; /* Center the tooltip */
-        opacity: 0;
-        transition: opacity 0.3s;
-      }
-      .tooltip:hover .tooltip-text {
-        visibility: visible;
-        opacity: 1;
-      }
-      /* Dimming percent display */
-      #dimming-percent-display {
+        justify-content: space-between;
+        margin-bottom: 5px;
         font-weight: bold;
-        margin-left: 10px;
-        color: #007bff;
+        color: #555;
       }
-      /* Grouped settings */
-      .grouped-section {
-        border-top: 1px solid #ddd;
-        padding-top: 10px;
+      label span {
+        font-weight: normal;
       }
+
       .feedback-label {
         display: block;
         text-align: center;
         margin: 10px auto 0;
       }
+
+      input[type="text"],
+      input[type="password"],
+      input[type="number"] {
+        width: 100%;
+        padding: 10px;
+        box-sizing: border-box;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+
+      input[type="number"] {
+        width: 150px;
+      }
+
+      .password-container {
+        position: relative;
+      }
+
+      .toggle-password {
+        position: absolute;
+        right: 10px;
+        top: 5px;
+        cursor: pointer;
+        color: #666;
+      }
+
+      /* Button Styles */
+
+      .button-container {
+        margin: 20px 0;
+        display: flex;
+        gap: 5px;
+      }
+
+      button {
+        padding: 10px 15px;
+        margin-right: 10px;
+        margin-top: 5px;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      button:hover {
+        background-color: #45a049;
+      }
+
+      button.secondary {
+        background-color: #2196f3;
+      }
+
+      button.secondary:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+
+      button.secondary:hover {
+        background-color: #0b7dda;
+      }
+
+      button.danger {
+        background-color: #f44336;
+      }
+
+      button.danger:hover {
+        background-color: #d32f2f;
+      }
+
+      button.apply-btn {
+        width: 100%;
+      }
+
+      button.apply-btn:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+
+      button.add-btn {
+        background-color: #2196f3;
+        margin-bottom: 5px;
+      }
+
+      /* Printer Form Styles */
+      .printer-form {
+        border: 1px solid #eee;
+        padding: 15px;
+        margin-bottom: 15px;
+        border-radius: 5px;
+        background-color: #f9f9f9;
+        position: relative;
+      }
+
+      .printer-form.default {
+        background-color: #e6f7ff;
+        border-color: #1890ff;
+      }
+
+      .ip-container {
+        display: flex;
+        gap: 5px;
+      }
+
+      .ip-segment {
+        flex: 1;
+      }
+
+      .error-message {
+        color: red;
+        font-size: 12px;
+        margin-top: 2px;
+        display: none;
+      }
+
+      button.remove-btn {
+        background-color: #f44336;
+        padding: 5px 10px;
+        margin: 0;
+        margin-top: -3px;
+      }
+
+      button.default-btn {
+        background-color: #2196f3;
+        margin-bottom: 5px;
+      }
+
+      button.default-btn.active {
+        background-color: #0b7dda;
+        border: 2px solid #064579;
+      }
+
+      #json-output {
+        width: 100%;
+        height: 150px;
+        margin-top: 10px;
+        border: 1px solid #ccc;
+        padding: 10px;
+        box-sizing: border-box;
+        border-radius: 4px;
+        background-color: #f9f9f9;
+        font-family: monospace;
+      }
     </style>
   </head>
   <body>
-    <div class="container">
-      <h1>Application Configuration</h1>
-      <!-- Encryption Key Section -->
-      <div class="section grouped-section" id="security-key-section">
-        <h2>Security Key</h2>
-        <div class="field">
+    <h1>SpoolEase Configuration</h1>
+    <h3>Most configurations require device restart</h3>
+
+    <!-- Security Key Section -->
+    <div class="section" id="security-section">
+      <h2 class="section-title">Security Key</h2>
+
+      <div id="verify-key-section">
+        <div class="form-row">
           <label for="security-key"
-            >Key
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text">The key to secure communication, get it from the device screen</span>
-            </span>
-          </label>
+            >Key: * <span>Fill and verify key before configuring</span></label
+          >
           <input
             type="text"
-            maxlength="20"
             id="security-key"
-            name="security-key"
-            placeholder="Enter Security Key"
+            placeholder="Enter security key"
           />
         </div>
+
         <button
-          class="apply-button"
-          id="security-key-apply"
+          id="verify-key-button"
+          type="button"
+          class="secondary apply-btn"
           onclick="applyKeyFetchConfigs()"
           disabled
         >
@@ -175,283 +234,159 @@
         </button>
         <label class="feedback-label" id="security-key-feedback"></label>
       </div>
-      <div class="section grouped-section" id="fixed-security-key-section">
-        <div class="field">
+      <div id="set-fixed-key-section">
+        <div class="form-row" style="margin-top: 20px">
           <label for="fixed-security-key"
-            >Set a Fixed Security Key (Optional)
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text">Set a fixed security key if required</span>
-            </span>
-            <br/>IMPORTANT: takes effect only after web-config restart
-          </label>
+            >Set a Fixed Security Key:<span
+              >Optional, applies after restart</span
+            ></label
+          >
           <input
             type="text"
-            maxlength="20"
             id="fixed-security-key"
-            name="fixed-security-key"
-            placeholder="Enter a Fixed Security Key"
+            placeholder="Enter fixed security key"
           />
         </div>
+
         <button
-          class="apply-button"
-          id="fixed-security-key-apply"
+          id="set-fixed-key-apply"
+          type="button"
+          class="apply-btn"
           onclick="applyFixedSecurityKeySettings()"
           disabled
         >
           Apply
         </button>
-        <label class="feedback-label" id="fixed-security-key-feedback"></label>
+      </div>
+    </div>
+
+    <!-- WiFi Credentials Section -->
+    <div class="section" id="wifi-section">
+      <h2 class="section-title">WiFi Credentials</h2>
+
+      <div class="form-row">
+        <label for="wifi-ssid">SSID: *</label>
+        <input
+          type="text"
+          id="wifi-ssid"
+          placeholder="Enter WiFi network name"
+        />
       </div>
 
-      <!-- WiFi Credentias Section -->
-      <div class="section grouped-section" id="wifi-section">
-        <h2>WiFi Credentials</h2>
-        <div class="field">
-          <label for="ssid"
-            >SSID
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text">The network name for WiFi</span>
-            </span>
-          </label>
-          <input
-            type="text"
-            maxlength="32"
-            id="ssid"
-            name="ssid"
-            placeholder="Enter WiFi SSID"
-          />
-        </div>
-        <div class="field">
-          <label for="password"
-            >Password
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text">Password for WiFi access</span>
-            </span>
-          </label>
+      <div class="form-row">
+        <label for="wifi-password">Password: *</label>
+        <div class="password-container">
           <input
             type="password"
-            maxlength="32"
-            id="password"
-            name="password"
-            placeholder="Enter WiFi Password"
+            id="wifi-password"
+            placeholder="Enter WiFi password"
           />
-          <span class="password-toggle" onclick="togglePassword()">Show</span>
+          <span
+            class="toggle-password"
+            onclick="togglePasswordVisibility('wifi-password', this)"
+            >👁️</span
+          >
         </div>
+      </div>
+
+      <button
+        id="wifi-section-apply"
+        type="button"
+        class="apply-btn"
+        onclick="applyWiFiSettings()"
+        disabled
+      >
+        Apply
+      </button>
+    </div>
+
+    <!-- Display Settings Section -->
+    <div class="section" id="display-section">
+      <h2 class="section-title">Display Settings</h2>
+
+      <div class="form-row">
+        <label for="dimming-timeout">Dimming Timeout (in seconds): *</label>
+        <input
+          type="number"
+          id="dimming-timeout"
+          min="0"
+          placeholder="Enter timeout"
+        />
+      </div>
+
+      <div class="form-row">
+        <label for="dimming-percent">Dimming Percent (0-100%): *</label>
+        <input
+          type="number"
+          id="dimming-percent"
+          min="0"
+          max="100"
+          placeholder="Enter percentage"
+        />
+      </div>
+
+      <div class="form-row">
+        <label for="blackout-timeout">Blackout Timeout (in seconds): *</label>
+        <input
+          type="number"
+          id="blackout-timeout"
+          min="0"
+          placeholder="Enter timeout"
+        />
+      </div>
+
+      <button
+        id="display-section-apply"
+        type="button"
+        class="apply-btn"
+        onclick="applyDisplaySettings()"
+        disabled
+      >
+        Apply
+      </button>
+    </div>
+
+    <!-- Printer Settings Section -->
+    <div class="section" id="printer-section">
+      <h2 class="section-title">Printer Settings</h2>
+
+      <div id="printers-container">
+        <!-- Printer forms will be added here dynamically -->
+      </div>
+
+      <div class="button-container">
         <button
-          class="apply-button"
-          id="wifi-apply"
-          onclick="applyWiFiSettings()"
-          disabled
+          id="printers-apply"
+          type="button"
+          class="apply-btn"
+          onclick="applyPrintersSettings()"
         >
           Apply
         </button>
+        <!-- <button type="button" class="add-btn" onclick="addPrinter()">Add&nbsp;Printer</button> -->
       </div>
 
-      <!-- Display Settings Section -->
-      <div class="section grouped-section" id="display-section">
-        <h2>Display Settings</h2>
-        <div class="field">
-          <label for="dimming-timeout"
-            >Dimming Timeout (in seconds)
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text">Duration before screen dims</span>
-            </span>
-          </label>
-          <input
-            type="number"
-            id="dimming-timeout"
-            name="dimming-timeout"
-            min="0"
-            placeholder="Enter dimming timeout"
-          />
-        </div>
-        <div class="field">
-          <label for="dimming-percent"
-            >Dimming Percent (0-100)
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text">Percentage to which screen dims</span>
-            </span>
-          </label>
-          <input
-            type="range"
-            id="dimming-percent"
-            name="dimming-percent"
-            min="0"
-            max="100"
-            value="15"
-            oninput="updateDimmingPercent(this.value)"
-            onchange="updateDimmingPercent(this.value)"
-          />
-          <span id="dimming-percent-display">15%</span>
-        </div>
-        <div class="field">
-          <label for="blackout-timeout"
-            >Blackout Timeout (in seconds)
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text"
-                >Duration before screen turns off</span
-              >
-            </span>
-          </label>
-          <input
-            type="number"
-            id="blackout-timeout"
-            name="blackout-timeout"
-            min="0"
-            placeholder="Enter blackout timeout"
-          />
-        </div>
-        <button
-          class="apply-button"
-          id="display-apply"
-          onclick="applyDisplaySettings()"
-          disabled
-        >
-          Apply
-        </button>
-      </div>
+      <textarea
+        style="display: none"
+        id="json-output"
+        placeholder="Printer configuration JSON..."
+        readonly
+      ></textarea>
+    </div>
 
-      <!-- Printer & Tag Scanning Settings Section -->
-      <div class="section grouped-section" id="printer-section">
-        <h2>Printer Settings</h2>
-        <div class="field">
-          <label for="printer-ip"
-            >Printer IP (Optional)
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text">IP address of the printer<br>if provided must provide also printer name</br></span>
-            </span>
-            <br/><span>IMPORTANT: if set must also set printer name</span>
-          </label>
-          <div class="ip-input">
-            <input
-              type="number"
-              min="0"
-              max="255"
-              id="printer-ip-a"
-              oninput="nextInput(this)"
-            />
-            <input
-              type="number"
-              min="0"
-              max="255"
-              id="printer-ip-b"
-              oninput="nextInput(this)"
-            />
-            <input
-              type="number"
-              min="0"
-              max="255"
-              id="printer-ip-c"
-              oninput=Partially tested, what was tested worked. Either way, will be released soon officially as well."nextInput(this)"
-            />
-            <input
-              type="number"
-              min="0"
-              max="255"
-              id="printer-ip-d"
-              oninput="nextInput(this)"
-            />
-          </div>
-        </div>
-        <div class="field">
-          <label for="printer-name"
-            >Printer Name
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text">Printer name (Optional)</span>
-            </span>
-            <br/><span>IMPORTANT: if set without printer ip will be overriden by discovered name</span>
-          </label>
-          <input
-            type="text"
-            id="printer-name"
-            name="printer-name"
-            placeholder="Enter printer name"
-          />
-        </div>
-        <div class="field">
-          <label for="printer-serial"
-            >Printer Serial Number
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text">Serial number of the printer.</span>
-            </span>
-          </label>
-          <input
-            type="text"
-            id="printer-serial"
-            name="printer-serial"
-            placeholder="Enter serial number"
-          />
-        </div>
-        <div class="field">
-          <label for="printer-access-code"
-            >Printer Access Code
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text">Access code for secure printing.</span>
-            </span>
-          </label>
-          <input
-            type="text"
-            id="printer-access-code"
-            name="printer-access-code"
-            placeholder="Enter access code"
-          />
-        </div>
-        <button
-          class="apply-button"
-          id="printer-apply"
-          onclick="applyPrinterSettings()"
-          disabled
-        >
-          Apply
-        </button>
-      </div>
+    <!-- General Section -->
+    <div class="section" id="general-section">
+      <h2 class="section-title">General</h2>
 
-      <div class="section grouped-section" id="tag-section">
-        <h2>Tag Settings</h2>
-        <div class="field">
-          <label for="tag-scan-timeout"
-            >Tag Scan Timeout (in seconds)
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text"
-                >Timeout duration for tag scanning.</span
-              >
-            </span>
-          </label>
-          <input
-            type="number"
-            id="tag-scan-timeout"
-            name="tag-scan-timeout"
-            min="0"
-            placeholder="Enter scan timeout"
-          />
-        </div>
-        <button
-          class="apply-button"
-          id="tag-apply"
-          onclick="applyTagSettings()"
-          disabled
-        >
-          Apply
-        </button>
-      </div>
-
-      <div class="section grouped-section" id="general-section">
-        <h2>General</h2>
-        <button class="apply-button" id="reset-device" onclick="resetDevice()">
-          Restart Device
-        </button>
-      </div>
+      <button
+        id="restart-device"
+        type="button"
+        class="danger apply-btn"
+        onclick="restartDevice()"
+        disabled
+      >
+        Restart Device
+      </button>
     </div>
 
     <script type="module">
@@ -464,55 +399,24 @@
         decrypt,
       } from "./pkg/device_wasm.js";
       // initialize wasm
+      console.log("-- waitning for wasm");
       await wasm();
+      console.log("-- done waitning for wasm");
       window.securityKeyOnDerive = "";
       window.encryptionKey = derive_key("", "example_salt");
       window.derive_key = derive_key;
       window.decrypt = decrypt;
       window.encrypt = encrypt;
-      document.body.style.display = "flex";
+      document.body.style.display = "block";
     </script>
     <script>
-      // Enable button on any input change
-      function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
-        const section = document.getElementById(sectionId);
-        const applyButton = document.getElementById(buttonId);
-        section.addEventListener("input", () => {
-          applyButton.disabled = false;
-          if (feedbackLabelId) {
-            const feedbackLabel = document.getElementById(feedbackLabelId);
-            feedbackLabel.textContent = "";
-          } 
-        });
-      }
-
-      function togglePassword() {
-        const passwordField = document.getElementById("password");
-        const toggleText = document.querySelector(".password-toggle");
-        if (passwordField.type === "password") {
-          passwordField.type = "text";
-          toggleText.textContent = "Hide";
-        } else {
-          passwordField.type = "password";
-          toggleText.textContent = "Show";
-        }
-      }
-
-      function updateDimmingPercent(value) {
-        document.getElementById("dimming-percent-display").textContent =
-          value + "%";
-      }
-      function nextInput(currentInput) {
-        if (
-          currentInput.value.length === 3 &&
-          currentInput.nextElementSibling
-        ) {
-          currentInput.nextElementSibling.focus();
-        }
-      }
-
-      async function sendData(url, data) {
+      async function sendData(inurl, data) {
+        // data is object, not json string
+        const url = `${urlPrefix}${inurl}`;
+        console.log(`in sendData with url: ${url}`);
         let encryptionKey = getEncryptionKey();
+        console.log(`in sendData with url: ${url}`);
+        console.log(encryptionKey);
         const response = await retryOperation(() =>
           fetch(url, {
             method: "POST",
@@ -524,13 +428,9 @@
       }
 
       // Utility function to collect form data and send to the server
-      async function sendConfigData(
-        url,
-        data,
-        applyButton,
-      ) {
+      async function sendConfigData(url, data, applyButton) {
         try {
-          let response = await sendData(url, data);
+          let response = await sendData(`${urlPrefix}${url}`, data);
           if (!response.ok) throw new Error(`Error: ${response.statusText}`);
           const encryptedText = await response.text();
           const decryptedText = decrypt(encryptionKey, encryptedText);
@@ -546,34 +446,117 @@
       }
 
       function getEncryptionKey() {
-        const securityKey = document.getElementById("security-key").value.trim();
+        console.log("in getEncryptionKey");
+        const securityKey = document
+          .getElementById("security-key")
+          .value.trim();
+        console.log(securityKey);
         if (securityKey != window.securityKeyOnDerive) {
+          console.log("different security-key");
           window.encryptionKey = derive_key(securityKey, "example_salt");
+          console.log(`derived key: ${window.encryptionKey}`);
           window.securityKeyOnDerive = securityKey;
         }
         return window.encryptionKey;
       }
       // Function to test key
       async function applyKeyFetchConfigs() {
+        console.log("in applyKeyFetchConfigs");
         const data = { test: "Hello" };
         try {
           let response = await sendData("/api/test-key", data); // Replace with actual server endpoint
-          if (response.status == 403) {
-            document.getElementById('security-key-feedback').textContent = 'Security Key is incorrect';
+          console.log(`REspnse status ${response.status}`);
+          if (response.status == 400) {
+            document.getElementById("security-key-feedback").textContent =
+              "Security Key is incorrect";
+            document.getElementById("restart-device").disabled = true;
           } else if (response.ok) {
-            document.getElementById('security-key-feedback').textContent = 'Security Key validated';
-            document.getElementById("security-key-apply").diabled = true;
-            await fetchSectionConfigs();
+            document.getElementById("security-key-feedback").textContent =
+              "Security Key validated";
+            document.getElementById("verify-key-button").disabled = true;
+            document.getElementById("restart-device").disabled = false;
           }
-
         } catch (error) {
           console.error("Failed to apply settings:", error);
-          document.getElementById('security-key-feedback').textContent = `Failed to check key, try again (${error.message})`;
+          document.getElementById("security-key-feedback").textContent =
+            `Failed to check key, try again (${error.message})`;
+          return;
+        }
+        try {
+          await fetchSectionConfigs();
+        } catch (error) {
+          document.getElementById("security-key-feedback").textContent +=
+            " but Failed to Load Configs";
+        }
+      }
+
+      async function retryOperation(operation, retries = 5) {
+        for (let i = 0; i < retries; i++) {
+          try {
+            return await operation();
+          } catch (error) {
+            if (i === retries - 1) throw error; // Throw error if it's the last retry
+          }
+        }
+      }
+
+      async function fetchSectionConfigs() {
+        await retryOperation(() => fetchWifiInitialConfig());
+        await retryOperation(() => fetchDisplayInitialConfig());
+        await retryOperation(() => fetchPrinterInitialConfig());
+      }
+
+      async function fetchInitialSectionConfig(section) {
+        try {
+          const response = await fetch(`${urlPrefix}/api/${section}-config`); // Replace with actual endpoint
+          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+          const encryptedText = await response.text();
+          const decryptedText = decrypt(encryptionKey, encryptedText);
+          const data = JSON.parse(decryptedText);
+
+          // Populate WiFi credentials
+          return data;
+        } catch (error) {
+          console.error(`Failed to fetch ${section} configuration:`, error);
+          return null;
+        }
+      }
+
+      async function fetchWifiInitialConfig() {
+        const data = await fetchInitialSectionConfig("wifi");
+
+        if (data) {
+          document.getElementById("wifi-ssid").value = data.ssid;
+          document.getElementById("wifi-password").value = data.password;
+        }
+      }
+
+      async function fetchDisplayInitialConfig() {
+        const data = await fetchInitialSectionConfig("display");
+
+        if (data) {
+          document.getElementById("dimming-timeout").value =
+            data.dimming_timeout;
+          document.getElementById("dimming-percent").value =
+            data.dimming_percent;
+          document.getElementById("blackout-timeout").value =
+            data.blackout_timeout;
+          // document.getElementById("dimming-percent-display").textContent =
+          //   `${data.dimming_percent}%`;
+        }
+      }
+
+      async function fetchPrinterInitialConfig() {
+        const data = await fetchInitialSectionConfig("printer");
+
+        if (data) {
+          console.log(JSON.stringify(data));
+          loadPrinterSettings(data);
         }
       }
 
       // Function to reset the device
-      function resetDevice() {
+      function restartDevice() {
         const data = {};
         sendData("/api/reset-device", data);
         alert(
@@ -583,17 +566,17 @@
 
       // Function to collect WiFi settings and send them as JSON
       function applyWiFiSettings() {
-        const ssid = document.getElementById("ssid").value;
-        const password = document.getElementById("password").value;
+        const ssid = document.getElementById("wifi-ssid").value;
+        const password = document.getElementById("wifi-password").value;
         const data = { ssid, password };
-        const applyButton = document.getElementById("wifi-apply");
+        const applyButton = document.getElementById("wifi-section-apply");
         sendConfigData("/api/wifi-config", data, applyButton); // Replace with actual server endpoint
       }
 
       function applyFixedSecurityKeySettings() {
         const key = document.getElementById("fixed-security-key").value;
         const data = { key };
-        const applyButton = document.getElementById("fixed-security-key-apply");
+        const applyButton = document.getElementById("set-fixed-key-apply");
         sendConfigData("/api/fixed-key-config", data, applyButton); // Replace with actual server endpoint
       }
 
@@ -614,149 +597,425 @@
       }
 
       // Function to collect Printer settings and send them as JSON
-      function applyPrinterSettings() {
-        // Collect Printer IP as an array of octets
-        const ip = [
-          document.getElementById("printer-ip-a").value,
-          document.getElementById("printer-ip-b").value,
-          document.getElementById("printer-ip-c").value,
-          document.getElementById("printer-ip-d").value,
-        ].join(".");
-        const name = document.getElementById("printer-name").value;
-        if (ip !== "..." & name == "") {
-          alert("If printer IP is set, must set also printer name");
-          return;
-        }
-
-        // Collect other Printer settings
-        // const name = document.getElementById("printer-name").value;
-        const serial = document.getElementById("printer-serial").value;
-        const access_code = document.getElementById(
-          "printer-access-code",
-        ).value;
-
-        const data = {
-          ip,
-          name,
-          serial,
-          access_code,
-        };
-        const applyButton = document.getElementById("printer-apply");
+      function applyPrintersSettings() {
+        const data = generatePrinterData();
+        if (!data) return;
+        // Display the JSON in the textarea
+        document.getElementById("json-output").value = JSON.stringify(
+          data,
+          null,
+          2,
+        );
+        const applyButton = document.getElementById("printers-apply");
         sendConfigData("/api/printer-config", data, applyButton); // Replace with actual server endpoint
       }
+    </script>
 
-      // Function to collect Tag settings and send them as JSON
-      function applyTagSettings() {
-        // Tag scanning timeout setting
-        const tag_scan_timeout = parseInt(
-          document.getElementById("tag-scan-timeout").value,
+    <script>
+      // ==========================================
+      // Initialization
+      // ==========================================
+      document.addEventListener("DOMContentLoaded", function () {
+        // Initialize the form with data from server
+
+        // Add the first printer (cannot be removed)
+        const firstPrinter = createPrinterTemplate(1, true);
+        document.getElementById("printers-container").appendChild(firstPrinter);
+        setupChangeListeners("wifi-section", "wifi-section-apply");
+        setupChangeListeners(
+          "verify-key-section",
+          "verify-key-button",
+          "security-key-feedback",
+        );
+        setupChangeListeners("set-fixed-key-section", "set-fixed-key-apply");
+        setupChangeListeners("display-section", "display-section-apply");
+        // Setup IP fields
+        setupIPFields(document.querySelectorAll(".ip-part"));
+      });
+
+      function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
+        const section = document.getElementById(sectionId);
+        const applyButton = document.getElementById(buttonId);
+        section.addEventListener("input", () => {
+          applyButton.disabled = false;
+          if (feedbackLabelId) {
+            const feedbackLabel = document.getElementById(feedbackLabelId);
+            feedbackLabel.textContent = "";
+          }
+        });
+      }
+
+      function togglePasswordVisibility(inputId, toggleButton) {
+        const passwordInput = document.getElementById(inputId);
+
+        if (passwordInput.type === "password") {
+          passwordInput.type = "text";
+          toggleButton.textContent = "🔒";
+        } else {
+          passwordInput.type = "password";
+          toggleButton.textContent = "👁️";
+        }
+      }
+
+      // ==========================================
+      // Printer Settings Functions
+      // ==========================================
+      // Template for the printer form
+      function createPrinterTemplate(id, isRemovable = true) {
+        const template = document.createElement("div");
+        template.className = "printer-form";
+        template.dataset.id = id;
+
+        template.innerHTML = `
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <h3>Printer <span class="printer-number">${id}</span></h3>
+                  ${isRemovable ? '<button class ="remove-btn" type="button" onclick="removePrinter(' + id + ')">Remove</button>' : ""}
+                  <button class="add-btn" style="margin-left:auto" type="button" onclick="addPrinterAbove(this)">Add Printer Above</button>
+                </div>
+                
+                <div class="form-row">
+                    <label>Serial Number: *</label>
+                    <input type="text" class="serial" placeholder="Enter serial number">
+                    <div class="error-message serial-error">Serial number is required</div>
+                </div>
+                
+                <div class="form-row">
+                    <label>Access Code: *</label>
+                    <input type="text" class="access-code" placeholder="Enter access code">
+                    <div class="error-message access-code-error">Access code is required</div>
+                </div>
+                
+                <div class="form-row">
+                    <label>Name:<span>Also used as multiprinter select</span></label>
+                    <input type="text" class="name" placeholder="Enter printer name">
+                    <div class="error-message name-error">Name is required when IP is provided</div>
+                </div>
+                
+                <div class="form-row">
+                    <label>IP Address:<span>If set, requires also name</span></label>
+                    <div class="ip-container">
+                        <div class="ip-segment">
+                            <input type="text" class="ip-part" maxlength="3" placeholder="000">
+                        </div>
+                        <div class="ip-segment">
+                            <input type="text" class="ip-part" maxlength="3" placeholder="000">
+                        </div>
+                        <div class="ip-segment">
+                            <input type="text" class="ip-part" maxlength="3" placeholder="000">
+                        </div>
+                        <div class="ip-segment">
+                            <input type="text" class="ip-part" maxlength="3" placeholder="000">
+                        </div>
+                    </div>
+                    <div class="error-message ip-error">IP requires name to be provided</div>
+                </div>
+                
+                <div style="display: flex">
+                  <button class="default-btn" type="button" onclick="setAsDefault(${id})">Set as Default</button>
+                  <button class="add-btn" style="margin-left:auto" type="button" onclick="addPrinterBelow(this)">Add Printer Below</button>
+                </div>
+            `;
+
+        return template;
+      }
+
+      let defaultPrinter = null;
+      function loadPrinterSettings(printersConfig) {
+        // Clear existing printers
+        const printersContainer = document.getElementById("printers-container");
+        printersContainer.innerHTML = "";
+
+        // Reset default
+        defaultPrinter = null;
+
+        // Add printers from the data
+        printersConfig.printers.forEach((printer, index) => {
+          const isFirst = index === 0;
+          const newPrinterForm = createPrinterTemplate(index + 1, !isFirst);
+          printersContainer.appendChild(newPrinterForm);
+
+          // Fill in the printer data
+          newPrinterForm.querySelector(".serial").value = printer.serial || "";
+          newPrinterForm.querySelector(".access-code").value =
+            printer.access_code || "";
+          newPrinterForm.querySelector(".name").value = printer.name || "";
+
+          // Set IP if available
+          if (printer.ip) {
+            const ipParts = printer.ip.split(".");
+            const ipInputs = newPrinterForm.querySelectorAll(".ip-part");
+
+            for (
+              let i = 0;
+              i < Math.min(ipParts.length, ipInputs.length);
+              i++
+            ) {
+              ipInputs[i].value = ipParts[i];
+            }
+          }
+        });
+
+        // Setup IP fields for all printers
+        setupIPFields(document.querySelectorAll(".ip-part"));
+
+        // Set the default printer if specified
+        if (printersConfig.default_printer_serial) {
+          const defaultSerial = printersConfig.default_printer_serial;
+          document.querySelectorAll(".printer-form").forEach((form) => {
+            const serial = form.querySelector(".serial").value;
+            if (serial === defaultSerial) {
+              const id = form.dataset.id;
+              setAsDefault(id);
+            }
+          });
+        }
+
+        console.log("Loaded printer settings:", printersConfig);
+      }
+
+      // Function to restrict IP fields to numbers only
+      function setupIPFields(ipFields) {
+        ipFields.forEach((field) => {
+          field.addEventListener("keypress", function (e) {
+            // Only allow numbers
+            if (!/[0-9]/.test(e.key)) {
+              e.preventDefault();
+            }
+
+            // Auto-move to next input after 3 digits
+            if (this.value.length >= 3 && e.key !== "Tab") {
+              const nextInput =
+                this.parentElement.nextElementSibling?.querySelector("input");
+              if (nextInput) {
+                nextInput.focus();
+              }
+            }
+          });
+
+          field.addEventListener("input", function () {
+            // Ensure value is between 0-255
+            let val = parseInt(this.value, 10);
+            if (isNaN(val)) {
+              this.value = "";
+            } else if (val > 255) {
+              this.value = "255";
+            }
+          });
+        });
+      }
+
+      function newPrinterForm() {
+        const printersContainer = document.getElementById("printers-container");
+        const currentCount = printersContainer.children.length;
+        const newId = currentCount + 1;
+        const newPrinterForm = createPrinterTemplate(newId, true);
+        // Setup IP fields for the new printer
+        setupIPFields(newPrinterForm.querySelectorAll(".ip-part"));
+        return newPrinterForm;
+      }
+      function addPrinterAbove(me) {
+        const parent = me.parentElement.parentElement;
+        parent.insertAdjacentElement("beforebegin", newPrinterForm());
+        updatePrinterNumbers();
+      }
+
+      function addPrinterBelow(me) {
+        const parent = me.parentElement.parentElement;
+        parent.insertAdjacentElement("afterend", newPrinterForm());
+        updatePrinterNumbers();
+      }
+
+      function removePrinter(id) {
+        const printerForm = document.querySelector(
+          `.printer-form[data-id="${id}"]`,
         );
 
-        const data = {
-          tag_scan_timeout,
-        };
-        const applyButton = document.getElementById("printer-apply");
-        sendConfigData("/api/tag-config", data, applyButton); // Replace with actual server endpoint
+        // If this is the default printer, clear the default
+        if (printerForm.classList.contains("default")) {
+          defaultPrinter = null;
+        }
+
+        printerForm.remove();
+
+        // Update all printer numbers and IDs
+        updatePrinterNumbers();
       }
 
-      // Fetch initial configuration data and populate fields
-      async function fetchInitialSectionConfig(section) {
-        try {
-          const response = await fetch(`/api/${section}-config`); // Replace with actual endpoint
-          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
-          const encryptedText = await response.text();
-          const decryptedText = decrypt(encryptionKey, encryptedText);
-          const data = JSON.parse(decryptedText);
+      function updatePrinterNumbers() {
+        const printerForms = document.querySelectorAll(".printer-form");
+        const showRemoveButton = printerForms.length > 1;
 
-          // Populate WiFi credentials
-          return data;
-        } catch (error) {
-          console.error(`Failed to fetch ${section} configuration:`, error);
+        printerForms.forEach((form, index) => {
+          const newId = index + 1;
+
+          // Update the ID attribute
+          form.dataset.id = newId;
+
+          // Update the printer number text
+          form.querySelector(".printer-number").textContent = newId;
+
+          // Update the onClick handlers
+          const defaultBtn = form.querySelector(".default-btn");
+          defaultBtn.setAttribute("onclick", `setAsDefault(${newId})`);
+
+          const removeBtn = form.querySelector(".remove-btn");
+          if (removeBtn) {
+            if (showRemoveButton) {
+              removeBtn.style = "display: block;";
+            } else {
+              removeBtn.style = "display: none;";
+            }
+            removeBtn.setAttribute("onclick", `removePrinter(${newId})`);
+          }
+
+          // If this was the default printer, update the defaultPrinter variable
+          if (form.classList.contains("default")) {
+            defaultPrinter = newId;
+          }
+        });
+      }
+
+      function setAsDefault(id) {
+        // Remove default class from all printer forms
+        document.querySelectorAll(".printer-form").forEach((form) => {
+          form.classList.remove("default");
+          const defaultBtn = form.querySelector(".default-btn");
+          defaultBtn.classList.remove("active");
+          defaultBtn.textContent = "Set as Default";
+        });
+
+        // Set this printer as default
+        const printerForm = document.querySelector(
+          `.printer-form[data-id="${id}"]`,
+        );
+        printerForm.classList.add("default");
+        const defaultBtn = printerForm.querySelector(".default-btn");
+        defaultBtn.classList.add("active");
+        defaultBtn.textContent = "Default Printer";
+
+        defaultPrinter = id;
+      }
+
+      function validatePrinterForms() {
+        let isValid = true;
+
+        // Hide all error messages first
+        document.querySelectorAll(".error-message").forEach((msg) => {
+          msg.style.display = "none";
+        });
+
+        // Validate each printer form
+        document.querySelectorAll(".printer-form").forEach((form) => {
+          const serialInput = form.querySelector(".serial");
+          const accessCodeInput = form.querySelector(".access-code");
+          const nameInput = form.querySelector(".name");
+          const ipParts = Array.from(form.querySelectorAll(".ip-part"));
+
+          // Check required fields
+          if (!serialInput.value.trim()) {
+            form.querySelector(".serial-error").style.display = "block";
+            isValid = false;
+          }
+
+          if (!accessCodeInput.value.trim()) {
+            form.querySelector(".access-code-error").style.display = "block";
+            isValid = false;
+          }
+
+          // Check if any IP part is filled
+          const hasIPValue = ipParts.some((part) => part.value.trim() !== "");
+
+          // Check if all IP parts are filled or all are empty
+          const ipFilled = ipParts.every((part) => part.value.trim() !== "");
+          const ipEmpty = ipParts.every((part) => part.value.trim() === "");
+
+          if (hasIPValue && !ipFilled) {
+            form.querySelector(".ip-error").textContent =
+              "All IP fields must be filled";
+            form.querySelector(".ip-error").style.display = "block";
+            isValid = false;
+          }
+
+          // If IP is provided, name is required
+          if (hasIPValue && !nameInput.value.trim()) {
+            form.querySelector(".name-error").style.display = "block";
+            isValid = false;
+          }
+        });
+
+        return isValid;
+      }
+
+      function generatePrinterData() {
+        if (!validatePrinterForms()) {
+          alert(
+            "Please fix the printer validation errors before applying settings.",
+          );
           return null;
         }
-      }
 
-      async function fetchWifiInitialConfig() {
-        const data = await fetchInitialSectionConfig("wifi");
+        const printers = [];
+        let defaultPrinterSerial = null;
 
-        if (data) {
-          document.getElementById("ssid").value = data.ssid;
-          document.getElementById("password").value = data.password;
-        }
-      }
+        document.querySelectorAll(".printer-form").forEach((form) => {
+          const serial = form.querySelector(".serial").value.trim();
+          const accessCode = form.querySelector(".access-code").value.trim();
+          const name = form.querySelector(".name").value.trim();
 
-      async function fetchDisplayInitialConfig() {
-        const data = await fetchInitialSectionConfig("display");
+          const ipParts = Array.from(form.querySelectorAll(".ip-part"));
+          const ipValid = ipParts.every((part) => part.value.trim() !== "");
 
-        if (data) {
-          document.getElementById("dimming-timeout").value =
-            data.dimming_timeout;
-          document.getElementById("dimming-percent").value =
-            data.dimming_percent;
-          document.getElementById("blackout-timeout").value =
-            data.blackout_timeout;
-          document.getElementById("dimming-percent-display").textContent =
-            `${data.dimming_percent}%`;
-        }
-      }
-
-      async function fetchPrinterInitialConfig() {
-        const data = await fetchInitialSectionConfig("printer");
-
-        if (data) {
-          const printerIP = data.ip ? data.ip.split(".") : "...".split(".");
-          // document.getElementById("printer-name").value = data.name;
-          document.getElementById("printer-ip-a").value = printerIP[0];
-          document.getElementById("printer-ip-b").value = printerIP[1];
-          document.getElementById("printer-ip-c").value = printerIP[2];
-          document.getElementById("printer-ip-d").value = printerIP[3];
-          document.getElementById("printer-name").value = data.name;
-          document.getElementById("printer-serial").value = data.serial;
-          document.getElementById("printer-access-code").value =
-            data.access_code;
-        }
-      }
-
-      async function fetchTagInitialConfig() {
-        const data = await fetchInitialSectionConfig("tag");
-
-        if (data) {
-          // Populate Tag scanning settings
-          document.getElementById("tag-scan-timeout").value =
-            data.tag_scan_timeout;
-        }
-      }
-
-      async function retryOperation(operation, retries = 5) {
-        for (let i = 0; i < retries; i++) {
-          try {
-            return await operation();
-          } catch (error) {
-            if (i === retries - 1) throw error; // Throw error if it's the last retry
+          let ip = null;
+          if (ipValid) {
+            ip = ipParts.map((part) => part.value.trim()).join(".");
           }
+
+          const printer = {
+            serial: serial,
+            access_code: accessCode,
+          };
+
+          if (name) {
+            printer.name = name;
+          }
+
+          if (ip) {
+            printer.ip = ip;
+          }
+
+          printers.push(printer);
+
+          // Check if this is the default printer
+          if (form.classList.contains("default")) {
+            defaultPrinterSerial = serial;
+          }
+        });
+
+        // Create the final JSON object
+        const jsonData = { printers: printers };
+
+        // Add default_printer_serial if set
+        if (defaultPrinterSerial) {
+          jsonData.default_printer_serial = defaultPrinterSerial;
         }
+
+        return jsonData; // not really json, it's an object here
       }
 
-      async function fetchSectionConfigs() {
-        await retryOperation(() => fetchWifiInitialConfig());
-        await retryOperation(() => fetchDisplayInitialConfig());
-        await retryOperation(() => fetchPrinterInitialConfig());
-        await retryOperation(() => fetchTagInitialConfig());
-      }
+    </script>
 
-      // Initialize listeners for each section
-      window.addEventListener("DOMContentLoaded", async () => {
-        // await fetchFormConfigFromServer()
-        // await retryOperation(() => fetchWifiInitialConfig());
-        // await retryOperation(() => fetchDisplayInitialConfig());
-        // await retryOperation(() => fetchPrinterInitialConfig());
-        // await retryOperation(() => fetchTagInitialConfig());
-        setupChangeListeners("wifi-section", "wifi-apply");
-        setupChangeListeners("display-section", "display-apply");
-        setupChangeListeners("printer-section", "printer-apply");
-        setupChangeListeners("tag-section", "tag-apply");
-        setupChangeListeners("security-key-section", "security-key-apply", "security-key-feedback");
-        setupChangeListeners("fixed-security-key-section", "fixed-security-key-apply", "fixed-security-key-feedback");
+    <!-- for debugging -->
+    <script>
+      var urlPrefix = "";
+      // for local debugging case
+      window.addEventListener("DOMContentLoaded", () => {
+        const installButton = document.getElementById("install-button");
+        if (
+          window.location.hostname === "localhost" ||
+          window.location.hostname === "127.0.0.1"
+        ) {
+          urlPrefix = "http://192.168.10.52";
+        }
       });
     </script>
   </body>

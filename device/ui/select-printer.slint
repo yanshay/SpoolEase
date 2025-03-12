@@ -1,0 +1,39 @@
+import { MyButton } from "./framework/widgets.slint";
+import { AppBackend, AppState } from "app.slint";
+
+export component SelectPrinterTitle inherits Rectangle {
+    in-out property <string> text;
+    height: 40px;
+    background: green.brighter(1.0);
+    border-color: black;
+    border-width: 1px;
+    Text {
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        height: 40px;
+        text: text;
+        font-size: 20px;
+    }
+}
+
+export component SelectPrinterButton inherits MyButton {
+    in-out property <string> printer;
+    height: 56px;
+    horizontal-alignment: left;
+}
+
+export component SelectPrinter inherits VerticalLayout {
+  callback selected;
+  SelectPrinterTitle {
+      text: "Select Printer";
+  }
+  for printer in AppState.available_printers: SelectPrinterButton {
+      printer: printer;
+      height: 60px;
+      text: (AppState.curr_printer == printer ? "  ✓ ": "      ") + printer + (AppState.default_printer == printer ? " (Default)" : "");
+      clicked  => {
+        AppBackend.select-printer(printer); 
+        selected();
+      }
+  }
+}

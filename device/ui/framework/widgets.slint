@@ -1,6 +1,7 @@
 export component MyButton {
     in property <string> text;
     in property <bool> enabled: true;
+    in property <TextHorizontalAlignment> horizontal-alignment: center;
     callback clicked;
     Rectangle {
         background: enabled ? @linear-gradient(20deg, #3559E0 0%, #c2cdf6 100%) : @linear-gradient(20deg, #5C5C5C 0%, #CFCFCF 100%);
@@ -8,7 +9,7 @@ export component MyButton {
         height: root.height;
         Text {
             width: parent.width;
-            horizontal-alignment: center;
+            horizontal-alignment: root.horizontal-alignment;
             text: root.text;
             font-size: 20px;
             font-weight: 400 + (enabled && area.pressed ? 500 : 0);
