@@ -308,9 +308,10 @@ impl BambuPrinterObserver for ViewModel {
             } else {
                 ui_tray.filament.state = crate::app::UiFilamentState::Unknown;
             }
-            let k_value_unformatted = curr_tray.k.as_ref().unwrap_or(&"(0.020)".to_string()).clone();
-            let k_value_for_ui = k_value_for_ui(&k_value_unformatted);
-            ui_tray.k = SharedString::from(k_value_for_ui);
+            // let k_value_unformatted = curr_tray.k.as_ref().unwrap_or(&"(0.020)".to_string()).clone();
+            let k_value_unformatted = bambu_printer.get_tray_resolved_k_value(&curr_tray);
+            // let k_value_for_ui = k_value_for_ui(&k_value_unformatted);
+            ui_tray.k = SharedString::from(k_value_unformatted);
             trays_state.set_row_data(tray_row, ui_tray);
         }
 
