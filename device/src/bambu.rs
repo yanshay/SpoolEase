@@ -65,7 +65,7 @@ impl BambuPrinter {
         let unknown = Tray {
             state: TrayState::Unknown,
             filament: Filament::Unknown,
-            k: None,
+            k_from_tray: None,
             cali_idx: None,
         };
 
@@ -108,7 +108,7 @@ impl BambuPrinter {
         self.reset_printer();
     }
     pub fn reset_printer(&mut self) {
-       let empty = Self::new(self.write_packets, self.app_config.clone(), self.restart_printer);
+        let empty = Self::new(self.write_packets, self.app_config.clone(), self.restart_printer);
         *self = Self {
             observers: self.observers.clone(),
             ..empty
@@ -147,20 +147,20 @@ impl BambuPrinter {
         Some(calibration.k_value.clone())
     }
 
-    fn get_tray_cali_k_value(&self, tray: &Tray) -> Option<String> {
-        let cali_idx = match tray.cali_idx {
-            Some(cali_idx) => cali_idx,
-            None => {
-                return tray.k.clone();
-            }
-        };
-        let nozzle_diameter = match &self.nozzle_diameter {
-            Some(nozzle_diameter) => nozzle_diameter,
-            None => {
-                return tray.k.clone();
-            }
-        };
-        self.get_cali_k_value(nozzle_diameter, cali_idx).or_else(|| tray.k.clone())
+    pub fn get_tray_resolved_k_value(&self, tray: &Tray) -> String {
+        let mut k_result = "(0.020)".to_string();
+        if let Some(k_from_tray) = &tray.k_from_tray {
+                k_result = format!("({k_from_tray:.3})");
+        }
+        if let Some(cali_idx) = tray.cali_idx {
+            if let Some(nozzle_diameter) = &self.nozzle_diameter {
+                if let Some(k_value) = self.get_cali_k_value(nozzle_diameter, cali_idx) {
+                    let k_float = f32::from_str(&k_value).unwrap_or_default();
+                    k_result = format!("{:.3}", k_float);
+                }
+            };
+        }
+        k_result
     }
 
     fn tray_from_update(&self, tray_update: &PrintTray) -> Result<Option<Tray>, String> {
@@ -199,18 +199,17 @@ impl BambuPrinter {
                 Filament::Known(FilamentInfo::from(tray_update))
             };
 
-            // TODO: This snippet is in two places, fix that
             new_tray.cali_idx = tray_update.cali_idx;
-            // start by assigning the tray 'k', then override with calibration if exist
-            new_tray.k = tray_update.k.map(|k| format!("({k:.3})"));
-            new_tray.k = self.get_tray_cali_k_value(&new_tray);
+            new_tray.k_from_tray = tray_update.k;
 
             // add the cali_idx and its name into the filament for the specific nozzle
             if let (Some(nozzle_diameter), Some(cali_idx)) = (self.nozzle_diameter.as_ref(), tray_update.cali_idx.as_ref()) {
                 if let Some(calibrations) = self.calibrations.get(nozzle_diameter) {
                     if let Some(calibration) = calibrations.get(cali_idx) {
                         if let Filament::Known(ref mut filament_info) = new_tray.filament {
-                            filament_info.calibrations.insert(nozzle_diameter.clone(), calibration.clone());
+                            filament_info
+                                .calibrations
+                                .insert(nozzle_diameter.clone(), calibration.clone().with_valid_to_encode(true));
                         }
                     }
                 }
@@ -301,168 +300,6 @@ impl BambuPrinter {
                 // No new information, don't change anything
                 None
             }
-        }
-    }
-
-    pub fn _old_get_updated_tray(&self, old_tray: &Tray, tray_update: Option<&PrintTray>, tray_id: Option<usize>) -> Option<Tray> {
-        let mut new_tray = if let Some(tray_exist_bits) = self.tray_exist_bits {
-            let tray_exist = match tray_id {
-                Some(tray_id) => ((tray_exist_bits >> tray_id) & 0x01) != 0,
-                None => {
-                    // external tray
-                    if let Some(v_tray) = tray_update {
-                        !v_tray.tray_type.as_ref().is_none_or(|v| v.is_empty())
-                    } else {
-                        false
-                    }
-                }
-            };
-            let tray_reading = if let Some(tray_reading_bits) = self.tray_reading_bits {
-                match tray_id {
-                    Some(tray_id) => ((tray_reading_bits >> tray_id) & 0x01) != 0,
-                    None => false,
-                }
-            } else {
-                false
-            };
-
-            let tray_read_done = if let Some(tray_read_done_bits) = self.tray_read_done_bits {
-                match tray_id {
-                    Some(tray_id) => ((tray_read_done_bits >> tray_id) & 0x01) != 0,
-                    None => false,
-                }
-            } else {
-                tray_exist
-            };
-
-            if tray_exist {
-                if let Some(tray_update) = tray_update {
-                    if let (Some(tray_type_update), Some(_tray_info_idx_update), Some(_tray_color_update)) =
-                        (&tray_update.tray_type, &tray_update.tray_info_idx, &tray_update.tray_color)
-                    {
-                        // Remember: tray_type is the material(PLA, PETG, etc), tray_info_idx is the filament_id (some code)
-                        // when there is data in the tray data then
-                        let new_tray: Option<Tray> = {
-                            let mut new_tray = Tray::default(); // Everything is unknown at start
-                                                                // when adding filament to a tray when the printer doesn't know what is inside, tray_info_idx and tray_type
-                                                                // will arrive as empty, so this is a fine condition. In the past I thought it couldn't be.
-                                                                // I'm still unclear when filament settings are cleared form tray.
-
-                            // Sometimes the tray arrives with tray_type, tray_info_idx, color filled with 00000000 (also last two are 00),  which may be an error, not sure
-                            // if strange issues seem to appear, check that out and maybe deal with that case
-                            if tray_type_update.ends_with("00") {
-                                error!("??????????????????????? tray_type with 00 suffix");
-                                debug!("{:?}", tray_update);
-                                return None;
-                            }
-                            if _tray_color_update.ends_with("00") {
-                                error!("??????????????????????? tray_color with 00 suffix");
-                                debug!("{:?}", tray_update);
-                                return None;
-                            }
-                            if _tray_info_idx_update.ends_with("00") {
-                                error!("??????????????????????? tray_info_idx with 00 suffix");
-                                debug!("{:?}", tray_update);
-                                return None;
-                            }
-
-                            // For AMS - begin with Spool, for External - Ready since don't really know anything about it
-                            new_tray.state = if tray_id.is_some() { TrayState::Spool } else { TrayState::Ready };
-                            if tray_reading {
-                                new_tray.state = TrayState::Reading;
-                            }
-                            if tray_read_done {
-                                new_tray.state = TrayState::Ready;
-                            }
-
-                            new_tray.filament = if tray_type_update.is_empty() {
-                                Filament::Unknown
-                            } else {
-                                Filament::Known(FilamentInfo::from(tray_update))
-                            };
-                            // TODO: This snippet is in two places, fix that
-                            new_tray.cali_idx = tray_update.cali_idx;
-                            // start by assigning the tray 'k', then override with calibration if exist
-                            new_tray.k = tray_update.k.map(|k| format!("({k:.3})"));
-                            new_tray.k = self.get_tray_cali_k_value(&new_tray);
-
-                            // add the cali_idx and its name into the filament for the specific nozzle
-                            if let (Some(nozzle_diameter), Some(cali_idx)) = (self.nozzle_diameter.as_ref(), tray_update.cali_idx.as_ref()) {
-                                if let Some(calibrations) = self.calibrations.get(nozzle_diameter) {
-                                    if let Some(calibration) = calibrations.get(cali_idx) {
-                                        if let Filament::Known(ref mut filament_info) = new_tray.filament {
-                                            filament_info.calibrations.insert(nozzle_diameter.clone(), calibration.clone());
-                                        }
-                                    }
-                                }
-                            }
-
-                            Some(new_tray)
-                        };
-                        new_tray
-                    } else if tray_id.is_none() {
-                        // if case of External Tray
-                        // No data in external tray means it is empty?
-                        // No is only in case of explicit reset fom Studio, so no need to 'remember' previous filament like in ams trays
-                        Some(Tray {
-                            state: TrayState::Empty,
-                            filament: Filament::Unknown,
-                            cali_idx: None,
-                            k: None,
-                        })
-                    } else {
-                        // No data in ams tray and tray exist, don't change a thing for this tray
-                        None
-                    }
-                } else {
-                    None // if no source_tray (in data) then don't change anything for this tray by returning None
-                }
-            } else {
-                // In case the tray is empty (so no ready bits), we still want to keep the filamen-info of the tray, but set it as empty
-                // special case handling (different than Bambustudio).
-                // we remember historical color (which the printer also remembers, just doesn't report)
-                let mut new_tray = old_tray.clone();
-                new_tray.state = TrayState::Empty;
-                Some(new_tray)
-            }
-        } else {
-            Some(Tray::unknown()) //  if exist_bits not available yet, then tray should be unknown
-        };
-
-        //
-        // Handle tray_reading_bits
-        //
-        // TODO: duplication of above, organize this entire function better
-        // Separate external and internal path
-        // Remove duplications of work (reading)
-        if tray_id.is_some() {
-            // ams tray
-            let tray_reading = if let Some(tray_reading_bits) = self.tray_reading_bits {
-                match tray_id {
-                    Some(tray_id) => ((tray_reading_bits >> tray_id) & 0x01) != 0,
-                    None => false,
-                }
-            } else {
-                false
-            };
-            if tray_reading {
-                match new_tray {
-                    Some(ref mut new_tray) => {
-                        new_tray.state = TrayState::Reading;
-                    }
-                    None => {
-                        let mut alt_new_tray = old_tray.clone();
-                        alt_new_tray.state = TrayState::Reading;
-                        new_tray = Some(alt_new_tray);
-                    }
-                }
-            }
-        }
-
-        if new_tray.is_some() && *old_tray != *new_tray.as_ref().unwrap() {
-            new_tray
-        } else {
-            None
         }
     }
 
@@ -587,14 +424,14 @@ impl BambuPrinter {
                     self.virt_tray.state = TrayState::Ready;
                 }
                 self.virt_tray.filament = new_filament;
-                self.virt_tray.k = None; // Is this correct to do?
+                self.virt_tray.k_from_tray = None; // Is this correct to do?
             } else {
                 // Handle AMS tray
                 if let Some(ams_id) = print.ams_id {
                     // no change to tray state in case of AMS
                     let ams_id = usize::try_from(ams_id).unwrap();
                     self.ams_trays[ams_id * 4 + usize::try_from(tray_id).unwrap()].filament = new_filament;
-                    self.ams_trays[ams_id * 4 + usize::try_from(tray_id).unwrap()].k = None;
+                    self.ams_trays[ams_id * 4 + usize::try_from(tray_id).unwrap()].k_from_tray = None;
                     // Is this correct to do?
                 }
             }
@@ -609,7 +446,6 @@ impl BambuPrinter {
         if let (Some(nozzle_diameter), Some(tray_id), Some(cali_idx)) = (&print.nozzle_diameter, &print.tray_id, &print.cali_idx) {
             if *tray_id >= 0 {
                 let tray_id: usize = (*tray_id).try_into().unwrap();
-                let k = self.get_cali_k_value(nozzle_diameter, *cali_idx);
                 let tray = if tray_id == 254 {
                     &mut self.virt_tray
                 } else {
@@ -617,12 +453,13 @@ impl BambuPrinter {
                 };
                 // TODO: This snippet is in two places, fix that
                 tray.cali_idx = if *cali_idx == -1 { None } else { Some(*cali_idx) };
-                tray.k = k.or(Some(format!("({:.3})", 0.02))); // TODO: where to bring default from, all materials 0.020?
                 if let (Some(nozzle_diameter), Some(cali_idx)) = (self.nozzle_diameter.as_ref(), tray.cali_idx.as_ref()) {
                     if let Some(calibrations) = self.calibrations.get(nozzle_diameter) {
                         if let Some(calibration) = calibrations.get(cali_idx) {
                             if let Filament::Known(ref mut filament_info) = tray.filament {
-                                filament_info.calibrations.insert(nozzle_diameter.clone(), calibration.clone());
+                                filament_info
+                                    .calibrations
+                                    .insert(nozzle_diameter.clone(), calibration.clone().with_valid_to_encode(true));
                             }
                         }
                     }
@@ -656,12 +493,8 @@ impl BambuPrinter {
             }
             for filament in filaments {
                 let calibration = Calibration::from(filament);
-                nozzle_calibrations.insert(filament.cali_idx, calibration);
+                nozzle_calibrations.insert(filament.cali_idx, calibration.with_valid_to_encode(true));
             }
-            for i in 0..self.ams_trays.len() {
-                self.ams_trays[i].k = self.get_tray_cali_k_value(&self.ams_trays[i]);
-            }
-            self.virt_tray.k = self.get_tray_cali_k_value(&self.virt_tray);
         }
 
         change_made
@@ -850,6 +683,7 @@ impl BambuPrinter {
         // If the filament info contains calibration for the current nozzle and the printer calibrations contain that calibration-idx for that nozzle diameter then send that, otherwise send -1 (so no calibration)
         if let Some(filament_calibration) = filament.calibrations.get(self.nozzle_diameter.as_ref().unwrap()) {
             if let Some(printer_calibrations) = self.calibrations.get(self.nozzle_diameter.as_ref().unwrap()) {
+                // TODO: Refactor: here, instead of relying on cali_idx, search for relevant filament based on data in the spool calibration info
                 if printer_calibrations.contains_key(&filament_calibration.cali_idx) {
                     cali_idx = filament_calibration.cali_idx;
                 }
@@ -873,7 +707,7 @@ impl BambuPrinter {
 pub struct Tray {
     pub state: TrayState,
     pub filament: Filament,
-    pub k: Option<String>,
+    pub k_from_tray: Option<f32>,
     pub cali_idx: Option<i32>,
 }
 
@@ -945,7 +779,7 @@ impl FilamentInfo {
         };
         let k_postfix = if !k_prefix.is_empty() { ")" } else { "" };
 
-        for calibration_kv in self.calibrations.iter() {
+        for calibration_kv in self.calibrations.iter().filter(|c| c.1.valid_to_encode) {
             if let Some(cal_nozzle_diameter_char) = calibration_kv.0.chars().nth(2) {
                 let calibration = calibration_kv.1;
                 inner_calibrations_part += &format!(
@@ -1044,6 +878,11 @@ impl FilamentInfo {
             }
         }
 
+        // Processing of K Factor //////////////////
+
+        // First just collect data from tag
+
+        let mut filament_calibrations: HashMap<String, Calibration> = HashMap::new();
         // Second pass on parts that need to be processed after the first
         for param in descriptor.split(&['/', '&', '?']) {
             let mut param = param;
@@ -1056,6 +895,9 @@ impl FilamentInfo {
                 // to get the printer name (formatted as name~serial , use match 1 and don't forget to my_decode_from_url_part the data
                 // currently not used, could compare to current printer name and ignore
             }
+
+            // this is just calibrations loaded from the filament, without any matching, all with cali_idx = -1
+
             if let Some((param_name, param_value)) = param.split_once("=") {
                 match param_name {
                     // K - Pressure Advance Factor for Nozzle Diameter 0.4, 0.2, 0.6, 0.8
@@ -1071,53 +913,196 @@ impl FilamentInfo {
                         let setting_id = k_parts.next().ok_or(Error::ParseError)?;
                         let name = k_parts.next().ok_or(Error::ParseError)?;
                         let name = my_decode_from_url_part(name);
-
-                        // Here there is room for flexibility.
-                        // We have K, filament_id (from filament info as tray_info_idx), setting_id and name
-                        // And current nozzle diameter
-                        // There are is redundancy of information to identify the relevant calibration
-                        // I currently prefer to find relevant calibration by searching K & filament_id & setting_id match in the calibrations of current nozzle diameter, ignoring name (which is easy to rename).
-                        // But K may have changed on another spool for same filament, in such I select it based on the name.
-                        // This means K is prioritized over name. Here is reasoning for either priorities
-                        // I could also ignore K, or force only K and find something that match the K
-                        // I can also check what to do exactly based on printer name - if its the original printer or not - see belo comment
-
-                        if let Some(nozzle_calibrations) = bambu_printer.calibrations.get(&nozzle_diameter) {
-                            if let Some(calibration) = nozzle_calibrations.values().find(|v| {
-                                v.k_value.trim_end_matches('0') == k_value.trim_end_matches('0')
-                                    && v.filament_id == filament_info_result.tray_info_idx
-                                    && v.setting_id == setting_id
-                            }) {
-                                let calibration = Calibration::new_minimal(
-                                    k_value,
-                                    &calibration.filament_id,
-                                    &calibration.setting_id,
-                                    &calibration.name,
-                                    calibration.cali_idx,
-                                );
-                                filament_info_result.calibrations.insert(nozzle_diameter, calibration);
-                            } else if let Some(calibration) = nozzle_calibrations.values().find(|v| {
-                                // TODO: Key note for multiprinter support
-                                // if I'll remove the setting_id check it will allow tag from one printer to match another if PA profile named the same
-                                // if I make similarity on name, it will be more flexible, maybe be flexible around color names
-                                // I can also check what to do exactly based on printer name - if its the original printer or not
-                                v.name.trim() == name.trim() && v.filament_id == filament_info_result.tray_info_idx && v.setting_id == setting_id
-                            }) {
-                                let calibration = Calibration::new_minimal(
-                                    &calibration.k_value,
-                                    &calibration.filament_id,
-                                    &calibration.setting_id,
-                                    &calibration.name,
-                                    calibration.cali_idx,
-                                );
-                                filament_info_result.calibrations.insert(nozzle_diameter, calibration);
-                            }
-                        }
+                        let calibration = Calibration::new_minimal(k_value, &filament_info_result.tray_info_idx, setting_id, &name, -1);
+                        filament_calibrations.insert(nozzle_diameter, calibration.with_valid_to_encode(true));
                     }
                     _ => (), // previous run already identified unrecognized parameters, here we skip also those that were ok so can't error
                 }
             }
         }
+
+        // Not process it
+
+        // Now we have a list of calibrations from the filament.
+        // We need to select for each nozzle size in the printer (even if no value in filament settings), a matching calibration from the printer, if possible.
+        // We can either match a perfect match or we can deduce of no perfect match
+        // We can deduce for a certain nozzle also based on information we have on other nozzle diameters in the filaments calibrations
+
+        // Go through nozzle sizes 0.2, 0.4, 0.6 and 0.8
+        //    Go through printer calibrations of the iterated-nozzle-size (if there are any) with the same filamentm_id and:
+        //    First, look at the calibration for that nozzle size in the filament calibrations.
+        //       1- check if any printer calibration match to the setting_id - if it is there's an exact match
+        //       2- check if any printer calibration has the same setting-name (cleaned) - if it is there's a match (similar match)
+        //       3- check if any printer calibration same k value - if it is there's a match (not exact)
+        //       future: 4- check if any printer calibration has a similar name - if it is there's a match (similar match)
+        //    Next, go through calibrations of other nozzle sizes in the filament calibrations
+        //       5- check if any printer calibration has the same setting-name (cleaned) - if it is there's a match
+        //       6- check if any printer calibration has a similar name - if it is then there's a match
+        //    If all failed, then no match
+        //
+
+        fn clean_compare(a: &str, b: &str) -> bool {
+            // Create filtered iterators that:
+            // 1. Skip whitespace
+            // 2. Skip chars_to_ignore
+            // 3. Convert to lowercase for case-insensitive comparison
+            let chars_to_ignore = &['.', '-', ','];
+            let iter_a = a
+                .chars()
+                .filter(|&c| !c.is_whitespace() && !chars_to_ignore.contains(&c))
+                .flat_map(|c| c.to_lowercase());
+
+            let iter_b = b
+                .chars()
+                .filter(|&c| !c.is_whitespace() && !chars_to_ignore.contains(&c))
+                .flat_map(|c| c.to_lowercase());
+
+            // Compare the filtered iterators
+            iter_a.eq(iter_b)
+        }
+
+        fn similar_compare(_s1: &str, _s2: &str) -> bool {
+            // TODO: implement Metaphone Double
+            false
+        }
+
+        // There's an issue in an edge case when you scan and no exact match and then you encode.
+        // What should we encode, the original data? or the data on the printer.
+        // The correct thing I think is to encode the current value from the printer.
+        // The fact the user is encoding from an already scanned tag, means he is happy with the values
+        // It is especially true when scanning a filament encoded on another printer.
+        // If we'll encode the data that came with the filament, we'll encode under the new printer
+        //   the data from the old printer which is the worst, it matches nowhere.
+
+        for (printer_nozzle, printer_calibrations) in &bambu_printer.calibrations {
+            // the code is ready to fill in for not current nozzle sizes, but there's no value in that, so for now skipping all other nozzle sizes
+            // practically, searching only value for calibration for current nozzle
+            // in the future, when support multi K factors per tag, need to uncomment this
+            if printer_nozzle != bambu_printer.nozzle_diameter.as_ref().unwrap_or(&"".to_string()) {
+                continue;
+            }
+            let same_filament_id_printer_calibrations = printer_calibrations
+                .iter()
+                .filter(|&c| c.1.filament_id == filament_info_result.tray_info_idx);
+
+            // If there is filament calibration for that nozzle size
+            if let Some(filament_calibration) = filament_calibrations.get(printer_nozzle) {
+                // 1
+                if let Some(calibration_match) = same_filament_id_printer_calibrations
+                    .clone()
+                    .find(|printer_calibration| printer_calibration.1.setting_id == filament_calibration.setting_id)
+                {
+                    let inserted_calibration = calibration_match.1.clone();
+                    filament_info_result
+                        .calibrations
+                        .insert(printer_nozzle.clone(), inserted_calibration.with_valid_to_encode(true));
+                    continue;
+                // 2
+                } else if let Some(calibration_match) = same_filament_id_printer_calibrations
+                    .clone()
+                    .find(|printer_calibration| clean_compare(&printer_calibration.1.name, &filament_calibration.name))
+                {
+                    let inserted_calibration = calibration_match.1.clone();
+                    filament_info_result
+                        .calibrations
+                        .insert(printer_nozzle.clone(), inserted_calibration.with_valid_to_encode(true));
+                    continue;
+                // 3
+                } else if let Some(calibration_match) = same_filament_id_printer_calibrations
+                    .clone()
+                    .find(|printer_calibration| printer_calibration.1.k_value == filament_calibration.k_value)
+                {
+                    // TODO: skip if a different printer, comparing by K is just wrong
+                    let inserted_calibration = calibration_match.1.clone();
+                    filament_info_result
+                        .calibrations
+                        .insert(printer_nozzle.clone(), inserted_calibration.with_valid_to_encode(true));
+                    continue;
+                // 4 : TODO: use metaphone double to compare strings
+                } else if let Some(calibration_match) = same_filament_id_printer_calibrations
+                    .clone()
+                    .find(|printer_calibration| similar_compare(&printer_calibration.1.name, &filament_calibration.name))
+                {
+                    let inserted_calibration = calibration_match.1.clone();
+                    filament_info_result
+                        .calibrations
+                        .insert(printer_nozzle.clone(), inserted_calibration.with_valid_to_encode(true));
+                    continue;
+                }
+            };
+            // Here we add the calibrations but w/o valid_to_encode since by definition these are deduced with new nozzle sizes that weren't in the tag
+            // If we don't do that, then encoding after a scan will always generate K for all nozzle sizes
+            // It might be interesting approach to fill in all K's but since it can be deduced anyway, it's not valuable (except for presenting from the tag)
+            // And if we want that, then need to do that also when clibration arrives from the printer itself not just as side effect of scanning a tag
+            for (_, filament_calibration) in &filament_calibrations {
+                if let Some(calibration_match) = same_filament_id_printer_calibrations
+                    .clone()
+                    .find(|printer_calibration| clean_compare(&printer_calibration.1.name, &filament_calibration.name))
+                {
+                    let inserted_calibration = calibration_match.1.clone(); // IMPORTANT: Since this is coming from another nozzle diameter, we copy what's in the printer
+                    filament_info_result
+                        .calibrations
+                        .insert(printer_nozzle.clone(), inserted_calibration.with_valid_to_encode(false));
+                    continue;
+                } else if let Some(calibration_match) = same_filament_id_printer_calibrations
+                    .clone()
+                    .find(|printer_calibration| similar_compare(&printer_calibration.1.name, &filament_calibration.name))
+                {
+                    let inserted_calibration = calibration_match.1.clone().with_valid_to_encode(false); // IMPORTANT: Since this is coming from another nozzle diameter, we copy what's in the printer
+                    filament_info_result
+                        .calibrations
+                        .insert(printer_nozzle.clone(), inserted_calibration.with_valid_to_encode(false));
+                    continue;
+                }
+            }
+        }
+
+        // Here there is room for flexibility.
+        // We have K, filament_id (from filament info as tray_info_idx), setting_id and name
+        // And current nozzle diameter
+        // There are is redundancy of information to identify the relevant calibration
+        // I currently prefer to find relevant calibration by searching K & filament_id & setting_id match in the calibrations of current nozzle diameter, ignoring name (which is easy to rename).
+        // But K may have changed on another spool for same filament, in such I select it based on the name.
+        // This means K is prioritized over name. Here is reasoning for either priorities
+        // I could also ignore K, or force only K and find something that match the K
+        // I can also check what to do exactly based on printer name - if its the original printer or not - see belo comment
+
+        // if let Some(nozzle_calibrations) = bambu_printer.calibrations.get(&nozzle_diameter) {
+        //     if let Some(calibration) = nozzle_calibrations.values().find(|v| {
+        //         v.k_value.trim_end_matches('0') == k_value.trim_end_matches('0')
+        //             && v.filament_id == filament_info_result.tray_info_idx
+        //             && v.setting_id == setting_id
+        //     }) {
+        //         let calibration = Calibration::new_minimal(
+        //             k_value,
+        //             &calibration.filament_id,
+        //             &calibration.setting_id,
+        //             &calibration.name,
+        //             calibration.cali_idx,
+        //         );
+        //         filament_info_result.calibrations.insert(nozzle_diameter, calibration);
+        //     } else if let Some(calibration) = nozzle_calibrations.values().find(|v| {
+        //         // TODO: Key note for multiprinter support
+        //         // if I'll remove the setting_id check it will allow tag from one printer to match another if PA profile named the same
+        //         // if I make similarity on name, it will be more flexible, maybe be flexible around color names
+        //         // I can also check what to do exactly based on printer name - if its the original printer or not
+        //         v.name.trim() == name.trim() && v.filament_id == filament_info_result.tray_info_idx && v.setting_id == setting_id
+        //     }) {
+        //         let calibration = Calibration::new_minimal(
+        //             &calibration.k_value,
+        //             &calibration.filament_id,
+        //             &calibration.setting_id,
+        //             &calibration.name,
+        //             calibration.cali_idx,
+        //         );
+        //         filament_info_result.calibrations.insert(nozzle_diameter, calibration);
+        //     }
+        // }
+        //             }
+        //             _ => (), // previous run already identified unrecognized parameters, here we skip also those that were ok so can't error
+        //         }
+        //     }
+        // }
         if v && id && m && fi && c && nn && nx {
             Ok(filament_info_result)
         } else {
@@ -1305,6 +1290,13 @@ pub struct Calibration {
     setting_id: String,
     name: String,
     cali_idx: i32,
+    // the field below states if when generating descriptor to encode this (relevant only for filaments calibrations, not printer).
+    // meaning if 'real for the filament'
+    //    If set to the slot from the printer
+    //    If came with the filament scanning
+    //    specified manually by user to encode in device when this will become possible
+    // or not valid if 'deduced based on unverified heuristics to find a matching calibration'
+    valid_to_encode: bool,
 }
 
 impl From<&bambu_api::Filament> for Calibration {
@@ -1316,6 +1308,7 @@ impl From<&bambu_api::Filament> for Calibration {
             n_coef: f32::from_str(&v.n_coef).unwrap_or(-1.0),
             setting_id: v.setting_id.clone(),
             cali_idx: v.cali_idx,
+            valid_to_encode: true,
         }
     }
 }
@@ -1330,6 +1323,14 @@ impl Calibration {
             cali_idx,
             ..Default::default()
         }
+    }
+    pub fn with_cali_idx(mut self, cali_idx: i32) -> Self {
+        self.cali_idx = cali_idx;
+        self
+    }
+    pub fn with_valid_to_encode(mut self, valid_to_encode: bool) -> Self {
+        self.valid_to_encode = valid_to_encode;
+        self
     }
 }
 
@@ -1361,7 +1362,14 @@ pub async fn init(
     );
 
     spawner
-        .spawn(multi_bambu_mqtt_task(stack, read_packets, write_packets, app_config.clone(), tls, restart_printer))
+        .spawn(multi_bambu_mqtt_task(
+            stack,
+            read_packets,
+            write_packets,
+            app_config.clone(),
+            tls,
+            restart_printer,
+        ))
         .ok();
 
     let bambu_printer_model = Rc::new(RefCell::new(BambuPrinter::new(write_packets, app_config, restart_printer)));
@@ -1386,7 +1394,8 @@ pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
         .borrow()
         .app_config
         .borrow()
-        .get_printer_serial().clone()
+        .get_printer_serial()
+        .clone()
         .unwrap_or("NO-SERIAL".to_string())
         .clone();
 
@@ -1446,13 +1455,13 @@ pub async fn incoming_messages_task(
                             } else {
                                 warn!("Unprocessed message {:?} : {:?}", parse_res, core::str::from_utf8(payload));
                             }
-                        },
+                        }
                         mqttrust::Packet::Suback(mqttrust::encoding::v4::Suback { pid, return_codes }) => {
                             // Subscribed, now time to request for update
                             let spawner = embassy_executor::Spawner::for_current_executor().await;
                             spawner.spawn(fetch_initial_info(bambu_printer.clone())).ok();
                             info!(">>>>Printer connected, getting initial info");
-                        },
+                        }
                         _ => (),
                     }
                 } else {
@@ -1467,7 +1476,8 @@ pub async fn incoming_messages_task(
                         .borrow()
                         .app_config
                         .borrow()
-                        .get_printer_serial().clone()
+                        .get_printer_serial()
+                        .clone()
                         .unwrap_or("NO-SERIAL".to_string())
                         .clone();
                     BambuPrinter::request_full_update(&printer_serial, write_packets).await;
@@ -1489,7 +1499,7 @@ pub async fn multi_bambu_mqtt_task(
 ) {
     loop {
         debug!(">>>>> creating bambu_mqtt_task");
-        let printer_mqtt_task = bambu_mqtt_task(stack,read_packets, write_packets, app_config.clone(), tls);
+        let printer_mqtt_task = bambu_mqtt_task(stack, read_packets, write_packets, app_config.clone(), tls);
         debug!(">>>>> awaiting bambu_mqtt_task and signal");
         match select(printer_mqtt_task, restart_printer.wait()).await {
             Either::First(_) => {
@@ -1497,7 +1507,9 @@ pub async fn multi_bambu_mqtt_task(
                 // is wait for printer restart
                 restart_printer.wait().await;
             }
-            Either::Second(_) => {debug!(">>>> Signal received");},
+            Either::Second(_) => {
+                debug!(">>>> Signal received");
+            }
         }
         write_packets.clear();
         read_packets.clear();
@@ -1535,7 +1547,6 @@ pub async fn bambu_mqtt_task(
         term_info!("Missing Printer Serial and/or Access Code configurations");
         return;
     }
-
 
     let no_serial = "NO-SERIAL".to_string();
     let app_config_borrow = app_config.borrow();
@@ -1642,7 +1653,12 @@ pub async fn bambu_mqtt_task(
         }
     } else {
         printer_ip = app_config.borrow().get_printer_ip().unwrap();
-        printer_name = app_config.borrow().get_printer_name().clone().unwrap_or(String::from("Unknown")).to_string();
+        printer_name = app_config
+            .borrow()
+            .get_printer_name()
+            .clone()
+            .unwrap_or(String::from("Unknown"))
+            .to_string();
     }
 
     // Final name, theoretically if name explicitly supplied and IP not,  this could override the supplied name
@@ -1655,7 +1671,8 @@ pub async fn bambu_mqtt_task(
         let app_config_borrow = app_config.borrow();
         Some(
             app_config_borrow
-                .get_printer_access_code().clone()
+                .get_printer_access_code()
+                .clone()
                 .unwrap_or("NO-ACCESS-CODE".to_string())
                 .clone()
                 .into_bytes(),
