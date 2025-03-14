@@ -104,3 +104,47 @@ This feature allows SpoolEase to download and install the latest firmware update
 - You may find it convenient to use the “Synchronize Filament List from AMS” feature in the slicer after loading tagged spools into the AMS, rather than manually selecting them in the slicer.
 
 - To copy a spool’s tag, scan the source tag to move its data into staging, then encode the staging data onto the new tag.
+
+# Viewing Spool Tag Information  
+
+If you want to see the information stored on your NFC tag in a clear and organized way, simply scan the tag with your mobile phone. Ensure NFC is enabled (on Android, it may be disabled by default). You'll be redirected to a web page displaying the encoded tag information—a "Virtual Spool Tag."  
+
+![Virtual Spool Tag](virtual-spool-tag.jpg)  
+
+## Identifying Filament Names  
+
+- If you're using a standard filament type from BambuStudio slicer, its name will appear automatically.  
+- If you've defined custom filaments, you'll initially see **"Custom Filament"** because SpoolEase needs additional information to recognize them.  
+
+## Enabling Custom Filament Names  
+
+By default, custom filaments appear as **"Custom Filament"** because the necessary data isn't available online. To enable proper filament names:  
+
+1. Use **SpoolEase Desktop** to collect filament data from your computer.  
+2. Store the exported data in an accessible online location.  
+3. Link the stored data to SpoolEase via the "Virtual Spool Tag" web page.  
+
+### Steps:  
+
+1. **Get SpoolEase Desktop**  
+   - Download **SpoolEase Desktop** from [SpoolEase.io](https://www.spoolease.io).  
+
+2. **Export Filament Data**  
+   - Run SpoolEase Desktop on the same computer where BambuStudio and/or OrcaSlicer is installed.  
+   - Export the collected filament data as a JSON file.  
+
+3. **Host the JSON File**  
+   - Upload the JSON file to an online location that your mobile phone can access without CORS restrictions.  
+   - GitHub is a good option (as a file in a repository or a Gist).  
+
+4. **Provide the URL to SpoolEase**  
+   - Get the **raw file URL** (not the normal web page view).  
+   - On the "Virtual Spool Tag" web page, tap **"Custom Filament"** or the link at the bottom.  
+   - Store the URL in your mobile's local storage (accessible only by the application).  
+
+Once set up, scanning your NFC tag will display the actual filament name instead of "Custom Filament."  
+
+### Updating Your Filament Data  
+
+As you add more custom filaments, update the JSON file in the same location. There's no need to update the URL in SpoolEase if the file remains in the same place.  
+
