@@ -1,7 +1,7 @@
 use core::cell::RefCell;
 
 use alloc::{rc::Rc, string::String, vec::Vec};
-use base64::{engine::general_purpose::URL_SAFE, Engine as _};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
 
@@ -225,8 +225,7 @@ pub async fn nfc_task(
                 match operation_with_tag.unwrap_or(TagOperation::ReadTag(ReadTagRequest {})) {
                     TagOperation::WriteTag(write_tag_reuest) => {
                         spool_tag_rc.borrow().notify_status(Status::FoundTagNowWriting);
-                        let tag_uid = URL_SAFE.encode(previous_tag.as_ref().unwrap());
-                        let tag_uid = tag_uid.trim_end_matches('=');
+                        let tag_uid = URL_SAFE_NO_PAD.encode(previous_tag.as_ref().unwrap());
                         let final_tag_text = write_tag_reuest.text.replace(TAG_PLACEHOLDER, &tag_uid);
                         match crate::nfc::write_ndef_url_record(&mut pn532, &final_tag_text, Duration::from_secs(2)).await {
                             Ok(_num_bytes_written) => {

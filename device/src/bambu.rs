@@ -1623,15 +1623,20 @@ pub struct TagInformation {
 }
 
 impl TagInformation {
-    pub fn to_descriptor(&self, printer_name: &Option<String>, printe_serial: &Option<String>) -> Option<String> {
+    pub fn to_descriptor(&self, printer_name: &Option<String>, printe_uuid: &Option<String>) -> Option<String> {
         let mut inner_calibrations_part = String::new();
         let printer_name = printer_name.as_ref();
-        let printer_serial = printe_serial.as_ref();
+        let printer_uuid = printe_uuid.as_ref();
 
         let empty = "".to_string();
-        let k_prefix = &format!("{}~{}", printer_name.unwrap_or(&empty), printer_serial.unwrap_or(&empty));
-        let k_prefix = if !k_prefix.is_empty() {
-            format!("&{}(", my_encode_to_url_part(k_prefix))
+        let printer_name = printer_name.unwrap_or(&empty);
+        let encoded_printer_name = if !printer_name.is_empty() {
+           my_encode_to_url_part(&printer_name)
+        } else { "".to_string() };
+
+        let already_encoded_k_prefix = &format!("{}~{}", encoded_printer_name, printer_uuid.unwrap_or(&empty));
+        let k_prefix = if !already_encoded_k_prefix.is_empty() {
+            format!("&{}(", already_encoded_k_prefix)
         } else {
             "&".to_string()
         };

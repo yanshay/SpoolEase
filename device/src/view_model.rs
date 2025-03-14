@@ -227,7 +227,7 @@ impl ViewModel {
                 };
                 if let Some(descriptor) = &tag_info.to_descriptor(
                     &moved_app_config.borrow().get_printer_name(),
-                    &moved_app_config.borrow().get_printer_serial(),
+                    &moved_app_config.borrow().get_printer_uuid_to_encode(),
                 ) {
                     spool_tag.write_tag(&descriptor, tray_id);
                 }
