@@ -109,8 +109,9 @@ This feature allows SpoolEase to download and install the latest firmware update
 
 If you want to see the information stored on your NFC tag in a clear and organized way, simply scan the tag with your mobile phone. Ensure NFC is enabled (on Android, it may be disabled by default). You'll be redirected to a web page displaying the encoded tag information—a "Virtual Spool Tag."  
   
-![Virtual Spool Tag](virtual-spool-tag.jpeg)
-<img src="virtual-spool-tag.jpeg" alt="Virtual Spool Tag" height="300" >
+<div align="center">
+  <img src="virtual-spool-tag.jpeg" alt="Virtual Spool Tag" height="800" >
+</div>
 
 ## Identifying Filament Names  
 
