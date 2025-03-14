@@ -44,7 +44,6 @@ To be clear: You CAN use this device in your business operations, even if those 
 If you're interested in commercial licensing, redistribution rights, or other activities not permitted under these terms, please contact SpoolEase at gmail dot com for potential partnership opportunities.
 
 ## Required Components
-
 - [WT32-SC01 Plus](https://www.aliexpress.com/item/3256805864064800.html) (**make sure to pick the board and not accessories**)
 - 7 wire cable with JST 1.25mm connector (I received one in the box together with WT32-SC01-Plus)
 - [PN532 NFC reader module](https://www.aliexpress.com/item/3256806852006648.html) (**make sure to pick the module and not accessories**)
@@ -57,6 +56,8 @@ If you're interested in commercial licensing, redistribution rights, or other ac
 - NFC Tags (Ntag215) – Available in different types and qualities, including paper and PET stickers, typically round with a 25mm diameter. It’s recommended to test a few before purchasing in bulk. If using a dryer, ensure the adhesive is durable enough or choose a mounting method that prevents the stickers from falling off.
 
 - (Optional) 3D Model of spool with place for NFC sticker tags - TBD
+
+For components sourcing from Amazon EU/US, check out [this discussion](https://github.com/yanshay/SpoolEase/discussions/1).
 
 ## Detailed Instructions
 - [Build](documentation/build.md)
