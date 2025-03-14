@@ -1,17 +1,17 @@
-use crate::bambu::Filament;
+use crate::bambu::TagInformation;
 
 pub struct FilamentStaging {
-    pub filament_info: Filament,
+    pub tag_info: Option<TagInformation>,
 }
 
 impl FilamentStaging {
     pub fn new() -> Self {
         Self {
-            filament_info: Filament::Unknown,
+            tag_info: None,
         }
     }
 
     pub fn clear(&mut self) {
-        self.filament_info = Filament::Unknown;
+        self.tag_info = None
     }
 }

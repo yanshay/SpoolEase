@@ -1,7 +1,7 @@
 [package]
 name = "SpoolEase"
 homepage = "SpoolEase.io"
-version = "0.1.12"
+version = "0.2.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 rust-version = "1.84"
@@ -107,6 +107,7 @@ pasetors = { version = "0.7.0", default-features = false, features = ["v4"] }
 base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 getrandom = { version = "0.2.15", features = ["custom"] }
 semver = { version = "1.0.25", default-features = false }
+derivative = { version = "2.2.0", features = ["use_core"] }
 
 # Security/Crypto crates
 aes-gcm = { version = "0.10" }  # AES-GCM encryption/decryption
