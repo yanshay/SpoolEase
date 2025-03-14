@@ -20,7 +20,7 @@ Notice: This is a new project currently in its early stages, with testing limite
 ## Collaboration
 - For questions, feedback, comments, etc. please use the [repo discussions area](https://github.com/yanshay/SpoolEase/discussions)
 - For getting notified on important updates, subscribe to the [Announcements Discussion](https://github.com/yanshay/SpoolEase/discussions/7)
-- If you want to try your luck with immediate online response, try the [Discord Channel](https://discord.com/channels/1344027434571272252/1344027676461105234)
+- If you want to try your luck with immediate online response, try the [Discord Server](https://discord.gg/QY55uSp7)
 - It would be real cool if you post your build in the [Introduce Your Build Discussion](https://github.com/yanshay/SpoolEase/discussions/8) 
 
 ## Recommendations for Use at This Stage
