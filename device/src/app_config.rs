@@ -8,6 +8,7 @@ use alloc::{
 };
 use embassy_net::Ipv4Address;
 use serde::{Deserialize, Deserializer, Serializer};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 
 use framework::prelude::*;
 
@@ -83,6 +84,7 @@ pub struct AppConfig {
     printer_name: Option<String>,
     printer_serial: Option<String>,
     printer_access_code: Option<String>,
+    printer_uuid_to_encode: Option<String>,
     pub tag_scan_timeout: u64,
 
     config_processed_ok: Option<bool>,
@@ -105,6 +107,9 @@ impl AppConfig {
     }
     pub fn get_printer_serial(&self) -> &Option<String> {
         &self.printer_serial
+    }
+    pub fn get_printer_uuid_to_encode(&self) -> &Option<String> {
+        &self.printer_uuid_to_encode
     }
     pub fn get_printer_access_code(&self) -> &Option<String> {
         &self.printer_access_code
@@ -138,6 +143,7 @@ impl AppConfig {
             printer_name: None,
             printer_serial: None,
             printer_access_code: None,
+            printer_uuid_to_encode: None,
             tag_scan_timeout: 10,
 
             config_processed_ok: None,
@@ -200,6 +206,16 @@ impl AppConfig {
         self.printer_name = printer.name;
         self.printer_serial = printer.serial;
         self.printer_access_code = printer.access_code;
+        if let Some(printer_serial) = &self.printer_serial {
+            let array = printer_serial.as_bytes();
+            let key: &[u8;16] = b"SpoolEaseIsGreat"; // doesn't really matter, just can't ever change
+            let hasher = siphasher::sip::SipHasher24::new_with_key(key);
+            let hashed_serial = hasher.hash(array);
+            let hashed_encoded_serial = URL_SAFE_NO_PAD.encode(hashed_serial.to_le_bytes());
+            self.printer_uuid_to_encode = Some(hashed_encoded_serial);
+        } else {
+            self.printer_uuid_to_encode = None;
+        }
     }
 
     pub fn set_current_printer_by_name(&mut self, name: &str) -> Result<(), String> {
@@ -326,9 +342,9 @@ impl AppConfig {
                         toml_priner_config.name = Some(String::from(value));
                     }
                     "printer_serial" => {
-                        self.printer_serial = Some(String::from(value));
+                        toml_priner_config.serial = Some(String::from(value));
                     }
-                    "printer_access_code" => self.printer_access_code = Some(String::from(value)),
+                    "printer_access_code" => toml_priner_config.access_code = Some(String::from(value)),
                     "tag_timeout" => {
                         if let Ok(tag_timeout) = value.parse::<u64>() {
                             self.tag_scan_timeout = tag_timeout;
