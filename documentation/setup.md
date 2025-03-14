@@ -54,7 +54,7 @@ The easiest way to flash the firmware is through Chrome or Edge (other browsers 
 8. Enter the **security key** from the device display into the browser and click **Verify Key**. A "Security Key Validated" message should appear.
 9. In the **Printer Settings** section, enter the **Printer Serial Number** and **Access Code**. Optionally, enter the **Printer IP Address** (needed only for advanced network setups).
 10. Click **Apply**. A confirmation should appear that settings were applied successfully.
-11. Restart the device from the browser by pressing **Disable Web Config** followed by **Restart Device**.
+11. Restart the device from the browser by pressing **Restart Device**.
 12. After rebooting, if the printer is online, SpoolEase should display the main interface.
 
 **Congratulations! Setup is complete.**
