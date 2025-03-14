@@ -2,6 +2,8 @@
 
 This project is an ESP32S3 based add-on device for Bambulab 3D printers to encode and decode NFC tags attached to filament spools. The tags store filament information, which can be used to automatically configure printer settings when loading spools, whether through AMS or an external spool. It also provides visibility to the filaments currently loaded into the AMS's and the External Spool.
 
+And most importantly, even though it’s an open-source project, it’s easy to build and surprisingly simple to set up!
+
 > [!Note]
 > Printer coverage questions keeps coming up, so I leave this update here for some time:
 >
