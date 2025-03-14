@@ -17,6 +17,12 @@ This project is an ESP32S3 based add-on device for Bambulab 3D printers to encod
 
 Notice: This is a new project currently in its early stages, with testing limited to personal use. Users should be aware that there are no warranties, liabilities, or guarantees, and they assume all risks involved.
 
+## Collaboration
+- For questions, feedback, comments, etc. please use the [repo discussions area](https://github.com/yanshay/SpoolEase/discussions)
+- For getting notified on important updates, subscribe to the [Announcements Discussion](https://github.com/yanshay/SpoolEase/discussions/7)
+- If you want to try your luck with immediate online response, try the [Discord Channel](https://discord.com/channels/1344027434571272252/1344027676461105234)
+- It would be real cool if you post your build in the [Introduce Your Build Discussion](https://github.com/yanshay/SpoolEase/discussions/8) 
+
 ## Recommendations for Use at This Stage
 - Please ensure you read through this page fully before building or using the device—several important guidelines and tips are provided.
 - Since the project is still in its early stages with only a few users, I recommend using it with filaments you regularly work with. As the project gains more exposure, the NFC tag data format may need adjustments. Re-encoding a large number of tags could be inconvenient, and addressing backward compatibility at this stage may slow development. It’s best to wait a couple of weeks for stabilization and to address non-critical data format issues before using it on a large number of spools. Eventually, the project will transition to a state where tags are always backward compatible, but patience is advised until then.
@@ -58,12 +64,6 @@ If you're interested in commercial licensing, redistribution rights, or other ac
 - [Usage](documentation/usage.md)
 - [Troubleshooting](documentation/troubleshooting.md)
 
-## Collaboration
-
-- For questions, feedback, comments, etc. please use the [repo discussions area](https://github.com/yanshay/SpoolEase/discussions)
-- For getting notified on important updates, subscribe to the [Announcements Discussion](https://github.com/yanshay/SpoolEase/discussions/7)
-- If you want to try your luck with immediate online response, try the [Discord Channel](https://discord.com/channels/1344027434571272252/1344027676461105234)
-- It would be real cool if you post your build in the [Introduce Your Build Discussion](https://github.com/yanshay/SpoolEase/discussions/8) 
 ## Licensing
 This software is licensed under Apache License, Version 2.0  **with Commons Clause** - see [LICENSE.md](LICENSE.md).
 - ✅ Free for use
