@@ -72,7 +72,7 @@ pub enum Failure {
 pub enum Status {
     FoundTagNowReading,
     FoundTagNowWriting,
-    WriteSuccess(/*tray_id*/ usize),
+    WriteSuccess(/*tray_id*/ usize, /* Descriptor Written*/ String),
     ReadSuccess(String),
     Failure(Failure),
 }
@@ -231,7 +231,7 @@ pub async fn nfc_task(
                         match crate::nfc::write_ndef_url_record(&mut pn532, &final_tag_text, Duration::from_secs(2)).await {
                             Ok(_num_bytes_written) => {
                                 debug!("Wrote {} to tag", final_tag_text);
-                                spool_tag_rc.borrow().notify_status(Status::WriteSuccess(write_tag_reuest.tray_id));
+                                spool_tag_rc.borrow().notify_status(Status::WriteSuccess(write_tag_reuest.tray_id, final_tag_text));
                             }
                             Err(e) => {
                                 term_error!("Error writing to tag {:?}", e);

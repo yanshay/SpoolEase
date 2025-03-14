@@ -1,9 +1,9 @@
-use core::{cell::RefCell, str::FromStr};
+use core::cell::RefCell;
 
 use alloc::{
     format,
     rc::Rc,
-    string::{String, ToString},
+    string::ToString,
     vec::Vec,
 };
 use embassy_net::Stack;
@@ -17,7 +17,7 @@ use framework::{
 
 use crate::{
     app_config::{self, AppConfig, AppControlObserver},
-    bambu::{self, BambuPrinter, BambuPrinterObserver, Filament, FilamentInfo, TrayState},
+    bambu::{self, BambuPrinter, BambuPrinterObserver, TagInformation, TrayState},
     filament_staging::FilamentStaging,
     spool_tag::{self, SpoolTagObserver, Status},
 };
@@ -154,10 +154,22 @@ impl ViewModel {
         // initialization of application (consider moving to a separate function)
         let default_printer = self.app_config.borrow().get_default_printer_selector_text();
         let curr_printer = self.app_config.borrow().get_curr_printer_selector_text();
-        let available_printers_vec: Vec<SharedString> = self.app_config.borrow().get_printers_selector_texts().into_iter().map(|s| s.into()).collect();
+        let available_printers_vec: Vec<SharedString> = self
+            .app_config
+            .borrow()
+            .get_printers_selector_texts()
+            .into_iter()
+            .map(|s| s.into())
+            .collect();
         let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers_vec));
-        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_set_printers_info(available_printers, default_printer.into());
-        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_set_curr_printer(curr_printer.into());
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppState>()
+            .invoke_set_printers_info(available_printers, default_printer.into());
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppState>()
+            .invoke_set_curr_printer(curr_printer.into());
 
         let moved_filament_staging = self.filament_staging.clone();
         let moved_ui = self.ui_weak.clone();
@@ -187,21 +199,39 @@ impl ViewModel {
             .on_encode_tray_to_tag(move |tray_id| {
                 info!("Request to encode tag with {tray_id} info");
                 let spool_tag = moved_spool_tag.borrow();
-                let bambu_printer = moved_bambu_printer.borrow();
                 let tray_id = usize::try_from(tray_id).unwrap();
-                let filament = if tray_id == 999 {
-                    // Staging
-                    &moved_filament_staging.borrow().filament_info
-                } else if tray_id == 254 {
-                    // External
-                    &bambu_printer.virt_tray.filament
+                let borrowed_filament_staging = moved_filament_staging.borrow();
+                let printer_tag_info: Option<TagInformation>;
+                let tag_info = if tray_id == 999 {
+                    // Encode from Staging
+                    if let Some(staging_tag_info) = &borrowed_filament_staging.tag_info {
+                        staging_tag_info
+                    } else {
+                        return 10;
+                    }
                 } else {
-                    &bambu_printer.ams_trays[tray_id].filament
+                    match moved_bambu_printer.borrow().get_tag_info_to_encode(tray_id) {
+                        Ok(tag_info) => {
+                            printer_tag_info = Some(tag_info);
+                            printer_tag_info.as_ref().unwrap()
+                        }
+                        Err(err) => {
+                            // hopefully no borrowing issues since calling into ui in a callback
+                            moved_ui
+                                .unwrap()
+                                .global::<crate::app::AppState>()
+                                .invoke_encoding_failed(err.to_shared_string());
+                            return 10;
+                        }
+                    }
                 };
-                if let Filament::Known(f) = filament {
-                    spool_tag.write_tag(&f.to_descriptor(&moved_app_config.borrow().get_printer_name(), &moved_app_config.borrow().get_printer_serial()), tray_id);
-                    info!("Sent the write request of tray {} over signal", tray_id);
+                if let Some(descriptor) = &tag_info.to_descriptor(
+                    &moved_app_config.borrow().get_printer_name(),
+                    &moved_app_config.borrow().get_printer_serial(),
+                ) {
+                    spool_tag.write_tag(&descriptor, tray_id);
                 }
+                info!("Sent the write request of tray {} over signal", tray_id);
                 // TODO: Get proper timeout fron config and pass it in the write_tag to spool_tag
                 10
             });
@@ -215,11 +245,14 @@ impl ViewModel {
 
         let moved_ui = self.ui_weak.clone();
         let moved_bambu_printer = self.bambu_printer_model.clone();
-        self.ui_weak.unwrap().global::<crate::app::AppBackend>().on_select_printer(move |printer: SharedString| {
-            moved_bambu_printer.borrow_mut().select_printer(printer.as_str());
-            moved_ui.unwrap().global::<crate::app::AppState>().invoke_set_curr_printer(printer);
-            moved_ui.unwrap().global::<crate::app::AppState>().invoke_reset_printer();
-        });
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_select_printer(move |printer: SharedString| {
+                moved_bambu_printer.borrow_mut().select_printer(printer.as_str());
+                moved_ui.unwrap().global::<crate::app::AppState>().invoke_set_curr_printer(printer);
+                moved_ui.unwrap().global::<crate::app::AppState>().invoke_reset_printer();
+            });
 
         let moved_spool_tag = self.spool_tag_model.clone();
         let moved_ui = self.ui_weak.clone();
@@ -235,8 +268,8 @@ impl ViewModel {
         tray_id: i32,
     ) {
         let mut filament_staging = filament_staging.borrow_mut();
-        if let Filament::Known(ref filament_info) = &filament_staging.filament_info {
-            bambu_printer.borrow().set_tray_filament(tray_id, filament_info);
+        if let Some(tag_info) = &filament_staging.tag_info {
+            bambu_printer.borrow_mut().set_tray_filament(tray_id, tag_info);
             filament_staging.clear();
             ui.unwrap().global::<crate::app::AppState>().invoke_empty_spool_staging();
             let (ams_id, tray_id) = BambuPrinter::get_ams_and_tray_id(tray_id as usize);
@@ -244,6 +277,36 @@ impl ViewModel {
             let tray_id = tray_id as i32;
             ui.unwrap().global::<crate::app::AppState>().invoke_tray_update_succeeded(ams_id, tray_id);
         }
+    }
+
+    fn tag_info_to_ui_spool_info(&self, tag_info: &TagInformation) -> Option<crate::app::UiSpoolInfo> {
+        if tag_info.filament.is_none() {
+            return None;
+        }
+
+        let filament_info = tag_info.filament.as_ref().unwrap();
+
+        let color = u32::from_str_radix(&filament_info.tray_color[..6], 16).unwrap() + 0xFF000000; // the plus 0xFF at the end is fo add alpha
+
+        let bambu_printer_borrow = self.bambu_printer_model.borrow();
+        let mut final_k = bambu_printer_borrow.get_tag_k_for_current_nozzle(tag_info);
+        if let Some(calibration) = tag_info
+            .calibrations
+            .get(bambu_printer_borrow.nozzle_diameter.as_ref().unwrap_or(&"NA".to_string()))
+        {
+            debug!(">>>>>>>>>>>>> final_k: {final_k}");
+            debug!(">>>>>>>>>>>>> tag_info.calibrations {:?}", tag_info.calibrations);
+            let source_k = &calibration.k_value;
+            if source_k != &final_k {
+                final_k = format!("?{final_k}");
+            }
+        }
+        let ui_spool_info = crate::app::UiSpoolInfo {
+            color: slint::Color::from_argb_encoded(color),
+            k: SharedString::from(final_k),
+            material: filament_info.tray_type.to_shared_string(),
+        };
+        Some(ui_spool_info)
     }
 }
 
@@ -308,6 +371,7 @@ impl BambuPrinterObserver for ViewModel {
             } else {
                 ui_tray.filament.state = crate::app::UiFilamentState::Unknown;
             }
+            ui_tray.tagged = curr_tray.tag_info.is_some();
             // let k_value_unformatted = curr_tray.k.as_ref().unwrap_or(&"(0.020)".to_string()).clone();
             let k_value_unformatted = bambu_printer.get_tray_resolved_k_value(&curr_tray);
             // let k_value_for_ui = k_value_for_ui(&k_value_unformatted);
@@ -352,45 +416,52 @@ impl SpoolTagObserver for ViewModel {
             Status::FoundTagNowWriting => {
                 ui.unwrap().global::<crate::app::AppState>().invoke_encode_tag_found();
             }
-            Status::WriteSuccess(pure_tray_id) => {
+            Status::WriteSuccess(pure_tray_id, encoded_descriptor) => {
                 let (ams_id, tray_id) = BambuPrinter::get_ams_and_tray_id(*pure_tray_id);
                 let ams_id = ams_id as i32;
                 let tray_id = tray_id as i32;
-                ui.unwrap().global::<crate::app::AppState>().invoke_encoding_succeeded(ams_id, tray_id);
 
-                let filament = if *pure_tray_id == 999 {
-                    self.filament_staging.borrow().filament_info.clone()
-                } else if *pure_tray_id == 254 {
-                    let bambu_printer_model_clone = self.bambu_printer_model.clone();
-                    let bambu_printer_model = bambu_printer_model_clone.borrow();
-                    let tray = &bambu_printer_model.virt_tray;
-                    tray.filament.clone()
-                } else {
-                    let bambu_printer_model_clone = self.bambu_printer_model.clone();
-                    let bambu_printer_model = bambu_printer_model_clone.borrow();
-                    let tray = &bambu_printer_model.ams_trays[*pure_tray_id];
-                    tray.filament.clone()
-                };
-                if let Filament::Known(filament_info) = filament {
-                    let ui_spool_info = filament_info_to_ui_spool_info(self.bambu_printer_model.borrow(), &filament_info);
-                    ui.unwrap().global::<crate::app::AppState>().invoke_update_spool_staging(ui_spool_info);
+                // // TODO: fix to get the tag info from the tray or staging
+                // let filament = if *pure_tray_id == 999 {
+                //     if let Some(filament_info) = self.filament_staging.borrow().tag_info
+                //     self.filament_staging.borrow().filament_info.clone()
+                // } else if *pure_tray_id == 254 {
+                //     let bambu_printer_model_clone = self.bambu_printer_model.clone();
+                //     let bambu_printer_model = bambu_printer_model_clone.borrow();
+                //     let tray = &bambu_printer_model.virt_tray;
+                //     tray.filament.clone()
+                // } else {
+                //     let bambu_printer_model_clone = self.bambu_printer_model.clone();
+                //     let bambu_printer_model = bambu_printer_model_clone.borrow();
+                //     let tray = &bambu_printer_model.ams_trays[*pure_tray_id];
+                //     tray.filament.clone()
+                // };
+                if let Ok(tag_info) = TagInformation::from_descriptor(encoded_descriptor) {
+                    if let Some(ui_spool_info) = self.tag_info_to_ui_spool_info(&tag_info) {
+                        self.filament_staging.borrow_mut().tag_info = Some(tag_info);
+                        ui.unwrap().global::<crate::app::AppState>().invoke_update_spool_staging(ui_spool_info);
+                        ui.unwrap().global::<crate::app::AppState>().invoke_encoding_succeeded(ams_id, tray_id);
+                    } else {
+                        ui.unwrap()
+                            .global::<crate::app::AppState>()
+                            .invoke_encoding_failed(SharedString::from("Descriptor Generation Error"));
+                    }
                 }
             }
             Status::ReadSuccess(read_text) => {
-                let bambu_printer_model = self.bambu_printer_model.borrow();
-                if let Ok(filament_info) = FilamentInfo::from_descriptor(read_text, &bambu_printer_model) {
-                    let ui_spool_info = filament_info_to_ui_spool_info(bambu_printer_model, &filament_info);
-                    self.filament_staging.borrow_mut().filament_info = Filament::Known(filament_info);
-
-                    ui.unwrap().global::<crate::app::AppState>().invoke_read_tag_succeeded(ui_spool_info);
-                } else {
-                    ui.unwrap()
-                        .global::<crate::app::AppState>()
-                        .invoke_read_tag_failed(SharedString::from("Invalid Tag Info"));
+                if let Ok(tag_info) = TagInformation::from_descriptor(read_text) {
+                    if let Some(ui_spool_info) = self.tag_info_to_ui_spool_info(&tag_info) {
+                        self.filament_staging.borrow_mut().tag_info = Some(tag_info);
+                        ui.unwrap().global::<crate::app::AppState>().invoke_read_tag_succeeded(ui_spool_info);
+                    } else {
+                        ui.unwrap()
+                            .global::<crate::app::AppState>()
+                            .invoke_read_tag_failed(SharedString::from("Invalid Tag Content"));
+                    }
                 }
             }
             Status::Failure(spool_tag::Failure::TagWriteFailure) => {
-                ui.unwrap().global::<crate::app::AppState>().invoke_encoding_failed();
+                ui.unwrap().global::<crate::app::AppState>().invoke_encoding_failed("".to_shared_string());
             }
             Status::Failure(spool_tag::Failure::TagReadFailure) => {
                 ui.unwrap()
@@ -401,31 +472,6 @@ impl SpoolTagObserver for ViewModel {
     }
 }
 
-fn filament_info_to_ui_spool_info(bambu_printer_model: core::cell::Ref<'_, BambuPrinter>, filament_info: &FilamentInfo) -> crate::app::UiSpoolInfo {
-    let color = u32::from_str_radix(&filament_info.tray_color[..6], 16).unwrap() + 0xFF000000;
-    // the plus at the end is fo add alpha
-    let ui_spool_info = crate::app::UiSpoolInfo {
-        color: slint::Color::from_argb_encoded(color),
-        k: SharedString::from(k_value_for_ui(&bambu_printer_model.get_filament_k_for_current_nozzle(filament_info))),
-        material: SharedString::from(&filament_info.tray_type),
-    };
-    ui_spool_info
-}
-
-fn k_value_for_ui(k: &str) -> String {
-    if k.is_empty() {
-        return "".to_string();
-    }
-    let k_value_for_ui = if k.starts_with("(") {
-        let k = k.trim_matches(['(', ')']);
-        let k_value = f32::from_str(k).unwrap_or_default();
-        format!("({:.3})", k_value)
-    } else {
-        let k_value = f32::from_str(k).unwrap_or_default();
-        format!("{:.3}", k_value)
-    };
-    k_value_for_ui
-}
 
 impl FrameworkObserver for ViewModel {
     fn on_web_config_started(&self, key: &str, mode: WebConfigMode) {

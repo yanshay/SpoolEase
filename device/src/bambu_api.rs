@@ -11,21 +11,21 @@ pub struct Print {
 }
 
 impl Print {
-    #[allow(dead_code)]
-    pub fn find_print_tray_by_id(&self, target_id: u32) -> Option<&PrintTray> {
-        self.print
-            .ams
-            .as_ref()? // Get reference to PrintAms if it exists, otherwise return None
-            .ams
-            .as_ref()? // Get reference to Vec<PrintAmsData> if it exists, otherwise return None
-            .iter() // Create an iterator over Vec<PrintAmsData>
-            .flat_map(|ams_data| &ams_data.tray) // Flatten all trays into a single iterator
-            .find(|tray| tray.id == target_id) // Find the tray with the matching id
-    }
+    // #[allow(dead_code)]
+    // pub fn find_print_tray_by_id(&self, target_id: u32) -> Option<&PrintTray> {
+    //     self.print
+    //         .ams
+    //         .as_ref()? // Get reference to PrintAms if it exists, otherwise return None
+    //         .ams
+    //         .as_ref()? // Get reference to Vec<PrintAmsData> if it exists, otherwise return None
+    //         .iter() // Create an iterator over Vec<PrintAmsData>
+    //         .flat_map(|ams_data| &ams_data.tray) // Flatten all trays into a single iterator
+    //         .find(|tray| tray.id == target_id) // Find the tray with the matching id
+    // }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Filament {
+pub struct Filament { // this is really calibrations, not filaments
     pub filament_id: String,
     pub name: String,
     pub k_value: String,
@@ -144,8 +144,9 @@ pub struct PrintAmsData {
 // An AMS Tray
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PrintTray {
-    #[serde(serialize_with = "u32_as_str_se", deserialize_with = "u32_as_str_de")]
-    pub id: u32, // Tray Id
+    // #[serde(serialize_with = "u32_as_str_se", deserialize_with = "u32_as_str_de")]
+    #[serde(default, serialize_with = "option_u32_as_str_se", deserialize_with = "option_u32_as_str_de")]
+    pub id: Option<u32>, // Tray Id
     #[serde(skip_serializing)]
     pub k: Option<f32>,
     #[serde(skip_serializing)]
@@ -297,6 +298,7 @@ where
     s.serialize_str(&format!("{}", x))
 }
 
+#[allow(dead_code)]
 fn u32_as_str_de<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
     D: Deserializer<'de>,

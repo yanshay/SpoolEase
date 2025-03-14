@@ -97,6 +97,17 @@ component Spool inherits Rectangle {
         border-color: self.border-width == 1px ? black : utils.contrasting_color(root.background);
     }
 
+    if tray-state.tagged: tag := Rectangle {
+      x: 10px;
+      y: 10px;
+      width: 15px;
+      height: 20px;
+      background: green;
+      border-radius: 3px;
+      border-color: black;
+      border-width: 1px;
+    }
+
     area := TouchArea {
         // touch area is shifted (by 20px) from the top to not accidentally press AMS and hit a tray
         y: parent.y + 20px;
