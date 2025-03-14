@@ -30,7 +30,7 @@ To encode an NFC tag, follow these steps:
    - Place the NFC tag next to the right side of SpoolEase.
    - Once the encoding is successful, a confirmation message will appear. If it fails, repeat the process.
 
-**Note**: NFC tags have varying ranges depending on factors like the PN532 module, the NFC tag itself, and the USB power supply. Typically, the tag needs to be placed around 1 cm from the sensor. The exact placement may require some trial and error to find the optimal spot.
+> **Note**: NFC tags have varying ranges depending on factors like the PN532 module, the NFC tag itself, and the USB power supply. Typically, the tag needs to be placed around 1 cm from the sensor. The exact placement may require some trial and error to find the optimal spot.
 
 ---
 
@@ -104,6 +104,8 @@ This feature allows SpoolEase to download and install the latest firmware update
 - You may find it convenient to use the “Synchronize Filament List from AMS” feature in the slicer after loading tagged spools into the AMS, rather than manually selecting them in the slicer.
 
 - To copy a spool’s tag, scan the source tag to move its data into staging, then encode the staging data onto the new tag.
+
+--
 
 # Viewing Spool Tag Information  
 
