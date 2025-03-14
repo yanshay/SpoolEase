@@ -30,7 +30,7 @@ To encode an NFC tag, follow these steps:
    - Place the NFC tag next to the right side of SpoolEase.
    - Once the encoding is successful, a confirmation message will appear. If it fails, repeat the process.
 
-> **Note**: NFC tags have varying ranges depending on factors like the PN532 module, the NFC tag itself, and the USB power supply. Typically, the tag needs to be placed around 1 cm from the sensor. The exact placement may require some trial and error to find the optimal spot.
+**Note**: NFC tags have varying ranges depending on factors like the PN532 module, the NFC tag itself, and the USB power supply. Typically, the tag needs to be placed around 1 cm from the sensor. The exact placement may require some trial and error to find the optimal spot.
 
 ---
 
@@ -109,7 +109,7 @@ This feature allows SpoolEase to download and install the latest firmware update
 
 If you want to see the information stored on your NFC tag in a clear and organized way, simply scan the tag with your mobile phone. Ensure NFC is enabled (on Android, it may be disabled by default). You'll be redirected to a web page displaying the encoded tag information—a "Virtual Spool Tag."  
 
-![Virtual Spool Tag](virtual-spool-tag.jpg)  
+![Virtual Spool Tag](virtual-spool-tag.jpeg)  
 
 ## Identifying Filament Names  
 
