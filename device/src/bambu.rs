@@ -1191,16 +1191,11 @@ pub async fn init(
         embassy_sync::signal::Signal::<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>::new()
     );
 
-    let rx_buffer = mk_static!(embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 8192]>, 
-                                    embassy_sync::mutex::Mutex::new([0; 8192]));
-    let tx_buffer = mk_static!(embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 4096]>, 
-                                    embassy_sync::mutex::Mutex::new([0; 4096]));
-
     spawner
         .spawn(multi_bambu_mqtt_task(
             stack,
-            rx_buffer,
-            tx_buffer,
+            8192,
+            4096,
             read_packets,
             write_packets,
             app_config.clone(),
@@ -1337,8 +1332,8 @@ pub async fn incoming_messages_task(
 #[embassy_executor::task]
 pub async fn multi_bambu_mqtt_task(
     stack: Stack<'static>,
-    rx_buffer: &'static embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 8192]>,
-    tx_buffer: &'static embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 4096]>,
+    rx_socket_buffer_size: usize,
+    tx_socket_buffer_size: usize,
     read_packets: &'static PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>,
     write_packets: &'static Channel<NoopRawMutex, BufferedMqttPacket, 3>,
     app_config: Rc<RefCell<AppConfig>>,
@@ -1346,7 +1341,7 @@ pub async fn multi_bambu_mqtt_task(
     restart_printer: &'static embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>,
 ) {
     loop {
-        let printer_mqtt_task = bambu_mqtt_task(stack, rx_buffer, tx_buffer, read_packets, write_packets, app_config.clone(), tls);
+        let printer_mqtt_task = bambu_mqtt_task(stack, rx_socket_buffer_size, tx_socket_buffer_size, read_packets, write_packets, app_config.clone(), tls);
         match select(printer_mqtt_task, restart_printer.wait()).await {
             Either::First(_) => {
                 // we arrive here only if something is wrong with config, so the only thing to do
@@ -1369,8 +1364,8 @@ pub async fn multi_bambu_mqtt_task(
 // This is specific to the hw and required detailes (buffer sizes, etc.)
 pub async fn bambu_mqtt_task(
     stack: Stack<'static>,
-    rx_buffer: &'static embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 8192]>,
-    tx_buffer: &'static embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 4096]>,
+    rx_socket_buffer_size: usize,
+    tx_socket_buffer_size: usize,
     read_packets: &'static PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>,
     write_packets: &'static Channel<NoopRawMutex, BufferedMqttPacket, 3>,
     app_config: Rc<RefCell<AppConfig>>,
@@ -1533,8 +1528,8 @@ pub async fn bambu_mqtt_task(
         0,
         &subscribe_topics,
         stack,
-        rx_buffer,
-        tx_buffer,
+        rx_socket_buffer_size,
+        tx_socket_buffer_size,
         write_packets,
         read_packets,
         Duration::from_secs(20),
