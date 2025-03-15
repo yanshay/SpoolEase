@@ -8,8 +8,8 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use derivative::Derivative;
 use core::{cell::RefCell, str::FromStr};
+use derivative::Derivative;
 use embassy_futures::select::{select, Either};
 use embassy_net::{Ipv4Address, Stack};
 use embassy_sync::{
@@ -281,11 +281,10 @@ impl BambuPrinter {
                     // new_tray.k_from_tray = tray_update.k.or(old_tray.k_from_tray);
                     // new_tray.cali_idx = tray_update.cali_idx.or(old_tray.cali_idx);
                     // new_tray.filament.
-                    // ... more 
+                    // ... more
                     //
                     // return Some(new_tray);
-                } else
-                if let Ok(tray_update) = self.tray_from_update(tray_update) {
+                } else if let Ok(tray_update) = self.tray_from_update(tray_update) {
                     if let Some(mut new_tray) = tray_update {
                         // External tray with data is always considered Ready
                         if matches!(new_tray.filament, Filament::Unknown) {
@@ -412,7 +411,8 @@ impl BambuPrinter {
         // theoretically possible if want to supssport that in this app using nfc as a source for example
         if let Some(tray_id) = print.tray_id {
             let tray_info_idx = print.tray_info_idx.as_ref().cloned().unwrap_or_default();
-            let new_filament = if tray_info_idx.is_empty() { // not even filament type available, this means a reset
+            let new_filament = if tray_info_idx.is_empty() {
+                // not even filament type available, this means a reset
                 Filament::Unknown
             } else {
                 Filament::Known(FilamentInfo {
@@ -423,7 +423,8 @@ impl BambuPrinter {
                     nozzle_temp_min: print.nozzle_temp_min.unwrap_or(190),
                 })
             };
-            if tray_id == 254 { // External tray handling
+            if tray_id == 254 {
+                // External tray handling
                 // Handle external tray
                 if new_filament == Filament::Unknown {
                     self.virt_tray.state = TrayState::Empty;
@@ -432,7 +433,8 @@ impl BambuPrinter {
                     self.virt_tray.state = TrayState::Ready;
                 }
                 self.virt_tray.filament = new_filament;
-            } else { // AMS Tray handling
+            } else {
+                // AMS Tray handling
                 // Handle AMS tray
                 if let Some(ams_id) = print.ams_id {
                     // no change to tray state in case of AMS
@@ -699,7 +701,6 @@ impl BambuPrinter {
             }
             if tray_id == 254 {
                 self.virt_tray.tag_info = Some(tag_info.clone())
-
             } else {
                 self.ams_trays[tray_id as usize].tag_info = Some(tag_info.clone());
             }
@@ -716,7 +717,7 @@ impl BambuPrinter {
         // We can deduce for a certain nozzle also based on information we have on other nozzle diameters in the filaments calibrations
 
         // within the same nozzle/printer-type setting_id & filament_id will be the same
-        // setting_id differs across nozzles/printer-types 
+        // setting_id differs across nozzles/printer-types
         // filament_id is the same across nozzles/printer-types
 
         // Go through nozzle sizes 0.2, 0.4, 0.6 and 0.8
@@ -802,7 +803,8 @@ impl BambuPrinter {
             // A3
             } else if let Some(calibration_match) = same_filament_id_nozzle_printer_type_calibrations
                 .clone()
-                .find(|printer_calibration| printer_calibration.1.k_value == filament_calibration.k_value) // because we are on same printer-type/nozzle this should be ok
+                .find(|printer_calibration| printer_calibration.1.k_value == filament_calibration.k_value)
+            // because we are on same printer-type/nozzle this should be ok
             {
                 warn!("Matched on A3, {:?}", calibration_match);
                 return Some(calibration_match.1.clone());
@@ -817,12 +819,10 @@ impl BambuPrinter {
         };
 
         for (_, filament_calibration) in &tag_info.calibrations {
-            // TODO: When tag has several calibrations for different nozzles, here we can iterate over them as well 
+            // TODO: When tag has several calibrations for different nozzles, here we can iterate over them as well
             // (so compare man to many) since name from another nozzle diameter could help finding for another nozzle
             // size, it's just name mathing
-            let same_filament_id_printer_calibrations = printer_calibrations
-                .iter()
-                .filter(|&c| c.1.filament_id == *tag_filament_id);
+            let same_filament_id_printer_calibrations = printer_calibrations.iter().filter(|&c| c.1.filament_id == *tag_filament_id);
             // B1
             if let Some(calibration_match) = same_filament_id_printer_calibrations
                 .clone()
@@ -1138,7 +1138,8 @@ fn formatted_k_value(k: &str) -> String {
 }
 
 impl From<&bambu_api::Filament> for Calibration {
-    fn from(v: &bambu_api::Filament) -> Self { // this "Filament" in bambu_api is really calibrations, bambulab naming ...
+    fn from(v: &bambu_api::Filament) -> Self {
+        // this "Filament" in bambu_api is really calibrations, bambulab naming ...
         Self {
             filament_id: v.filament_id.clone(),
             name: v.name.clone(),
@@ -1190,9 +1191,16 @@ pub async fn init(
         embassy_sync::signal::Signal::<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>::new()
     );
 
+    let rx_buffer = mk_static!(embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 8192]>, 
+                                    embassy_sync::mutex::Mutex::new([0; 8192]));
+    let tx_buffer = mk_static!(embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 4096]>, 
+                                    embassy_sync::mutex::Mutex::new([0; 4096]));
+
     spawner
         .spawn(multi_bambu_mqtt_task(
             stack,
+            rx_buffer,
+            tx_buffer,
             read_packets,
             write_packets,
             app_config.clone(),
@@ -1277,7 +1285,7 @@ pub async fn incoming_messages_task(
                                 debug!("MQTT Receive: {:?}", print);
                                 let mut skip = false;
                                 if let Some(print_result) = &print.print.result {
-                                   if print_result == "fail" {
+                                    if print_result == "fail" {
                                         warn!("Printer reported an error message, ignoring message");
                                         skip = true;
                                     }
@@ -1329,6 +1337,8 @@ pub async fn incoming_messages_task(
 #[embassy_executor::task]
 pub async fn multi_bambu_mqtt_task(
     stack: Stack<'static>,
+    rx_buffer: &'static embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 8192]>,
+    tx_buffer: &'static embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 4096]>,
     read_packets: &'static PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>,
     write_packets: &'static Channel<NoopRawMutex, BufferedMqttPacket, 3>,
     app_config: Rc<RefCell<AppConfig>>,
@@ -1336,7 +1346,7 @@ pub async fn multi_bambu_mqtt_task(
     restart_printer: &'static embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>,
 ) {
     loop {
-        let printer_mqtt_task = bambu_mqtt_task(stack, read_packets, write_packets, app_config.clone(), tls);
+        let printer_mqtt_task = bambu_mqtt_task(stack, rx_buffer, tx_buffer, read_packets, write_packets, app_config.clone(), tls);
         match select(printer_mqtt_task, restart_printer.wait()).await {
             Either::First(_) => {
                 // we arrive here only if something is wrong with config, so the only thing to do
@@ -1359,8 +1369,8 @@ pub async fn multi_bambu_mqtt_task(
 // This is specific to the hw and required detailes (buffer sizes, etc.)
 pub async fn bambu_mqtt_task(
     stack: Stack<'static>,
-    // socket_rx_buffer: &'static mut [u8;8192],
-    // socket_tx_buffer: &'static mut [u8;4096],
+    rx_buffer: &'static embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 8192]>,
+    tx_buffer: &'static embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 4096]>,
     read_packets: &'static PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>,
     write_packets: &'static Channel<NoopRawMutex, BufferedMqttPacket, 3>,
     app_config: Rc<RefCell<AppConfig>>,
@@ -1523,10 +1533,10 @@ pub async fn bambu_mqtt_task(
         0,
         &subscribe_topics,
         stack,
+        rx_buffer,
+        tx_buffer,
         write_packets,
         read_packets,
-        // socket_rx_buffer,
-        // socket_tx_buffer,
         Duration::from_secs(20),
         app_config,
         tls,
@@ -1631,8 +1641,10 @@ impl TagInformation {
         let empty = "".to_string();
         let printer_name = printer_name.unwrap_or(&empty);
         let encoded_printer_name = if !printer_name.is_empty() {
-           my_encode_to_url_part(&printer_name)
-        } else { "".to_string() };
+            my_encode_to_url_part(&printer_name)
+        } else {
+            "".to_string()
+        };
 
         let already_encoded_k_prefix = &format!("{}~{}", encoded_printer_name, printer_uuid.unwrap_or(&empty));
         let k_prefix = if !already_encoded_k_prefix.is_empty() {
