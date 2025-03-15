@@ -327,22 +327,17 @@ impl<'a> From<&'a PacketOnChannel> for mqttrust::Packet<'a> {
     }
 }
 
-static RX_BUFFER: embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 8192]> = 
-                                embassy_sync::mutex::Mutex::new([0; 8192]);
-static TX_BUFFER: embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; 4096]> = 
-                                embassy_sync::mutex::Mutex::new([0; 4096]);
-
 // Not Embassy Task since use generics
 #[allow(clippy::too_many_arguments)]
 pub async fn generic_mqtt_task<
     E: Into<IpEndpoint> + core::fmt::Debug + core::marker::Copy,
-    // const SOCKET_RX_SIZE: usize,
-    // const SOCKET_TX_SIZE: usize,
     M: RawMutex,
     const N: usize,
     const CAP: usize,
     const SUBS: usize,
     const PUBS: usize,
+    const SOCKET_RX_SIZE: usize,
+    const SOCKET_TX_SIZE: usize,
 >(
     remote_endpoint: E,
     printer_serial: &String,
@@ -351,10 +346,10 @@ pub async fn generic_mqtt_task<
     keep_alive_secs: u16,
     subscribe_topics: &[SubscribeTopic<'_>],
     stack: Stack<'static>,
+    rx_buffer: &'static embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; SOCKET_RX_SIZE]>,
+    tx_buffer: &'static embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; SOCKET_TX_SIZE]>,
     write_packets: &'static Channel<M, BufferedMqttPacket, N>,
     read_packets: &'static PubSubChannel<M, BufferedMqttPacket, CAP, SUBS, PUBS>,
-    // socket_rx_buffer: &'static mut [u8; SOCKET_RX_SIZE],
-    // socket_tx_buffer: &'static mut [u8; SOCKET_TX_SIZE],
     write_timeout: Duration,
     app_config: Rc<RefCell<AppConfig>>,
     tls: TlsReference<'static>,
@@ -363,8 +358,8 @@ pub async fn generic_mqtt_task<
     //     .unwrap()
     //     .with_hardware_rsa(&mut rsa);
 
-    let socket_rx_buffer = &mut *RX_BUFFER.lock().await;
-    let socket_tx_buffer = &mut *TX_BUFFER.lock().await;
+    let socket_rx_buffer = &mut *rx_buffer.lock().await;
+    let socket_tx_buffer = &mut *tx_buffer.lock().await;
     'establish_communication: loop {
         let mut socket = TcpSocket::new(stack, socket_rx_buffer, socket_tx_buffer);
 
