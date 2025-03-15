@@ -336,8 +336,6 @@ pub async fn generic_mqtt_task<
     const CAP: usize,
     const SUBS: usize,
     const PUBS: usize,
-    const SOCKET_RX_SIZE: usize,
-    const SOCKET_TX_SIZE: usize,
 >(
     remote_endpoint: E,
     printer_serial: &String,
@@ -346,20 +344,21 @@ pub async fn generic_mqtt_task<
     keep_alive_secs: u16,
     subscribe_topics: &[SubscribeTopic<'_>],
     stack: Stack<'static>,
-    rx_buffer: &'static embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; SOCKET_RX_SIZE]>,
-    tx_buffer: &'static embassy_sync::mutex::Mutex<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, [u8; SOCKET_TX_SIZE]>,
+    rx_socket_buffer_size: usize,
+    tx_socket_buffer_size: usize,
     write_packets: &'static Channel<M, BufferedMqttPacket, N>,
     read_packets: &'static PubSubChannel<M, BufferedMqttPacket, CAP, SUBS, PUBS>,
     write_timeout: Duration,
     app_config: Rc<RefCell<AppConfig>>,
     tls: TlsReference<'static>,
 ) -> ! {
-    // let tls = Tls::new(&mut sha)
-    //     .unwrap()
-    //     .with_hardware_rsa(&mut rsa);
 
-    let socket_rx_buffer = &mut *rx_buffer.lock().await;
-    let socket_tx_buffer = &mut *tx_buffer.lock().await;
+    let mut socket_rx_buffer = vec![0u8;rx_socket_buffer_size];
+    let mut socket_tx_buffer = vec![0u8;tx_socket_buffer_size];
+
+    let socket_rx_buffer = socket_rx_buffer.as_mut_slice();
+    let socket_tx_buffer = socket_tx_buffer.as_mut_slice();
+
     'establish_communication: loop {
         let mut socket = TcpSocket::new(stack, socket_rx_buffer, socket_tx_buffer);
 
