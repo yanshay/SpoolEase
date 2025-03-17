@@ -230,7 +230,7 @@
           onclick="applyKeyFetchConfigs()"
           disabled
         >
-          Verify Key
+          Verify Key & Load Config
         </button>
         <label class="feedback-label" id="security-key-feedback"></label>
       </div>
@@ -360,6 +360,7 @@
           type="button"
           class="apply-btn"
           onclick="applyPrintersSettings()"
+          disabled
         >
           Apply
         </button>
@@ -592,7 +593,7 @@
           document.getElementById("blackout-timeout").value,
         );
         const data = { dimming_timeout, dimming_percent, blackout_timeout };
-        const applyButton = document.getElementById("printer-apply");
+        const applyButton = document.getElementById("display-section-apply");
         sendConfigData("/api/display-config", data, applyButton); // Replace with actual server endpoint
       }
 
@@ -621,6 +622,7 @@
         // Add the first printer (cannot be removed)
         const firstPrinter = createPrinterTemplate(1, true);
         document.getElementById("printers-container").appendChild(firstPrinter);
+        updatePrinterNumbers(); 
         setupChangeListeners("wifi-section", "wifi-section-apply");
         setupChangeListeners(
           "verify-key-section",
@@ -629,6 +631,7 @@
         );
         setupChangeListeners("set-fixed-key-section", "set-fixed-key-apply");
         setupChangeListeners("display-section", "display-section-apply");
+        setupChangeListeners("printers-container", "printers-apply");
         // Setup IP fields
         setupIPFields(document.querySelectorAll(".ip-part"));
       });
@@ -731,7 +734,7 @@
         // Add printers from the data
         printersConfig.printers.forEach((printer, index) => {
           const isFirst = index === 0;
-          const newPrinterForm = createPrinterTemplate(index + 1, !isFirst);
+          const newPrinterForm = createPrinterTemplate(index + 1, true);
           printersContainer.appendChild(newPrinterForm);
 
           // Fill in the printer data
@@ -769,7 +772,7 @@
             }
           });
         }
-
+        updatePrinterNumbers();
         console.log("Loaded printer settings:", printersConfig);
       }
 
@@ -844,6 +847,7 @@
       function updatePrinterNumbers() {
         const printerForms = document.querySelectorAll(".printer-form");
         const showRemoveButton = printerForms.length > 1;
+        console.log(`updatePrinterNumbers: ${showRemoveButton}`);
 
         printerForms.forEach((form, index) => {
           const newId = index + 1;

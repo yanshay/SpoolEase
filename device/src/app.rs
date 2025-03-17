@@ -8,7 +8,7 @@ use esp_mbedtls::TlsReference;
 
 use framework::prelude::*;
 
-use crate::{app_config::AppConfig, bambu, spool_tag};
+use crate::{app_config::AppConfig, spool_tag};
 
 slint::include_modules!();
 
@@ -28,9 +28,7 @@ pub async fn app_task(
     spi_device: ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
     irq: esp_hal::gpio::Input<'static>,
 ) {
-    // == Setup Bambu Printer Model ===================================================
-
-    let bambu_printer_model = bambu::init(stack, app_config.clone(), tls).await;
+    let spawner = embassy_executor::Spawner::for_current_executor().await;
 
     // == Setup spool_tag =============================================================
 
@@ -45,8 +43,10 @@ pub async fn app_task(
         framework.clone(),
         // Application
         app_config.clone(),
-        bambu_printer_model,
+        // bambu_printer_model,
         spool_tag_model,
+        spawner, 
+        tls
     );
 
     (*view_model).borrow_mut().init();

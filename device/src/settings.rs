@@ -15,3 +15,5 @@ pub const WEB_APP_DOMAIN: &str = "device.spoolease.io";
 pub const WEB_APP_SECURITY_KEY_LENGTH: usize = 7; 
 pub const WEB_APP_SALT: &str = "example_salt"; // to be aligned with WASM & Captive HTML
 pub const WEB_APP_KEY_DERIVATION_ITERATIONS: u32 = 10_000; // to be aligned with WASM & Captive HTML
+
+pub const MAX_NUM_PRINTERS: usize = 5;

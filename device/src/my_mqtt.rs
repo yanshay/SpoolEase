@@ -2,6 +2,7 @@ use alloc::boxed::Box;
 use alloc::ffi::CString;
 use alloc::rc::Rc;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use embassy_time::with_timeout;
@@ -30,7 +31,7 @@ use mqttrust::{
 
 use framework::prelude::*;
 
-use crate::app_config::AppConfig;
+use crate::bambu::BambuPrinter;
 
 #[derive(Debug)]
 #[allow(clippy::enum_variant_names)]
@@ -346,12 +347,14 @@ pub async fn generic_mqtt_task<
     stack: Stack<'static>,
     rx_socket_buffer_size: usize,
     tx_socket_buffer_size: usize,
-    write_packets: &'static Channel<M, BufferedMqttPacket, N>,
-    read_packets: &'static PubSubChannel<M, BufferedMqttPacket, CAP, SUBS, PUBS>,
+    write_packets: Arc<Channel<M, BufferedMqttPacket, N>>,
+    read_packets: Arc<PubSubChannel<M, BufferedMqttPacket, CAP, SUBS, PUBS>>,
     write_timeout: Duration,
-    app_config: Rc<RefCell<AppConfig>>,
+    bambu_printer: Rc<RefCell<BambuPrinter>>,
     tls: TlsReference<'static>,
 ) -> ! {
+    let printer_number = bambu_printer.borrow().printer_number;
+    let printer_name = bambu_printer.borrow().printer_name.clone();
 
     let mut socket_rx_buffer = vec![0u8;rx_socket_buffer_size];
     let mut socket_tx_buffer = vec![0u8;tx_socket_buffer_size];
@@ -378,7 +381,7 @@ pub async fn generic_mqtt_task<
         let embassy_net::IpAddress::Ipv4(addr) = endpoint.addr else { todo!() }; // Ipv6 should not happen
         let octets = addr.octets();
 
-        term_info!("Connecting to Printer {} at {}.{}.{}.{}:{}", printer_serial, octets[0], octets[1], octets[2], octets[3], port);
+        term_info!("[{}] Connecting to Printer {} at {}.{}.{}.{}:{}", printer_number, printer_serial, octets[0], octets[1], octets[2], octets[3], port);
         let mut socket_error_count = 0;
         match socket.connect(remote_endpoint).await {
             Ok(()) => (),
@@ -391,14 +394,14 @@ pub async fn generic_mqtt_task<
                 // }
                 socket_error_count += 1;
                 if socket_error_count % 10 == 0 {
-                    term_error!("Unexpected error connecting socket {:?}", e);
+                    term_error!("[{}] nexpected error connecting socket {:?}", printer_number, e);
                 }
                 Timer::after(Duration::from_millis(1000)).await;
                 continue;
             }
         }
 
-        term_info!("Connected to Printer");
+        term_info!("[{}] Connected to Printer {}", printer_number, printer_name);
 
         let servername = CString::new(printer_serial.clone()).unwrap();
 
@@ -416,37 +419,37 @@ pub async fn generic_mqtt_task<
         ) {
             Ok(tls_starter) => tls_starter,
             Err(e) => {
-                term_error!("Error establishing TLS Connection {:?}", e);
+                term_error!("[{}] Error establishing TLS Connection {:?}", printer_number, e);
                 Timer::after(Duration::from_millis(500)).await;
                 continue;
             }
         };
 
-        term_info!("Establishing TLS connection with Printer");
+        term_info!("[{}] Establishing TLS connection with Printer", printer_number);
 
         if let Err(e) = session.connect().await {
             // any point in retrying several times when tls fail?
-            term_error!("Unexpected error during tls handshake {:?}", e);
+            term_error!("[{}] Unexpected error during tls handshake {:?}", printer_number, e);
             Timer::after(Duration::from_millis(500)).await;
             continue;
         }
 
-        term_info!("TLS connection with Printer established");
+        term_info!("[{}] TLS connection with Printer established", printer_number);
 
-        term_info!("Establishing MQTT connection with Printer");
+        term_info!("[{}] Establishing MQTT connection with Printer", printer_number);
         let mut my_mqtt = MyMqtt::new(session, write_timeout);
 
         if let Err(e) = my_mqtt.connect(keep_alive_secs, username, password.as_deref()).await {
             // any point in retrying mqtt connect ?
-            term_error!("Unexpected error during mqtt connect {:?}", e);
+            term_error!("[{}] Unexpected error during mqtt connect {:?}", printer_number, e);
             Timer::after(Duration::from_millis(500)).await;
             continue;
         }
-        term_info!("MQTT connection with Printer established");
+        term_info!("[{}] MQTT connection with Printer established", printer_number);
 
         let publisher = read_packets.immediate_publisher();
 
-        term_info!("Subscribing to Printer reports");
+        term_info!("[{}] Subscribing to Printer reports", printer_number);
         match my_mqtt.subscribe(None, subscribe_topics).await {
             Ok(Some(packet)) => match BufferedMqttPacket::try_from(packet) {
                 Ok(p) => {
@@ -454,21 +457,21 @@ pub async fn generic_mqtt_task<
                     publisher.publish_immediate(p);
                 }
                 Err(e) => {
-                    term_error!("Error converting internal packets data on read {:?}", e);
+                    term_error!("[{}] Error converting internal packets data on read {:?}", printer_number, e);
                 }
             },
             Ok(None) => {
-                term_error!("MQTT Recv:  None Packet");
+                term_error!("[{}] MQTT Recv:  None Packet", printer_number);
             },
             Err(e) => {
-                term_error!("Unexpected error during mqtt subscribe {:?}", e);
+                term_error!("[{}] Unexpected error during mqtt subscribe {:?}", printer_number, e);
                 Timer::after(Duration::from_millis(500)).await;
                 continue;
             }
         }
 
-        term_info!("Subscription to Printer reports confirmed");
-        app_config.borrow_mut().report_printer_connectivity(true);
+        term_info!("[{}] Subscription to Printer reports confirmed", printer_number);
+        bambu_printer.borrow_mut().report_printer_connectivity(true);
 
         loop {
             let res = if keep_alive_secs != 0 {
@@ -491,36 +494,36 @@ pub async fn generic_mqtt_task<
                             publisher.publish_immediate(p);
                         }
                         Err(e) => {
-                            term_error!("Error converting internal packets data on read {:?}", e);
+                            term_error!("[{}] Error converting internal packets data on read {:?}", printer_number, e);
                         }
                     },
                     Ok(None) => {
-                        term_error!("MQTT Recv:  None Packet");
+                        term_error!("[{}] MQTT Recv:  None Packet", printer_number);
                     }
                     Err(MyMqttError::TlsError(e)) => {
-                        term_error!("TLS Error on receive {:?}", e);
+                        term_error!("[{}] TLS Error on receive {:?}", printer_number, e);
                         continue 'establish_communication;
                     }
                     Err(e) => {
-                        term_error!("MQTT Recv: Error {:?}", e);
+                        term_error!("[{}] MQTT Recv: Error {:?}", printer_number, e);
                     }
                 },
                 // Second: Write Request
                 Either3::Second(packet) => match mqttrust::Packet::try_from(&packet) {
                     Ok(p) => {
                         if let Err(e) = my_mqtt.write(p).await {
-                            term_error!("MQTT write error: {:?}\nReconnecting...", e);
+                            term_error!("[{}] MQTT write error: {:?}\nReconnecting...", printer_number, e);
                             // any point retrying?
                             continue 'establish_communication;
                         }
                     }
                     Err(e) => {
-                        term_error!("Error converting between internal packets on write {:?}", e);
+                        term_error!("[{}] Error converting between internal packets on write {:?}", printer_number, e);
                     }
                 },
                 Either3::Third(()) => {
                     if let Err(e) = my_mqtt.write_pingreq().await {
-                        term_error!("MQTT Send: ping message error: {:?}", e);
+                        term_error!("[{}] MQTT Send: ping message error: {:?}", printer_number, e);
                         // any point retrying?
                         continue 'establish_communication;
                     }
