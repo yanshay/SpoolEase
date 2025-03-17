@@ -42,6 +42,7 @@ export component AppWindow inherits Window {
                 if self.handle-swipe-left &&  self.current-position.x < self.pressed-position.x - (self.width / 5) {
                    AppState.select-printer = true;
                    current-page_x = 1;
+                   current-page = current-page; // this looks strange, but to 'cut' the automatic state based vertical positioning tht scrolls on events which is confusing after manual touch
                 } else if self.handle-swipe-right && self.current-position.x > self.pressed-position.x + (self.width / 5) { 
                    AppState.select-printer = false;
                    current-page_x = 0;

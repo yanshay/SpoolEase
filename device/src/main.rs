@@ -64,14 +64,14 @@ use framework::prelude::*;
 use framework::wt32_sc01_plus::{WT32SC01Plus, WT32SC01PlusPeripherals, WT32SC01PlusRunner};
 
 use app_config::AppConfig;
-use settings::AP_ADDR;
+use settings::{AP_ADDR, MAX_NUM_PRINTERS};
 use settings::WEB_SERVER_NUM_LISTENERS;
 use settings::{
     OTA_DOMAIN, OTA_PATH, OTA_TOML_FILENAME, WEB_APP_DOMAIN, WEB_APP_KEY_DERIVATION_ITERATIONS, WEB_APP_SALT, WEB_APP_SECURITY_KEY_LENGTH,
     WEB_SERVER_CAPTIVE, WEB_SERVER_HTTPS, WEB_SERVER_PORT, WEB_SERVER_TLS_CERTIFICATE, WEB_SERVER_TLS_PRIVATE_KEY,
 };
 use web_app::NestedAppBuilder;
-const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 1 + FRAMEWORK_STA_STACK_RESOURCES; // web-config listeners + (mqtt / USDP(?), not together) + from framework: potentially https captive +  ota + captive dns + ? initial firmware check if doen't complete 
+const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 1 + 1*MAX_NUM_PRINTERS + FRAMEWORK_STA_STACK_RESOURCES ; // web-config listeners + USDP + mqtt*num-of-printers + from framework: potentially https captive +  ota + captive dns + ? initial firmware check if doen't complete 
 const AP_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + FRAMEWORK_AP_STACK_RESOURCES;
 
 #[macro_export]

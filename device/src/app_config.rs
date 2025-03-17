@@ -8,7 +8,6 @@ use alloc::{
 };
 use embassy_net::Ipv4Address;
 use serde::{Deserialize, Deserializer, Serializer};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 
 use framework::prelude::*;
 
@@ -74,60 +73,35 @@ struct TagConfig {
 //////////////////////////////////////////////////////////////////
 
 pub struct AppConfig {
-    observers: Vec<alloc::rc::Weak<RefCell<dyn AppControlObserver>>>,
     framework: Rc<RefCell<Framework>>,
     // configured are what configured
     pub configured_printers: PrintersConfig,
     pub configured_default_printer: DefaultPrinterConfig,
-    // w/o configured is also if learnt
-    printer_ip: Option<Ipv4Address>,
-    printer_name: Option<String>,
-    printer_serial: Option<String>,
-    printer_access_code: Option<String>,
-    printer_uuid_to_encode: Option<String>,
     pub tag_scan_timeout: u64,
 
     config_processed_ok: Option<bool>,
     pn532_ok: Option<bool>,
-    printer_connectivity_ok: Option<bool>,
 }
 
 impl AppConfig {
-    pub fn get_printer_ip(&self) -> Option<Ipv4Address> {
-        self.printer_ip
-    }
-    pub fn set_printer_ip(&mut self, printer_ip: Option<Ipv4Address>) {
-        self.printer_ip = printer_ip;
-    }
-    pub fn get_printer_name(&self) -> &Option<String> {
-        &self.printer_name
-    }
-    pub fn set_printer_name(&mut self, printer_name: Option<String>) {
-        self.printer_name = printer_name;
-    }
-    pub fn get_printer_serial(&self) -> &Option<String> {
-        &self.printer_serial
-    }
-    pub fn get_printer_uuid_to_encode(&self) -> &Option<String> {
-        &self.printer_uuid_to_encode
-    }
-    pub fn get_printer_access_code(&self) -> &Option<String> {
-        &self.printer_access_code
-    }
-
     #[allow(dead_code)]
     pub fn missing_configs(&self) -> bool {
-        let mut missing = false;
-        if self.printer_serial.is_none() {
-            term_error!("Missing configuration for Printer Serial");
-            missing = true;
+        let mut missing = true;
+        let mut partial_missing = false;
+        for printer in &self.configured_printers.printers {
+            if printer.serial.is_some() && printer.access_code.is_some() {
+                missing = false;
+            }
+            if printer.serial.is_none() || printer.access_code.is_none() {
+                partial_missing = true;
+            }
         }
-        if self.printer_access_code.is_none() {
-            term_error!("Missing configuration for Printer Access Code");
-            missing = true;
-        }
+
         if missing {
-            term_error!("Use Web Config to set missing configuration(s)");
+            term_error!("Missing complete printer information");
+        }
+        if partial_missing {
+            term_error!("At least one printer is missing serial/access_code configuration");
         }
 
         missing
@@ -135,131 +109,13 @@ impl AppConfig {
 
     pub fn new(framework: Rc<RefCell<Framework>>) -> Self {
         Self {
-            observers: Vec::new(),
             framework,
             configured_printers: PrintersConfig { printers: Vec::new() },
             configured_default_printer: DefaultPrinterConfig { serial: None },
-            printer_ip: None,
-            printer_name: None,
-            printer_serial: None,
-            printer_access_code: None,
-            printer_uuid_to_encode: None,
             tag_scan_timeout: 10,
 
             config_processed_ok: None,
             pn532_ok: None,
-            printer_connectivity_ok: None,
-        }
-    }
-
-    pub fn get_curr_printer_selector_text(&self) -> String {
-        self.printer_name
-            .as_ref()
-            .unwrap_or(self.printer_serial.as_ref().unwrap_or(&"".to_string()))
-            .clone()
-    }
-
-    pub fn get_default_printer_selector_text(&self) -> String {
-        if let Some(default_printer_serial) = &self.configured_default_printer.serial {
-            if let Some(printer) = self
-                .configured_printers
-                .printers
-                .iter()
-                .find(|printer| printer.serial.as_deref() == Some(&default_printer_serial))
-            {
-                printer
-                    .name
-                    .as_ref()
-                    .unwrap_or(printer.access_code.as_ref().unwrap_or(&"".to_string()))
-                    .clone()
-            } else {
-                String::default()
-            }
-        } else {
-            String::default()
-        }
-    }
-
-    pub fn get_printers_selector_texts(&self) -> Vec<String> {
-        self.configured_printers
-            .printers
-            .iter()
-            .map(|printer_config| {
-                printer_config
-                    .name
-                    .as_ref()
-                    .unwrap_or(printer_config.serial.as_ref().unwrap_or(&"".to_string()))
-                    .clone()
-            })
-            .collect()
-    }
-
-    pub fn set_current_printer_by_name_then_serial(&mut self, name_or_serial: &str) -> Result<(), String> {
-        if self.set_current_printer_by_name(name_or_serial).is_err() {
-            self.set_current_printer_by_serial(name_or_serial)?
-        }
-        Ok(())
-    }
-
-    fn set_current_printer(&mut self, printer: PrinterConfig) {
-        self.printer_ip = printer.ip;
-        self.printer_name = printer.name;
-        self.printer_serial = printer.serial;
-        self.printer_access_code = printer.access_code;
-        if let Some(printer_serial) = &self.printer_serial {
-            let array = printer_serial.as_bytes();
-            let key: &[u8;16] = b"SpoolEaseIsGreat"; // doesn't really matter, just can't ever change
-            let hasher = siphasher::sip::SipHasher24::new_with_key(key);
-            let hashed_serial = hasher.hash(array);
-            let hashed_encoded_serial = URL_SAFE_NO_PAD.encode(hashed_serial.to_le_bytes());
-            self.printer_uuid_to_encode = Some(hashed_encoded_serial);
-        } else {
-            self.printer_uuid_to_encode = None;
-        }
-    }
-
-    pub fn set_current_printer_by_name(&mut self, name: &str) -> Result<(), String> {
-        let printer = self
-            .configured_printers
-            .printers
-            .iter()
-            .find(|printer| printer.name.as_deref() == Some(name))
-            .cloned();
-        if let Some(printer) = printer {
-            self.set_current_printer(printer);
-            return Ok(());
-        } else {
-            debug!(">>>> Not Found the default printer {name}");
-            Err("Name not found".into())
-        }
-    }
-    pub fn set_current_printer_by_serial(&mut self, serial: &str) -> Result<(), String> {
-        let printer = self
-            .configured_printers
-            .printers
-            .iter()
-            .find(|printer| printer.serial.as_deref() == Some(serial))
-            .cloned();
-        if let Some(printer) = printer {
-            self.set_current_printer(printer);
-            return Ok(());
-        } else {
-            debug!(">>>> Not Found the default printer {serial}");
-            Err("Serial not found".into())
-        }
-    }
-    pub fn set_current_printer_to_default(&mut self) -> Result<(), String> {
-        let mut serial = self.configured_default_printer.serial.clone();
-
-        if serial.is_none() {
-            if self.configured_printers.printers.len() > 0 {
-                serial = self.configured_printers.printers[0].serial.clone()
-            }
-        }
-        if let Some(serial) = serial {
-            return self.set_current_printer_by_serial(&serial);
-        } else {
-            return Err("No printers to select".into());
         }
     }
 
@@ -275,9 +131,9 @@ impl AppConfig {
                         self.configured_default_printer = default_printer_config;
                     }
                 }
-                if let Err(err) = self.set_current_printer_to_default() {
-                    term_info!("Bad printers configuration, can't select printer: {}", err);
-                }
+                // if let Err(err) = self.set_current_printer_to_default() {
+                //     term_info!("Bad printers configuration, can't select printer: {}", err);
+                // }
             }
         } else {
             // backwards compatibility with a single printer
@@ -286,9 +142,9 @@ impl AppConfig {
                 if let Ok(printer_config) = serde_json::from_str::<PrinterConfig>(&printer_store) {
                     self.configured_default_printer.serial = printer_config.serial.clone();
                     self.configured_printers.printers.push(printer_config);
-                    if let Err(err) = self.set_current_printer_to_default() {
-                        term_info!("Bad printers configuration, can't select printer: {}", err);
-                    }
+                    // if let Err(err) = self.set_current_printer_to_default() {
+                    //     term_info!("Bad printers configuration, can't select printer: {}", err);
+                    // }
                 }
             }
         } 
@@ -370,9 +226,9 @@ impl AppConfig {
         }
         if toml_priner_config != PrinterConfig::default() {
             self.configured_printers.printers.push(toml_priner_config);
-            if let Err(err) = self.set_current_printer_to_default() {
-                term_info!("Bad printer configuration {}", err);
-            }
+            // if let Err(err) = self.set_current_printer_to_default() {
+            //     term_info!("Bad printer configuration {}", err);
+            // }
         }
         self.config_processed_ok = Some(true);
         Ok(())
@@ -381,22 +237,19 @@ impl AppConfig {
     pub fn report_pn532(&mut self, status: bool) {
         self.pn532_ok = Some(status);
     }
-    pub fn report_printer_connectivity(&mut self, status: bool) {
-        self.printer_connectivity_ok = Some(status);
-        self.notify_printer_connect_status(status);
-    }
 
     pub fn initialization_ok(&self) -> bool {
         self.framework.borrow().initialization_ok()
             && matches!(self.config_processed_ok, Some(true))
             && matches!(self.pn532_ok, Some(true))
-            && self.printer_serial != None
-            && self.printer_access_code != None
+            && !self.missing_configs()
+            // && self.printer_serial != None
+            // && self.printer_access_code != None
     }
 
     #[allow(dead_code)]
     pub fn boot_completed(&self) -> bool {
-        self.framework.borrow().boot_completed() && self.initialization_ok() && matches!(self.printer_connectivity_ok, Some(true))
+        self.framework.borrow().boot_completed() && self.initialization_ok()
     }
 
     pub fn set_printers_config(
@@ -426,18 +279,5 @@ impl AppConfig {
 
     // Events
 
-    pub fn subscribe(&mut self, observer: alloc::rc::Weak<RefCell<dyn AppControlObserver>>) {
-        self.observers.push(observer);
-    }
-
-    pub fn notify_printer_connect_status(&self, status: bool) {
-        for weak_observer in self.observers.iter() {
-            let observer = weak_observer.upgrade().unwrap();
-            observer.borrow_mut().on_printer_connect_status(status);
-        }
-    }
 }
 
-pub trait AppControlObserver {
-    fn on_printer_connect_status(&self, status: bool);
-}
