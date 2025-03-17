@@ -1,5 +1,8 @@
 # Troubleshooting Guide
 
+Here are some common issues. Additional ones may be found in the [issues](https://github.com/yanshay/SpoolEase/issues) and [discussions](https://github.com/yanshay/SpoolEase/discussions) areas on GitHub, including closed issues, so be sure to search there as well.
+
+
 ## Initialization
 #### SpoolEase fails to establish communication with the NFC Tag Reader, showing a `TimeoutAck` error.
 - Check that you configured the DIP switches correctly as described in the documentation.
