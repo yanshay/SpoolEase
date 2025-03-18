@@ -377,7 +377,7 @@ async fn main(spawner: Spawner) {
     // == Load Configuration from SDCard, required here for WiFi ssid & password ======
 
     let config_filename = format!("/{}.cfg", env!("CARGO_PKG_NAME").to_lowercase());
-    term_info!("Loading config file '{}' from SDCard", config_filename);
+    term_info!("Loading optional config file '{}' from SDCard", config_filename);
 
     let read_file_str = sdcard.read_file_str(&config_filename);
     let config_toml = match read_file_str {
@@ -386,7 +386,7 @@ async fn main(spawner: Spawner) {
             config_toml
         }
         Err(e) => {
-            term_error!("Failed to load config file '{}' : {}", config_filename, e);
+            term_info!("Failed to load optional config file '{}' : {}", config_filename, e);
             "".to_string()
             // SDCard is not mandatory, so can continue
         }

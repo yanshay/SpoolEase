@@ -47,6 +47,7 @@ pub struct BambuPrinter {
     pub configured_printer_name: Option<String>,
     pub configured_printer_ip: Option<Ipv4Address>,
     pub printer_name: String,
+    pub printer_selector_name: String, // configured_printer_name or if not set then printer_serial which is always available
     pub printer_ip: Ipv4Address,
     pub printer_uuid_to_encode: String,
     pub printer_connectivity_ok: Option<bool>,
@@ -65,8 +66,8 @@ pub struct BambuPrinter {
 }
 
 pub trait BambuPrinterObserver {
-    fn on_trays_update(&self, bambu_printer: &BambuPrinter, prev_tray_reading_bits: Option<u32>, new_tray_reading_bits: Option<u32>);
-    fn on_printer_connect_status(&self, status: bool);
+    fn on_trays_update(&mut self, bambu_printer: &mut BambuPrinter, prev_tray_reading_bits: Option<u32>, new_tray_reading_bits: Option<u32>);
+    fn on_printer_connect_status(&self, bambu_printer: &mut BambuPrinter, status: bool);
 }
 
 impl BambuPrinter {
@@ -95,6 +96,13 @@ impl BambuPrinter {
         let hashed_encoded_serial = URL_SAFE_NO_PAD.encode(hashed_serial.to_le_bytes());
         let printer_uuid_to_encode = hashed_encoded_serial;
 
+        // Define a user oriented name for selection
+        let printer_selector_name = if let Some(printer_name) = &printer_name {
+            printer_name.clone()
+        } else {
+            printer_serial.to_string()
+        };
+
         Self {
             printer_number,
             printer_serial: String::from(printer_serial),
@@ -103,6 +111,7 @@ impl BambuPrinter {
             configured_printer_name: printer_name.clone(),
             printer_ip: printer_ip.unwrap_or(Ipv4Address::new(0, 0, 0, 0)),
             printer_name: printer_name.clone().unwrap_or("Unknown".to_string()),
+            printer_selector_name,
             printer_uuid_to_encode,
             printer_connectivity_ok: None,
             nozzle_diameter: None,
@@ -162,7 +171,7 @@ impl BambuPrinter {
     pub fn subscribe(&mut self, observer: alloc::rc::Weak<RefCell<dyn BambuPrinterObserver>>) {
         self.observers.push(observer);
     }
-    pub fn clear_all_subscriptions(&mut self) {
+    pub fn _clear_all_subscriptions(&mut self) {
         self.observers.clear();
     }
 
@@ -541,9 +550,9 @@ impl BambuPrinter {
 
     pub fn process_print_message(&mut self, print: &bambu_api::PrintData) -> bool {
         if let Some(sequence_id) = &print.sequence_id {
-            debug!("[{}] -> Message {}", self.printer_name, sequence_id);
+            debug!("[{}] -> Message {}", self.printer_number+1, sequence_id);
         } else {
-            warn!("[{}] -> Message with No sequence_id ?", self.printer_name);
+            warn!("[{}] -> Message with No sequence_id ?", self.printer_number+1);
         }
         // important: Can't issue event from here because this method is called with a mut reference (even if behind RefCell)
         // Therefore, to issue an event need to call update_ams_trays_done afterwards through a non mut reference (so not borrow_mut if refcell)
@@ -590,20 +599,22 @@ impl BambuPrinter {
                 // debug!("[{}]             {command} message", &self.printer_name.as_ref().unwrap_or(&"".to_string()));
                 change_made = self.process_print_message__extrusion_cali_get(print);
             }
-            debug!("[{}]    {command} message", &self.printer_number);
+            debug!("[{}]    {command} message", &self.printer_number+1);
         }
         change_made
     }
 
-    pub fn notify_printer_connect_status(&self, status: bool) {
-        for weak_observer in self.observers.iter() {
+    pub fn notify_printer_connect_status(&mut self, status: bool) {
+        let mut observers = self.observers.clone(); // to avoid two references - can probably optimize in various ways
+        for weak_observer in observers.iter_mut() {
             let observer = weak_observer.upgrade().unwrap();
-            observer.borrow_mut().on_printer_connect_status(status);
+            observer.borrow_mut().on_printer_connect_status(self, status);
         }
     }
 
-    pub fn update_ams_trays_done(&self, prev_trays_reading_bits: Option<u32>, new_trays_reading_bits: Option<u32>) {
-        for weak_observer in self.observers.iter() {
+    pub fn update_ams_trays_done(&mut self, prev_trays_reading_bits: Option<u32>, new_trays_reading_bits: Option<u32>) {
+        let mut observers = self.observers.clone(); // to avoid two references - can probably optimize in various ways
+        for weak_observer in observers.iter_mut() {
             let observer = weak_observer.upgrade().unwrap();
             observer
                 .borrow_mut()
@@ -614,7 +625,7 @@ impl BambuPrinter {
     // TODO: Unify sending messages, no need for two functions
 
     pub fn publish_payload(&self, payload: String) {
-        debug!("[{}] MQTT Publish: {}", self.printer_number, payload);
+        debug!("[{}] MQTT Publish: {}", self.printer_number+1, payload);
 
         let topic_name = format!("device/{}/request", &self.printer_serial);
         let topic_name = topic_name.as_str();
@@ -635,10 +646,11 @@ impl BambuPrinter {
 
     pub async fn publish_payload_async(
         printer_serial: &String,
+        printer_number: usize,
         write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
         payload: String,
     ) {
-        debug!("MQTT Publish: {}", payload);
+        debug!("[{}] MQTT Publish: {}", printer_number, payload);
         let topic_name = format!("device/{}/request", printer_serial);
         let topic_name = topic_name.as_str();
 
@@ -662,11 +674,12 @@ impl BambuPrinter {
 
     pub async fn request_full_update_async(
         printer_serial: &String,
+        printer_number: usize,
         write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
     ) {
         let cmd = crate::bambu_api::PushAllCommand::new();
         let payload = serde_json::to_string_pretty(&cmd).unwrap();
-        BambuPrinter::publish_payload_async(printer_serial, write_packets, payload).await;
+        BambuPrinter::publish_payload_async(printer_serial, printer_number, write_packets, payload).await;
     }
 
     pub fn fetch_filament_calibrations(&self, nozzle_diameter: &str) {
@@ -677,12 +690,13 @@ impl BambuPrinter {
 
     pub async fn fetch_filament_calibrations_async(
         printer_serial: &String,
+        printer_number: usize,
         write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
         nozzle_diameter: &str,
     ) {
         let cmd = crate::bambu_api::ExtrusionCaliGetCommand::new(nozzle_diameter);
         let payload = serde_json::to_string_pretty(&cmd).unwrap();
-        BambuPrinter::publish_payload_async(printer_serial, write_packets, payload).await;
+        BambuPrinter::publish_payload_async(printer_serial, printer_number, write_packets, payload).await;
     }
 
     pub fn set_tray_filament(&mut self, tray_id: i32, tag_info: &TagInformation) {
@@ -1268,15 +1282,16 @@ pub fn init(
 pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
     let write_packets = bambu_printer.borrow().write_packets.clone();
     let printer_serial = bambu_printer.borrow().printer_serial.clone();
+    let printer_number = bambu_printer.borrow().printer_number;
 
     // fetch first setting for all nozzles, need that in advance before getting filaments
     let nozzle_diameters = ["0.8", "0.6", "0.2", "0.4"];
     for nozzle_diameter in nozzle_diameters {
-        BambuPrinter::fetch_filament_calibrations_async(&printer_serial, write_packets.clone(), nozzle_diameter).await;
+        BambuPrinter::fetch_filament_calibrations_async(&printer_serial, printer_number, write_packets.clone(), nozzle_diameter).await;
     }
 
     // Now request full update, and wait until data is processed and have the nozzle diameter at hand for next request
-    BambuPrinter::request_full_update_async(&printer_serial, write_packets.clone()).await;
+    BambuPrinter::request_full_update_async(&printer_serial, printer_number, write_packets.clone()).await;
     while bambu_printer.borrow().nozzle_diameter.is_none() {
         Timer::after_millis(100).await;
     }
@@ -1285,7 +1300,7 @@ pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
     // that's because in slicer they don't check if data received from printer it's current nozzle or not
     // it's a bug there, can even be reproduced in the slicer by switching in the manage results to another nozzle diameter
     let curr_nozzle_diameter = bambu_printer.borrow().nozzle_diameter.as_ref().unwrap().clone();
-    BambuPrinter::fetch_filament_calibrations_async(&printer_serial, write_packets, &curr_nozzle_diameter).await;
+    BambuPrinter::fetch_filament_calibrations_async(&printer_serial, printer_number, write_packets, &curr_nozzle_diameter).await;
 }
 
 #[embassy_executor::task(pool_size = MAX_NUM_PRINTERS)]
@@ -1295,7 +1310,7 @@ pub async fn incoming_messages_task(
 ) {
     let mut subscriber = read_packets.subscriber().unwrap();
     const KEEP_ALIVE_SEC: u32 = 20;
-    let printer_number = bambu_printer.borrow().printer_number;
+    let printer_log_id = bambu_printer.borrow().printer_number+1;
 
     let mut printer_known_to_be_up = false;
     loop {
@@ -1316,12 +1331,11 @@ pub async fn incoming_messages_task(
                         }) => {
                             let parse_res = serde_json::from_slice::<bambu_api::Print>(payload);
                             if let Ok(print) = parse_res {
-       // let printer_number = bambu_printer.borrow().printer_number.clone();
-       // debug!("[{}] {:?}", printer_number, print);
+       // debug!("[{}] {:?}", printer_log_id, print);
                                 let mut skip = false;
                                 if let Some(print_result) = &print.print.result {
                                     if print_result == "fail" {
-                                        warn!("[{}] Printer reported an error message, ignoring message", printer_number);
+                                        warn!("[{}] Printer reported an error message, ignoring message", printer_log_id);
                                         skip = true;
                                     }
                                 }
@@ -1330,11 +1344,11 @@ pub async fn incoming_messages_task(
                                     let change_made = (*bambu_printer.borrow_mut()).process_print_message(&print.print);
                                     let updated_reading_bits = bambu_printer.borrow().tray_reading_bits;
                                     if change_made {
-                                        (*bambu_printer.borrow()).update_ams_trays_done(previous_reading_bits, updated_reading_bits);
+                                        (*bambu_printer.borrow_mut()).update_ams_trays_done(previous_reading_bits, updated_reading_bits);
                                     }
                                 }
                             } else {
-                                warn!("[{}] Unprocessed message {:?} : {:?}", printer_number, parse_res, core::str::from_utf8(payload));
+                                warn!("[{}] Unprocessed message {:?} : {:?}", printer_log_id, parse_res, core::str::from_utf8(payload));
                             }
                         }
                         mqttrust::Packet::Suback(mqttrust::encoding::v4::Suback { pid: _, return_codes: _ }) => {
@@ -1350,10 +1364,11 @@ pub async fn incoming_messages_task(
             }
             Err(_) => {
                 if printer_known_to_be_up {
-                    warn!("[{}] Printer connectivity issues suspected (uncertain), checking", printer_number);
+                    warn!("[{}] Printer connectivity issues suspected (uncertain), checking", printer_log_id);
                     let write_packets = bambu_printer.borrow().write_packets.clone();
                     let printer_serial = bambu_printer.borrow().printer_serial.clone();
-                    BambuPrinter::request_full_update_async(&printer_serial, write_packets).await;
+                    let printer_number = bambu_printer.borrow().printer_number;
+                    BambuPrinter::request_full_update_async(&printer_serial, printer_number, write_packets).await;
                     printer_known_to_be_up = false;
                 }
             }
@@ -1426,13 +1441,13 @@ pub async fn bambu_mqtt_task(
     >,
 ) {
     let printer_serial = bambu_printer.borrow().printer_serial.clone();
-    let printer_number =bambu_printer.borrow().printer_number; 
+    let printer_log_id =bambu_printer.borrow().printer_number+1; 
     let subscribe_topics = [mqttrust::SubscribeTopic {
         topic_path: &format!("device/{}/report", printer_serial),
         qos: mqttrust::QoS::AtLeastOnce,
     }];
 
-    info!("[{}] Waiting for IP in Bambu Mqtt Task", printer_number);
+    info!("[{}] Waiting for IP in Bambu Mqtt Task", printer_log_id);
     // let mut wait_counter = 0;
     // const SKIP_CHECKS: i32 = 4;
     loop {
@@ -1441,14 +1456,14 @@ pub async fn bambu_mqtt_task(
         }
         Timer::after(Duration::from_millis(250)).await;
     }
-    info!("[{}] From Bambu MQTT - got IP", printer_number);
+    info!("[{}] From Bambu MQTT - got IP", printer_log_id);
     Timer::after(Duration::from_millis(250)).await; // So log will come after wifi log
 
     let printer_ip: Ipv4Address;
     let printer_name: String;
 
     if bambu_printer.borrow().configured_printer_ip.is_none() {
-        term_info!("[{}] No Printer IP configured, discovering Printer {}", printer_number, printer_serial);
+        term_info!("[{}] No Printer IP configured, discovering Printer", printer_log_id);
         let mut ssdp_subscribe = ssdp_pub_sub.subscriber().unwrap();
         loop {
             let ssdp_info = ssdp_subscribe.next_message().await;
@@ -1458,6 +1473,7 @@ pub async fn bambu_mqtt_task(
                     if printer_serial == ssdp_info.serial.unwrap_or("".to_string()) {
                         printer_ip = ssdp_info.ip.unwrap();
                         printer_name = ssdp_info.name.unwrap();
+                        term_info!("[{}] Discovered printer {}", printer_log_id, printer_name);
                         break;
                     }
                 }
@@ -1742,7 +1758,7 @@ pub async fn ssdp_task(
     recv_socket2.bind(recv_source_endpoint2).unwrap();
 
     loop {
-        debug!("Waiting for SSDP UDP");
+        // debug!("Waiting for SSDP UDP");
 
         let data = match select(recv_socket1.recv_from(&mut buf1), recv_socket2.recv_from(&mut buf2)).await {
             Either::First(Ok(inner_res)) => {
@@ -1807,8 +1823,8 @@ pub async fn ssdp_task(
                         }
                     }
                     if found_printer_serial.is_some() {
-                        info!("SSDP Discovered a Bambu Printer at {:?}", found_printer_ip);
-                        info!("Printer named '{:?}'", found_printer_name);
+                        // info!("SSDP Discovered a Bambu Printer at {:?}", found_printer_ip);
+                        // info!("Printer named '{:?}'", found_printer_name);
                         let ssdp_info = BambuSSDPInfo {
                             serial: found_printer_serial,
                             name: found_printer_name,
