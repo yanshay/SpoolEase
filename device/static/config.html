@@ -431,7 +431,7 @@
       // Utility function to collect form data and send to the server
       async function sendConfigData(url, data, applyButton) {
         try {
-          let response = await sendData(`${urlPrefix}${url}`, data);
+          let response = await sendData(`${url}`, data);
           if (!response.ok) throw new Error(`Error: ${response.statusText}`);
           const encryptedText = await response.text();
           const decryptedText = decrypt(encryptionKey, encryptedText);
@@ -496,6 +496,7 @@
           try {
             return await operation();
           } catch (error) {
+            console.log(error);
             if (i === retries - 1) throw error; // Throw error if it's the last retry
           }
         }
@@ -713,8 +714,10 @@
                     <div class="error-message ip-error">IP requires name to be provided</div>
                 </div>
                 
-                <div style="display: flex">
+                <div style="display: flex; align-items: center;">
                   <button class="default-btn" type="button" onclick="setAsDefault(${id})">Set as Default</button>
+                  <input class="printer-log-filter" type="checkbox" id="printer-log-filter">
+                  <label for="printer-log-filter" style="margin-top: 6px; padding-left: 2px;">Enable Logs</label>
                   <button class="add-btn" style="margin-left:auto" type="button" onclick="addPrinterBelow(this)">Add Printer Below</button>
                 </div>
             `;
@@ -756,6 +759,20 @@
               ipInputs[i].value = ipParts[i];
             }
           }
+
+          var logsEnabled = false;
+          if (printer.log_filter) {
+            switch (printer.log_filter) {
+              case 'OFF': 
+              case 'ERROR':
+              case 'WARN':
+                logsEnabled = false;
+                break;
+              default:
+                logsEnabled = true;
+            }
+          }
+          newPrinterForm.querySelector(".printer-log-filter").checked = logsEnabled;
         });
 
         // Setup IP fields for all printers
@@ -965,6 +982,7 @@
           const serial = form.querySelector(".serial").value.trim();
           const accessCode = form.querySelector(".access-code").value.trim();
           const name = form.querySelector(".name").value.trim();
+          const logFilterEnabled = form.querySelector(".printer-log-filter").checked;
 
           const ipParts = Array.from(form.querySelectorAll(".ip-part"));
           const ipValid = ipParts.every((part) => part.value.trim() !== "");
@@ -985,6 +1003,12 @@
 
           if (ip) {
             printer.ip = ip;
+          }
+
+          if (logFilterEnabled) {
+            printer.log_filter = "TRACE";
+          } else {
+            printer.log_filter = "WARN";
           }
 
           printers.push(printer);

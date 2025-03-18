@@ -93,7 +93,7 @@ picoserve = {version = "0.14.1", git = "https://github.com/sammhicks/picoserve",
 # Utility crates
 cfg-if = "1.0.0"
 no_std_io = { version = "0.6.0", default-features = false, features = [ "alloc" ] }
-log = "0.4.22"
+log = { version = "0.4.22", features = ["serde"] }
 heapless = "0.8.0"
 critical-section = "1.2.0"
 static_cell = { version = "2.1", features = ["nightly"] }

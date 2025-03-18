@@ -54,6 +54,7 @@ pub struct PrinterConfig {
     pub name: Option<String>,
     pub serial: Option<String>,
     pub access_code: Option<String>,
+    pub log_filter: Option<log::LevelFilter>,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
