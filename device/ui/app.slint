@@ -93,6 +93,13 @@ export global AppState {
     in-out property <string> curr-printer: "";
     in-out property <[string]> available-printers: [];
     in-out property <string> default-printer: "";
+    in-out property <string> pending-curr-printer: "";
+    changed pending-curr-printer => {
+      if pending-curr-printer != "" {
+        AppBackend.select-printer(pending-curr-printer);
+        pending-curr-printer = "";
+      }
+    }
 
     in-out property <bool> highlight-trays: false;
     in-out property <bool> highlight-staging: false;
@@ -117,8 +124,10 @@ export global AppState {
 
 // Functions called locally fom Rust
 
-    public function boot-succeeded() {
-        self.control-state = ControlState.Ready;
+    public function printer-connected(printer-name: string) {
+        if self.control-state == ControlState.Booting || self.control-state == ControlState.ConnectingToPrinter {
+            self.control-state = ControlState.Ready;
+        }
     }
 
     public function boot-failed(status: string) {
@@ -193,11 +202,14 @@ export global AppState {
         self.user-message = (tray-id == 254 ? "Configuring\nExternal Spool Filament\nFailed" : "Configuring\nAMS \{ams-id + 1}, Slot \{tray-id + 1} Filament\nFailed");
         self.user-message-type = StatusType.Error;
     }
-    public function tray-update-succeeded(ams-id: int, tray-id: int) {
+    public function tray-update-succeeded(printer: string, ams-id: int, tray-id: int) {
         self.control-state = ControlState.PostAction;
         self.user-message = (tray-id == 254 ? "Configuring\nExternal Spool Filament\nSucceeded" : "Configuring\nAMS \{ams-id + 1}, Slot \{tray-id + 1} Filament\nSucceeded");
         self.user-message-type = StatusType.Success;
         start-highlight-tray((tray-id == 254) ? 254 : tray-id + ams-id * 4);
+        if printer != self.curr-printer {
+          self.set-later-curr-printer(printer)
+        }
     }
 
     public function encode-start(tray-id: int) {
@@ -221,8 +233,14 @@ export global AppState {
         self.default-printer = default-printer;
     }
 
-    public function set-curr_printer(curr-printer: string) {
+    public function set-curr-printer(curr-printer: string) {
         self.curr-printer = curr_printer;
+    }
+    // the below is a function to call with delay the select-printer
+    // to avoid rust's borrowing issues in the implementation
+    // uses property changed for delayed call
+    public function set-later-curr-printer(curr-printer: string) {
+        self.pending-curr-printer = curr-printer
     }
 
     public function reset-printer() {

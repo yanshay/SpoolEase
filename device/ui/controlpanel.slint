@@ -125,7 +125,7 @@ export component Ready inherits ControlPanelBase {
     message-color: color-timer.color;
     message-text: (AppState.spool-staging-state == SpoolStagingState.Empty) ? 
                       ("Scanning for Tagged Spool..." + (AppState.available-printers.length > 1 ? "\n\n\{AppState.curr-printer}" : "")) 
-                    : "Load Spool\nor\nRescan Tag";
+                    : "Load Spool\nor Rescan Tag" + (AppState.available-printers.length > 1 ? "\n\n\{AppState.curr-printer}" : "");
     button1-text: (AppState.spool-staging-state == SpoolStagingState.Loaded) ? "Clear Staging" : "";
     button1-timeout: (AppState.spool-staging-state == SpoolStagingState.Loaded) ? 60 : 0;
     button2-text: "Encode Tag";
