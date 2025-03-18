@@ -41,6 +41,7 @@ use crate::{
 const FILAMENT_URL_PREFIX: &str = "https://info.filament3d.org/";
 
 pub struct BambuPrinter {
+    pub log_filter: log::LevelFilter,
     pub printer_number: usize, // number of printer in user's configuration,
     pub printer_index: usize, // index of printer in the array of printers, if a config is not good and skipped, then index would be different than number
     pub printer_serial: String,      // mandatory, so configured is the same as actual
@@ -82,6 +83,7 @@ impl BambuPrinter {
         write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
         app_config: Rc<RefCell<AppConfig>>,
         restart_printer: Arc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
+        log_filter: log::LevelFilter,
     ) -> Self {
         let unknown = Tray {
             state: TrayState::Unknown,
@@ -146,6 +148,7 @@ impl BambuPrinter {
             tray_reading_bits: None,
             ams_exist_bits: None,
             restart_printer,
+            log_filter
         }
     }
 
@@ -160,6 +163,7 @@ impl BambuPrinter {
             self.write_packets.clone(),
             self.app_config.clone(),
             self.restart_printer.clone(),
+            self.log_filter,
         );
         *self = Self {
             observers: self.observers.clone(),
@@ -554,9 +558,9 @@ impl BambuPrinter {
 
     pub fn process_print_message(&mut self, print: &bambu_api::PrintData) -> bool {
         if let Some(sequence_id) = &print.sequence_id {
-            debug!("[{}] -> Message {}", self.printer_number, sequence_id);
+            if self.log_filter >= log::Level::Debug { debug!("[{}] -> Message {}", self.printer_number, sequence_id); } 
         } else {
-            warn!("[{}] -> Message with No sequence_id ?", self.printer_number);
+            if self.log_filter >= log::Level::Warn { warn!("[{}] -> Message with No sequence_id ?", self.printer_number); }
         }
         // important: Can't issue event from here because this method is called with a mut reference (even if behind RefCell)
         // Therefore, to issue an event need to call update_ams_trays_done afterwards through a non mut reference (so not borrow_mut if refcell)
@@ -564,7 +568,6 @@ impl BambuPrinter {
         let mut change_made = false;
         if let Some(command) = &print.command {
             if command == "push_status" {
-                // debug!("             {command} message");
                 let mut nozzle_diameter_change_made = false;
                 let mut ams_change_made = false;
                 let mut vt_tray_change_made = false;
@@ -600,10 +603,9 @@ impl BambuPrinter {
             } else if command == "extrusion_cali_get" {
                 // TODO: Check: distinguish between command that was sent and the result, which are structured the same
                 // here we want to process only the results (the one that includes the list of filaments )
-                // debug!("[{}]             {command} message", &self.printer_name.as_ref().unwrap_or(&"".to_string()));
                 change_made = self.process_print_message__extrusion_cali_get(print);
             }
-            debug!("[{}]    {command} message", &self.printer_number);
+            if self.log_filter >= log::Level::Debug { debug!("[{}]    {command} message", &self.printer_number); }
         }
         change_made
     }
@@ -629,7 +631,7 @@ impl BambuPrinter {
     // TODO: Unify sending messages, no need for two functions
 
     pub fn publish_payload(&self, payload: String) {
-        debug!("[{}] MQTT Publish: {}", self.printer_number, payload);
+        if self.log_filter >= log::Level::Debug { debug!("[{}] MQTT Publish: {}", self.printer_number, payload); }
 
         let topic_name = format!("device/{}/request", &self.printer_serial);
         let topic_name = topic_name.as_str();
@@ -651,10 +653,11 @@ impl BambuPrinter {
     pub async fn publish_payload_async(
         printer_serial: &String,
         printer_number: usize,
+        log_filter: log::LevelFilter,
         write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
         payload: String,
     ) {
-        debug!("[{}] MQTT Publish: {}", printer_number, payload);
+        if log_filter >= log::Level::Debug { debug!("[{}] MQTT Publish: {}", printer_number, payload); }
         let topic_name = format!("device/{}/request", printer_serial);
         let topic_name = topic_name.as_str();
 
@@ -679,11 +682,12 @@ impl BambuPrinter {
     pub async fn request_full_update_async(
         printer_serial: &String,
         printer_number: usize,
+        log_filter: log::LevelFilter,
         write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
     ) {
         let cmd = crate::bambu_api::PushAllCommand::new();
         let payload = serde_json::to_string_pretty(&cmd).unwrap();
-        BambuPrinter::publish_payload_async(printer_serial, printer_number, write_packets, payload).await;
+        BambuPrinter::publish_payload_async(printer_serial, printer_number, log_filter, write_packets, payload).await;
     }
 
     pub fn fetch_filament_calibrations(&self, nozzle_diameter: &str) {
@@ -695,12 +699,13 @@ impl BambuPrinter {
     pub async fn fetch_filament_calibrations_async(
         printer_serial: &String,
         printer_number: usize,
+        log_filter: log::LevelFilter,
         write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
         nozzle_diameter: &str,
     ) {
         let cmd = crate::bambu_api::ExtrusionCaliGetCommand::new(nozzle_diameter);
         let payload = serde_json::to_string_pretty(&cmd).unwrap();
-        BambuPrinter::publish_payload_async(printer_serial, printer_number, write_packets, payload).await;
+        BambuPrinter::publish_payload_async(printer_serial, printer_number, log_filter, write_packets, payload).await;
     }
 
     pub fn set_tray_filament(&mut self, tray_id: i32, tag_info: &TagInformation) {
@@ -1241,6 +1246,11 @@ pub fn init(
 
     let printer_name = printer_config.name.clone();
     let printer_ip = printer_config.ip.clone();
+    let log_filter = if let Some(log_filter) = &printer_config.log_filter {
+        *log_filter
+    } else {
+        log::LevelFilter::Warn
+    };
 
     // == Setup MQTT ==================================================================
     let write_packets = Arc::new(embassy_sync::channel::Channel::<
@@ -1269,6 +1279,7 @@ pub fn init(
         write_packets.clone(),
         app_config.clone(),
         restart_printer.clone(),
+        log_filter,
     )));
 
     spawner
@@ -1301,15 +1312,16 @@ pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
     let write_packets = bambu_printer.borrow().write_packets.clone();
     let printer_serial = bambu_printer.borrow().printer_serial.clone();
     let printer_number = bambu_printer.borrow().printer_number;
+    let log_filter = bambu_printer.borrow().log_filter;
 
     // fetch first setting for all nozzles, need that in advance before getting filaments
     let nozzle_diameters = ["0.8", "0.6", "0.2", "0.4"];
     for nozzle_diameter in nozzle_diameters {
-        BambuPrinter::fetch_filament_calibrations_async(&printer_serial, printer_number, write_packets.clone(), nozzle_diameter).await;
+        BambuPrinter::fetch_filament_calibrations_async(&printer_serial, printer_number, log_filter, write_packets.clone(), nozzle_diameter).await;
     }
 
     // Now request full update, and wait until data is processed and have the nozzle diameter at hand for next request
-    BambuPrinter::request_full_update_async(&printer_serial, printer_number, write_packets.clone()).await;
+    BambuPrinter::request_full_update_async(&printer_serial, printer_number, log_filter, write_packets.clone()).await;
     while bambu_printer.borrow().nozzle_diameter.is_none() {
         Timer::after_millis(100).await;
     }
@@ -1318,7 +1330,7 @@ pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
     // that's because in slicer they don't check if data received from printer it's current nozzle or not
     // it's a bug there, can even be reproduced in the slicer by switching in the manage results to another nozzle diameter
     let curr_nozzle_diameter = bambu_printer.borrow().nozzle_diameter.as_ref().unwrap().clone();
-    BambuPrinter::fetch_filament_calibrations_async(&printer_serial, printer_number, write_packets, &curr_nozzle_diameter).await;
+    BambuPrinter::fetch_filament_calibrations_async(&printer_serial, printer_number, log_filter, write_packets, &curr_nozzle_diameter).await;
 }
 
 #[embassy_executor::task(pool_size = MAX_NUM_PRINTERS)]
@@ -1329,6 +1341,7 @@ pub async fn incoming_messages_task(
     let mut subscriber = read_packets.subscriber().unwrap();
     const KEEP_ALIVE_SEC: u32 = 20;
     let printer_log_id = bambu_printer.borrow().printer_number;
+    let log_level = bambu_printer.borrow().log_filter;
 
     let mut printer_known_to_be_up = false;
     loop {
@@ -1349,11 +1362,11 @@ pub async fn incoming_messages_task(
                         }) => {
                             let parse_res = serde_json::from_slice::<bambu_api::Print>(payload);
                             if let Ok(print) = parse_res {
-       // debug!("[{}] {:?}", printer_log_id, print);
+                                if log_level >= log::Level::Trace { trace!("[{}] {:?}", printer_log_id, print); }
                                 let mut skip = false;
                                 if let Some(print_result) = &print.print.result {
                                     if print_result == "fail" {
-                                        warn!("[{}] Printer reported an error message, ignoring message", printer_log_id);
+                                        if log_level >= log::Level::Warn { warn!("[{}] Printer reported an error message, ignoring message", printer_log_id); }
                                         skip = true;
                                     }
                                 }
@@ -1366,7 +1379,7 @@ pub async fn incoming_messages_task(
                                     }
                                 }
                             } else {
-                                warn!("[{}] Unprocessed message {:?} : {:?}", printer_log_id, parse_res, core::str::from_utf8(payload));
+                                 if log_level >= log::Level::Warn { warn!("[{}] Unprocessed message {:?} : {:?}", printer_log_id, parse_res, core::str::from_utf8(payload)); }
                             }
                         }
                         mqttrust::Packet::Suback(mqttrust::encoding::v4::Suback { pid: _, return_codes: _ }) => {
@@ -1382,11 +1395,12 @@ pub async fn incoming_messages_task(
             }
             Err(_) => {
                 if printer_known_to_be_up {
-                    warn!("[{}] Printer connectivity issues suspected (uncertain), checking", printer_log_id);
+                    if log_level >= log::Level::Warn { warn!("[{}] Printer connectivity issues suspected (uncertain), checking", printer_log_id); }
                     let write_packets = bambu_printer.borrow().write_packets.clone();
                     let printer_serial = bambu_printer.borrow().printer_serial.clone();
                     let printer_number = bambu_printer.borrow().printer_number;
-                    BambuPrinter::request_full_update_async(&printer_serial, printer_number, write_packets).await;
+                    let log_filter = bambu_printer.borrow().log_filter;
+                    BambuPrinter::request_full_update_async(&printer_serial, printer_number, log_filter, write_packets).await;
                     printer_known_to_be_up = false;
                 }
             }
@@ -1460,12 +1474,14 @@ pub async fn bambu_mqtt_task(
 ) {
     let printer_serial = bambu_printer.borrow().printer_serial.clone();
     let printer_log_id =bambu_printer.borrow().printer_number; 
+    let log_level = bambu_printer.borrow().log_filter;
+
     let subscribe_topics = [mqttrust::SubscribeTopic {
         topic_path: &format!("device/{}/report", printer_serial),
         qos: mqttrust::QoS::AtLeastOnce,
     }];
 
-    info!("[{}] Waiting for IP in Bambu Mqtt Task", printer_log_id);
+    if log_level >= log::Level::Info { info!("[{}] Waiting for IP in Bambu Mqtt Task", printer_log_id); }
     // let mut wait_counter = 0;
     // const SKIP_CHECKS: i32 = 4;
     loop {
@@ -1474,7 +1490,7 @@ pub async fn bambu_mqtt_task(
         }
         Timer::after(Duration::from_millis(250)).await;
     }
-    info!("[{}] From Bambu MQTT - got IP", printer_log_id);
+    if log_level >= log::Level::Info { info!("[{}] From Bambu MQTT - got IP", printer_log_id); }
     Timer::after(Duration::from_millis(250)).await; // So log will come after wifi log
 
     let printer_ip: Ipv4Address;
