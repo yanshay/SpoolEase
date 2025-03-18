@@ -1,7 +1,7 @@
 // TODO:
 // Deal with when to clear tag information, when we know spool taken out
 // Deal with when to copy tag information between trays if only some data change but we know the spool is there
-use crate::{settings::MAX_NUM_PRINTERS, spool_tag::TAG_PLACEHOLDER};
+use crate::{app_config::PrinterConfig, settings::MAX_NUM_PRINTERS, spool_tag::TAG_PLACEHOLDER};
 use alloc::{
     format,
     rc::Rc,
@@ -41,7 +41,8 @@ use crate::{
 const FILAMENT_URL_PREFIX: &str = "https://info.filament3d.org/";
 
 pub struct BambuPrinter {
-    pub printer_number: usize,
+    pub printer_number: usize, // number of printer in user's configuration,
+    pub printer_index: usize, // index of printer in the array of printers, if a config is not good and skipped, then index would be different than number
     pub printer_serial: String,      // mandatory, so configured is the same as actual
     pub printer_access_code: String, // mandatory, so configured is the same as actual
     pub configured_printer_name: Option<String>,
@@ -73,6 +74,7 @@ pub trait BambuPrinterObserver {
 impl BambuPrinter {
     pub fn new(
         printer_number: usize,
+        printer_index: usize,
         printer_serial: &str,
         printer_access_code: &str,
         printer_name: &Option<String>,
@@ -105,6 +107,7 @@ impl BambuPrinter {
 
         Self {
             printer_number,
+            printer_index,
             printer_serial: String::from(printer_serial),
             printer_access_code: String::from(printer_access_code),
             configured_printer_ip: *printer_ip,
@@ -149,6 +152,7 @@ impl BambuPrinter {
     pub fn reset_printer(&mut self) {
         let empty = Self::new(
             self.printer_number,
+            self.printer_index,
             &self.printer_serial,
             &self.printer_access_code,
             &self.configured_printer_name,
@@ -550,9 +554,9 @@ impl BambuPrinter {
 
     pub fn process_print_message(&mut self, print: &bambu_api::PrintData) -> bool {
         if let Some(sequence_id) = &print.sequence_id {
-            debug!("[{}] -> Message {}", self.printer_number+1, sequence_id);
+            debug!("[{}] -> Message {}", self.printer_number, sequence_id);
         } else {
-            warn!("[{}] -> Message with No sequence_id ?", self.printer_number+1);
+            warn!("[{}] -> Message with No sequence_id ?", self.printer_number);
         }
         // important: Can't issue event from here because this method is called with a mut reference (even if behind RefCell)
         // Therefore, to issue an event need to call update_ams_trays_done afterwards through a non mut reference (so not borrow_mut if refcell)
@@ -599,7 +603,7 @@ impl BambuPrinter {
                 // debug!("[{}]             {command} message", &self.printer_name.as_ref().unwrap_or(&"".to_string()));
                 change_made = self.process_print_message__extrusion_cali_get(print);
             }
-            debug!("[{}]    {command} message", &self.printer_number+1);
+            debug!("[{}]    {command} message", &self.printer_number);
         }
         change_made
     }
@@ -625,7 +629,7 @@ impl BambuPrinter {
     // TODO: Unify sending messages, no need for two functions
 
     pub fn publish_payload(&self, payload: String) {
-        debug!("[{}] MQTT Publish: {}", self.printer_number+1, payload);
+        debug!("[{}] MQTT Publish: {}", self.printer_number, payload);
 
         let topic_name = format!("device/{}/request", &self.printer_serial);
         let topic_name = topic_name.as_str();
@@ -1208,11 +1212,9 @@ impl Calibration {
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 pub fn init(
-    printer_number: usize,
-    printer_serial: String,
-    printer_access_code: String,
-    printer_name: Option<String>,
-    printer_ip: Option<Ipv4Address>,
+    printer_number: usize, // number of printer in user's configuration,
+    printer_index: usize, // index of printer in the array of printers, if a config is not good and skipped, then index would be different than number
+    printer_config: &PrinterConfig,
     stack: Stack<'static>,
     app_config: Rc<RefCell<AppConfig>>,
     tls: TlsReference<'static>,
@@ -1224,7 +1226,22 @@ pub fn init(
         MAX_NUM_PRINTERS,
         1,
     >,
-) -> Rc<RefCell<BambuPrinter>> {
+) -> Result<Rc<RefCell<BambuPrinter>>, String> {
+    let printer_serial = if let Some(printer_serial) = &printer_config.serial {
+        printer_serial.clone()
+    } else {
+        return Err("Missing printer serial".to_string());
+    };
+
+    let printer_access_code = if let Some(printer_access_code) = &printer_config.access_code {
+        printer_access_code.clone()
+    } else {
+        return Err("Missing printer access code".to_string());
+    };
+
+    let printer_name = printer_config.name.clone();
+    let printer_ip = printer_config.ip.clone();
+
     // == Setup MQTT ==================================================================
     let write_packets = Arc::new(embassy_sync::channel::Channel::<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
@@ -1243,7 +1260,8 @@ pub fn init(
     let restart_printer = Arc::new(embassy_sync::signal::Signal::<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>::new());
 
     let bambu_printer = Rc::new(RefCell::new(BambuPrinter::new(
-        printer_number,
+        printer_number, 
+        printer_index,
         &printer_serial,
         &printer_access_code,
         &printer_name,
@@ -1269,7 +1287,7 @@ pub fn init(
 
     spawner.spawn(incoming_messages_task(read_packets, bambu_printer.clone())).ok();
 
-    bambu_printer
+    Ok(bambu_printer)
 }
 
 // Important: This is the initial load task. Because it issues more commands than can fit the Channel, it can't await while borrowing bambu_printer
@@ -1310,7 +1328,7 @@ pub async fn incoming_messages_task(
 ) {
     let mut subscriber = read_packets.subscriber().unwrap();
     const KEEP_ALIVE_SEC: u32 = 20;
-    let printer_log_id = bambu_printer.borrow().printer_number+1;
+    let printer_log_id = bambu_printer.borrow().printer_number;
 
     let mut printer_known_to_be_up = false;
     loop {
@@ -1441,7 +1459,7 @@ pub async fn bambu_mqtt_task(
     >,
 ) {
     let printer_serial = bambu_printer.borrow().printer_serial.clone();
-    let printer_log_id =bambu_printer.borrow().printer_number+1; 
+    let printer_log_id =bambu_printer.borrow().printer_number; 
     let subscribe_topics = [mqttrust::SubscribeTopic {
         topic_path: &format!("device/{}/report", printer_serial),
         qos: mqttrust::QoS::AtLeastOnce,
