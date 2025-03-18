@@ -186,43 +186,47 @@ impl ViewModel {
         self.spawner.spawn(ssdp_task(self.stack, ssdp_pub_sub)).ok();
 
         let mut default_printer_set = false;
-        let mut printer_number = 0;
+        let mut printer_number = 1; // starts from one and incremented for any printer
+        let mut printer_index = 0; // starts from zero and incremented only on successful init and adding to array
         let mut available_printers: Vec<SharedString> = Vec::new();
         for printer_config in &self.app_config.borrow().configured_printers.printers {
-            let printer_serial = printer_config.serial.clone().unwrap();
-            let printer_access_code = printer_config.access_code.clone().unwrap();
-            let printer_name = printer_config.name.clone();
-            let printer_ip = printer_config.ip.clone();
+            // let printer_serial = printer_config.serial.clone().unwrap();
+            // let printer_access_code = printer_config.access_code.clone().unwrap();
+            // let printer_name = printer_config.name.clone();
+            // let printer_ip = printer_config.ip.clone();
 
-            let bambu_printer_model = bambu::init(
-                printer_number.clone(),
-                printer_serial.clone(),
-                printer_access_code,
-                printer_name.clone(),
-                printer_ip,
+            match bambu::init(
+                printer_number,
+                printer_index,
+                &printer_config,
                 self.stack,
                 self.app_config.clone(),
                 self.tls,
                 self.spawner,
                 ssdp_pub_sub,
-            );
-            printer_number += 1;
-            self.bambu_printer_model.printers.push(bambu_printer_model.clone());
-            if !default_printer_set && Some(&printer_serial) == self.app_config.borrow().configured_default_printer.serial.as_ref() {
-                // set the first with default serial to be the default (in case of using the same printer several times, for testing ...)
-                self.bambu_printer_model.index = self.bambu_printer_model.printers.len() - 1;
-                default_printer_set = true;
-            }
-            available_printers.push(bambu_printer_model.borrow().printer_selector_name.to_shared_string());
+            ) {
+                Ok(bambu_printer_model) => {
+                    self.bambu_printer_model.printers.push(bambu_printer_model.clone());
+                    if !default_printer_set && Some(&bambu_printer_model.borrow().printer_serial) == self.app_config.borrow().configured_default_printer.serial.as_ref() {
+                        // set the first with default serial to be the default (in case of using the same printer several times, for testing ...)
+                        self.bambu_printer_model.index = self.bambu_printer_model.printers.len() - 1;
+                        default_printer_set = true;
+                    }
+                    available_printers.push(bambu_printer_model.borrow().printer_selector_name.to_shared_string());
 
-            // notification from printer on events, should be treated for all printers,
-            // but selected printer should be considered as to what to update in the UI
-            if let Some(view_model_rc) = &self.view_model {
-                let trait_for_bambu_printer_rc: alloc::rc::Rc<core::cell::RefCell<dyn bambu::BambuPrinterObserver>> = view_model_rc.clone();
-                let trait_for_bambu_printer_weak: alloc::rc::Weak<core::cell::RefCell<dyn bambu::BambuPrinterObserver>> =
-                    alloc::rc::Rc::downgrade(&trait_for_bambu_printer_rc);
-                bambu_printer_model.borrow_mut().subscribe(trait_for_bambu_printer_weak);
+                    // notification from printer on events, should be treated for all printers,
+                    // but selected printer should be considered as to what to update in the UI
+                    if let Some(view_model_rc) = &self.view_model {
+                        let trait_for_bambu_printer_rc: alloc::rc::Rc<core::cell::RefCell<dyn bambu::BambuPrinterObserver>> = view_model_rc.clone();
+                        let trait_for_bambu_printer_weak: alloc::rc::Weak<core::cell::RefCell<dyn bambu::BambuPrinterObserver>> =
+                            alloc::rc::Rc::downgrade(&trait_for_bambu_printer_rc);
+                        bambu_printer_model.borrow_mut().subscribe(trait_for_bambu_printer_weak);
+                    }
+                    printer_index += 1; // index is increased only if printer is added to array
+                }
+                Err(e) => { term_info!("[{}] Error initializing printer {}", printer_number, e); }
             }
+            printer_number += 1; // printer_number is always increased, even if printer is bad config
         }
         let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index]
             .borrow()
@@ -246,14 +250,16 @@ impl ViewModel {
             .unwrap()
             .global::<crate::app::AppBackend>()
             .on_select_printer(move |selected_printer: SharedString| {
-
                 // First stored UI for this printer for when we switch back to it
                 Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), &selected_printer);
             });
     }
 
-
-    fn perform_select_printer(moved_ui: slint::Weak<crate::app::AppWindow>, moved_view_model: Rc<RefCell<ViewModel>>, selected_printer: &SharedString) {
+    fn perform_select_printer(
+        moved_ui: slint::Weak<crate::app::AppWindow>,
+        moved_view_model: Rc<RefCell<ViewModel>>,
+        selected_printer: &SharedString,
+    ) {
         // Collect printer view state to store until we switch back
         let current_shown_ams = moved_ui.unwrap().global::<crate::app::AppState>().get_curr_ams_id();
         let current_printer_selector_name = moved_ui.unwrap().global::<crate::app::AppState>().get_curr_printer();
@@ -516,7 +522,7 @@ impl BambuPrinterObserver for ViewModel {
         // note - accepting bambu_printer rather than taking from self, because it's already borrowed and another borrow will panic
         let current_selected_printer = self.bambu_printer_model.index;
 
-        if bambu_printer.printer_number == current_selected_printer {
+        if bambu_printer.printer_index == current_selected_printer {
             self.update_ui_from_printer(bambu_printer);
         }
 
@@ -532,17 +538,17 @@ impl BambuPrinterObserver for ViewModel {
                     trays_reading_changed.push(tray_id);
                 }
             }
-            // if bambu_printer.printer_number == 0 { // UNREMARK FOR TESTS WITH ONE PRINTER
-                if trays_reading_changed.len() == 1 {
-                    let only_reading_tray = trays_reading_changed[0];
-                    info!("Single tray {only_reading_tray} is loading now");
-                    self.set_staging_to_tray_direct(
-                        &self.filament_staging.clone(),
-                        bambu_printer,
-                        &self.ui_weak.clone(),
-                        only_reading_tray as i32,
-                    );
-                }
+            // if bambu_printer.printer_number == 1 { // UNREMARK FOR TESTS WITH ONE PRINTER
+            if trays_reading_changed.len() == 1 {
+                let only_reading_tray = trays_reading_changed[0];
+                info!("Single tray {only_reading_tray} is loading now");
+                self.set_staging_to_tray_direct(
+                    &self.filament_staging.clone(),
+                    bambu_printer,
+                    &self.ui_weak.clone(),
+                    only_reading_tray as i32,
+                );
+            }
             // }
         }
     }
@@ -557,7 +563,10 @@ impl BambuPrinterObserver for ViewModel {
             term_info!(&"-".repeat(67));
             term_info!("Printer [{}] connected successfully", bambu_printer.printer_number);
             term_info!(&"-".repeat(67));
-            self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_printer_connected(bambu_printer.printer_selector_name.to_shared_string());
+            self.ui_weak
+                .unwrap()
+                .global::<crate::app::AppState>()
+                .invoke_printer_connected(bambu_printer.printer_selector_name.to_shared_string());
         }
     }
 }
