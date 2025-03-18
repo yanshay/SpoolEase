@@ -1366,7 +1366,10 @@ pub async fn incoming_messages_task(
                                 let mut skip = false;
                                 if let Some(print_result) = &print.print.result {
                                     if print_result == "fail" {
-                                        if log_level >= log::Level::Warn { warn!("[{}] Printer reported an error message, ignoring message", printer_log_id); }
+                                        if log_level >= log::Level::Warn { 
+                                            warn!("[{}] Printer reported an error message, ignoring message", printer_log_id); 
+                                            warn!("[{}] {:?}", printer_log_id, print);
+                                        }
                                         skip = true;
                                     }
                                 }
@@ -1379,7 +1382,7 @@ pub async fn incoming_messages_task(
                                     }
                                 }
                             } else {
-                                 if log_level >= log::Level::Warn { warn!("[{}] Unprocessed message {:?} : {:?}", printer_log_id, parse_res, core::str::from_utf8(payload)); }
+                                 if log_level >= log::Level::Debug { debug!("[{}] Unprocessed message {:?} : {:?}", printer_log_id, parse_res, core::str::from_utf8(payload)); }
                             }
                         }
                         mqttrust::Packet::Suback(mqttrust::encoding::v4::Suback { pid: _, return_codes: _ }) => {
