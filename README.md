@@ -14,8 +14,14 @@ And most importantly, even though it’s an open-source project, it’s easy to 
 > ✅ A1/A1 Mini: OK - Tested to work
 
 ## Press Below for Video Demonstration
-
-[![SpoolEase](https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg)](https://www.youtube.com/watch?v=WKIBzVbrhOg)
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=WKIBzVbrhOg">
+    <img src="https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg" height="500px">
+  </a>
+  <a href="">
+    <img src="documentation/virtual-spool-tag.jpeg" height="500px">
+  </a>
+</div>
 
 Notice: This is a new project currently in its early stages, with testing limited to personal use. Users should be aware that there are no warranties, liabilities, or guarantees, and they assume all risks involved.
 
