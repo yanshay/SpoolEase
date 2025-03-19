@@ -16,10 +16,10 @@ And most importantly, even though it’s an open-source project, it’s easy to 
 ## Press Below for Video Demonstration
 <div align="center">
   <a href="https://www.youtube.com/watch?v=WKIBzVbrhOg">
-    <img src="https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg" height="500px">
+    <img src="https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg" height="400px">
   </a>
   <a href="">
-    <img src="documentation/virtual-spool-tag.jpeg" height="500px">
+    <img src="documentation/virtual-spool-tag.jpeg" height="400px">
   </a>
 </div>
 
