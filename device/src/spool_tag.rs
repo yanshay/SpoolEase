@@ -192,7 +192,21 @@ pub async fn nfc_task(
         let res = pn532.process(&pn532::Request::INLIST_ONE_ISO_A_TARGET, 17, Duration::from_secs(60)).await;
 
         match res {
-            Ok(uid) => {
+            Ok(response) => {
+                let number_of_tags_found = response[0];
+                if number_of_tags_found == 0 { // no tag found, shouldn't occure
+                    continue;
+                }
+                if number_of_tags_found != 1 {
+                    error!("Found more than one tag ({number_of_tags_found}), ignoring all");
+                    continue;
+                }
+                let uid_len = response[5] as usize;
+                if uid_len < 4 || 6+uid_len > response.len() {
+                    error!("Error with tag response, uid_len doen't seem right {uid_len}");
+                    continue;
+                } 
+                let uid = &response[6..6+uid_len];
                 debug!("Found Tag with uid : {:?}", uid);
                 let uid = uid.to_vec();
                 if previous_tag.as_ref() == Some(&uid) && previous_tag_scan_time.elapsed() < Duration::from_millis(500) {
