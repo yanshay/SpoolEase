@@ -1,6 +1,6 @@
 import { FrameworkBackend, FrameworkState } from "framework/framework.slint";
 import { MyButton } from "framework/widgets.slint";
-import { AppBackend, AppState, StatusType, ControlState, SpoolStagingState } from "app.slint";
+import { AppConsts, AppBackend, AppState, StatusType, ControlState, SpoolScaleState, SpoolStagingState } from "app.slint";
 import { Utils } from "utils.slint";
 import { SpoolStaging } from "spoolstaging.slint";
 
@@ -53,18 +53,53 @@ export component ControlPanelBase inherits HorizontalLayout {
     }
 
     spacing: 4px;
-    Rectangle {
-        background: message-type == StatusType.Success ? green.brighter(1.0) : message-type == StatusType.Error ? red : white;
-        preferred-width: 480px;
-        border-width: text-border-width;
-        border-color: black;
-        Text {
-            vertical-alignment: center;
-            horizontal-alignment: center;
-            font-size: 20px;
-            wrap: word-wrap;
-            text: message-text;
-            color: message-color == black ? utils.contrasting_color(parent.background) : message-color;
+    VerticalLayout {
+        spacing: AppConsts.trays-spacing;
+        if AppState.spool-scale-state == SpoolScaleState.Loaded: scale := Rectangle {
+            text-border-timer := Timer {
+                property <int> counter: 20;
+                property <length> text-border-width: 1px;
+                interval: 0.3s;
+                running: AppState.spool-scale-just-loaded == true;
+                triggered() => {
+                    if text-border-width == 1px {
+                        text-border-width = 4px;
+                    } else {
+                        text-border-width = 1px;
+                    }
+                    counter = counter - 1;
+                    if counter == 0 {
+                        AppState.spool-scale-just-loaded = false;
+                        counter = 20;
+                        text-border-width = 1px;
+                    }
+                }
+            }
+            height: 30px;
+            border-color: black;
+            border-width: text-border-timer.text-border-width;
+            background: lightskyblue;
+            Text { 
+              // color: utils.contrasting_color(title.background);
+              font-size: 20px;
+              text: ((AppState.spool-staging-state != SpoolStagingState.Empty && AppState.spool-staging-info.core-weight > 0) ?  "\{AppState.spool-scale-weight - AppState.spool-staging-info.core-weight} g  /  " : "") 
+                    + "\{AppState.spool-scale-weight} g";
+            }
+        }
+
+        Rectangle {
+            background: message-type == StatusType.Success ? green.brighter(1.0) : message-type == StatusType.Error ? red : white;
+            preferred-width: 480px;
+            border-width: text-border-width;
+            border-color: black;
+            Text {
+                vertical-alignment: center;
+                horizontal-alignment: center;
+                font-size: 20px;
+                wrap: word-wrap;
+                text: message-text;
+                color: message-color == black ? utils.contrasting_color(parent.background) : message-color;
+            }
         }
     }
 
@@ -123,9 +158,7 @@ export component Ready inherits ControlPanelBase {
     }
 
     message-color: color-timer.color;
-    message-text: (AppState.spool-staging-state == SpoolStagingState.Empty) ? 
-                      ("Scanning for Tagged Spool..." + (AppState.available-printers.length > 1 ? "\n\n\{AppState.curr-printer}" : "")) 
-                    : "Load Spool\nor Rescan Tag" + (AppState.available-printers.length > 1 ? "\n\n\{AppState.curr-printer}" : "");
+    message-text: (AppState.spool-staging-state == SpoolStagingState.Empty) ? ("Scanning for Tagged Spool..." + (AppState.available-printers.length > 1 ? "\n\n\{AppState.curr-printer}" : "")) : "Load Spool\nor Rescan Tag" + (AppState.available-printers.length > 1 ? "\n\n\{AppState.curr-printer}" : "");
     button1-text: (AppState.spool-staging-state == SpoolStagingState.Loaded) ? "Clear Staging" : "";
     button1-timeout: (AppState.spool-staging-state == SpoolStagingState.Loaded) ? 60 : 0;
     button2-text: "Encode Tag";

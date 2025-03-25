@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpoolEase Scale Configuration</title>
+    <style>
+      /* General Styles */
+      body {
+        display: none;
+        font-family: Arial, sans-serif;
+        max-width: 500px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      h3 {
+        font-weight: normal;
+      }
+
+      /* Section Styles */
+      .section {
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+
+      .section-title {
+        margin-top: 0;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #eee;
+        color: #333;
+      }
+
+      /* Form Styles */
+      .form-row {
+        margin-bottom: 15px;
+      }
+
+      label {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 5px;
+        font-weight: bold;
+        color: #555;
+      }
+      label span {
+        font-weight: normal;
+      }
+
+      .feedback-label {
+        display: block;
+        text-align: center;
+        margin: 10px auto 0;
+      }
+
+      input[type="text"],
+      input[type="password"],
+      input[type="number"] {
+        width: 100%;
+        padding: 10px;
+        box-sizing: border-box;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+
+      input[type="number"] {
+        width: 150px;
+      }
+
+      .password-container {
+        position: relative;
+      }
+
+      .toggle-password {
+        position: absolute;
+        right: 10px;
+        top: 5px;
+        cursor: pointer;
+        color: #666;
+      }
+
+      /* Button Styles */
+
+      .button-container {
+        margin: 20px 0;
+        display: flex;
+        gap: 5px;
+      }
+
+      button {
+        padding: 10px 15px;
+        margin-right: 10px;
+        margin-top: 5px;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      button:hover {
+        background-color: #45a049;
+      }
+
+      button.secondary {
+        background-color: #2196f3;
+      }
+
+      button.secondary:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+
+      button.secondary:hover {
+        background-color: #0b7dda;
+      }
+
+      button.danger {
+        background-color: #f44336;
+      }
+
+      button.danger:hover {
+        background-color: #d32f2f;
+      }
+
+      button.apply-btn {
+        width: 100%;
+      }
+
+      button.apply-btn:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+
+      button.add-btn {
+        background-color: #2196f3;
+        margin-bottom: 5px;
+      }
+
+      .error-message {
+        color: red;
+        font-size: 12px;
+        margin-top: 2px;
+        display: none;
+      }
+
+    </style>
+  </head>
+  <body>
+    <h1>SpoolEase Configuration</h1>
+    <h3>Most configurations require device restart</h3>
+
+    <!-- Security Key Section -->
+    <div class="section" id="security-section">
+      <h2 class="section-title">Security Key</h2>
+
+      <div id="verify-key-section">
+        <div class="form-row">
+          <label for="security-key"
+            >Key: * <span>Fill and verify key before configuring</span></label
+          >
+          <input
+            type="text"
+            id="security-key"
+            placeholder="Enter security key"
+          />
+        </div>
+
+        <button
+          id="verify-key-button"
+          type="button"
+          class="secondary apply-btn"
+          onclick="applyKeyFetchConfigs()"
+          disabled
+        >
+          Verify Key & Load Config
+        </button>
+        <label class="feedback-label" id="security-key-feedback"></label>
+      </div>
+      <div id="set-fixed-key-section">
+        <div class="form-row" style="margin-top: 20px">
+          <label for="fixed-security-key"
+            >Set a Fixed Security Key:<span
+              >Optional, applies after restart</span
+            ></label
+          >
+          <input
+            type="text"
+            id="fixed-security-key"
+            placeholder="Enter fixed security key"
+          />
+        </div>
+
+        <button
+          id="set-fixed-key-apply"
+          type="button"
+          class="apply-btn"
+          onclick="applyFixedSecurityKeySettings()"
+          disabled
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+
+    <!-- WiFi Credentials Section -->
+    <div class="section" id="wifi-section">
+      <h2 class="section-title">WiFi Credentials</h2>
+
+      <div class="form-row">
+        <label for="wifi-ssid">SSID: *</label>
+        <input
+          type="text"
+          id="wifi-ssid"
+          placeholder="Enter WiFi network name"
+        />
+      </div>
+
+      <div class="form-row">
+        <label for="wifi-password">Password: *</label>
+        <div class="password-container">
+          <input
+            type="password"
+            id="wifi-password"
+            placeholder="Enter WiFi password"
+          />
+          <span
+            class="toggle-password"
+            onclick="togglePasswordVisibility('wifi-password', this)"
+            >👁️</span
+          >
+        </div>
+      </div>
+
+      <button
+        id="wifi-section-apply"
+        type="button"
+        class="apply-btn"
+        onclick="applyWiFiSettings()"
+        disabled
+      >
+        Apply
+      </button>
+    </div>
+
+    <!-- General Section -->
+    <div class="section" id="general-section">
+      <h2 class="section-title">General</h2>
+
+      <button
+        id="restart-device"
+        type="button"
+        class="danger apply-btn"
+        onclick="restartDevice()"
+        disabled
+      >
+        Restart Device
+      </button>
+    </div>
+
+    <script type="module">
+      // Importing WASM as a JS module requires us to call an init function provided by the default export.
+      // This is planned to be changed in the future.
+      import {
+        default as wasm,
+        derive_key,
+        encrypt,
+        decrypt,
+      } from "./pkg/device_wasm.js";
+      // initialize wasm
+      console.log("-- waiting for wasm");
+      await wasm();
+      console.log("-- done waiting for wasm");
+      window.securityKeyOnDerive = "";
+      window.encryptionKey = derive_key("", "example_salt");
+      window.derive_key = derive_key;
+      window.decrypt = decrypt;
+      window.encrypt = encrypt;
+      document.body.style.display = "block";
+    </script>
+
+    <script>
+      async function sendData(inurl, data) {
+        // data is object, not json string
+        const url = `${urlPrefix}${inurl}`;
+        console.log(`in sendData with url: ${url}`);
+        let encryptionKey = getEncryptionKey();
+        console.log(`in sendData with url: ${url}`);
+        console.log(encryptionKey);
+        const response = await retryOperation(() =>
+          fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/text" },
+            body: encrypt(encryptionKey, JSON.stringify(data)),
+          }),
+        );
+        return response;
+      }
+
+      // Utility function to collect form data and send to the server
+      async function sendConfigData(url, data, applyButton) {
+        try {
+          let response = await sendData(`${url}`, data);
+          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+          const encryptedText = await response.text();
+          const decryptedText = decrypt(encryptionKey, encryptedText);
+          const result = JSON.parse(decryptedText);
+          alert(`Settings applied successfully`);
+          if (applyButton) {
+            applyButton.disabled = true;
+          }
+        } catch (error) {
+          console.error("Failed to apply settings:", error);
+          alert(`Failed to apply settings: ${error.message}`);
+        }
+      }
+
+      function getEncryptionKey() {
+        console.log("in getEncryptionKey");
+        const securityKey = document
+          .getElementById("security-key")
+          .value.trim();
+        console.log(securityKey);
+        if (securityKey != window.securityKeyOnDerive) {
+          console.log("different security-key");
+          window.encryptionKey = derive_key(securityKey, "example_salt");
+          console.log(`derived key: ${window.encryptionKey}`);
+          window.securityKeyOnDerive = securityKey;
+        }
+        return window.encryptionKey;
+      }
+      // Function to test key
+      async function applyKeyFetchConfigs() {
+        console.log("in applyKeyFetchConfigs");
+        const data = { test: "Hello" };
+        try {
+          let response = await sendData("/api/test-key", data); // Replace with actual server endpoint
+          console.log(`REspnse status ${response.status}`);
+          if (response.status == 400) {
+            document.getElementById("security-key-feedback").textContent =
+              "Security Key is incorrect";
+            document.getElementById("restart-device").disabled = true;
+          } else if (response.ok) {
+            document.getElementById("security-key-feedback").textContent =
+              "Security Key validated";
+            document.getElementById("verify-key-button").disabled = true;
+            document.getElementById("restart-device").disabled = false;
+          }
+        } catch (error) {
+          console.error("Failed to apply settings:", error);
+          document.getElementById("security-key-feedback").textContent =
+            `Failed to check key, try again (${error.message})`;
+          return;
+        }
+        try {
+          await fetchSectionConfigs();
+        } catch (error) {
+          document.getElementById("security-key-feedback").textContent +=
+            " but Failed to Load Configs";
+        }
+      }
+
+      async function retryOperation(operation, retries = 5) {
+        for (let i = 0; i < retries; i++) {
+          try {
+            return await operation();
+          } catch (error) {
+            console.log(error);
+            if (i === retries - 1) throw error; // Throw error if it's the last retry
+          }
+        }
+      }
+
+      async function fetchSectionConfigs() {
+        await retryOperation(() => fetchWifiInitialConfig());
+        // await retryOperation(() => fetchDisplayInitialConfig());
+      }
+
+      async function fetchInitialSectionConfig(section) {
+        try {
+          const response = await fetch(`${urlPrefix}/api/${section}-config`); // Replace with actual endpoint
+          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+          const encryptedText = await response.text();
+          const decryptedText = decrypt(encryptionKey, encryptedText);
+          const data = JSON.parse(decryptedText);
+
+          // Populate WiFi credentials
+          return data;
+        } catch (error) {
+          console.error(`Failed to fetch ${section} configuration:`, error);
+          return null;
+        }
+      }
+
+      async function fetchWifiInitialConfig() {
+        const data = await fetchInitialSectionConfig("wifi");
+
+        if (data) {
+          document.getElementById("wifi-ssid").value = data.ssid;
+          document.getElementById("wifi-password").value = data.password;
+        }
+      }
+
+
+      // Function to reset the device
+      function restartDevice() {
+        const data = {};
+        sendData("/api/reset-device", data);
+        alert(
+          "Device restarted. Reactivate Web Config from device and refresh page to continue configuration",
+        );
+      }
+
+      // Function to collect WiFi settings and send them as JSON
+      function applyWiFiSettings() {
+        const ssid = document.getElementById("wifi-ssid").value;
+        const password = document.getElementById("wifi-password").value;
+        const data = { ssid, password };
+        const applyButton = document.getElementById("wifi-section-apply");
+        sendConfigData("/api/wifi-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      function applyFixedSecurityKeySettings() {
+        const key = document.getElementById("fixed-security-key").value;
+        const data = { key };
+        const applyButton = document.getElementById("set-fixed-key-apply");
+        sendConfigData("/api/fixed-key-config", data, applyButton); // Replace with actual server endpoint
+      }
+    
+      // ==========================================
+      // Initialization
+      // ==========================================
+      document.addEventListener("DOMContentLoaded", function () {
+        // Initialize the form with data from server
+
+        setupChangeListeners("wifi-section", "wifi-section-apply");
+        setupChangeListeners(
+          "verify-key-section",
+          "verify-key-button",
+          "security-key-feedback",
+        );
+        setupChangeListeners("set-fixed-key-section", "set-fixed-key-apply");
+        // setupChangeListeners("display-section", "display-section-apply");
+      });
+
+      function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
+        const section = document.getElementById(sectionId);
+        const applyButton = document.getElementById(buttonId);
+        section.addEventListener("input", () => {
+          applyButton.disabled = false;
+          if (feedbackLabelId) {
+            const feedbackLabel = document.getElementById(feedbackLabelId);
+            feedbackLabel.textContent = "";
+          }
+        });
+      }
+
+      function togglePasswordVisibility(inputId, toggleButton) {
+        const passwordInput = document.getElementById(inputId);
+
+        if (passwordInput.type === "password") {
+          passwordInput.type = "text";
+          toggleButton.textContent = "🔒";
+        } else {
+          passwordInput.type = "password";
+          toggleButton.textContent = "👁️";
+        }
+      }
+    </script>
+      
+    </script>
+
+    <!-- for debugging -->
+    <script>
+      var urlPrefix = "";
+      // for local debugging case
+      window.addEventListener("DOMContentLoaded", () => {
+        const installButton = document.getElementById("install-button");
+        if (
+          window.location.hostname === "localhost" ||
+          window.location.hostname === "127.0.0.1"
+        ) {
+          urlPrefix = "http://192.168.10.79";
+        }
+      });
+    </script>
+
+    <!-- Script Example of added section -->
+    <script>
+      // async function fetchDisplayInitialConfig() {
+      //   const data = await fetchInitialSectionConfig("display");
+      //
+      //   if (data) {
+      //     document.getElementById("dimming-timeout").value =
+      //       data.dimming_timeout;
+      //     document.getElementById("dimming-percent").value =
+      //       data.dimming_percent;
+      //     document.getElementById("blackout-timeout").value =
+      //       data.blackout_timeout;
+      //     // document.getElementById("dimming-percent-display").textContent =
+      //     //   `${data.dimming_percent}%`;
+      //   }
+      // }
+
+      // // Function to collect Display settings and send them as JSON
+      // function applyDisplaySettings() {
+      //   const dimming_timeout = parseInt(
+      //     document.getElementById("dimming-timeout").value,
+      //   );
+      //   const dimming_percent = parseInt(
+      //     document.getElementById("dimming-percent").value,
+      //   );
+      //   const blackout_timeout = parseInt(
+      //     document.getElementById("blackout-timeout").value,
+      //   );
+      //   const data = { dimming_timeout, dimming_percent, blackout_timeout };
+      //   const applyButton = document.getElementById("display-section-apply");
+      //   sendConfigData("/api/display-config", data, applyButton); // Replace with actual server endpoint
+      // }
+
+    </script>
+  </body>
+</html>

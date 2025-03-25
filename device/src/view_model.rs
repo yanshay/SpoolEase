@@ -2,7 +2,7 @@ use core::cell::RefCell;
 use core::ops::{Deref, DerefMut};
 
 use alloc::string::String;
-use alloc::{format, rc::Rc, string::ToString, vec::Vec};
+use alloc::{format, rc::{Rc, Weak}, string::ToString, vec::Vec};
 use embassy_executor::Spawner;
 use embassy_net::Stack;
 use esp_mbedtls::TlsReference;
@@ -15,8 +15,8 @@ use framework::{
     terminal::{self, term_mut, TerminalObserver},
 };
 
-use crate::bambu::{ssdp_task, BambuSSDPInfo};
-use crate::settings::MAX_NUM_PRINTERS;
+use crate::spool_scale::{self, SpoolScaleObserver};
+use crate::ssdp::{ssdp_task, SSDPPubSubChannel};
 use crate::{
     app_config::AppConfig,
     bambu::{self, BambuPrinter, BambuPrinterObserver, TagInformation, TrayState},
@@ -40,6 +40,7 @@ pub struct ViewModel {
     // bambu_printer_model: Rc<RefCell<bambu::BambuPrinter>>,
     bambu_printer_model: SelectedPrinter,
     spool_tag_model: Rc<RefCell<spool_tag::SpoolTag>>,
+    spool_scale_model: Rc<RefCell<spool_scale::SpoolScale>>,
     filament_staging: Rc<RefCell<FilamentStaging>>,
     spawner: Spawner,
     tls: TlsReference<'static>,
@@ -60,16 +61,25 @@ impl ViewModel {
         tls: TlsReference<'static>,
     ) -> Rc<RefCell<ViewModel>> {
         let terminal_view_model = Rc::new(RefCell::new(TerminalViewModel { ui_weak: ui_weak.clone() }));
-        let trait_for_terminal_rc: alloc::rc::Rc<core::cell::RefCell<dyn terminal::TerminalObserver>> = terminal_view_model.clone();
-        let trait_for_terminal_weak: alloc::rc::Weak<core::cell::RefCell<dyn terminal::TerminalObserver>> =
-            alloc::rc::Rc::downgrade(&trait_for_terminal_rc);
+        let trait_for_terminal_rc: Rc<RefCell<dyn terminal::TerminalObserver>> = terminal_view_model.clone();
+        let trait_for_terminal_weak: Weak<RefCell<dyn terminal::TerminalObserver>> =
+            Rc::downgrade(&trait_for_terminal_rc);
         term_mut().subscribe(trait_for_terminal_weak);
 
         let set_of_printers: Vec<Rc<RefCell<BambuPrinter>>> = Vec::new();
         // set_of_printers.push(bambu_printer_model.clone());
         let selected_printer = SelectedPrinter::new(set_of_printers, 0);
 
-        let view_model_rc = Rc::new(RefCell::new(ViewModel {
+        let ssdp_pub_sub = mk_static!(
+            SSDPPubSubChannel,
+            SSDPPubSubChannel::new()
+        );
+
+        spawner.spawn(ssdp_task(stack, ssdp_pub_sub)).ok();
+
+        let spool_scale_model = crate::spool_scale::init(stack, spawner, ssdp_pub_sub);
+
+        let view_model = ViewModel {
             // Framework
             stack,
             ui_weak: ui_weak.clone(),
@@ -77,31 +87,37 @@ impl ViewModel {
             framework: framework.clone(),
             _terminal_view_model: terminal_view_model, // used by Terminal with weak reference, hold it so it won't be released
             // Application
-            // bambu_printer_model: bambu_printer_model.clone(),
             bambu_printer_model: selected_printer,
             spool_tag_model: spool_tag_model.clone(),
+            spool_scale_model: spool_scale_model.clone(),
             app_config: app_config.clone(),
             filament_staging: Rc::new(RefCell::new(FilamentStaging::new())),
             spawner,
             tls,
             printers_view_state: HashMap::new(),
-        }));
+        };
 
-        // let trait_for_bambu_printer_rc: alloc::rc::Rc<core::cell::RefCell<dyn bambu::BambuPrinterObserver>> = view_model_rc.clone();
-        // let trait_for_bambu_printer_weak: alloc::rc::Weak<core::cell::RefCell<dyn bambu::BambuPrinterObserver>> =
-        //     alloc::rc::Rc::downgrade(&trait_for_bambu_printer_rc);
-        // bambu_printer_model.borrow_mut().subscribe(trait_for_bambu_printer_weak);
 
-        let trait_for_spool_tag_rc: alloc::rc::Rc<core::cell::RefCell<dyn spool_tag::SpoolTagObserver>> = view_model_rc.clone();
-        let trait_for_spool_tag_weak: alloc::rc::Weak<core::cell::RefCell<dyn spool_tag::SpoolTagObserver>> =
-            alloc::rc::Rc::downgrade(&trait_for_spool_tag_rc);
+        let view_model_rc = Rc::new(RefCell::new(view_model));
+
+        let trait_for_spool_tag_rc: Rc<RefCell<dyn spool_tag::SpoolTagObserver>> = view_model_rc.clone();
+        let trait_for_spool_tag_weak: Weak<RefCell<dyn spool_tag::SpoolTagObserver>> =
+            Rc::downgrade(&trait_for_spool_tag_rc);
         spool_tag_model.borrow_mut().subscribe(trait_for_spool_tag_weak);
 
-        let trait_for_framework_rc: alloc::rc::Rc<core::cell::RefCell<dyn FrameworkObserver>> = view_model_rc.clone();
-        let trait_for_framework_weak: alloc::rc::Weak<core::cell::RefCell<dyn FrameworkObserver>> = alloc::rc::Rc::downgrade(&trait_for_framework_rc);
+        let trait_for_spool_scale_rc: Rc<RefCell<dyn spool_scale::SpoolScaleObserver>> = view_model_rc.clone();
+        let trait_for_spool_scale_weak: Weak<RefCell<dyn spool_scale::SpoolScaleObserver>> =
+            Rc::downgrade(&trait_for_spool_scale_rc);
+        spool_scale_model.borrow_mut().subscribe(trait_for_spool_scale_weak);
+
+        let trait_for_framework_rc: Rc<RefCell<dyn FrameworkObserver>> = view_model_rc.clone();
+        let trait_for_framework_weak: Weak<RefCell<dyn FrameworkObserver>> = Rc::downgrade(&trait_for_framework_rc);
         framework.borrow_mut().subscribe(trait_for_framework_weak);
 
         view_model_rc.borrow_mut().view_model = Some(view_model_rc.clone());
+
+        view_model_rc.borrow_mut().init(ssdp_pub_sub);
+
         view_model_rc
     }
 
@@ -162,7 +178,10 @@ impl ViewModel {
             });
     }
 
-    pub fn init(&mut self) {
+    pub fn init(
+        &mut self,
+        ssdp_pub_sub: &'static SSDPPubSubChannel
+    ) {
         self.init_framework(); // Initialization of framework
 
         let moved_filament_staging = self.filament_staging.clone();
@@ -178,22 +197,11 @@ impl ViewModel {
             moved_spool_tag.borrow().cancel_operation();
         });
 
-        let ssdp_pub_sub = mk_static!(
-            embassy_sync::pubsub::PubSubChannel::<embassy_sync::blocking_mutex::raw::NoopRawMutex, BambuSSDPInfo, 3, MAX_NUM_PRINTERS, 1>,
-            embassy_sync::pubsub::PubSubChannel::<embassy_sync::blocking_mutex::raw::NoopRawMutex, BambuSSDPInfo, 3, MAX_NUM_PRINTERS, 1>::new()
-        );
-
-        self.spawner.spawn(ssdp_task(self.stack, ssdp_pub_sub)).ok();
-
         let mut default_printer_set = false;
         let mut printer_number = 1; // starts from one and incremented for any printer
         let mut printer_index = 0; // starts from zero and incremented only on successful init and adding to array
         let mut available_printers: Vec<SharedString> = Vec::new();
         for printer_config in &self.app_config.borrow().configured_printers.printers {
-            // let printer_serial = printer_config.serial.clone().unwrap();
-            // let printer_access_code = printer_config.access_code.clone().unwrap();
-            // let printer_name = printer_config.name.clone();
-            // let printer_ip = printer_config.ip.clone();
 
             match bambu::init(
                 printer_number,
@@ -207,7 +215,9 @@ impl ViewModel {
             ) {
                 Ok(bambu_printer_model) => {
                     self.bambu_printer_model.printers.push(bambu_printer_model.clone());
-                    if !default_printer_set && Some(&bambu_printer_model.borrow().printer_serial) == self.app_config.borrow().configured_default_printer.serial.as_ref() {
+                    if !default_printer_set
+                        && Some(&bambu_printer_model.borrow().printer_serial) == self.app_config.borrow().configured_default_printer.serial.as_ref()
+                    {
                         // set the first with default serial to be the default (in case of using the same printer several times, for testing ...)
                         self.bambu_printer_model.index = self.bambu_printer_model.printers.len() - 1;
                         default_printer_set = true;
@@ -217,14 +227,16 @@ impl ViewModel {
                     // notification from printer on events, should be treated for all printers,
                     // but selected printer should be considered as to what to update in the UI
                     if let Some(view_model_rc) = &self.view_model {
-                        let trait_for_bambu_printer_rc: alloc::rc::Rc<core::cell::RefCell<dyn bambu::BambuPrinterObserver>> = view_model_rc.clone();
-                        let trait_for_bambu_printer_weak: alloc::rc::Weak<core::cell::RefCell<dyn bambu::BambuPrinterObserver>> =
-                            alloc::rc::Rc::downgrade(&trait_for_bambu_printer_rc);
+                        let trait_for_bambu_printer_rc: Rc<RefCell<dyn bambu::BambuPrinterObserver>> = view_model_rc.clone();
+                        let trait_for_bambu_printer_weak: Weak<RefCell<dyn bambu::BambuPrinterObserver>> =
+                            Rc::downgrade(&trait_for_bambu_printer_rc);
                         bambu_printer_model.borrow_mut().subscribe(trait_for_bambu_printer_weak);
                     }
                     printer_index += 1; // index is increased only if printer is added to array
                 }
-                Err(e) => { term_info!("[{}] Error initializing printer {}", printer_number, e); }
+                Err(e) => {
+                    term_info!("[{}] Error initializing printer {}", printer_number, e);
+                }
             }
             printer_number += 1; // printer_number is always increased, even if printer is bad config
         }
@@ -365,6 +377,7 @@ impl ViewModel {
         let moved_filament_staging = self.filament_staging.clone();
         let moved_bambu_printer = self.bambu_printer_model.clone();
         let moved_spool_tag = self.spool_tag_model.clone();
+        let moved_spool_scale = self.spool_scale_model.clone();
         let moved_ui = self.ui_weak.clone();
         moved_ui
             .unwrap()
@@ -374,20 +387,16 @@ impl ViewModel {
                 let spool_tag = moved_spool_tag.borrow();
                 let tray_id = usize::try_from(tray_id).unwrap();
                 let borrowed_filament_staging = moved_filament_staging.borrow();
-                let printer_tag_info: Option<TagInformation>;
-                let tag_info = if tray_id == 999 {
+                let mut tag_info_to_encode = if tray_id == 999 {
                     // Encode from Staging
-                    if let Some(staging_tag_info) = &borrowed_filament_staging.tag_info {
+                    if let Some(staging_tag_info) = borrowed_filament_staging.tag_info.clone() {
                         staging_tag_info
                     } else {
                         return 10;
                     }
                 } else {
                     match moved_bambu_printer.borrow().get_tag_info_to_encode(tray_id) {
-                        Ok(tag_info) => {
-                            printer_tag_info = Some(tag_info);
-                            printer_tag_info.as_ref().unwrap()
-                        }
+                        Ok(tag_info) => tag_info,
                         Err(err) => {
                             // hopefully no borrowing issues since calling into ui in a callback
                             moved_ui
@@ -398,8 +407,16 @@ impl ViewModel {
                         }
                     }
                 };
+                let spool_scale_weight = moved_spool_scale.borrow().weight;
+                tag_info_to_encode.core_weight = None;
+                // TODO: Only for experiments
+                if spool_scale_weight > 1100 {
+                    tag_info_to_encode.core_weight = Some(spool_scale_weight - 1000);
+                }
                 let bambu_printer_borrow = moved_bambu_printer.borrow();
-                if let Some(descriptor) = &tag_info.to_descriptor(&bambu_printer_borrow.printer_name, &bambu_printer_borrow.printer_uuid_to_encode) {
+                if let Some(descriptor) =
+                    &tag_info_to_encode.to_descriptor(&bambu_printer_borrow.printer_name, &bambu_printer_borrow.printer_uuid_to_encode)
+                {
                     spool_tag.write_tag(&descriptor, tray_id);
                 }
                 info!("Sent the write request of tray {} over signal", tray_id);
@@ -440,6 +457,7 @@ impl ViewModel {
             color: slint::Color::from_argb_encoded(color),
             k: SharedString::from(final_k),
             material: filament_info.tray_type.to_shared_string(),
+            core_weight: tag_info.core_weight.unwrap_or_default(),
         };
         Some(ui_spool_info)
     }
@@ -486,7 +504,6 @@ impl ViewModel {
             let mut ui_tray = trays_state.row_data(tray_row).unwrap().clone();
             ui_tray.spool_state = crate::app::UiTrayState::from(&curr_tray.state);
             if let bambu::Filament::Known(filament_info) = &curr_tray.filament {
-                // FIX: when color string is less than 6 chars
                 let color = u32::from_str_radix(&filament_info.tray_color[..6], 16).unwrap() + 0xFF000000; // the plus at the end is fo add alpha
                 ui_tray.filament.color = slint::Color::from_argb_encoded(color);
                 ui_tray.filament.material = slint::SharedString::from(&filament_info.tray_type);
@@ -744,5 +761,28 @@ impl Deref for SelectedPrinter {
 impl DerefMut for SelectedPrinter {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.printers[self.index]
+    }
+}
+
+impl SpoolScaleObserver for ViewModel {
+    fn on_scale_loaded(&mut self, weight: i32) {
+        info!("Scale loaded with {weight} g");
+        self.framework.borrow().undim_display();
+        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_loaded(weight);
+    }
+
+    fn on_scale_load_changed(&mut self, weight: i32) {
+        debug!("Scale load changed to {weight}");
+        self.framework.borrow().undim_display();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppState>()
+            .invoke_spool_scale_load_changed(weight);
+    }
+
+    fn on_scale_load_removed(&mut self) {
+        debug!("Scale load removed");
+        self.framework.borrow().undim_display();
+        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_load_removed();
     }
 }

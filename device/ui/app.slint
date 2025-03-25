@@ -29,6 +29,7 @@ export struct UiSpoolInfo {
   color: color,
   material: string,
   k: string,
+  core-weight: int,
 }
 
 // Consts
@@ -52,6 +53,12 @@ export enum ControlState {
   Encoding,
   Reading,
   PostAction,
+}
+
+export enum SpoolScaleState {
+  Unavailable,
+  Empty,
+  Loaded,
 }
 
 export enum StatusType {
@@ -100,6 +107,11 @@ export global AppState {
         pending-curr-printer = "";
       }
     }
+
+    in-out property <SpoolScaleState> spool-scale-state: SpoolScaleState.Unavailable;
+    in-out property <int> spool-scale-weight: 0;
+    in-out property <int> spool-scale-net-weight: 0;
+    in-out property <bool> spool-scale-just-loaded: false;
 
     in-out property <bool> highlight-trays: false;
     in-out property <bool> highlight-staging: false;
@@ -167,6 +179,7 @@ export global AppState {
 
     public function empty-spool-staging() {
         self.spool-staging-state = SpoolStagingState.Empty;
+        self.spool-staging-info.core-weight = 0;
     }
 
     public function encode-tag-found() {
@@ -224,6 +237,21 @@ export global AppState {
         if self.spool-staging-state == SpoolStagingState.Loaded {
             self.staging-to-tray = tray_id;
         }
+    }
+
+    public function spool-scale-loaded(weight: int) {
+        self.spool-scale-state = SpoolScaleState.Loaded;
+        self.spool-scale-weight = weight;
+        self.spool-scale-just-loaded = true;
+    }
+
+    public function spool-scale-load-changed(weight: int) {
+        self.spool-scale-weight = weight;
+    }
+
+    public function spool-scale-load-removed() {
+        self.spool-scale-state = SpoolScaleState.Empty;
+        self.spool-scale-weight = 0;
     }
 
     in-out property <[UiTray]> trays-state: self.empty-trays-state();

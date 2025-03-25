@@ -8,13 +8,15 @@ use esp_mbedtls::TlsReference;
 
 use framework::prelude::*;
 
-use crate::{app_config::AppConfig, spool_tag};
+use crate::{app_config::AppConfig, settings::MAX_NUM_PRINTERS, spool_tag};
 
 slint::include_modules!();
 
 pub fn create_slint_app() -> AppWindow {
     AppWindow::new().expect("Failed to load UI")
 }
+
+pub const MAX_NUM_SSDP_LISTENERS: usize = MAX_NUM_PRINTERS + 1; // 1 for spool_scale
 
 #[embassy_executor::task]
 #[allow(clippy::too_many_arguments)]
@@ -36,7 +38,7 @@ pub async fn app_task(
 
     // == Setup ViewModel =============================================================
     let ui_strong = ui.upgrade().unwrap();
-    let view_model = crate::view_model::ViewModel::new(
+    let _view_model = crate::view_model::ViewModel::new(
         // Framework
         stack,
         ui_strong.as_weak(),
@@ -45,11 +47,10 @@ pub async fn app_task(
         app_config.clone(),
         // bambu_printer_model,
         spool_tag_model,
+        // spool_scale_model,
         spawner, 
         tls
     );
-
-    (*view_model).borrow_mut().init();
 
     loop {
         Timer::after(Duration::from_secs(2)).await;

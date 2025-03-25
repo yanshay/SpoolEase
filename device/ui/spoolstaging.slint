@@ -27,9 +27,12 @@ export component SpoolStaging inherits Window {
 
             if AppState.spool-staging-state == SpoolStagingState.Loaded: 
             VerticalLayout {
-                alignment: center;
-                spacing: 10px;
+                property <bool> show-weight: AppState.spool-staging-info.core-weight > 0;
+                alignment: space-around;
+                padding-top: 12px;
+                padding-bottom: 8px;
                 material := Text {
+                    padding: 0px;
                     horizontal-alignment: center;
                     font-size: 20px;
                     text: AppState.spool-staging-info.material;
@@ -38,9 +41,20 @@ export component SpoolStaging inherits Window {
 
                 // K Value
                 k-value := Text {
+                    padding: 0px;
                     horizontal-alignment: center;
                     font-size: 20px;
                     text: "K " + ((AppState.spool-staging-info.k != "") ? AppState.spool-staging-info.k : "N/A");
+                    color: utils.contrasting_color(filament-box.background);
+                }
+
+                // Spool Core Weight
+                if self.show-weight : core-weigth := 
+                Text {
+                    padding: 0px;
+                    horizontal-alignment: center;
+                    font-size: 20px;
+                    text:  (parent.show-weight ? "\{AppState.spool-staging-info.core-weight} g" : "");
                     color: utils.contrasting_color(filament-box.background);
                 }
             }

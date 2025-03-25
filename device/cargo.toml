@@ -35,7 +35,6 @@ slint-build = "1.9.1"
 #TODO: Important - lock to specific tag when released
 # framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/" }
 framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag ="0.1.1" }
-# framework = { package = "esp-hal-app-framework", path = "../../esp-hal-app/esp-hal-app-framework/" } #, features = ["esp32s3", "wt32-sc01-plus"] }
 esp32s3 = { version = "0.30.0" }
 
 # Esp-Hal Crates
@@ -85,12 +84,30 @@ ft6x36 = { version = "0.6.1" }
 # Networking crates
 smoltcp = { version = "0.12.0", default-features = false, features = [ "proto-ipv4", "socket-tcp", "socket-icmp", "socket-udp", "medium-ethernet", "proto-dhcpv4", "socket-raw", "socket-dhcpv4"] }
 
-edge-nal-embassy = "0.5.0"
-edge-dhcp = "0.5.0"
-edge-nal = "0.5.0"
-edge-captive = "0.5.0"
-edge-http = "0.5.0"
+# edge-nal-embassy = "0.5.0"
+# edge-dhcp = "0.5.0"
+# edge-nal = "0.5.0"
+# edge-captive = "0.5.0"
+# edge-http = "0.5.1"
+# edge-ws = "0.4.0"
+
+# edge-nal-embassy = { path = "../../../../../OpenSourceProj/forked/edge-net/edge-nal-embassy/" }
+# edge-http = { path = "../../../../../OpenSourceProj/forked/edge-net/edge-http/" }
+# edge-dhcp = { path = "../../../../../OpenSourceProj/forked/edge-net/edge-dhcp/" }
+# edge-nal = { path = "../../../../../OpenSourceProj/forked/edge-net/edge-nal/" }
+# edge-captive = { path = "../../../../../OpenSourceProj/forked/edge-net/edge-captive/" }
+# edge-ws = { path = "../../../../../OpenSourceProj/forked/edge-net/edge-ws/" }
+
+edge-nal-embassy = { git = "https://github.com/yanshay/edge-net" }
+edge-http = { git = "https://github.com/yanshay/edge-net" } 
+edge-dhcp = { git = "https://github.com/yanshay/edge-net" } 
+edge-nal = { git = "https://github.com/yanshay/edge-net" } 
+edge-captive = { git = "https://github.com/yanshay/edge-net" } 
+edge-ws = { git = "https://github.com/yanshay/edge-net" } 
+>>>>>>> 9279829 (scale: first working version - discovery, communication, load events, tag encoding)
+
 picoserve = {version = "0.14.1", git = "https://github.com/sammhicks/picoserve", rev = "5d40ea410efa4c2e313cfaa19f62f844ece1fd55", features = ["alloc", "embassy"] }
+
 
 # Utility crates
 cfg-if = "1.0.0"
@@ -127,6 +144,7 @@ mqttrust = { version = "0.6.0" }
 pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_async_full", default-features = false }
 # pn532 = { path="../../../../../OpenSourceProj/forked/pn532/", default-features = false }
 regex = { version = "1.11.1", default-features = false }
+shared = { path = "../shared/" }
 
 [features]
 default = ["esp32s3"]

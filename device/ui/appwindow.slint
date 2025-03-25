@@ -7,11 +7,11 @@ import { MyButton } from "framework/widgets.slint";
 
 import { Utils } from "utils.slint";
 import { Trays } from "trays.slint";
-import { AppBackend, AppState, AppConsts, ControlState, SpoolStagingState, UiTray, UiTrayState, UiFilamentState, UiSpoolInfo } from "app.slint";
+import { AppBackend, AppState, AppConsts, ControlState, SpoolStagingState, SpoolScaleState, UiTray, UiTrayState, UiFilamentState, UiSpoolInfo } from "app.slint";
 import { SpoolStaging } from "spoolstaging.slint";
 import { ControlPanel } from "controlpanel.slint";
 import { SelectPrinter } from "select-printer.slint";
-
+import { SpoolScale } from "spool-scale.slint";
 // reexport to rust
 
 export { FrameworkState, FrameworkBackend }
@@ -119,5 +119,12 @@ export component AppWindow inherits Window {
             }
             x: left-pages.x+480px;
         }
+       
+        // if AppState.spool-scale-state == SpoolScaleState.Loaded: SpoolScale {
+        //   x: 50px;
+        //   y: 40px;
+        //   width: root.width - self.x*2;
+        //   height: root.height - self.y*2;
+        // }
     }
 }

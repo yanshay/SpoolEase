@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 
-members = ["desktop"]
+members = ["desktop", "shared"]
 
-exclude = ["device"]
+exclude = ["device", "scale"]
 
 [profile]
 
