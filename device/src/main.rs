@@ -35,7 +35,7 @@ use esp_hal_ota::Ota;
 use esp_mbedtls::Tls;
 use esp_storage::FlashStorage;
 use esp_wifi::{init, EspWifiController};
-use framework::framework::FrameworkSettings;
+use framework::{framework::FrameworkSettings, RNG};
 use rand::RngCore;
 
 extern crate alloc;
@@ -88,21 +88,6 @@ macro_rules! heap_dram2_allocator {
             esp_alloc::HEAP.add_region(esp_alloc::HeapRegion::new(region, $size, esp_alloc::MemoryCapability::Internal.into()));
         }
     }};
-}
-
-static mut RNG: once_cell::sync::OnceCell<esp_hal::rng::Rng> = once_cell::sync::OnceCell::new();
-
-#[no_mangle]
-unsafe extern "Rust" fn __getrandom_custom(dest: *mut u8, len: usize) -> Result<(), getrandom::Error> {
-    let mut buf = unsafe {
-        // fill the buffer with zeros
-        core::ptr::write_bytes(dest, 0, len);
-        // create mutable byte slice
-        core::slice::from_raw_parts_mut(dest, len)
-    };
-    #[allow(static_mut_refs)]
-    RNG.get_mut().unwrap().fill_bytes(&mut buf);
-    Ok(())
 }
 
 fn init_psram_heap(start: *mut u8, size: usize) {
@@ -290,7 +275,7 @@ async fn main(spawner: Spawner) {
 
     // == Setup Web Application and Run Web Server ====================================
 
-    let web_app_builder = framework::framework_web_app::WebAppProps::<NestedAppBuilder> {
+    let web_app_builder = framework::framework_web_app::WebAppBuilder::<NestedAppBuilder> {
         framework: framework.clone(),
         captive_html: include_str!("../static/captive.html"),
         web_app_html: include_str!("../static/config.html"),
@@ -301,7 +286,7 @@ async fn main(spawner: Spawner) {
     };
 
     let web_app_router = mk_static!(
-        picoserve::AppRouter<framework::framework_web_app::WebAppProps<NestedAppBuilder>>,
+        picoserve::AppRouter<framework::framework_web_app::WebAppBuilder<NestedAppBuilder>>,
         picoserve::AppWithStateBuilder::build_app(web_app_builder)
     );
 
@@ -310,15 +295,20 @@ async fn main(spawner: Spawner) {
         framework::framework_web_app::WebAppState::new(framework.borrow().encryption_key)
     );
 
+    let config = picoserve::Config::new(picoserve::Timeouts {
+        start_read_request: Some(Duration::from_secs(5)),
+        read_request: Some(Duration::from_millis(5000)),
+        write: Some(Duration::from_millis(5000)),
+    })
+    .keep_connection_alive();
+
     let web_server_runner = mk_static!(
-        framework::web_server::Runner<NestedAppBuilder>,
-        framework::web_server::Runner::new(
+        framework::web_server::WebAppRunner<NestedAppBuilder>,
+        framework::web_server::WebAppRunner::new(
             framework.clone(),
             web_app_router,
             web_app_state,
-            spawner,
-            framework.borrow().web_server_commands,
-            tls.reference()
+            config
         )
     );
 
@@ -490,7 +480,7 @@ async fn main(spawner: Spawner) {
 }
 
 #[embassy_executor::task(pool_size = WEB_SERVER_NUM_LISTENERS)]
-async fn web_server_task(runner: &'static framework::web_server::Runner<NestedAppBuilder>, id: usize) {
+async fn web_server_task(runner: &'static framework::web_server::WebAppRunner<NestedAppBuilder>, id: usize) {
     runner.run(id).await;
 }
 

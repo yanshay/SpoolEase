@@ -33,8 +33,8 @@ slint-build = "1.9.1"
 
 [dependencies]
 #TODO: Important - lock to specific tag when released
-# framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/" }
-framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag ="0.1.1" }
+# framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag ="0.1.0" }
+framework = { package = "esp-hal-app-framework", path = "../../esp32-support/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
 esp32s3 = { version = "0.30.0" }
 
 # Esp-Hal Crates
@@ -104,7 +104,6 @@ edge-dhcp = { git = "https://github.com/yanshay/edge-net" }
 edge-nal = { git = "https://github.com/yanshay/edge-net" } 
 edge-captive = { git = "https://github.com/yanshay/edge-net" } 
 edge-ws = { git = "https://github.com/yanshay/edge-net" } 
->>>>>>> 9279829 (scale: first working version - discovery, communication, load events, tag encoding)
 
 picoserve = {version = "0.14.1", git = "https://github.com/sammhicks/picoserve", rev = "5d40ea410efa4c2e313cfaa19f62f844ece1fd55", features = ["alloc", "embassy"] }
 
