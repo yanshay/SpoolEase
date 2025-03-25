@@ -1,34 +1,92 @@
 use core::cell::RefCell;
 
 use alloc::rc::Rc;
-use embassy_net::Stack;
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, pubsub::PubSubBehavior};
 use embassy_time::{Duration, Timer};
 use esp_hal::{gpio::AnyPin, spi::AnySpi};
-use esp_mbedtls::TlsReference;
-use framework::{debug, prelude::Framework};
+use framework::{
+    error, framework::WebServerCommands, info, mk_static, prelude::Framework, web_server::WebServerCommand
+};
 use num_traits::abs;
 use shared::scale::ScaleToConsole;
 
 use crate::{app_config::AppConfig, console_proxy, load_cell::LoadCell};
 
+#[derive(Clone, Copy)]
 enum ScaleState {
+    Unknown,
     Empty,
     Loaded(i32),
 }
 
+pub struct App {
+    connected: bool,
+    pub scale_to_console_channel: &'static ScaleToConsoleChannel,
+    pub _load_cell: Rc<RefCell<LoadCell>>,
+    scale_state: ScaleState,
+}
+
+impl App {
+    pub fn new(
+        scale_to_console_channel: &'static ScaleToConsoleChannel,
+        load_cell: Rc<RefCell<LoadCell>>,
+    ) -> Self {
+       Self {
+            connected: false,
+            scale_to_console_channel,
+            _load_cell: load_cell,
+            scale_state: ScaleState::Unknown,
+        } 
+    }
+    pub async fn send_to_console(&self, scale_to_console_msg: ScaleToConsole) {
+        if self.connected {
+            info!("Sending {:?}", scale_to_console_msg);
+            self.scale_to_console_channel
+                .send(scale_to_console_msg)
+                .await;
+        } else {
+            info!("Not! sending {:?}", scale_to_console_msg);
+        }
+
+    }
+    pub fn try_send_to_console(&self, scale_to_console_msg: ScaleToConsole) {
+        if self.connected {
+            info!("Sending (on connect) {:?}", scale_to_console_msg);
+            self.scale_to_console_channel
+                .try_send(scale_to_console_msg).unwrap_or_else(|err| error!("Failed *trying* to send message to console {err:?}"));
+        } else {
+            info!("Not! sending (on connect) {:?}", scale_to_console_msg);
+        }
+    }
+    pub fn notify_connected(&mut self) {
+        self.connected = true;
+        match self.scale_state {
+            ScaleState::Unknown => (),
+            ScaleState::Empty => { self.try_send_to_console(ScaleToConsole::LoadRemoved); }
+            ScaleState::Loaded(weight) => { self.try_send_to_console(ScaleToConsole::NewLoad(weight)); } 
+        }
+    }
+    pub fn notify_disconnected(&mut self) {
+        self.connected = false;
+        self.scale_to_console_channel.clear();
+    }
+}
+
+pub type ScaleToConsoleChannel = Channel<NoopRawMutex, ScaleToConsole, 5>;
+
 #[embassy_executor::task]
 #[allow(clippy::too_many_arguments)]
 pub async fn app_task(
-    stack: Stack<'static>,
     framework: Rc<RefCell<Framework>>,
     app_config: Rc<RefCell<AppConfig>>,
-    _tls: TlsReference<'static>,
     loadcell_dt: AnyPin,
     loadcell_sck: AnyPin,
     loadcell_spi: AnySpi,
 ) {
-    let spawner = embassy_executor::Spawner::for_current_executor().await;
-    let scale_to_console_channel = console_proxy::init(framework, app_config, stack, spawner).await;
+    let spawner = framework.borrow().spawner;
+
+    let scale_to_console_channel = mk_static!(ScaleToConsoleChannel, ScaleToConsoleChannel::new());
+    let web_server_commands = crate::mk_static!(WebServerCommands, WebServerCommands::new());
 
     let load_cell = LoadCell::new(
         loadcell_spi,
@@ -39,21 +97,34 @@ pub async fn app_task(
         spawner,
     );
 
+    let app = App::new(scale_to_console_channel, load_cell.clone());
+
+    let app = Rc::new(RefCell::new(app));
+
+    console_proxy::init(
+        framework.clone(),
+        app_config,
+        app.clone(),
+        scale_to_console_channel,
+        web_server_commands,
+    )
+    .await;
+
     LoadCell::tare(&load_cell).await;
+
+    Framework::wait_for_wifi(&framework).await;
+
+    web_server_commands.publish_immediate(WebServerCommand::Start(framework.borrow().stack));
+
     let load_cell_reader = load_cell.borrow_mut().reader();
-    let mut scale_state = ScaleState::Empty;
     loop {
+        let scale_state = app.borrow().scale_state;
         match scale_state {
-            ScaleState::Empty => {
-                // debug!("In monitoring scale loop - empty");
+            ScaleState::Empty | ScaleState::Unknown => {
                 let read = load_cell_reader.read_changed().await;
-                // let read = load_cell_reader.read().await;
                 if read > 10 {
-                    scale_to_console_channel
-                        .send(ScaleToConsole::NewLoad(read))
-                        .await;
-                    debug!("Sending Spool Loaded");
-                    scale_state = ScaleState::Loaded(read);
+                    app.borrow().send_to_console(ScaleToConsole::NewLoad(read)).await;
+                    app.borrow_mut().scale_state = ScaleState::Loaded(read);
                 } else if read < 1 {
                     LoadCell::tare(&load_cell).await;
                 }
@@ -63,17 +134,11 @@ pub async fn app_task(
                 // debug!("In monitoring scale loop - loaded");
                 let read = load_cell_reader.read().await;
                 if abs(read) < 10 {
-                    scale_to_console_channel
-                        .send(ScaleToConsole::LoadRemoved)
-                        .await;
-                    debug!("Sending Spool Loaded Removed");
-                    scale_state = ScaleState::Empty;
+                    app.borrow().send_to_console(ScaleToConsole::LoadRemoved).await;
+                    app.borrow_mut().scale_state = ScaleState::Empty;
                 } else if read != prev_read {
-                    scale_to_console_channel
-                        .send(ScaleToConsole::LoadChanged(read))
-                        .await;
-                    debug!("Sending Spool Loaded Changed");
-                    scale_state = ScaleState::Loaded(read)
+                    app.borrow().send_to_console(ScaleToConsole::LoadChanged(read)).await;
+                    app.borrow_mut().scale_state = ScaleState::Loaded(read)
                 }
                 Timer::after_millis(500).await;
             }

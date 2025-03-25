@@ -1,11 +1,12 @@
 use core::cell::RefCell;
 
-use crate::{app_config::AppConfig, ssdp};
+use crate::{
+    app::{App, ScaleToConsoleChannel},
+    app_config::AppConfig,
+    ssdp,
+};
 use alloc::rc::Rc;
-use embassy_executor::Spawner;
 use embassy_futures::select::select3;
-use embassy_net::Stack;
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, pubsub::PubSubBehavior};
 use embassy_time::{Duration, Instant, Timer};
 use framework::{
     debug, error,
@@ -14,7 +15,7 @@ use framework::{
     prelude::Framework,
     utils::random_u32,
     warn,
-    web_server::{WebServerCommand, WebServerConfig},
+    web_server::WebServerConfig,
 };
 use picoserve::{
     io::Error,
@@ -22,7 +23,6 @@ use picoserve::{
     routing::get,
     AppRouter, AppWithStateBuilder,
 };
-use shared::scale::ScaleToConsole;
 
 pub struct ConsoleProxyWebAppState {}
 
@@ -32,32 +32,31 @@ pub struct ConsoleProxyAppBuilder {
     #[allow(dead_code)]
     pub app_config: Rc<RefCell<AppConfig>>,
     scale_to_console_channel: &'static ScaleToConsoleChannel,
+    pub app: Rc<RefCell<App>>,
 }
 
 const NUM_LISTENERS: usize = 1; // increasing this to suport more than one connection simultaniously requires allowing a PubSubChannel, and probably other applicative issues.
 
-type ScaleToConsoleChannel = Channel<NoopRawMutex, ScaleToConsole, 5>;
-
 pub async fn init(
     framework: Rc<RefCell<Framework>>,
     app_config: Rc<RefCell<AppConfig>>,
-    stack: Stack<'static>,
-    spawner: Spawner,
+    app: Rc<RefCell<App>>,
+    scale_to_console_channel: &'static ScaleToConsoleChannel,
+    web_server_commands: &'static WebServerCommands,
 ) -> &'static ScaleToConsoleChannel {
-    let scale_to_console_channel = mk_static!(ScaleToConsoleChannel, ScaleToConsoleChannel::new());
-
-    let web_app_builder = ConsoleProxyAppBuilder {
+    let console_proxy_web_app_builder = ConsoleProxyAppBuilder {
         framework: framework.clone(),
         app_config: app_config.clone(),
+        app,
         scale_to_console_channel,
     };
 
     let web_app_router = mk_static!(
         AppRouter<ConsoleProxyAppBuilder>,
-        AppWithStateBuilder::build_app(web_app_builder)
+        AppWithStateBuilder::build_app(console_proxy_web_app_builder)
     );
 
-    let app_state = mk_static!(ConsoleProxyWebAppState, ConsoleProxyWebAppState {});
+    let console_proxy_app_state = mk_static!(ConsoleProxyWebAppState, ConsoleProxyWebAppState {});
 
     let web_server_config = WebServerConfig {
         web_app_name: "Console-Proxy",
@@ -74,15 +73,13 @@ pub async fn init(
     })
     .keep_connection_alive();
 
-    let web_server_commands = crate::mk_static!(WebServerCommands, WebServerCommands::new());
-
     let console_proxy_web_app_runner = mk_static!(
         framework::web_server::GenericRunner<ConsoleProxyAppBuilder, ConsoleProxyWebAppState>,
         framework::web_server::GenericRunner::<ConsoleProxyAppBuilder, ConsoleProxyWebAppState>::new(
             framework.clone(),
             web_server_config,
             web_app_router,
-            app_state,
+            console_proxy_app_state,
             web_server_commands,
             config,
         )
@@ -90,7 +87,9 @@ pub async fn init(
 
     for id in 0..NUM_LISTENERS {
         debug!("Spawning console proxy web-task {id}");
-        spawner
+        framework
+            .borrow()
+            .spawner
             .spawn(console_proxy_web_server_task(
                 console_proxy_web_app_runner,
                 id,
@@ -98,10 +97,11 @@ pub async fn init(
             .unwrap();
     }
 
-    Timer::after_secs(2).await;
-    web_server_commands.publish_immediate(WebServerCommand::Start(stack));
-
-    spawner.spawn(ssdp::ssdp_broadcast(stack)).ok();
+    framework
+        .borrow()
+        .spawner
+        .spawn(ssdp::ssdp_broadcast(framework.borrow().stack))
+        .ok();
 
     scale_to_console_channel
 }
@@ -127,18 +127,10 @@ impl AppWithStateBuilder for ConsoleProxyAppBuilder {
         let router = router.route(
             "/ws",
             get(move |upgrade: ws::WebSocketUpgrade| {
-                if let Some(protocols) = upgrade.protocols() {
-                    debug!("Protocols:");
-                    for protocol in protocols {
-                        debug!("\t{protocol}");
-                    }
-                }
-
-                upgrade.on_upgrade(ConsoleCommHandler {
-                    scale_to_console_channel: self.scale_to_console_channel, // tx: messages_tx.clone(),
-                                                                             // rx: messages_tx.subscribe(),
-                })
-                // .with_protocol("messages")
+                upgrade.on_upgrade(ConsoleCommHandler::new(
+                    self.scale_to_console_channel,
+                    self.app.clone(),
+                ))
             }),
         );
 
@@ -148,6 +140,26 @@ impl AppWithStateBuilder for ConsoleProxyAppBuilder {
 
 struct ConsoleCommHandler {
     scale_to_console_channel: &'static ScaleToConsoleChannel,
+    app: Rc<RefCell<App>>,
+}
+
+impl ConsoleCommHandler {
+    pub fn new(
+        scale_to_console_channel: &'static ScaleToConsoleChannel,
+        app: Rc<RefCell<App>>,
+    ) -> Self {
+        let myself = Self {
+            scale_to_console_channel,
+            app,
+        };
+        myself.app.borrow_mut().notify_connected();
+        myself
+    }
+}
+impl Drop for ConsoleCommHandler {
+    fn drop(&mut self) {
+        self.app.borrow_mut().notify_disconnected();
+    }
 }
 
 impl ws::WebSocketCallback for ConsoleCommHandler {

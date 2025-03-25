@@ -363,10 +363,8 @@ async fn main(spawner: Spawner) {
 
     spawner
         .spawn(crate::app::app_task(
-            sta_stack,
             framework.clone(),
             app_config.clone(),
-            tls.reference(),
             peripherals.GPIO4.into(),
             peripherals.GPIO5.into(),
             peripherals.SPI3.into(),
