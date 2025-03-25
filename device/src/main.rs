@@ -36,7 +36,6 @@ use esp_mbedtls::Tls;
 use esp_storage::FlashStorage;
 use esp_wifi::{init, EspWifiController};
 use framework::{framework::FrameworkSettings, RNG};
-use rand::RngCore;
 
 extern crate alloc;
 

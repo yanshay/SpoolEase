@@ -62,7 +62,7 @@ impl App {
         self.connected = true;
         match self.scale_state {
             ScaleState::Unknown => (),
-            ScaleState::Empty => { self.try_send_to_console(ScaleToConsole::LoadRemoved); }
+            ScaleState::Empty => (), // No need and better not send LoadRemoved here. So client will show connected. It tracks connection as well, so will switch on its own to Empty 
             ScaleState::Loaded(weight) => { self.try_send_to_console(ScaleToConsole::NewLoad(weight)); } 
         }
     }

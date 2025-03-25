@@ -56,7 +56,9 @@ export enum ControlState {
 }
 
 export enum SpoolScaleState {
-  Unavailable,
+  Unknown,
+  Disconnected,
+  Connected,
   Empty,
   Loaded,
 }
@@ -108,10 +110,11 @@ export global AppState {
       }
     }
 
-    in-out property <SpoolScaleState> spool-scale-state: SpoolScaleState.Unavailable;
+    in-out property <SpoolScaleState> spool-scale-state: SpoolScaleState.Unknown;
     in-out property <int> spool-scale-weight: 0;
     in-out property <int> spool-scale-net-weight: 0;
-    in-out property <bool> spool-scale-just-loaded: false;
+    in-out property <bool> spool-scale-flash: false;
+    in-out property <SpoolScaleState> spool-scale-after-flash-state: SpoolScaleState.Unknown;
 
     in-out property <bool> highlight-trays: false;
     in-out property <bool> highlight-staging: false;
@@ -239,10 +242,24 @@ export global AppState {
         }
     }
 
+    public function spool-scale-connected() {
+        self.spool-scale-state = SpoolScaleState.Connected;
+        self.spool-scale-flash = true;
+        self.spool-scale-after-flash-state = SpoolScaleState.Empty;
+
+    }
+
+    public function spool-scale-disconnected() {
+        self.spool-scale-state = SpoolScaleState.Disconnected;
+        self.spool-scale-flash = false;
+        self.spool-scale-after-flash-state = SpoolScaleState.Disconnected;
+    }
+
     public function spool-scale-loaded(weight: int) {
         self.spool-scale-state = SpoolScaleState.Loaded;
         self.spool-scale-weight = weight;
-        self.spool-scale-just-loaded = true;
+        self.spool-scale-flash = true;
+        self.spool-scale-after-flash-state = SpoolScaleState.Loaded;
     }
 
     public function spool-scale-load-changed(weight: int) {
@@ -252,6 +269,8 @@ export global AppState {
     public function spool-scale-load-removed() {
         self.spool-scale-state = SpoolScaleState.Empty;
         self.spool-scale-weight = 0;
+        self.spool-scale-flash = false;
+        self.spool-scale-after-flash-state = SpoolScaleState.Empty;
     }
 
     in-out property <[UiTray]> trays-state: self.empty-trays-state();

@@ -785,4 +785,14 @@ impl SpoolScaleObserver for ViewModel {
         self.framework.borrow().undim_display();
         self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_load_removed();
     }
+
+    fn on_scale_connected(&mut self) {
+        debug!("Scale connected");
+        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_connected();
+    }
+
+    fn on_scale_disconnected(&mut self) {
+        debug!("Scale disconnected");
+        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_disconnected();
+    }
 }

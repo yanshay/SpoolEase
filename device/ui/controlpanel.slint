@@ -55,12 +55,12 @@ export component ControlPanelBase inherits HorizontalLayout {
     spacing: 4px;
     VerticalLayout {
         spacing: AppConsts.trays-spacing;
-        if AppState.spool-scale-state == SpoolScaleState.Loaded: scale := Rectangle {
+        if AppState.spool-scale-state == SpoolScaleState.Loaded || AppState.spool-scale-state == SpoolScaleState.Disconnected || AppState.spool-scale-state == SpoolScaleState.Connected : scale := Rectangle {
             text-border-timer := Timer {
                 property <int> counter: 20;
                 property <length> text-border-width: 1px;
                 interval: 0.3s;
-                running: AppState.spool-scale-just-loaded == true;
+                running: AppState.spool-scale-flash == true;
                 triggered() => {
                     if text-border-width == 1px {
                         text-border-width = 4px;
@@ -69,7 +69,9 @@ export component ControlPanelBase inherits HorizontalLayout {
                     }
                     counter = counter - 1;
                     if counter == 0 {
-                        AppState.spool-scale-just-loaded = false;
+                        AppState.spool-scale-flash = false;
+                        AppState.spool-scale-state = AppState.spool-scale-after-flash-state;
+                        AppState.spool-scale-after-flash-state = SpoolScaleState.Unknown;
                         counter = 20;
                         text-border-width = 1px;
                     }
@@ -78,12 +80,16 @@ export component ControlPanelBase inherits HorizontalLayout {
             height: 30px;
             border-color: black;
             border-width: text-border-timer.text-border-width;
-            background: lightskyblue;
+            background: AppState.spool-scale-state == SpoolScaleState.Disconnected ? orangered : 
+                        AppState.spool-scale-state == SpoolScaleState.Connected ? lightgreen : 
+                        lightskyblue;
             Text { 
-              // color: utils.contrasting_color(title.background);
+              color: utils.contrasting_color(parent.background);
               font-size: 20px;
-              text: ((AppState.spool-staging-state != SpoolStagingState.Empty && AppState.spool-staging-info.core-weight > 0) ?  "\{AppState.spool-scale-weight - AppState.spool-staging-info.core-weight} g  /  " : "") 
-                    + "\{AppState.spool-scale-weight} g";
+              text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? "Disconnected" :
+                    AppState.spool-scale-state == SpoolScaleState.Connected ? "Connected" :
+                    AppState.spool-scale-state == SpoolScaleState.Loaded ? "\{AppState.spool-scale-weight} g" : 
+                    "";
             }
         }
 
