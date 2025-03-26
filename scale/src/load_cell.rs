@@ -11,6 +11,7 @@ use embassy_time::{Duration, Timer};
 use esp_hal::spi::{self, AnySpi};
 use esp_hal::time::RateExtU32;
 use esp_hal::{gpio::AnyPin, spi::master::Spi};
+use framework::{error, term_info};
 use hx711_spi::Hx711;
 use num_traits::abs;
 
@@ -23,14 +24,19 @@ pub struct LoadCell {
     duration_between_reads: Duration,
     samples: Vec<i32>,
     next_sample_index: usize,
-    calibration_weight: i64,
-    calibration_sample: i64,
-    calibration_tare: i64,
+    calibration_weight: i64, // from calibration, shouldn't be changed
+    calibration_sample: i64, // from calibration, shouldn't be changed
+    calibration_tare: i64,   // from calibration, shouldn't be changed
+    current_tare: i64,       // could change during execution (like if negative number)
 
-    clear_samples_change_threshold: i64,
     pub full_read_waiter: Rc<ReadWaiter>,
     pub change_waiter: Rc<ChangeWaiter>,
     pub load_cell_weak: Weak<RefCell<Self>>,
+
+    spi: Option<AnySpi>,
+    dt: Option<AnyPin>,
+    sck: Option<AnyPin>,
+    spawner: Spawner,
 }
 
 impl LoadCell {
@@ -42,35 +48,60 @@ impl LoadCell {
         duration_between_reads: Duration,
         spawner: Spawner,
     ) -> Rc<RefCell<Self>> {
-        let calibration_weight = 140;
-        let calibration_sample = 153100;
-        let clear_samples_change_threshold = 10 * calibration_sample / calibration_weight; // 10g
         let myself = Self {
             samples_per_read,
             duration_between_reads,
             samples: Vec::with_capacity(samples_per_read),
             next_sample_index: 0,
-            calibration_weight: 140,
-            calibration_sample,
-            calibration_tare: 0,
-            clear_samples_change_threshold,
+
+            // initial numbers on a 2kg load cell, need something to not have to deal with all kind of edge cases
+            calibration_tare: 63770,
+            calibration_weight: 292,
+            calibration_sample: 383722,
+            current_tare: 63770,
+
             full_read_waiter: Rc::new(ReadWaiter::new(0)),
             change_waiter: Rc::new(ChangeWaiter::new()),
             load_cell_weak: Weak::new(),
+            spi: Some(spi),
+            dt: Some(dt),
+            sck: Some(sck),
+            spawner
         };
         let myself = Rc::new(RefCell::new(myself));
         myself.borrow_mut().load_cell_weak = Rc::downgrade(&myself);
-        spawner
+
+        myself
+    }
+
+    pub fn start(&mut self) {
+        let spi = self.spi.take().unwrap();
+        let dt = self.dt.take().unwrap();
+        let sck = self.sck.take().unwrap();
+        let load_cell_rc = self.load_cell_weak.upgrade().unwrap();
+
+        self.spawner
             .spawn(spi_async_load_cell_task(
                 spi.into(),
                 dt.into(),
                 sck.into(),
-                myself.clone(),
-                duration_between_reads,
+                load_cell_rc.clone(),
+                self.duration_between_reads,
             ))
             .ok();
+    }
 
-        myself
+    pub fn set_calibration(
+        &mut self,
+        calibration_tare: i32,
+        calibration_weight: i32,
+        calibration_sample: i32,
+    ) {
+        self.calibration_tare = calibration_tare as i64;
+        self.calibration_weight = calibration_weight as i64;
+        self.calibration_sample = calibration_sample as i64;
+
+        self.current_tare = self.calibration_tare;
     }
 
     fn samples_sum(&self) -> i64 {
@@ -87,6 +118,16 @@ impl LoadCell {
         LoadCellReader { load_cell }
     }
 
+    pub fn immediate_read_uncalibrated(&self) -> i32 {
+        if self.samples.is_empty() {
+            // Should never happen except before initialization
+            // Later there should always be at least one sample
+            return -1;
+        }
+        let samples_sum = self.samples_sum();
+        (samples_sum / self.samples.len() as i64) as i32
+    }
+
     pub fn immediate_read(&self) -> i32 {
         if self.samples.is_empty() {
             // Should never happen except before initialization
@@ -94,24 +135,22 @@ impl LoadCell {
             return -1;
         }
         let samples_sum = self.samples_sum();
-        let samples_sum_after_tare =
-            samples_sum - self.samples.len() as i64 * self.calibration_tare;
-        let calibrated_sum =
-            samples_sum_after_tare * self.calibration_weight / self.calibration_sample;
-        (calibrated_sum / self.samples.len() as i64) as i32
+        let samples_sum_after_tare = samples_sum - self.samples.len() as i64 * self.current_tare; // here need to use the current_tare
+        let calibrated_sum = samples_sum_after_tare * self.calibration_weight
+            / (self.calibration_sample - self.calibration_tare); // here need to use the calibration_tare (because the calibration factor isn't supposed to change even if tare does)
+        return (calibrated_sum / self.samples.len() as i64) as i32;
     }
     pub fn add_sample(&mut self, sample: i32) {
-        // debug!("New sample {sample}");
-        if !self.samples.is_empty() {
+        if !self.samples.is_empty() && self.calibration_tare != 0 {
+            let clear_samples_change_threshold =
+                5 * (self.calibration_sample - self.calibration_tare) / self.calibration_weight; // 5g // here need to use calibration tare
             if abs(self.samples_sum() - sample as i64 * self.samples.len() as i64)
                 / self.samples.len() as i64
-                > self.clear_samples_change_threshold
+                > clear_samples_change_threshold
             {
-                // debug!("Clearing samples");
                 self.samples.clear();
                 self.next_sample_index = 0;
                 self.change_waiter.sender().send(sample);
-                // trace!("Sending change waiter {sample}");
             }
         }
 
@@ -124,7 +163,6 @@ impl LoadCell {
                 self.next_sample_index = 0;
             }
         }
-        // debug!("dealing with full_read_waiter");
         let full_read_waiter = self.full_read_waiter();
         if self.samples.len() == self.samples_per_read {
             full_read_waiter.set(1);
@@ -150,7 +188,7 @@ impl LoadCell {
             .map(|&x| x as i64)
             .sum::<i64>();
         let tare_value = samples_sum / required_samples as i64;
-        myself.borrow_mut().calibration_tare = tare_value;
+        myself.borrow_mut().current_tare = tare_value;
     }
 }
 
@@ -180,8 +218,6 @@ impl<'a> LoadCellReader {
     }
 }
 
-
-
 #[embassy_executor::task]
 async fn spi_async_load_cell_task(
     spi: AnySpi,
@@ -206,8 +242,21 @@ async fn spi_async_load_cell_task(
     .into_async();
 
     let mut hx711_sensor = Hx711::new_async(hx711_spi);
-    hx711_sensor.reset_async().await.unwrap();
-    // hx711_sensor.set_mode(hx711_spi::Mode::ChAGain128).unwrap(); // x128 works up to +-20mV
+    term_info!("Initializing Load-Cell reader");
+    let err_count = 0;
+    loop {
+        if let Err(err) = hx711_sensor.reset_async().await {
+            error!("Error initializing hx711 {err:?}");
+            Timer::after_millis(500).await;
+        } else {
+            break;
+        }
+        if err_count == 10 {
+            term_info!("Ending retries to initialize Load-Cell reader");
+            return;
+        }
+    }
+    term_info!("Load-Cell reader initialized successfully");
 
     // Skip first readings which are 0 / -1
     let initial_readings = true;

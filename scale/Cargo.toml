@@ -26,6 +26,7 @@ embassy-time = { version = "0.4.0", features = ["generic-queue-8"] }
 embassy-embedded-hal = { version = "0.3.0" }
 embassy-sync = { version = "0.6.2" }
 
+sequential-storage = { git = "https://github.com/tweedegolf/sequential-storage", features = [ "alloc", ], rev = "b6f7da77b7f3d66bc1ac36992a6a7b399b5ba030" }
 
 critical-section = "1.2.0"
 once_cell = { version = "1.20.2", default-features = false, features = ["alloc"] }

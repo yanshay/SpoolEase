@@ -23,6 +23,7 @@ use picoserve::{
     routing::get,
     AppRouter, AppWithStateBuilder,
 };
+use shared::scale::ConsoleToScale;
 
 pub struct ConsoleProxyWebAppState {}
 
@@ -201,7 +202,15 @@ impl ws::WebSocketCallback for ConsoleCommHandler {
                     match read_res {
                         Ok(msg) => match msg {
                             Message::Text(txt) => {
-                                debug!("Received msg {txt}");
+                                let console_to_scale_res = serde_json::from_str::<ConsoleToScale>(txt);
+                                match console_to_scale_res {
+                                    Ok(console_to_scale) =>  {
+                                        self.app.borrow_mut().handle_console_to_scale(console_to_scale);
+                                    }
+                                    Err(err) =>  {
+                                        error!("Error deserializing message from SpoolEase Console {err:?}");
+                                    }
+                                }
                             }
                             Message::Binary(items) => {
                                 error!("Received unsupported binary data {items:?}");

@@ -55,7 +55,11 @@ export component ControlPanelBase inherits HorizontalLayout {
     spacing: 4px;
     VerticalLayout {
         spacing: AppConsts.trays-spacing;
-        if AppState.spool-scale-state == SpoolScaleState.Loaded || AppState.spool-scale-state == SpoolScaleState.Disconnected || AppState.spool-scale-state == SpoolScaleState.Connected : scale := Rectangle {
+        if AppState.spool-scale-state == SpoolScaleState.Loaded || 
+           AppState.spool-scale-state == SpoolScaleState.Disconnected || 
+           AppState.spool-scale-state == SpoolScaleState.Uncalibrated || 
+           AppState.spool-scale-state == SpoolScaleState.Connected : 
+           scale := Rectangle {
             text-border-timer := Timer {
                 property <int> counter: 20;
                 property <length> text-border-width: 1px;
@@ -80,14 +84,15 @@ export component ControlPanelBase inherits HorizontalLayout {
             height: 30px;
             border-color: black;
             border-width: text-border-timer.text-border-width;
-            background: AppState.spool-scale-state == SpoolScaleState.Disconnected ? orangered : 
+            background: AppState.spool-scale-state == SpoolScaleState.Disconnected || AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? orangered : 
                         AppState.spool-scale-state == SpoolScaleState.Connected ? lightgreen : 
                         lightskyblue;
             Text { 
               color: utils.contrasting_color(parent.background);
               font-size: 20px;
-              text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? "Disconnected" :
-                    AppState.spool-scale-state == SpoolScaleState.Connected ? "Connected" :
+              text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? "Scale Disconnected" :
+                    AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Scale Not Calibrated" :
+                    AppState.spool-scale-state == SpoolScaleState.Connected ? "Scale Connected" :
                     AppState.spool-scale-state == SpoolScaleState.Loaded ? "\{AppState.spool-scale-weight} g" : 
                     "";
             }

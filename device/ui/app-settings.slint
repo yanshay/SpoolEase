@@ -1,0 +1,37 @@
+import { MyButton, Title } from "framework/widgets.slint";
+import { SettingsButton } from "framework/settings.slint";
+import { ScaleCalibration } from "scale-calibration.slint";
+import { AppState, SpoolScaleState } from "app.slint";
+
+enum AppSettingsState {
+  Buttons,
+  ScaleCalibration,
+}
+
+export component AppSettings inherits Rectangle {
+    callback done;
+    property <AppSettingsState> state: Buttons;
+
+    if state == AppSettingsState.Buttons: VerticalLayout {
+        Title {
+            text: "Application Settings";
+        }
+
+        SettingsButton {
+            text: "Calibrate Scale";
+            enabled: !(AppState.spool-scale-state == SpoolScaleState.Unknown || AppState.spool-scale-state == SpoolScaleState.Disconnected);
+            clicked => {
+                root.state = AppSettingsState.ScaleCalibration;
+            }
+        }
+    }
+    if state == AppSettingsState.ScaleCalibration: ScaleCalibration {
+        cancel-clicked => {
+            root.state = AppSettingsState.Buttons;
+        }
+        ok-clicked => {
+            root.state = AppSettingsState.Buttons;
+            done();
+        }
+    }
+}

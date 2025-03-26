@@ -1,13 +1,12 @@
 use alloc::{format, string::ToString};
 use embassy_net::Stack;
 use embassy_time::Timer;
-use framework::{debug, error};
+use framework::error;
 
 #[embassy_executor::task]
 pub async fn ssdp_broadcast(stack: Stack<'static>) {
     let local_addr;
     loop {
-        debug!("ssdp waiting for IP");
         if let Some(config) = stack.config_v4() {
             local_addr = config.address;
             break;

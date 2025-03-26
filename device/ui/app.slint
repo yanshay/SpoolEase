@@ -57,6 +57,7 @@ export enum ControlState {
 
 export enum SpoolScaleState {
   Unknown,
+  Uncalibrated,
   Disconnected,
   Connected,
   Empty,
@@ -82,6 +83,7 @@ export global AppBackend {
     callback cancel-encode();
     callback reset-printer();
     callback select-printer(printer: string);
+    callback calibrate-scale(weight: int);
 }
 
 export global AppState {
@@ -253,6 +255,12 @@ export global AppState {
         self.spool-scale-state = SpoolScaleState.Disconnected;
         self.spool-scale-flash = false;
         self.spool-scale-after-flash-state = SpoolScaleState.Disconnected;
+    }
+
+    public function spool-scale-uncalibrated() {
+        self.spool-scale-state = SpoolScaleState.Uncalibrated;
+        self.spool-scale-flash = false;
+        self.spool-scale-after-flash-state = SpoolScaleState.Uncalibrated;
     }
 
     public function spool-scale-loaded(weight: int) {

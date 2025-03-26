@@ -12,6 +12,8 @@ pub struct WebConfigInfo {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ScaleToConsole {
+    Term(String),
+    Uncalibrated,
     NewLoad(Weight),
     LoadChanged(Weight),
     LoadRemoved,
@@ -20,11 +22,9 @@ pub enum ScaleToConsole {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum ConsoleToScale {
-    RequestMeasure,
-    Tare,
-    SetNotifyThreshold(Weight),
     Calibrate(Weight),
-    ResetCalibrations,
+    ResetCalibration,
+    SetNotifyThreshold(Weight),
     EnableWebConfig,
     DisableWebConfig,
 }

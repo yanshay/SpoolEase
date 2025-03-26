@@ -7,24 +7,22 @@ use edge_http::{
 use edge_nal_embassy::{Tcp, TcpBuffers};
 use edge_ws::{FrameHeader, FrameType};
 use embassy_executor::Spawner;
+use embassy_futures::select::select3;
 use embassy_net::Stack;
-use embassy_time::{with_timeout, Duration, Instant, Timer};
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel};
+use embassy_time::{Instant, Timer};
 use embedded_io_async::Write;
-use framework::{debug, error, info, term_error, term_info, warn};
-use shared::scale::ScaleToConsole;
+use framework::{debug, error, info, mk_static, term_error, term_info, utils::random_u32, warn};
+use shared::scale::{ConsoleToScale, ScaleToConsole};
 
 use crate::ssdp::SSDPPubSubChannel;
 
-//TODO: use the one in the future release of 'framework'
-pub fn random_u32() -> u32 {
-    let mut buf = [0u8; 4];
-    getrandom::getrandom(&mut buf).unwrap();
-    u32::from_le_bytes(buf)
-}
+pub type ConsoleToScaleChannel = Channel<NoopRawMutex, ConsoleToScale, 5>;
 
 pub struct SpoolScale {
     pub weight: i32,
     observers: Vec<alloc::rc::Weak<RefCell<dyn SpoolScaleObserver>>>,
+    console_to_scale: &'static ConsoleToScaleChannel,
 }
 
 pub trait SpoolScaleObserver {
@@ -33,9 +31,15 @@ pub trait SpoolScaleObserver {
     fn on_scale_load_removed(&mut self);
     fn on_scale_connected(&mut self);
     fn on_scale_disconnected(&mut self);
+    fn on_scale_uncalibrated(&mut self);
+    fn on_term_text(&mut self, text: &str);
 }
 
 impl SpoolScale {
+    pub fn calibrate(&self, weight: i32) {
+        self.console_to_scale.try_send(ConsoleToScale::Calibrate(weight)).unwrap_or_else(|e| error!("Failed sending calibrate request to scale {e:?}"));
+    }
+
     pub fn process_message(&mut self, _frame_header: &FrameHeader, payload: &[u8]) {
         let parse_res = serde_json::from_slice::<ScaleToConsole>(payload);
         if let Ok(scale_to_console) = parse_res {
@@ -53,6 +57,12 @@ impl SpoolScale {
                     self.notify_scale_load_removed();
                 }
                 ScaleToConsole::WebConfigEnabled(_web_config_info) => todo!(),
+                ScaleToConsole::Uncalibrated => {
+                    self.notify_scale_uncalibrated();
+                }
+                ScaleToConsole::Term(text) => {
+                    self.notify_term_text(&text);
+                }
             }
         }
     }
@@ -97,12 +107,27 @@ impl SpoolScale {
             observer.borrow_mut().on_scale_disconnected();
         }
     }
+    pub fn notify_scale_uncalibrated(&self) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_scale_uncalibrated();
+        }
+    }
+    pub fn notify_term_text(&self, text: &str) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_term_text(text);
+        }
+    }
 }
 
 pub fn init(stack: Stack<'static>, spawner: Spawner, ssdp_pub_sub: &'static SSDPPubSubChannel) -> Rc<RefCell<SpoolScale>> {
+    let console_to_scale = mk_static!(ConsoleToScaleChannel, ConsoleToScaleChannel::new());
+
     let spool_scale_rc = Rc::new(RefCell::new(SpoolScale {
         weight: 0,
         observers: Vec::new(),
+        console_to_scale,
     }));
     spawner.spawn(spool_scale_task(stack, spool_scale_rc.clone(), ssdp_pub_sub)).ok();
 
@@ -112,6 +137,7 @@ pub fn init(stack: Stack<'static>, spawner: Spawner, ssdp_pub_sub: &'static SSDP
 #[embassy_executor::task]
 pub async fn spool_scale_task(stack: Stack<'static>, spool_scale_rc: Rc<RefCell<SpoolScale>>, ssdp_pub_sub: &'static SSDPPubSubChannel) {
     info!("Task spool_scale_task started");
+    let console_to_scale = spool_scale_rc.borrow().console_to_scale;
     loop {
         if let Some(_config) = stack.config_v4() {
             break;
@@ -170,6 +196,7 @@ pub async fn spool_scale_task(stack: Stack<'static>, spool_scale_rc: Rc<RefCell<
             if connect_error_counter % 5 == 0 && connect_error_counter != 0 {
                 term_error!("SpoolScale: Error initiating web socket request {:?}", err);
             }
+            connect_error_counter += 1;
             continue 'connect_loop;
         }
         if let Err(err) = conn.initiate_response().await {
@@ -210,10 +237,14 @@ pub async fn spool_scale_task(stack: Stack<'static>, spool_scale_rc: Rc<RefCell<
         'send_recv_loop: loop {
             // max timeout_for_ping need to be less than above WithTimeout wrapper
             let timeout_for_ping = (random_u32() % 5000) + 5000;
-            let with_timeout_res = with_timeout(Duration::from_millis(timeout_for_ping as u64), FrameHeader::recv(&mut socket)).await;
-            let recv_header_res = match with_timeout_res {
-                Ok(header) => header,
-                Err(_timeout_err) => {
+            let with_timeout_res = select3(
+                Timer::after_millis(timeout_for_ping as u64),
+                FrameHeader::recv(&mut socket),
+                console_to_scale.receive(),
+            )
+            .await;
+            match with_timeout_res {
+                embassy_futures::select::Either3::First(_timeout_res) => {
                     // Sending Ping on timeout
                     let now = Instant::now().as_ticks();
                     let ping_header = FrameHeader {
@@ -251,130 +282,175 @@ pub async fn spool_scale_task(stack: Stack<'static>, spool_scale_rc: Rc<RefCell<
                     // in case of timeut (which is the Err(_timeout_err) case we want to continue send_recv_loop
                     continue 'send_recv_loop;
                 }
-            };
-            match recv_header_res {
-                Ok(header) => {
-                    let recv_payload_res = header.recv_payload(&mut socket, buf).await;
-                    if let Ok(payload) = recv_payload_res {
-                        match header.frame_type {
-                            FrameType::Text(_fragmented) => {
-                                spool_scale_rc.borrow_mut().process_message(&header, payload);
-                            }
-                            FrameType::Binary(_) => {
-                                error!("Got binary message, header: {header}, payload: {payload:?}");
-                            }
-                            FrameType::Ping => {
-                                let pong_header = FrameHeader {
-                                    frame_type: FrameType::Pong,
-                                    payload_len: header.payload_len,
-                                    mask_key: header.mask_key,
-                                };
-                                let send_pong_header_res = pong_header.send(&mut socket).await;
-                                match send_pong_header_res {
-                                    Ok(_) => {
-                                        let res = pong_header.send_payload(&mut socket, payload).await;
-                                        match res {
+                embassy_futures::select::Either3::Second(from_scale_res) => {
+                    match from_scale_res {
+                        Ok(header) => {
+                            let recv_payload_res = header.recv_payload(&mut socket, buf).await;
+                            if let Ok(payload) = recv_payload_res {
+                                match header.frame_type {
+                                    FrameType::Text(_fragmented) => {
+                                        spool_scale_rc.borrow_mut().process_message(&header, payload);
+                                    }
+                                    FrameType::Binary(_) => {
+                                        error!("Got binary message, header: {header}, payload: {payload:?}");
+                                    }
+                                    FrameType::Ping => {
+                                        let pong_header = FrameHeader {
+                                            frame_type: FrameType::Pong,
+                                            payload_len: header.payload_len,
+                                            mask_key: header.mask_key,
+                                        };
+                                        let send_pong_header_res = pong_header.send(&mut socket).await;
+                                        match send_pong_header_res {
                                             Ok(_) => {
-                                                let flush_res = socket.flush().await;
-                                                match flush_res {
+                                                let res = pong_header.send_payload(&mut socket, payload).await;
+                                                match res {
                                                     Ok(_) => {
-                                                        debug!("SpoolScale: Received Ping, replied with Pong");
+                                                        let flush_res = socket.flush().await;
+                                                        match flush_res {
+                                                            Ok(_) => {
+                                                                debug!("SpoolScale: Received Ping, replied with Pong");
+                                                            }
+                                                            Err(err) => {
+                                                                error!("SpoolScale: Error sending Pong reply {err:?}, disconnecting");
+                                                                break 'send_recv_loop;
+                                                            }
+                                                        }
                                                     }
                                                     Err(err) => {
-                                                        error!("SpoolScale: Error sending Pong reply {err:?}, disconnecting");
+                                                        error!("SpoolScale: Error sending Pong payload {err:?}");
                                                         break 'send_recv_loop;
                                                     }
                                                 }
                                             }
                                             Err(err) => {
-                                                error!("SpoolScale: Error sending Pong payload {err:?}");
+                                                error!("SpoolScale: Error sending Pong header {err:?}");
                                                 break 'send_recv_loop;
                                             }
                                         }
                                     }
-                                    Err(err) => {
-                                        error!("SpoolScale: Error sending Pong header {err:?}");
-                                        break 'send_recv_loop;
+                                    FrameType::Pong => {
+                                        let tick_res: Result<&[u8; 8], _> = payload.try_into();
+                                        if let Ok(ticks) = tick_res {
+                                            let ping_ticks = u64::from_le_bytes(*ticks);
+                                            let ping_instant = Instant::from_ticks(ping_ticks);
+                                            let elapsed_duration = ping_instant.elapsed();
+                                            debug!("SpoolScale: Ping-Pong duration was {} millis", elapsed_duration.as_millis());
+                                        } else {
+                                            warn!("SpoolScale: Received pong wrongly formatted, header: {header:?}, payload: {payload:?}");
+                                        }
                                     }
-                                }
-                            }
-                            FrameType::Pong => {
-                                let tick_res: Result<&[u8; 8], _> = payload.try_into();
-                                if let Ok(ticks) = tick_res {
-                                    let ping_ticks = u64::from_le_bytes(*ticks);
-                                    let ping_instant = Instant::from_ticks(ping_ticks);
-                                    let elapsed_duration = ping_instant.elapsed();
-                                    debug!("SpoolScale: Ping-Pong duration was {} millis", elapsed_duration.as_millis());
-                                } else {
-                                    warn!("SpoolScale: Received pong wrongly formatted, header: {header:?}, payload: {payload:?}");
-                                }
-                            }
-                            FrameType::Close => {
-                                let close_resp_header = FrameHeader {
-                                    frame_type: FrameType::Close,
-                                    payload_len: header.payload_len,
-                                    mask_key: header.mask_key,
-                                };
-                                let close_resp_header_res = close_resp_header.send(&mut socket).await;
-                                match close_resp_header_res {
-                                    Ok(_) => {
-                                        let close_resp_payload_res = close_resp_header.send_payload(&mut socket, payload).await;
-                                        match close_resp_payload_res {
+                                    FrameType::Close => {
+                                        let close_resp_header = FrameHeader {
+                                            frame_type: FrameType::Close,
+                                            payload_len: header.payload_len,
+                                            mask_key: header.mask_key,
+                                        };
+                                        let close_resp_header_res = close_resp_header.send(&mut socket).await;
+                                        match close_resp_header_res {
                                             Ok(_) => {
-                                                let close_resp_flush_res = socket.flush().await;
-                                                match close_resp_flush_res {
+                                                let close_resp_payload_res = close_resp_header.send_payload(&mut socket, payload).await;
+                                                match close_resp_payload_res {
                                                     Ok(_) => {
-                                                        debug!("SpoolScale: Replied to Close, disconnecting");
-                                                        break 'send_recv_loop;
+                                                        let close_resp_flush_res = socket.flush().await;
+                                                        match close_resp_flush_res {
+                                                            Ok(_) => {
+                                                                debug!("SpoolScale: Replied to Close, disconnecting");
+                                                                break 'send_recv_loop;
+                                                            }
+                                                            Err(close_resp_flush_err) => {
+                                                                error!(
+                                                                    "SpoolScale: Error sending Close reply {close_resp_flush_err:?}, disconnecting"
+                                                                );
+                                                                break 'send_recv_loop;
+                                                            }
+                                                        }
                                                     }
-                                                    Err(close_resp_flush_err) => {
-                                                        error!("SpoolScale: Error sending Close reply {close_resp_flush_err:?}, disconnecting");
+                                                    Err(err) => {
+                                                        error!("SpoolScale: Error sending Close Response payload {err:?}");
                                                         break 'send_recv_loop;
                                                     }
                                                 }
                                             }
-                                            Err(err) => {
-                                                error!("SpoolScale: Error sending Close Response payload {err:?}");
+                                            Err(close_resp_header_err) => {
+                                                error!("SpoolScale: Error sending Close Response header {close_resp_header_err:?}");
                                                 break 'send_recv_loop;
                                             }
                                         }
                                     }
-                                    Err(close_resp_header_err) => {
-                                        error!("SpoolScale: Error sending Close Response header {close_resp_header_err:?}");
-                                        break 'send_recv_loop;
+                                    FrameType::Continue(_fragmented) => {
+                                        warn!(
+                                            "SpoolScale Recv(continue): header: {header}, payload: {}",
+                                            core::str::from_utf8(payload).unwrap()
+                                        );
                                     }
                                 }
-                            }
-                            FrameType::Continue(_fragmented) => {
-                                warn!(
-                                    "SpoolScale Recv(continue): header: {header}, payload: {}",
-                                    core::str::from_utf8(payload).unwrap()
-                                );
-                            }
-                        }
 
-                        if !header.frame_type.is_final() {
-                            warn!("SpoolScale: Unexpected fragmented frame header: {header:?}, payload: {payload:?}");
+                                if !header.frame_type.is_final() {
+                                    warn!("SpoolScale: Unexpected fragmented frame header: {header:?}, payload: {payload:?}");
+                                }
+                            } else {
+                                error!("SpoolScale: Error while reading payload {:?}", recv_payload_res.err().unwrap());
+                                // can continue, will try to read next header and if will fail, will fail on the header and disconnect
+                            }
                         }
-                    } else {
-                        error!("SpoolScale: Error while reading payload {:?}", recv_payload_res.err().unwrap());
-                        // can continue, will try to read next header and if will fail, will fail on the header and disconnect
+                        Err(recv_header_err) => {
+                            match recv_header_err {
+                                edge_ws::Error::Incomplete(_) => todo!(),
+                                edge_ws::Error::Invalid => todo!(),
+                                edge_ws::Error::BufferOverflow => todo!(),
+                                edge_ws::Error::InvalidLen => todo!(),
+                                edge_ws::Error::Io(io_err) => {
+                                    error!("SpoolScale: IO error while reading header, disconnecting {io_err:?}");
+                                    // breaking out of the loop, because when an IO error happens here, it happens continuously and turns to a busy loop
+                                    break 'send_recv_loop;
+                                }
+                            }
+                        }
                     }
                 }
-                Err(recv_header_err) => {
-                    match recv_header_err {
-                        edge_ws::Error::Incomplete(_) => todo!(),
-                        edge_ws::Error::Invalid => todo!(),
-                        edge_ws::Error::BufferOverflow => todo!(),
-                        edge_ws::Error::InvalidLen => todo!(),
-                        edge_ws::Error::Io(io_err) => {
-                            error!("SpoolScale: IO error while reading header, disconnecting {io_err:?}");
-                            // breaking out of the loop, because when an IO error happens here, it happens continuously and turns to a busy loop
-                            break 'send_recv_loop;
+                embassy_futures::select::Either3::Third(console_to_scale) => {
+                    let json_res = serde_json::to_string(&console_to_scale);
+                    match json_res {
+                        Ok(json) => {
+                            let send_to_scale_header = FrameHeader {
+                                frame_type: FrameType::Text(false),
+                                payload_len: json.len() as u64,
+                                mask_key: None,
+                            };
+
+                            let send_to_scale_header_res = send_to_scale_header.send(&mut socket).await;
+                            match send_to_scale_header_res {
+                                Ok(_) => {
+                                    let send_to_scale_payload_res = send_to_scale_header.send_payload(&mut socket, json.as_bytes()).await;
+                                    match send_to_scale_payload_res {
+                                        Ok(_) => {
+                                            let res = socket.flush().await;
+                                            match res {
+                                                Ok(_) => {
+                                                    debug!("SpoolScale: Sent message to scale: {json}");
+                                                }
+                                                Err(send_to_scale_flush_err) => {
+                                                    error!("SpoolScale: Error sending message payload {send_to_scale_flush_err:?}, disconnecting");
+                                                    break 'send_recv_loop;
+                                                }
+                                            }
+                                        }
+                                        Err(send_to_scale_payload_err) => {
+                                            error!("SpoolScale: Error sending Ping payload {send_to_scale_payload_err:?}");
+                                        }
+                                    }
+                                }
+                                Err(send_to_scale_header_err) => {
+                                    error!("SpoolScale: Error sending Ping header {send_to_scale_header_err:?}");
+                                }
+                            }
+                        }
+                        Err(err) => {
+                            error!("SpoolScale: Error serializing data {:?}, {:?}", console_to_scale, err)
                         }
                     }
-                }
-            }
+                }             }
         }
         spool_scale_rc.borrow_mut().disconnected();
     }

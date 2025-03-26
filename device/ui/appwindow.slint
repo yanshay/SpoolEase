@@ -3,7 +3,7 @@ import { GridBox, VerticalBox, HorizontalBox, Button, ComboBox, SpinBox, ScrollV
 import { FrameworkBackend, FrameworkState, OtaState, WebConfigState } from "framework/framework.slint";
 import { Terminal } from "framework/terminal.slint";
 import { Settings } from "framework/settings.slint";
-import { MyButton } from "framework/widgets.slint";
+import { MyButton, Title } from "framework/widgets.slint";
 
 import { Utils } from "utils.slint";
 import { Trays } from "trays.slint";
@@ -12,6 +12,8 @@ import { SpoolStaging } from "spoolstaging.slint";
 import { ControlPanel } from "controlpanel.slint";
 import { SelectPrinter } from "select-printer.slint";
 import { SpoolScale } from "spool-scale.slint";
+import { AppSettings } from "app-settings.slint";
+
 // reexport to rust
 
 export { FrameworkState, FrameworkBackend }
@@ -21,13 +23,13 @@ export component AppWindow inherits Window {
     width: 480px;
     height: 320px;
 
-    property <int> current-page: ( FrameworkState.web-config-state == WebConfigState.Started-AP || FrameworkState.web-config-state == WebConfigState.Started-STA) ? 2 : (AppState.control-state == ControlState.Booting || AppState.control-state == ControlState.ConnectingToPrinter || AppState.control-state == ControlState.BootFailed) ? 0 : 1;
+    property <int> current-page: (FrameworkState.web-config-state == WebConfigState.Started-AP || FrameworkState.web-config-state == WebConfigState.Started-STA) ? 2 : (AppState.control-state == ControlState.Booting || AppState.control-state == ControlState.ConnectingToPrinter || AppState.control-state == ControlState.BootFailed) ? 0 : 1;
     property <int> current-page-x: 0;
 
     sgr := SwipeGestureHandler {
         width: parent.width;
         height: parent.height;
-        handle-swipe-up: current-page < 2 && (!AppState.select-printer);
+        handle-swipe-up: current-page < 3 && (!AppState.select-printer);
         handle-swipe-down: current-page > 0 && (!AppState.select-printer);
         handle-swipe-left: AppState.select-printer == false;
         handle-swipe-right: AppState.select-printer == true;
@@ -39,17 +41,16 @@ export component AppWindow inherits Window {
                 } else if self.handle-swipe-up && self.current-position.y < self.pressed-position.y - (self.height / 8) {
                     current-page += 1;
                 }
-                if self.handle-swipe-left &&  self.current-position.x < self.pressed-position.x - (self.width / 5) {
-                   AppState.select-printer = true;
-                   current-page_x = 1;
-                   current-page = current-page; // this looks strange, but to 'cut' the automatic state based vertical positioning tht scrolls on events which is confusing after manual touch
-                } else if self.handle-swipe-right && self.current-position.x > self.pressed-position.x + (self.width / 5) { 
-                   AppState.select-printer = false;
-                   current-page_x = 0;
+                if self.handle-swipe-left && self.current-position.x < self.pressed-position.x - (self.width / 5) {
+                    AppState.select-printer = true;
+                    current-page_x = 1;
+                    current-page = current-page; // this looks strange, but to 'cut' the automatic state based vertical positioning tht scrolls on events which is confusing after manual touch
+                } else if self.handle-swipe-right && self.current-position.x > self.pressed-position.x + (self.width / 5) {
+                    AppState.select-printer = false;
+                    current-page_x = 0;
                 }
             }
         }
-         
         left-pages := VerticalLayout {
             x: - current-page_x * 480px;
             y: - current-page * 320px;
@@ -110,6 +111,14 @@ export component AppWindow inherits Window {
                 width: root.width;
                 height: root.height;
             }
+
+            page4 := AppSettings {
+                width: root.width;
+                height: root.height;
+                done => {
+                    root.current-page = 1;
+                }
+            }
         }
 
         SelectPrinter {
@@ -117,14 +126,7 @@ export component AppWindow inherits Window {
                 AppState.select-printer = false;
                 current-page-x = 0;
             }
-            x: left-pages.x+480px;
+            x: left-pages.x + 480px;
         }
-       
-        // if AppState.spool-scale-state == SpoolScaleState.Loaded: SpoolScale {
-        //   x: 50px;
-        //   y: 40px;
-        //   width: root.width - self.x*2;
-        //   height: root.height - self.y*2;
-        // }
     }
 }

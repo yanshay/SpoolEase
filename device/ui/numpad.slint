@@ -1,0 +1,156 @@
+import { MyButton } from "framework/widgets.slint";
+
+
+export component Display inherits Rectangle {
+    in-out property <int> number;
+    padding-right: 40px;
+    border-color: black;
+    border-width: 1px;
+
+    HorizontalLayout {
+        padding-right: 20px;
+        VerticalLayout {
+            padding: 4px;
+            alignment: center;
+            Text {
+                // preferred-height: 1px;
+                min-height: 0px;
+                text: "\{number} g";
+                font-size: 40px;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+export component NumButton inherits MyButton {
+    in property <int> digit;
+    text: "\{digit}";
+    callback pressed(digit: int);
+    preferred-width: 1px; // so all equal
+    preferred-height: 1px;
+    clicked => {
+        pressed(digit);
+    }
+}
+
+////////////////////////
+
+export component NumPad inherits Rectangle {
+    in property<int> max-digits: 4;
+    width: 288px;
+    callback ok-clicked;
+    in property <string> title;
+    background: white;
+    in-out property <int> number;
+    function pressed-digit(digit: int) {
+        if log(number, 10) < max-digits - 1 {
+          number = number * 10 + digit;
+        }
+    }
+    main := VerticalLayout {
+        Display {
+            height: root.height / 5;
+            number: root.number;
+        }
+
+        HorizontalLayout {
+            NumButton {
+                digit: 7;
+                pressed(digit) => {
+                    pressed-digit(digit);
+                }
+            }
+
+            NumButton {
+                digit: 8;
+                pressed(digit) => {
+                    pressed-digit(digit);
+                }
+            }
+
+            NumButton {
+                digit: 9;
+                pressed(digit) => {
+                    pressed-digit(digit);
+                }
+            }
+        }
+
+        HorizontalLayout {
+            NumButton {
+                digit: 4;
+                pressed(digit) => {
+                    pressed-digit(digit);
+                }
+            }
+
+            NumButton {
+                digit: 5;
+                pressed(digit) => {
+                    pressed-digit(digit);
+                }
+            }
+
+            NumButton {
+                digit: 6;
+                pressed(digit) => {
+                    pressed-digit(digit);
+                }
+            }
+        }
+
+        HorizontalLayout {
+            NumButton {
+                digit: 1;
+                pressed(digit) => {
+                    pressed-digit(digit);
+                }
+            }
+
+            NumButton {
+                digit: 2;
+                pressed(digit) => {
+                    pressed-digit(digit);
+                }
+            }
+
+            NumButton {
+                digit: 3;
+                pressed(digit) => {
+                    pressed-digit(digit);
+                }
+            }
+        }
+
+        HorizontalLayout {
+            NumButton {
+                text: "Del";
+                pressed(digit) => {
+                    root.number = floor(root.number / 10);
+                }
+            }
+
+            NumButton {
+                digit: 0;
+                pressed(digit) => {
+                    pressed-digit(digit);
+                }
+            }
+
+            NumButton {
+                text: "Ok";
+                pressed(digit) => {
+                    root.ok-clicked();
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        y:  main.y - 1px;
+        width: main.width;
+        border-color: black;
+        border-width: 1px;
+    }
+}

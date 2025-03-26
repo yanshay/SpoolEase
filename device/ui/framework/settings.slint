@@ -1,5 +1,6 @@
 import { MyButton } from "widgets.slint";
 import { FrameworkState, FrameworkBackend, OtaState, WebConfigState, ResetWifiCredentialsState, ResetFixedSecurityKeyState, RestartDeviceState } from "framework.slint";
+import { Title } from "widgets.slint";
 
 export component MyText inherits Text {
     height: 22px;
@@ -54,21 +55,6 @@ export component OtaButton inherits SettingsButton {
     }
 }
 
-export component SettingsTitle inherits Rectangle {
-    in-out property <string> text;
-    height: 40px;
-    background: green.brighter(1.0);
-    border-color: black;
-    border-width: 1px;
-    Text {
-        vertical-alignment: center;
-        horizontal-alignment: center;
-        height: 40px;
-        text: text;
-        font-size: 20px;
-    }
-}
-
 export component SettingsConfirm inherits VerticalLayout {
     in-out property <string> title;
     in-out property <string> text;
@@ -79,7 +65,7 @@ export component SettingsConfirm inherits VerticalLayout {
     alignment: space-between;
     VerticalLayout {
 
-        SettingsTitle {
+        Title {
             text: title;
         }
 
@@ -115,7 +101,7 @@ export component Settings inherits Rectangle {
         height: parent.height;
         width: parent.width;
 
-        SettingsTitle {
+        Title {
             text: "  Installed firmware: \{FrameworkState.app-info.name} \{ FrameworkState.app-info.version}";
         }
 

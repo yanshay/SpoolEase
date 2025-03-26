@@ -31,6 +31,7 @@ dependencies = [
  "once_cell",
  "picoserve",
  "rand",
+ "sequential-storage",
  "serde",
  "serde_json",
  "shared",
@@ -1473,7 +1474,7 @@ dependencies = [
  "embedded-nal-async",
  "heapless",
  "managed",
- "smoltcp 0.12.0",
+ "smoltcp",
 ]
 
 [[package]]
@@ -1970,7 +1971,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "slint",
- "smoltcp 0.11.0",
+ "smoltcp",
  "static_cell",
  "xtensa-lx-rt",
 ]
@@ -2178,7 +2179,7 @@ dependencies = [
  "portable-atomic",
  "portable_atomic_enum",
  "rand_core",
- "smoltcp 0.12.0",
+ "smoltcp",
  "xtensa-lx-rt",
 ]
 
@@ -5191,19 +5192,6 @@ checksum = "9676b89cd56310a87b93dec47b11af744f34d5fc9f367b829474eec0a891350d"
 dependencies = [
  "borsh",
  "serde",
-]
-
-[[package]]
-name = "smoltcp"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a1a996951e50b5971a2c8c0fa05a381480d70a933064245c4a223ddc87ccc97"
-dependencies = [
- "bitflags 1.3.2",
- "byteorder",
- "cfg-if",
- "heapless",
- "managed",
 ]
 
 [[package]]

@@ -2,7 +2,12 @@ use core::cell::RefCell;
 use core::ops::{Deref, DerefMut};
 
 use alloc::string::String;
-use alloc::{format, rc::{Rc, Weak}, string::ToString, vec::Vec};
+use alloc::{
+    format,
+    rc::{Rc, Weak},
+    string::ToString,
+    vec::Vec,
+};
 use embassy_executor::Spawner;
 use embassy_net::Stack;
 use esp_mbedtls::TlsReference;
@@ -62,18 +67,14 @@ impl ViewModel {
     ) -> Rc<RefCell<ViewModel>> {
         let terminal_view_model = Rc::new(RefCell::new(TerminalViewModel { ui_weak: ui_weak.clone() }));
         let trait_for_terminal_rc: Rc<RefCell<dyn terminal::TerminalObserver>> = terminal_view_model.clone();
-        let trait_for_terminal_weak: Weak<RefCell<dyn terminal::TerminalObserver>> =
-            Rc::downgrade(&trait_for_terminal_rc);
+        let trait_for_terminal_weak: Weak<RefCell<dyn terminal::TerminalObserver>> = Rc::downgrade(&trait_for_terminal_rc);
         term_mut().subscribe(trait_for_terminal_weak);
 
         let set_of_printers: Vec<Rc<RefCell<BambuPrinter>>> = Vec::new();
         // set_of_printers.push(bambu_printer_model.clone());
         let selected_printer = SelectedPrinter::new(set_of_printers, 0);
 
-        let ssdp_pub_sub = mk_static!(
-            SSDPPubSubChannel,
-            SSDPPubSubChannel::new()
-        );
+        let ssdp_pub_sub = mk_static!(SSDPPubSubChannel, SSDPPubSubChannel::new());
 
         spawner.spawn(ssdp_task(stack, ssdp_pub_sub)).ok();
 
@@ -97,17 +98,14 @@ impl ViewModel {
             printers_view_state: HashMap::new(),
         };
 
-
         let view_model_rc = Rc::new(RefCell::new(view_model));
 
         let trait_for_spool_tag_rc: Rc<RefCell<dyn spool_tag::SpoolTagObserver>> = view_model_rc.clone();
-        let trait_for_spool_tag_weak: Weak<RefCell<dyn spool_tag::SpoolTagObserver>> =
-            Rc::downgrade(&trait_for_spool_tag_rc);
+        let trait_for_spool_tag_weak: Weak<RefCell<dyn spool_tag::SpoolTagObserver>> = Rc::downgrade(&trait_for_spool_tag_rc);
         spool_tag_model.borrow_mut().subscribe(trait_for_spool_tag_weak);
 
         let trait_for_spool_scale_rc: Rc<RefCell<dyn spool_scale::SpoolScaleObserver>> = view_model_rc.clone();
-        let trait_for_spool_scale_weak: Weak<RefCell<dyn spool_scale::SpoolScaleObserver>> =
-            Rc::downgrade(&trait_for_spool_scale_rc);
+        let trait_for_spool_scale_weak: Weak<RefCell<dyn spool_scale::SpoolScaleObserver>> = Rc::downgrade(&trait_for_spool_scale_rc);
         spool_scale_model.borrow_mut().subscribe(trait_for_spool_scale_weak);
 
         let trait_for_framework_rc: Rc<RefCell<dyn FrameworkObserver>> = view_model_rc.clone();
@@ -178,10 +176,7 @@ impl ViewModel {
             });
     }
 
-    pub fn init(
-        &mut self,
-        ssdp_pub_sub: &'static SSDPPubSubChannel
-    ) {
+    pub fn init(&mut self, ssdp_pub_sub: &'static SSDPPubSubChannel) {
         self.init_framework(); // Initialization of framework
 
         let moved_filament_staging = self.filament_staging.clone();
@@ -197,12 +192,22 @@ impl ViewModel {
             moved_spool_tag.borrow().cancel_operation();
         });
 
+        // Spool Scale
+        let moved_spool_scale_model = self.spool_scale_model.clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_calibrate_scale(move |weight| {
+                moved_spool_scale_model.borrow_mut().calibrate(weight);
+            });
+
+        // Printers
+
         let mut default_printer_set = false;
         let mut printer_number = 1; // starts from one and incremented for any printer
         let mut printer_index = 0; // starts from zero and incremented only on successful init and adding to array
         let mut available_printers: Vec<SharedString> = Vec::new();
         for printer_config in &self.app_config.borrow().configured_printers.printers {
-
             match bambu::init(
                 printer_number,
                 printer_index,
@@ -228,8 +233,7 @@ impl ViewModel {
                     // but selected printer should be considered as to what to update in the UI
                     if let Some(view_model_rc) = &self.view_model {
                         let trait_for_bambu_printer_rc: Rc<RefCell<dyn bambu::BambuPrinterObserver>> = view_model_rc.clone();
-                        let trait_for_bambu_printer_weak: Weak<RefCell<dyn bambu::BambuPrinterObserver>> =
-                            Rc::downgrade(&trait_for_bambu_printer_rc);
+                        let trait_for_bambu_printer_weak: Weak<RefCell<dyn bambu::BambuPrinterObserver>> = Rc::downgrade(&trait_for_bambu_printer_rc);
                         bambu_printer_model.borrow_mut().subscribe(trait_for_bambu_printer_weak);
                     }
                     printer_index += 1; // index is increased only if printer is added to array
@@ -794,5 +798,18 @@ impl SpoolScaleObserver for ViewModel {
     fn on_scale_disconnected(&mut self) {
         debug!("Scale disconnected");
         self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_disconnected();
+    }
+
+    fn on_scale_uncalibrated(&mut self) {
+        debug!("Scale uncalibrated");
+        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_uncalibrated();
+    }
+
+    fn on_term_text(&mut self, text: &str) {
+        let text = format!("\n[S] {text}");
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::FrameworkState>()
+            .invoke_add_term_text(text.into());
     }
 }

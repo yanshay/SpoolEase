@@ -1,0 +1,66 @@
+import { MyButton, Title } from "framework/widgets.slint";
+import { NumPad } from "numpad.slint";
+import { AppBackend, AppState, SpoolScaleState } from "app.slint";
+
+export component ScaleCalibration inherits VerticalLayout {
+        callback ok-clicked;
+        callback cancel-clicked;
+
+        my-title:= Title {
+          height: 40px;
+          property <string> calibration-status:AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Uncalibrated" : "Calibrated";
+          text: "Scale Calibration - \{calibration-status}";
+        }
+        HorizontalLayout {
+            Rectangle {
+                background: white;
+                min-width: 0px;
+                horizontal-stretch: 1;
+                VerticalLayout {
+                  padding-left: 5px;
+                  padding-right: 5px;
+                  Rectangle {
+                    Text {
+                      max-height: (root.height - my-title.height) / 5;
+                      width: parent.width;
+                      font-size: 20px;
+                        horizontal-alignment: left;
+                        text: "1.Remove anything from the tray, then";
+                        wrap: word-wrap;
+                    }
+                  }
+                  MyButton {
+                      height: (root.height - my-title.height) / 5;
+                      text: "Press Tare";
+                      clicked => {
+                         AppBackend.calibrate-scale(0);
+                      }
+                  }
+                  Rectangle {
+                    Text {
+                      max-height: (root.height - my-title.height) / 5 * 2;
+                      width: parent.width;
+                      font-size: 20px;
+                        horizontal-alignment: left;
+                        text: "2.Place an item of a known weight (~1kg) on the scale, type its weight and press Ok.";
+                        wrap: word-wrap;
+                    }
+                  }
+                  MyButton {
+                      height: (root.height - my-title.height) / 5;
+                      text: "or... Cancel";
+                      clicked => { root.cancel-clicked(); }
+                  }
+                }
+            }
+
+            numpad := NumPad {
+                height: root.height - my-title.height;
+                title: "Calibration Weight";
+                ok-clicked => { 
+                  root.ok-clicked(); 
+                  AppBackend.calibrate-scale(self.number);
+                }
+            }
+        }
+    }

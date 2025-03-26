@@ -35,3 +35,18 @@ export component MyButton {
         border-width: 1px + (enabled && area.pressed ? 2px : 0px);
     }
 }
+
+export component Title inherits Rectangle {
+    in-out property <string> text;
+    height: 40px;
+    background: green.brighter(1.0);
+    border-color: black;
+    border-width: 1px;
+    Text {
+        vertical-alignment: center;
+        horizontal-alignment: center;
+        height: 40px;
+        text: text;
+        font-size: 20px;
+    }
+}
