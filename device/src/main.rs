@@ -227,9 +227,10 @@ async fn main(spawner: Spawner) {
 
         app_cargo_pkg_name: env!("CARGO_PKG_NAME"),
         app_cargo_pkg_version: env!("CARGO_PKG_VERSION"),
+        default_fixed_security_key: None,
     };
 
-    let framework = Framework::new(framework_settings, flash_map.clone(), spawner, sta_stack, tls.reference());
+    let framework = Framework::new(framework_settings, flash_map.clone(), spawner, sta_stack, tls.reference(), None);
 
     // == Setup Display Interface =====================================================
 
