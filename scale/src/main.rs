@@ -229,6 +229,7 @@ async fn main(spawner: Spawner) {
 
         app_cargo_pkg_name: env!("CARGO_PKG_NAME"),
         app_cargo_pkg_version: env!("CARGO_PKG_VERSION"),
+        default_fixed_security_key: Some("Replace-Me!".to_string()),
     };
 
     let framework = Framework::new(
@@ -237,6 +238,7 @@ async fn main(spawner: Spawner) {
         spawner,
         sta_stack,
         tls.reference(),
+        Some(peripherals.GPIO0.into())
     );
 
     // == Configure the App UI ========================================================
@@ -375,17 +377,11 @@ async fn main(spawner: Spawner) {
         .borrow()
         .notify_initialization_completed(app_config.borrow().initialization_ok());
 
-    let mut current_key = framework.borrow().fixed_key.clone();
-    if current_key.is_none() {
-        framework.borrow_mut().set_fixed_key("Replace-Me!").unwrap();
-        current_key = framework.borrow().fixed_key.clone();
-    }
     info!("--------------------------------------------");
-    info!(" Current security key is {}", current_key.unwrap());
+    info!(" Current security key is {}", framework.borrow().fixed_key.clone().unwrap_or("Ooops - no security key".to_string()));
     info!("--------------------------------------------");
 
-    // starting web_app should come AFTER setting the first fixed key
-
+    Framework::wait_for_wifi(&framework).await;// this is mostly to start the web app after all tasks initialized and won't miss this start message
     framework
         .borrow()
         .start_web_app(sta_stack, framework::framework::WebConfigMode::STA);
