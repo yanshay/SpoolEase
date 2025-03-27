@@ -105,7 +105,8 @@ edge-nal = { git = "https://github.com/yanshay/edge-net" }
 edge-captive = { git = "https://github.com/yanshay/edge-net" } 
 edge-ws = { git = "https://github.com/yanshay/edge-net" } 
 
-picoserve = {version = "0.14.1", git = "https://github.com/sammhicks/picoserve", rev = "5d40ea410efa4c2e313cfaa19f62f844ece1fd55", features = ["alloc", "embassy"] }
+# picoserve = {version = "0.14.1", git = "https://github.com/sammhicks/picoserve", rev = "5d40ea410efa4c2e313cfaa19f62f844ece1fd55", features = ["alloc", "embassy"] }
+picoserve = {version = "0.15.1", features = ["alloc", "embassy"] }
 
 
 # Utility crates
