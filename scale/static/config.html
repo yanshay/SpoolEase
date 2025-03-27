@@ -275,9 +275,9 @@
         decrypt,
       } from "./pkg/device_wasm.js";
       // initialize wasm
-      console.log("-- waiting for wasm");
+      console.log("Waiting for wasm initialization");
       await wasm();
-      console.log("-- done waiting for wasm");
+      console.log("Wasm initialization completed");
       window.securityKeyOnDerive = "";
       window.encryptionKey = derive_key("", "example_salt");
       window.derive_key = derive_key;
@@ -291,10 +291,7 @@
       async function sendData(inurl, data) {
         // data is object, not json string
         const url = `${urlPrefix}${inurl}`;
-        console.log(`in sendData with url: ${url}`);
         let encryptionKey = getEncryptionKey();
-        console.log(`in sendData with url: ${url}`);
-        console.log(encryptionKey);
         const response = await retryOperation(() =>
           fetch(url, {
             method: "POST",
@@ -324,15 +321,11 @@
       }
 
       function getEncryptionKey() {
-        console.log("in getEncryptionKey");
         const securityKey = document
           .getElementById("security-key")
           .value.trim();
-        console.log(securityKey);
         if (securityKey != window.securityKeyOnDerive) {
-          console.log("different security-key");
           window.encryptionKey = derive_key(securityKey, "example_salt");
-          console.log(`derived key: ${window.encryptionKey}`);
           window.securityKeyOnDerive = securityKey;
         }
         return window.encryptionKey;
@@ -385,11 +378,9 @@
     <script>
       // Function to test key
       async function applyKeyFetchConfigs() {
-        console.log("in applyKeyFetchConfigs");
         const data = { test: "Hello" };
         try {
           let response = await sendData("/api/test-key", data); // Replace with actual server endpoint
-          console.log(`REspnse status ${response.status}`);
           if (response.status == 400) {
             document.getElementById("security-key-feedback").textContent =
               "Security Key is incorrect";
