@@ -152,7 +152,7 @@
     </style>
   </head>
   <body>
-    <h1>SpoolEase Configuration</h1>
+    <h1>SpoolEase-Scale Configuration</h1>
     <h3>Most configurations require device restart</h3>
 
     <!-- Security Key Section -->
@@ -263,6 +263,8 @@
       </button>
     </div>
 
+
+    <!-- Wasm Section -->
     <script type="module">
       // Importing WASM as a JS module requires us to call an init function provided by the default export.
       // This is planned to be changed in the future.
@@ -284,6 +286,7 @@
       document.body.style.display = "block";
     </script>
 
+    <!-- Common Communication & UI Functions -->
     <script>
       async function sendData(inurl, data) {
         // data is object, not json string
@@ -334,6 +337,52 @@
         }
         return window.encryptionKey;
       }
+
+      async function retryOperation(operation, retries = 5) {
+        for (let i = 0; i < retries; i++) {
+          try {
+            return await operation();
+          } catch (error) {
+            console.log(error);
+            if (i === retries - 1) throw error; // Throw error if it's the last retry
+          }
+        }
+      }
+
+      async function fetchSectionConfigs() {
+        await retryOperation(() => fetchWifiInitialConfig());
+      }
+
+      async function fetchInitialSectionConfig(section) {
+        try {
+          const response = await fetch(`${urlPrefix}/api/${section}-config`); // Replace with actual endpoint
+          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+          const encryptedText = await response.text();
+          const decryptedText = decrypt(encryptionKey, encryptedText);
+          const data = JSON.parse(decryptedText);
+
+          return data;
+        } catch (error) {
+          console.error(`Failed to fetch ${section} configuration:`, error);
+          return null;
+        }
+      }
+
+      function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
+        const section = document.getElementById(sectionId);
+        const applyButton = document.getElementById(buttonId);
+        section.addEventListener("input", () => {
+          applyButton.disabled = false;
+          if (feedbackLabelId) {
+            const feedbackLabel = document.getElementById(feedbackLabelId);
+            feedbackLabel.textContent = "";
+          }
+        });
+      }
+    </script>
+
+    <!-- Basic functionality relevant to any device (wifi, security key, restart device)-->
+    <script>
       // Function to test key
       async function applyKeyFetchConfigs() {
         console.log("in applyKeyFetchConfigs");
@@ -365,38 +414,6 @@
         }
       }
 
-      async function retryOperation(operation, retries = 5) {
-        for (let i = 0; i < retries; i++) {
-          try {
-            return await operation();
-          } catch (error) {
-            console.log(error);
-            if (i === retries - 1) throw error; // Throw error if it's the last retry
-          }
-        }
-      }
-
-      async function fetchSectionConfigs() {
-        await retryOperation(() => fetchWifiInitialConfig());
-        // await retryOperation(() => fetchDisplayInitialConfig());
-      }
-
-      async function fetchInitialSectionConfig(section) {
-        try {
-          const response = await fetch(`${urlPrefix}/api/${section}-config`); // Replace with actual endpoint
-          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
-          const encryptedText = await response.text();
-          const decryptedText = decrypt(encryptionKey, encryptedText);
-          const data = JSON.parse(decryptedText);
-
-          // Populate WiFi credentials
-          return data;
-        } catch (error) {
-          console.error(`Failed to fetch ${section} configuration:`, error);
-          return null;
-        }
-      }
-
       async function fetchWifiInitialConfig() {
         const data = await fetchInitialSectionConfig("wifi");
 
@@ -405,7 +422,6 @@
           document.getElementById("wifi-password").value = data.password;
         }
       }
-
 
       // Function to reset the device
       function restartDevice() {
@@ -447,18 +463,6 @@
         setupChangeListeners("set-fixed-key-section", "set-fixed-key-apply");
         // setupChangeListeners("display-section", "display-section-apply");
       });
-
-      function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
-        const section = document.getElementById(sectionId);
-        const applyButton = document.getElementById(buttonId);
-        section.addEventListener("input", () => {
-          applyButton.disabled = false;
-          if (feedbackLabelId) {
-            const feedbackLabel = document.getElementById(feedbackLabelId);
-            feedbackLabel.textContent = "";
-          }
-        });
-      }
 
       function togglePasswordVisibility(inputId, toggleButton) {
         const passwordInput = document.getElementById(inputId);
@@ -522,7 +526,6 @@
       //   const applyButton = document.getElementById("display-section-apply");
       //   sendConfigData("/api/display-config", data, applyButton); // Replace with actual server endpoint
       // }
-
     </script>
   </body>
 </html>
