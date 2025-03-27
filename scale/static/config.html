@@ -152,7 +152,7 @@
     </style>
   </head>
   <body>
-    <h1>SpoolEase-Scale Configuration</h1>
+    <h1>SpoolEase-Scale</h1>
     <h3>Most configurations require device restart</h3>
 
     <!-- Security Key Section -->
@@ -185,7 +185,7 @@
       <div id="set-fixed-key-section">
         <div class="form-row" style="margin-top: 20px">
           <label for="fixed-security-key"
-            >Set a Fixed Security Key:<span
+            >Set a Fixed Key:<span
               >Optional, applies after restart</span
             ></label
           >
@@ -474,13 +474,16 @@
     <script>
       var urlPrefix = "";
       // for local debugging case
+      if (window.location.href.includes("captive")) {
+        urlPrefix = "/captive";
+      }
       window.addEventListener("DOMContentLoaded", () => {
         const installButton = document.getElementById("install-button");
         if (
           window.location.hostname === "localhost" ||
           window.location.hostname === "127.0.0.1"
         ) {
-          urlPrefix = "http://192.168.10.79";
+          urlPrefix = "http://192.168.10.79" + "urlPrefix";
         }
       });
     </script>
