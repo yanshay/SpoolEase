@@ -30,7 +30,8 @@ sequential-storage = { git = "https://github.com/tweedegolf/sequential-storage",
 
 critical-section = "1.2.0"
 once_cell = { version = "1.20.2", default-features = false, features = ["alloc"] }
-picoserve = {version = "0.14.1", git = "https://github.com/sammhicks/picoserve", rev = "5d40ea410efa4c2e313cfaa19f62f844ece1fd55", features = ["alloc", "embassy"] }
+# picoserve = {version = "0.14.1", git = "https://github.com/sammhicks/picoserve", rev = "5d40ea410efa4c2e313cfaa19f62f844ece1fd55", features = ["alloc", "embassy"] }
+picoserve = {version = "0.15.1", features = ["alloc", "embassy"] }
 log = { version = "0.4.21" }
 static_cell = { version = "2.1.0", features = ["nightly"] }
 rand = { version = "0.8", default-features = false }
