@@ -149,9 +149,43 @@
         display: none;
       }
 
+      #custom-alert {
+          position: fixed;
+          top: 0; left: 0; width: 100%; height: 100%;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 9999;  /* Ensure this overlay is on top of all content */
+      }
+
+      #custom-alert-box {
+          background: white;
+          padding: 20px;
+          border-radius: 5px;
+          text-align: center;
+      }
     </style>
   </head>
   <body>
+    <div id="custom-alert" style="display: none;">
+        <div id="custom-alert-box">
+            <p id="custom-alert-text"></p>
+            <button onclick="closeAlert()">OK</button>
+        </div>
+    </div>
+    <script>
+        function showAlert(message) {
+            document.getElementById("custom-alert-text").innerText = message;
+            document.getElementById("custom-alert").style.display = "flex";
+        }
+
+        function closeAlert() {
+            document.getElementById("custom-alert").style.display = "none";
+        }
+        window.alert = function(message) { showAlert(message); };
+    </script>
+
     <h1>SpoolEase-Scale</h1>
     <h3>Most configurations require device restart</h3>
 
