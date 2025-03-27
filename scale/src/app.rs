@@ -174,12 +174,30 @@ impl App {
 
     pub async fn send_to_console(&self, scale_to_console_msg: ScaleToConsole) {
         if self.connected {
-            info!("Sending {:?}", scale_to_console_msg);
+            if !matches!(scale_to_console_msg, ScaleToConsole::Term(_)) {
+                info!("Sending {:?}", scale_to_console_msg);
+            }
             self.scale_to_console_channel
                 .send(scale_to_console_msg)
                 .await;
         } else {
-            info!("Not! sending {:?}", scale_to_console_msg);
+            if !matches!(scale_to_console_msg, ScaleToConsole::Term(_)) {
+                info!("Not! sending {:?}", scale_to_console_msg);
+            }
+        }
+    }
+    pub fn try_send_to_console(&self, scale_to_console_msg: ScaleToConsole) {
+        if self.connected {
+            if !matches!(scale_to_console_msg, ScaleToConsole::Term(_)) {
+                info!("Sending {:?}", scale_to_console_msg);
+            }
+            self.scale_to_console_channel
+                .try_send(scale_to_console_msg)
+                .unwrap_or_else(|err| error!("Failed *trying* to send message to console {err:?}"));
+        } else {
+            if !matches!(scale_to_console_msg, ScaleToConsole::Term(_)) {
+                info!("Not! sending (on connect) {:?}", scale_to_console_msg);
+            }
         }
     }
     pub fn handle_console_to_scale(&mut self, console_to_scale_msg: ConsoleToScale) {
@@ -224,16 +242,7 @@ impl App {
             _ => (),
         }
     }
-    pub fn try_send_to_console(&self, scale_to_console_msg: ScaleToConsole) {
-        if self.connected {
-            info!("Sending (on connect) {:?}", scale_to_console_msg);
-            self.scale_to_console_channel
-                .try_send(scale_to_console_msg)
-                .unwrap_or_else(|err| error!("Failed *trying* to send message to console {err:?}"));
-        } else {
-            info!("Not! sending (on connect) {:?}", scale_to_console_msg);
-        }
-    }
+
     pub fn notify_connected(&mut self) {
         self.connected = true;
         match self.scale_state {
