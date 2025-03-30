@@ -171,8 +171,11 @@ impl Record {
                 0x04 => "https://",
                 _ => "",
             };
-            let url = core::str::from_utf8(&self.payload_data[1..]).unwrap();
-            format!("{}{}", prefix, url)
+            if let Ok(url) = core::str::from_utf8(&self.payload_data[1..]) {
+                format!("{}{}", prefix, url)
+            } else {
+                String::from("")
+            }
         } else {
             String::from("")
         }
