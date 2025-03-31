@@ -193,9 +193,9 @@ async fn main(spawner: Spawner) {
 
     let sta_config = Config::dhcpv4(Default::default());
 
-    let seed: u64 = 0;
-    let mut seed_bytes = seed.to_ne_bytes();
+    let mut seed_bytes = [0u8;8];
     getrandom::getrandom(&mut seed_bytes).unwrap();
+    let seed = u64::from_le_bytes(seed_bytes);
 
     let (sta_stack, sta_runner) = embassy_net::new(
         wifi_sta_interface,
