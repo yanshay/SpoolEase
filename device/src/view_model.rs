@@ -10,6 +10,7 @@ use alloc::{
 };
 use embassy_executor::Spawner;
 use embassy_net::Stack;
+use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_mbedtls::TlsReference;
 use hashbrown::HashMap;
 use slint::{ComponentHandle, Model, SharedString, ToSharedString};
@@ -50,6 +51,9 @@ pub struct ViewModel {
     spawner: Spawner,
     tls: TlsReference<'static>,
     printers_view_state: HashMap<String, PrinterUiState>,
+    selector_options_vec_rc: slint::ModelRc<crate::app::SelectorOption>,
+    // spool_cores_selector_options_list_rc: slint::ModelRc<crate::app::SelectorOptionsList>,
+    spools_cores_weights: HashMap<i32, i32>,
 }
 
 impl ViewModel {
@@ -61,25 +65,39 @@ impl ViewModel {
         // Application
         app_config: Rc<RefCell<AppConfig>>,
         // bambu_printer_model: Rc<RefCell<bambu::BambuPrinter>>,
-        spool_tag_model: Rc<RefCell<spool_tag::SpoolTag>>,
         spawner: Spawner,
         tls: TlsReference<'static>,
+        spi_device: ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
+        irq: esp_hal::gpio::Input<'static>,
     ) -> Rc<RefCell<ViewModel>> {
+        // Setup Terminal
         let terminal_view_model = Rc::new(RefCell::new(TerminalViewModel { ui_weak: ui_weak.clone() }));
         let trait_for_terminal_rc: Rc<RefCell<dyn terminal::TerminalObserver>> = terminal_view_model.clone();
         let trait_for_terminal_weak: Weak<RefCell<dyn terminal::TerminalObserver>> = Rc::downgrade(&trait_for_terminal_rc);
         term_mut().subscribe(trait_for_terminal_weak);
 
+        // Setup empty printers
         let set_of_printers: Vec<Rc<RefCell<BambuPrinter>>> = Vec::new();
-        // set_of_printers.push(bambu_printer_model.clone());
         let selected_printer = SelectedPrinter::new(set_of_printers, 0);
 
+        // Initialize ssdp
+        let spool_tag_model = spool_tag::init(spi_device, irq, app_config.clone(), spawner);
         let ssdp_pub_sub = mk_static!(SSDPPubSubChannel, SSDPPubSubChannel::new());
-
         spawner.spawn(ssdp_task(stack, ssdp_pub_sub)).ok();
 
+        // Initialize spool_scale_model
         let spool_scale_model = crate::spool_scale::init(stack, spawner, ssdp_pub_sub);
 
+        // Prepare an empty spool weights lists, later we'll replace it
+        let spools_cores_weights: HashMap<i32, i32> = HashMap::with_capacity(200);
+        let selector_options_vec: slint::VecModel<crate::app::SelectorOption> = slint::VecModel::default();
+        let selector_options_vec_rc = slint::ModelRc::from(Rc::new(selector_options_vec));
+
+        // <- Can be removed , for previous implementation of multiple lists
+        // let selector_options_lists: slint::VecModel<crate::app::SelectorOptionsList> = slint::VecModel::default();
+        // let spool_cores_selector_options_list_rc = slint::ModelRc::from(Rc::new(selector_options_lists));
+
+        // Create the ViewModel
         let view_model = ViewModel {
             // Framework
             stack,
@@ -96,112 +114,109 @@ impl ViewModel {
             spawner,
             tls,
             printers_view_state: HashMap::new(),
+            selector_options_vec_rc,
+            // spool_cores_selector_options_list_rc,
+            spools_cores_weights,
         };
-
         let view_model_rc = Rc::new(RefCell::new(view_model));
 
-        let trait_for_spool_tag_rc: Rc<RefCell<dyn spool_tag::SpoolTagObserver>> = view_model_rc.clone();
-        let trait_for_spool_tag_weak: Weak<RefCell<dyn spool_tag::SpoolTagObserver>> = Rc::downgrade(&trait_for_spool_tag_rc);
-        spool_tag_model.borrow_mut().subscribe(trait_for_spool_tag_weak);
-
-        let trait_for_spool_scale_rc: Rc<RefCell<dyn spool_scale::SpoolScaleObserver>> = view_model_rc.clone();
-        let trait_for_spool_scale_weak: Weak<RefCell<dyn spool_scale::SpoolScaleObserver>> = Rc::downgrade(&trait_for_spool_scale_rc);
-        spool_scale_model.borrow_mut().subscribe(trait_for_spool_scale_weak);
-
-        let trait_for_framework_rc: Rc<RefCell<dyn FrameworkObserver>> = view_model_rc.clone();
-        let trait_for_framework_weak: Weak<RefCell<dyn FrameworkObserver>> = Rc::downgrade(&trait_for_framework_rc);
-        framework.borrow_mut().subscribe(trait_for_framework_weak);
-
+        // hold a reference to itself to hand over to others, this is a 'memory leak' but object never gets destroyed so eaiser than weak reference
         view_model_rc.borrow_mut().view_model = Some(view_model_rc.clone());
 
-        view_model_rc.borrow_mut().init(ssdp_pub_sub);
+        // Initialize
+        view_model_rc.borrow_mut().init_framework_stuff();
+        view_model_rc.borrow_mut().init_app_stuff(ssdp_pub_sub);
 
+        // Done
         view_model_rc
     }
 
-    pub fn init_framework(&mut self) {
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::FrameworkState>()
-            .set_app_info(crate::app::AppInfo {
-                name: env!("CARGO_PKG_NAME").into(),
-                version: env!("CARGO_PKG_VERSION").into(),
-            });
+    pub fn init_framework_stuff(&mut self) {
+        // Subscribe to rust structs framework events
+        let trait_for_framework_rc: Rc<RefCell<dyn FrameworkObserver>> = self.view_model.as_ref().unwrap().clone();
+        let trait_for_framework_weak: Weak<RefCell<dyn FrameworkObserver>> = Rc::downgrade(&trait_for_framework_rc);
+        self.framework.borrow_mut().subscribe(trait_for_framework_weak);
+
+        let ui = self.ui_weak.unwrap();
+
+        // Initialize UI FrameworkState with framework information
+        let ui_framework_state = ui.global::<crate::app::FrameworkState>();
+        ui_framework_state.set_app_info(crate::app::AppInfo {
+            name: env!("CARGO_PKG_NAME").into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+        });
+
+        // Register to UI (Slint) framework events (UI FrameworkBackend API's)
+        let ui_framework_backend = ui.global::<crate::app::FrameworkBackend>();
 
         let framework = self.framework.clone();
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::FrameworkBackend>()
-            .on_reset_flash_wifi_credentials(move || {
-                framework.borrow_mut().erase_stored_wifi_credentials();
-                framework.borrow_mut().reset_device();
-            });
+        ui_framework_backend.on_reset_flash_wifi_credentials(move || {
+            framework.borrow_mut().erase_stored_wifi_credentials();
+            framework.borrow_mut().reset_device();
+        });
 
         let framework = self.framework.clone();
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::FrameworkBackend>()
-            .on_reset_fixed_security_key(move || {
-                let _ = framework.borrow_mut().set_fixed_key("");
-            });
+        ui_framework_backend.on_reset_fixed_security_key(move || {
+            let _ = framework.borrow_mut().set_fixed_key("");
+        });
 
         let framework = self.framework.clone();
         let stack = self.stack;
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::FrameworkBackend>()
-            .on_start_web_config(move || {
-                framework.borrow().start_web_app(stack, WebConfigMode::STA);
-            });
+        ui_framework_backend.on_start_web_config(move || {
+            framework.borrow().start_web_app(stack, WebConfigMode::STA);
+        });
 
         let framework = self.framework.clone();
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::FrameworkBackend>()
-            .on_stop_web_config(move || {
-                framework.borrow().stop_web_app();
-            });
+        ui_framework_backend.on_stop_web_config(move || {
+            framework.borrow().stop_web_app();
+        });
 
         let framework = self.framework.clone();
-        self.ui_weak.unwrap().global::<crate::app::FrameworkBackend>().on_reset_device(move || {
+        ui_framework_backend.on_reset_device(move || {
             framework.borrow().reset_device();
         });
 
         let framework = self.framework.clone();
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::FrameworkBackend>()
-            .on_update_firmware_ota(move || {
-                framework.borrow().update_firmware_ota();
-            });
+        ui_framework_backend.on_update_firmware_ota(move || {
+            framework.borrow().update_firmware_ota();
+        });
     }
 
-    pub fn init(&mut self, ssdp_pub_sub: &'static SSDPPubSubChannel) {
-        self.init_framework(); // Initialization of framework
+    pub fn init_app_stuff(&mut self, ssdp_pub_sub: &'static SSDPPubSubChannel) {
+        // Subscribe to rust spool_tag events
+        let trait_for_spool_tag_rc: Rc<RefCell<dyn spool_tag::SpoolTagObserver>> = self.view_model.as_ref().unwrap().clone();
+        let trait_for_spool_tag_weak: Weak<RefCell<dyn spool_tag::SpoolTagObserver>> = Rc::downgrade(&trait_for_spool_tag_rc);
+        self.spool_tag_model.borrow_mut().subscribe(trait_for_spool_tag_weak);
 
+        // Subscribe to rust spool_scale events
+        let trait_for_spool_scale_rc: Rc<RefCell<dyn spool_scale::SpoolScaleObserver>> = self.view_model.as_ref().unwrap().clone();
+        let trait_for_spool_scale_weak: Weak<RefCell<dyn spool_scale::SpoolScaleObserver>> = Rc::downgrade(&trait_for_spool_scale_rc);
+        self.spool_scale_model.borrow_mut().subscribe(trait_for_spool_scale_weak);
+
+        let ui = self.ui_weak.unwrap();
+        let ui_app_backend = ui.global::<crate::app::AppBackend>();
+        let ui_app_state = ui.global::<crate::app::AppState>();
+
+        // Register to UI(Slint) app UI events
         let moved_filament_staging = self.filament_staging.clone();
         let moved_ui = self.ui_weak.clone();
-        self.ui_weak.unwrap().global::<crate::app::AppBackend>().on_clear_staging(move || {
+        ui_app_backend.on_clear_staging(move || {
             moved_filament_staging.borrow_mut().clear();
             moved_ui.unwrap().global::<crate::app::AppState>().invoke_empty_spool_staging();
         });
 
         let moved_spool_tag = self.spool_tag_model.clone();
-        let moved_ui = self.ui_weak.clone();
-        moved_ui.unwrap().global::<crate::app::AppBackend>().on_cancel_encode(move || {
+        ui_app_backend.on_cancel_encode(move || {
             moved_spool_tag.borrow().cancel_operation();
         });
 
         // Spool Scale
         let moved_spool_scale_model = self.spool_scale_model.clone();
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::AppBackend>()
-            .on_calibrate_scale(move |weight| {
-                moved_spool_scale_model.borrow_mut().calibrate(weight);
-            });
+        ui_app_backend.on_calibrate_scale(move |weight| {
+            moved_spool_scale_model.borrow_mut().calibrate(weight);
+        });
 
-        // Printers
+        // Initialize Printers ///////////////////////////
 
         let mut default_printer_set = false;
         let mut printer_number = 1; // starts from one and incremented for any printer
@@ -244,33 +259,65 @@ impl ViewModel {
             }
             printer_number += 1; // printer_number is always increased, even if printer is bad config
         }
-        if !self.bambu_printer_model.printers.is_empty() {
-            let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index]
-                .borrow()
-                .printer_selector_name
-                .to_shared_string();
-            let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers));
-            self.ui_weak
-                .unwrap()
-                .global::<crate::app::AppState>()
-                .invoke_set_printers_info(available_printers, default_printer.clone());
-            self.ui_weak
-                .unwrap()
-                .global::<crate::app::AppState>()
-                .invoke_set_curr_printer(default_printer);
-            self.register_printer_related_listeners();
+        let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index]
+            .borrow()
+            .printer_selector_name
+            .to_shared_string();
+        let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers));
+        ui_app_state.invoke_set_printers_info(available_printers, default_printer.clone());
+        ui_app_state.invoke_set_curr_printer(default_printer);
+        self.register_printer_related_listeners();
+        let moved_ui = self.ui_weak.clone();
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        // this select_printer handler CAN'T depend on printer because then it would need to change itself while running
+        ui_app_backend.on_select_printer(move |selected_printer: SharedString| {
+            // First stored UI for this printer for when we switch back to it
+            Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), &selected_printer);
+        });
 
-                let moved_ui = self.ui_weak.clone();
-                let moved_view_model = self.view_model.as_ref().unwrap().clone();
-                // this select_printer handler CAN'T depend on printer because then it would need to change itself while running
-                self.ui_weak
-                    .unwrap()
-                    .global::<crate::app::AppBackend>()
-                    .on_select_printer(move |selected_printer: SharedString| {
-                        // First stored UI for this printer for when we switch back to it
-                        Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), &selected_printer);
-                    });
+        // Initialize SpoolScale and weight related stuff
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        ui_app_backend.on_get_spools_core_list(move || moved_view_model.borrow().selector_options_vec_rc.clone());
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        ui_app_backend.on_get_spool_core_weight(move |id| *moved_view_model.borrow().spools_cores_weights.get(&id).unwrap_or(&0));
+
+        // let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        // ui_app_backend.on_get_spools_core_lists(move || moved_view_model.borrow().spool_cores_selector_options_list_rc.clone());
+
+        // Fill spool cores weights list 
+
+        self.spools_cores_weights.clear();
+        
+        let selector_options_vec = self.selector_options_vec_rc.as_any().downcast_ref::<slint::VecModel<crate::app::SelectorOption>>().unwrap();
+        selector_options_vec.clear();
+
+        let mut selector_option = crate::app::SelectorOption::default();
+        selector_option.id = -1;
+        selector_option.text = "Spools Weight Catalog (Scuk's)".into();
+        selector_options_vec.push(selector_option);
+
+        let spool_cores_str = include_str!("./Spool-Core-Weights.csv");
+        let mut id = 0;
+        spool_cores_str.lines().enumerate().for_each(|(_, line)| {
+            let mut split = line.splitn(4, ',');
+            loop {
+                if let (Some(desc), Some(weight)) = (split.next(), split.next()) {
+                    if !desc.is_empty() && !weight.is_empty() {
+                        let mut selector_option = crate::app::SelectorOption::default();
+                        selector_option.id = id as i32;
+                        selector_option.text = desc.into();
+                        selector_options_vec.push(selector_option);
+                        let weight: i32 = weight.parse().unwrap();
+                        self.spools_cores_weights.insert(id, weight);
+                        id += 1;
+                    }
+                } else {
+                    break;
+                }
             }
+        });
     }
 
     fn perform_select_printer(
@@ -381,12 +428,11 @@ impl ViewModel {
         let moved_filament_staging = self.filament_staging.clone();
         let moved_bambu_printer = self.bambu_printer_model.clone();
         let moved_spool_tag = self.spool_tag_model.clone();
-        let moved_spool_scale = self.spool_scale_model.clone();
         let moved_ui = self.ui_weak.clone();
         moved_ui
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_encode_tray_to_tag(move |tray_id| {
+            .on_encode_tray_to_tag(move |tray_id, weight_core, weight_new| {
                 info!("Request to encode tag with {tray_id} info");
                 let spool_tag = moved_spool_tag.borrow();
                 let tray_id = usize::try_from(tray_id).unwrap();
@@ -411,12 +457,19 @@ impl ViewModel {
                         }
                     }
                 };
-                let spool_scale_weight = moved_spool_scale.borrow().weight;
-                tag_info_to_encode.core_weight = None;
-                // TODO: Only for experiments
-                if spool_scale_weight > 1100 {
-                    tag_info_to_encode.core_weight = Some(spool_scale_weight - 1000);
+                // let spool_scale_weight = moved_spool_scale.borrow().weight;
+                tag_info_to_encode.weight_core = None;
+                tag_info_to_encode.weight_new = None;
+                if weight_core != 0 {
+                    tag_info_to_encode.weight_core = Some(weight_core);
                 }
+                if weight_new != 0 {
+                    tag_info_to_encode.weight_new = Some(weight_new);
+                }
+                // TODO: Only for experiments
+                // if spool_scale_weight > 1100 {
+                //     tag_info_to_encode.core_weight = Some(spool_scale_weight - 1000);
+                // }
                 let bambu_printer_borrow = moved_bambu_printer.borrow();
                 if let Some(descriptor) =
                     &tag_info_to_encode.to_descriptor(&bambu_printer_borrow.printer_name, &bambu_printer_borrow.printer_uuid_to_encode)
@@ -461,7 +514,7 @@ impl ViewModel {
             color: slint::Color::from_argb_encoded(color),
             k: SharedString::from(final_k),
             material: filament_info.tray_type.to_shared_string(),
-            core_weight: tag_info.core_weight.unwrap_or_default(),
+            weight_core: tag_info.weight_core.unwrap_or_default(),
         };
         Some(ui_spool_info)
     }

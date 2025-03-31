@@ -1,6 +1,10 @@
+import { ListView } from "std-widgets.slint";
+
 export component MyButton {
     in property <string> text;
+    in property <length> text-padding;
     in property <bool> enabled: true;
+    in property <bool> pushed: false;
     in property <TextHorizontalAlignment> horizontal-alignment: center;
     callback clicked;
     Rectangle {
@@ -8,7 +12,8 @@ export component MyButton {
         width: root.width;
         height: root.height;
         Text {
-            width: parent.width;
+            x: text-padding;
+            width: parent.width - text-padding * 2;
             horizontal-alignment: root.horizontal-alignment;
             text: root.text;
             font-size: 20px;
@@ -22,17 +27,18 @@ export component MyButton {
             height: parent.height;
             clicked => {
                 if enabled {
-                  root.clicked();
+                    root.clicked();
                 }
             }
         }
     }
+
     Rectangle {
         // to add the border - slint software renderer doen't do gradents with border
         width: root.width;
         height: root.height;
         border-color: black;
-        border-width: 1px + (enabled && area.pressed ? 2px : 0px);
+        border-width: 1px + ((enabled && area.pressed) || pushed ? 2px : 0px);
     }
 }
 
@@ -48,5 +54,295 @@ export component Title inherits Rectangle {
         height: 40px;
         text: text;
         font-size: 20px;
+    }
+}
+
+
+export struct SelectorOption {
+    id: int,
+    text: string,
+}
+
+// Only for compatibility with Option-1 of Selector
+export struct SelectorOptionsList {
+    id: int,
+    title: string,
+    options: [SelectorOption],
+}
+
+export component Selector inherits Rectangle {
+    callback selected(text: string, pos-in-list: int, id: int);
+    in-out property <[SelectorOption]> options-list;
+    in property <length> option-height: 56px;
+    in property <length> page-buttons-height: 56px;
+    in property <length> thumb-height: 56px;
+    in property <length> scrollbar-width: 56px;
+    in property <TextHorizontalAlignment> option-alignment: center;
+    in-out property <string> selector-title;
+    in property <length> scroll-px-per-sec: 320px;
+    background: white;
+    VerticalLayout {
+        if root.selector-title != "": title := Title {
+            z: 1;
+            text: root.selector-title;
+        }
+
+        HorizontalLayout {
+
+            Rectangle {
+                clip: true;
+                height: 280px;
+                y: 0px;
+                sgr := SwipeGestureHandler {
+                    width: parent.width;
+                    height: parent.height;
+                    handle-swipe-up: true;
+                    handle-swipe-down: true;
+                    handle-swipe-left: false;
+                    handle-swipe-right: false;
+                    swiped => {
+                        if self.handle-swipe-down && self.current-position.y > self.pressed-position.y + (self.height / 8) {
+                            // swipe down 
+                            list.set-target(list.viewport-y - 1.5 * list.height, "gesture");
+                        } else if self.handle-swipe-up && self.current-position.y < self.pressed-position.y - (self.height / 8) {
+                            if list.preferred-height > list.height {
+                                list.set-target(list.viewport-y + 1.5 * list.height, "gesture");
+                            }
+                        }
+                    }
+                    list := VerticalLayout {
+                        property <length> viewport-height: root.options-list.length * option-height;
+                        property <length> viewport-y: target-viewport-y;
+                        property <length> target-viewport-y;
+                        property <int> num-items-to-render: floor(list.height/option-height) + 1;
+                        changed target-viewport-y => {
+                            if viewport-y == target-viewport-y {
+                                self.moving = false;
+                                self.move-trigger = "";
+                            }
+                        }
+                        animate viewport-y {
+                            duration: 1s;
+                            // duration: viewport-height / 400px * 1s; // panics
+                            easing: ease-in-out;
+                        }
+                        property <int> first-item: floor(viewport-y / option-height);
+
+                        property <length> target-y: 0px;
+                        function set-target(target-y: length, move-trigger: string) {
+                            set-target-inner(round(target-y/1px)*1px, move-trigger);
+                        }
+                        function set-target-inner(target-y: length, move-trigger: string) {
+                            if (target-y < 0px ? 0px : target-y > viewport-height - list.height ? viewport-height - list.height : target-y) != target-viewport-y {
+                                target-viewport-y = target-y < 0px ? 0px : target-y > viewport-height - list.height ? viewport-height - list.height : target-y;
+                                self.moving = true;
+                                self.move-trigger = move-trigger;
+                            }
+                        }
+                        in-out property <bool> moving: false;
+                        in-out property <string> move-trigger: "";
+
+                        y: - mod( viewport-y, option-height);
+                        // y: - mod( round(viewport-y/1px)*1px, option-height );
+                        for i in num-items-to-render: Window {
+                        // for i in 170: Window { // to test rendering of all items (but not components)
+                            height: option-height;
+                            if self.y > -self.height && self.y <= list.height && root.options-list[first-item + i].id < 0 : Rectangle { 
+                              background: lightskyblue;
+                              border-color: black;
+                              border-width: 1px;
+                              Text {
+                                  text: root.options-list[first-item + i].text;
+                                  font-size: 20px;
+                              }
+                            }
+
+                            if self.y > -self.height && self.y <= list.height &&  root.options-list[first-item + i].id >= 0 : MyButton {
+                                text-padding: 5px;
+                                horizontal-alignment: root.option-alignment;
+                                text: root.options-list[first-item + i].text;
+                                height: option-height;
+                                width: parent.width;
+                                clicked => {
+                                    root.selected(self.text, first-item + i, root.options-list[first-item + i].id);
+                                }
+                            }
+                        }
+                        // for options-list in options-lists: VerticalLayout {
+                        //     Rectangle {
+                        //         height: 30px;
+                        //         width: parent.width;
+                        //         background: lightskyblue;
+                        //         border-color: black;
+                        //         border-width: 1px;
+                        //         Text {
+                        //             font-size: 20px;
+                        //             text: options-list.list-title;
+                        //         }
+                        //     }
+                        //     // Main list of items
+                        //     for option in options-list.list-options: MyButton {
+                        //         text-padding: 5px;
+                        //         horizontal-alignment: root.option-alignment;
+                        //         text: option.option-text;
+                        //         height: 56px;
+                        //         width: parent.width;
+                        //         clicked => {
+                        //             root.selected(option.option-text, options-list.list-id, option.option-id);
+                        //         }
+                        //     }
+                        // }
+                    }
+                }
+
+                ta := TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    enabled: list.target-viewport-y != list.viewport-y;
+                    clicked => {
+                        list.target-viewport-y = list.viewport-y;
+                    }
+                }
+            }
+
+            VerticalLayout {
+                page-up := Rectangle {
+                    height: page-buttons-height;
+                    background: green;
+                    Text {
+                        width: parent.width;
+                        height: parent.height;
+                        font-size: 20px;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        text: "▲";
+                    }
+
+                    TouchArea {
+                        height: parent.height;
+                        width: parent.width;
+                        clicked => {
+                            // list.target-viewport-y = max(list.target-viewport-y - list.height, 0); 
+                            list.set-target(list.target-viewport-y - option-height, "page-btn");
+                        }
+                    }
+                }
+
+                scrollbar := Rectangle {
+                    property <length> thumb-range: self.height - thumb.height;
+                    background: black;
+                    property <length> thumb_y_during_drag;
+                    border-color: black;
+                    border-width: 1px;
+                    width: scrollbar-width;
+                    thumb := Rectangle {
+                        y: thumb-touch.pressed ? thumb_y_during_drag : (list.moving && list.move-trigger == "thumb") ? thumb_y_during_drag : list.viewport-y / (list.viewport-height - list.height) * thumb-range;
+                        height: thumb-height;
+                        background: lime;
+                        Text {
+                            font-size: 20px;
+                            text: "▲\n▼";
+                        }
+                    }
+
+                    thumb-touch := TouchArea {
+                        property <length> prev-update-y: -10px;
+                        height: parent.height;
+                        // Remarked because hurts the confition in the move to filter out small moves
+                        // changed pressed => {
+                        //     if list.preferred-height <= list.height {
+                        //         return;
+                        //     }
+                        //     thumb_y_during_drag = min(max(self.mouse-y - thumb.height / 2, 0), scrollbar.height - thumb.height);
+                        //     list.set-target(thumb_y_during_drag / thumb-range * (list.viewport-height - list.height), "thumb");
+                        // }
+                        clicked => { // after click and release (so once after both take place)
+                            if list.viewport-height <= list.height {
+                                return;
+                            }
+                            thumb_y_during_drag = (list.target-viewport-y / (list.viewport-height - list.height)) * thumb-range;
+                        }
+                        moved => {
+                            if list.viewport-height <= list.height {
+                                return;
+                            }
+                            thumb_y_during_drag = min(max(self.mouse-y - thumb.height / 2, 0), scrollbar.height - thumb.height);
+                            if abs(prev-update-y - self.mouse-y) > 10px {
+                                list.set-target(thumb_y_during_drag / thumb-range * (list.viewport-height - list.height), "thumb");
+                                self.prev-update-y = self.mouse-y;
+                                thumb_y_during_drag = (list.target-viewport-y / (list.viewport-height - list.height)) * thumb-range;
+                            }
+                        }
+                    }
+                }
+
+                page-down := Rectangle {
+                    height: page-up.height;
+                    background: page-up.background;
+                    Text {
+                        width: parent.width;
+                        height: parent.height;
+                        font-size: 20px;
+                        vertical-alignment: center;
+                        horizontal-alignment: center;
+                        text: "▼";
+                    }
+
+                    TouchArea {
+                        height: parent.height;
+                        width: parent.width;
+                        clicked => {
+                            // list.target-viewport-y = min(list.target-viewport-y + list.height, list.viewport-height - list.height); 
+                            list.set-target(list.target-viewport-y + option-height, "page-btn");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Rectangle {
+    //   width: 250px;
+    //   height: 200px;
+    //   background: white;
+    //   Text {
+    //       width: parent.width;
+    //       height: parent.height;
+    //       horizontal-alignment: left;
+    //       // text: "\{thumb-touch.pressed ? "P" : " "}\{ta.x / 1px}, \{ta.y / 1px}\n\{list.preferred-height / 1px}\n\{list.y / 1px}\n\{list.moving ? "moving" : "not-moving"}-\{list.move-trigger}\n\{scrollbar.thumb_y_during_drag / 1px}\n \{list.y / 1px} / \{list.target-y / 1px}\n\{thumb.y / 1px}";
+    //       text: "height: \{list-view.height/1px}\nviewport-height: \{list-view.viewport-height/1px}\n\{list-view.viewport-y/1px}";
+    //       font-size: 20px;
+    //   }
+    // }
+}
+
+export component LeftTab inherits Rectangle {
+    callback botom-tab-pressed;
+    in-out property <int> selected-index: 0;
+    in property <[string]> tabs;
+    in property <string> bottom-tab;
+
+    background: white;
+    width: 56px;
+    VerticalLayout {
+        alignment: space-between;
+        VerticalLayout {
+            for tab[index] in tabs: MyButton {
+                height: 56px;
+                text: tab;
+                pushed: root.selected-index == index;
+                clicked => {
+                    root.selected-index = index;
+                }
+            }
+        }
+
+        if bottom-tab != "": MyButton {
+            height: 56px;
+            text: bottom-tab;
+            clicked => {
+                root.botom-tab-pressed();
+            }
+        }
     }
 }

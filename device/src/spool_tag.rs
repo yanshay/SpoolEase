@@ -2,6 +2,7 @@ use core::cell::RefCell;
 
 use alloc::{rc::Rc, string::String, vec::Vec};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use embassy_executor::Spawner;
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
 
@@ -79,13 +80,12 @@ pub enum Status {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
-pub async fn init(
+pub fn init(
     spi_device: ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
     irq: esp_hal::gpio::Input<'static>,
     app_config: Rc<RefCell<AppConfig>>,
+    spawner: Spawner,
 ) -> Rc<RefCell<SpoolTag>> {
-    let spawner = embassy_executor::Spawner::for_current_executor().await;
-
     let tag_operation = mk_static!(
         embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, TagOperation>,
         embassy_sync::signal::Signal::<embassy_sync::blocking_mutex::raw::NoopRawMutex, TagOperation>::new()

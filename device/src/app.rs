@@ -8,7 +8,7 @@ use esp_mbedtls::TlsReference;
 
 use framework::prelude::*;
 
-use crate::{app_config::AppConfig, settings::MAX_NUM_PRINTERS, spool_tag};
+use crate::{app_config::AppConfig, settings::MAX_NUM_PRINTERS};
 
 slint::include_modules!();
 
@@ -34,7 +34,6 @@ pub async fn app_task(
 
     // == Setup spool_tag =============================================================
 
-    let spool_tag_model = spool_tag::init(spi_device, irq, app_config.clone()).await;
 
     // == Setup ViewModel =============================================================
     let ui_strong = ui.upgrade().unwrap();
@@ -45,11 +44,10 @@ pub async fn app_task(
         framework.clone(),
         // Application
         app_config.clone(),
-        // bambu_printer_model,
-        spool_tag_model,
-        // spool_scale_model,
         spawner, 
-        tls
+        tls,
+        spi_device,
+        irq,
     );
 
     loop {

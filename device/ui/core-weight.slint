@@ -1,0 +1,349 @@
+import { MyButton, Title, Selector, LeftTab } from "framework/widgets.slint";
+import { NumPad } from "numpad.slint";
+import { AppState, AppBackend, ControlState } from "app.slint";
+
+export component CoreEstimate inherits Rectangle {
+    background: white;
+    border-color: black;
+    border-width: 1px;
+    VerticalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 5px;
+        padding-bottom: 5px;
+        spacing: 8px;
+        VerticalLayout {
+            spacing: 0px;
+            Text {
+                vertical-alignment: center;
+                height: 30px;
+                text: "Use this estimate only with unused spools!";
+                font-size: 20px;
+            }
+
+            Text {
+                vertical-alignment: top;
+                height: 24px;
+                text: "Select full spool listed/advertised weight";
+                font-size: 20px;
+            }
+        }
+
+        HorizontalLayout {
+            preferred-width: 1000px;
+            padding-left: 10px;
+            padding-right: 10px;
+            alignment: space-between;
+            function select(text: string) {
+                one.pushed = false;
+                half.pushed = false;
+                threeq.pushed = false;
+                if text == "1kg" {
+                    one.pushed = true;
+                }
+                if text == "750g" {
+                    threeq.pushed = true;
+                }
+                if text == "500g" {
+                    half.pushed = true;
+                }
+            }
+            one := MyButton {
+                height: 56px;
+                width: 100px;
+                text: "1kg";
+                clicked => {
+                    select(self.text);
+                }
+            }
+
+            threeq := MyButton {
+                height: 56px;
+                width: 100px;
+                text: "750g";
+                clicked => {
+                    select(self.text);
+                }
+            }
+
+            half := MyButton {
+                height: 56px;
+                width: 100px;
+                text: "500g";
+                clicked => {
+                    select(self.text);
+                }
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 10px;
+            spacing: 20px;
+            VerticalLayout {
+                spacing: 10px;
+                Text {
+                    height: 24px;
+                    vertical-alignment: top;
+                    text: "Current measured weight";
+                    font-size: 20px;
+                }
+
+                current-measured-weight := Rectangle {
+                    width: 264px;
+                    height: 30px;
+                    border-color: black;
+                    border-width: 1px;
+                    background: lightskyblue;
+                    Text {
+                        font-size: 20px;
+                        text: "\{ AppState.spool-scale-weight} g";
+                    }
+                }
+
+                Text {
+                    height: 24px;
+                    vertical-alignment: top;
+                    text: "Estimated Spool Core Weight";
+                    font-size: 20px;
+                }
+
+                displayed-weight := Rectangle {
+                    property <int> calculated-core: AppState.spool-scale-weight - (one.pushed ? 1000 : half.pushed ? 500 : threeq.pushed ? 750 : AppState.spool-scale-weight);
+                    width: 264px;
+                    height: 30px;
+                    border-color: black;
+                    border-width: 1px;
+                    background: lightskyblue;
+                    Text {
+                        font-size: 20px;
+                        text: calculated-core > 0 ? "\{calculated-core}" : "";
+                    }
+                }
+            }
+
+            VerticalLayout {
+                Text { }
+
+                MyButton {
+                    enabled: displayed-weight.calculated-core > 0;
+                    height: 100px;
+                    text: "Ok";
+                    clicked => {
+                        AppState.encode-start(AppState.tray_id_to_encode_after_setting_core_weight, displayed-weight.calculated-core, AppState.spool-scale-weight);
+                        AppState.control-state = ControlState.Encoding;
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component SelectIfNewSpool inherits Rectangle {
+    callback cancel-clicked;
+    // visible: state == SpoolCoreWeightState.NewSpoolSelect;
+    in property <int> selected-weight-core;
+    background: white;
+    VerticalLayout {
+        alignment: center;
+        padding: 20px;
+        HorizontalLayout {
+            VerticalLayout {
+                width: parent.width / 2;
+                measured-weight-title := Text {
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    height: 30px;
+                    text: "Spool measured weight";
+                    font-size: 20px;
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 155px;
+                        height: 30px;
+                        background: lightskyblue;
+                        border-color: black;
+                        border-width: 1px;
+                        Text {
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            height: 30px;
+                            text: "\{AppState.spool-scale-weight} g";
+                            font-size: 20px;
+                        }
+                    }
+                }
+            }
+
+            VerticalLayout {
+                width: parent.width / 2;
+                core-weight-title := Text {
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    height: 30px;
+                    text: "Entered core weight";
+                    font-size: 20px;
+                }
+
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 155px;
+                        height: 30px;
+                        background: lightskyblue;
+                        border-color: black;
+                        border-width: 1px;
+                        Text {
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            height: 30px;
+                            text: "\{root.selected-weight-core} g";
+                            font-size: 20px;
+                        }
+                    }
+                }
+            }
+        }
+
+        Text {
+            vertical-alignment: center;
+            height: 30px;
+            text: "";
+            font-size: 20px;
+        }
+
+        Text {
+            vertical-alignment: center;
+            height: 30px;
+            text: "Encode this as a new Spool?";
+            font-size: 20px;
+        }
+
+        Text {
+            vertical-alignment: center;
+            height: 30px;
+            text: "Press 'Yes' only if this is an unused Spool";
+            font-size: 20px;
+        }
+
+        Text {
+            vertical-alignment: center;
+            height: 30px;
+            text: "";
+            font-size: 20px;
+        }
+
+        HorizontalLayout {
+            padding-top: 10px;
+            alignment: center;
+            spacing: 40px;
+            yes := MyButton {
+                height: 56px;
+                width: 120px;
+                text: "Yes";
+                clicked => {
+                    AppState.encode-start(AppState.tray_id_to_encode_after_setting_core_weight, root.selected-weight-core, AppState.spool-scale-weight);
+                    AppState.control-state = ControlState.Encoding;
+                }
+            }
+
+            no := MyButton {
+                height: 56px;
+                width: 120px;
+                text: "No";
+                clicked => {
+                    AppState.encode-start(AppState.tray_id_to_encode_after_setting_core_weight, root.selected-weight-core, 0);
+                    AppState.control-state = ControlState.Encoding;
+                }
+            }
+
+            cancel := MyButton {
+                height: 56px;
+                width: 120px;
+                text: "Cancel";
+                clicked => {
+                    // root.state = SpoolCoreWeightState.EntryTabs;
+                    root.cancel-clicked()
+                }
+            }
+        }
+    }
+}
+
+enum SpoolCoreWeightState {
+    EntryTabs,
+    NewSpoolSelect,
+}
+export component SpoolCoreWeight inherits Rectangle {
+    property <SpoolCoreWeightState> state: SpoolCoreWeightState.EntryTabs;
+    property <int> selected-weight-core: 0;
+
+    background: black;
+    select-if-new-spool := SelectIfNewSpool {
+        visible: state == SpoolCoreWeightState.NewSpoolSelect;
+        cancel-clicked => {
+            root.state = SpoolCoreWeightState.EntryTabs;
+        }
+    }
+
+    VerticalLayout {
+        visible: state == SpoolCoreWeightState.EntryTabs;
+        alignment: stretch;
+        title := Title {
+            text: "Core Weight - " + (tabs.selected-index == 0 ? "Select from List" : tabs.selected-index == 1 ? "Estimate for New Spool" : tabs.selected-index == 2 ? "Manually Entered" : "");
+            z: 1;
+        }
+
+        HorizontalLayout {
+            height: root.height - title.height;
+            tabs := LeftTab {
+                height: root.height - title.height;
+                tabs: ["List", "Est", "1234"];
+                bottom-tab: "Cancel";
+                botom-tab-pressed => {
+                    AppState.control-state = ControlState.Ready;
+                }
+                width: 70px;
+            }
+
+            tab-cards := Window {
+                width: root.width - tabs.width;
+
+                select-list := Selector {
+                    selected(text, pos-in-list, id) => {
+                        root.selected-weight-core = AppBackend.get-spool-core-weight(id);
+                        root.state = SpoolCoreWeightState.NewSpoolSelect;
+                    }
+                    visible: tabs.selected-index == 0;
+                    preferred-width: 1000px;
+                    option-alignment: left;
+                    options-list: AppBackend.get-spools-core-list();
+                    // options-lists: AppBackend.get-spools-core-lists();
+                }
+
+                estimate := CoreEstimate {
+                    visible: tabs.selected-index == 1;
+                }
+
+                type-weight := Rectangle {
+                    visible: tabs.selected-index == 2;
+                    background: black;
+                    HorizontalLayout {
+                        width: root.width - tabs.width;
+                        alignment: space-around;
+                        NumPad {
+                            max-digits: 3;
+                            height: tabs.height;
+                            ok-clicked => {
+                                root.selected-weight-core = self.number;
+                                root.state = SpoolCoreWeightState.NewSpoolSelect;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

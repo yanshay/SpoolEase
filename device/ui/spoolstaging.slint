@@ -1,6 +1,6 @@
 import { MyButton } from "framework/widgets.slint";
 import { Utils } from "utils.slint"; 
-import { AppState, AppConsts, AppBackend, SpoolStagingState, ControlState, UiSpoolInfo } from "app.slint";
+import { AppState, AppConsts, AppBackend, SpoolStagingState, ControlState, SpoolScaleState, UiSpoolInfo } from "app.slint";
 
 export component SpoolStaging inherits Window {
     utils := Utils { }
@@ -27,7 +27,7 @@ export component SpoolStaging inherits Window {
 
             if AppState.spool-staging-state == SpoolStagingState.Loaded: 
             VerticalLayout {
-                property <bool> show-weight: AppState.spool-staging-info.core-weight > 0;
+                property <bool> show-weight: AppState.spool-staging-info.weight-core > 0;
                 alignment: space-around;
                 padding-top: 12px;
                 padding-bottom: 8px;
@@ -54,7 +54,7 @@ export component SpoolStaging inherits Window {
                     padding: 0px;
                     horizontal-alignment: center;
                     font-size: 20px;
-                    text:  (parent.show-weight ? "\{AppState.spool-staging-info.core-weight} g" : "");
+                    text:  (parent.show-weight ? "\{AppState.spool-staging-info.weight-core} g" : "");
                     color: utils.contrasting_color(filament-box.background);
                 }
             }
@@ -80,8 +80,13 @@ export component SpoolStaging inherits Window {
         height: parent.height;
         clicked => {
             if AppState.spool-staging-state == SpoolStagingState.Loaded {
-                if AppState.control-state == ControlState.EncodeSelected {
-                    AppState.encode-start(999);
+                if AppState.control-state == ControlState.EncodeSelectSource {
+                    if AppState.spool-scale-state == SpoolScaleState.Loaded {
+                        AppState.tray_id_to_encode_after_setting_core_weight = 999;
+                        AppState.control-state = ControlState.EncodeSetSpoolCore
+                    } else {
+                        AppState.encode-start(999, 0, 0);
+                    }
                 } else {
                     AppState.control-state = ControlState.StagingSelected;
                 }

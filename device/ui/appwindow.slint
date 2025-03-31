@@ -1,9 +1,9 @@
-import { GridBox, VerticalBox, HorizontalBox, Button, ComboBox, SpinBox, ScrollView } from "std-widgets.slint";
+import { ListView, GridBox, VerticalBox, HorizontalBox, Button, ComboBox, SpinBox, ScrollView } from "std-widgets.slint";
 
 import { FrameworkBackend, FrameworkState, OtaState, WebConfigState } from "framework/framework.slint";
 import { Terminal } from "framework/terminal.slint";
 import { Settings } from "framework/settings.slint";
-import { MyButton, Title } from "framework/widgets.slint";
+import { Selector, MyButton, Title, LeftTab } from "framework/widgets.slint";
 
 import { Utils } from "utils.slint";
 import { Trays } from "trays.slint";
@@ -13,6 +13,8 @@ import { ControlPanel } from "controlpanel.slint";
 import { SelectPrinter } from "select-printer.slint";
 import { SpoolScale } from "spool-scale.slint";
 import { AppSettings } from "app-settings.slint";
+import { NumPad } from "numpad.slint";
+import { SpoolCoreWeight } from "core-weight.slint";
 
 // reexport to rust
 
@@ -26,7 +28,7 @@ export component AppWindow inherits Window {
     property <int> current-page: (FrameworkState.web-config-state == WebConfigState.Started-AP || FrameworkState.web-config-state == WebConfigState.Started-STA) ? 2 : (AppState.control-state == ControlState.Booting || AppState.control-state == ControlState.ConnectingToPrinter || AppState.control-state == ControlState.BootFailed) ? 0 : 1;
     property <int> current-page-x: 0;
 
-    sgr := SwipeGestureHandler {
+    if AppState.control-state != ControlState.EncodeSetSpoolCore: sgr := SwipeGestureHandler {
         width: parent.width;
         height: parent.height;
         handle-swipe-up: current-page < 3 && (!AppState.select-printer);
@@ -129,4 +131,152 @@ export component AppWindow inherits Window {
             x: left-pages.x + 480px;
         }
     }
+
+    if AppState.control-state == ControlState.EncodeSetSpoolCore: core-weight := 
+        SpoolCoreWeight { height: root.height; }
+
+    // Selector {
+    //   option-alignment: left;
+    //   options-list: 
+    //                 [
+    //                     { id: -1, text:"Previously Used" },
+    //                     { id: 1, text:"Bambu Lab (Low Temp) - Plastic (Light Grey) (without cardboard core) - 210 g" },
+    //                     { id: 2, text:"first" },
+    //                     { id: 3, text:"second" },
+    //                     { id: 4, text:"third" },
+    //                     { id: -1, text:"Catalog" },
+    //                     { id: 1001, text:"list2 - first" },
+    //                     { id: 1002, text:"list3 - second" },
+    //                 ];
+    // }
+
+    // property <int> show: 1;
+    //
+    // main2 := Rectangle {
+    //     property <length> px-per-sec: 10px;
+    //     in-out property <[string]> items: [
+    //         "1",
+    //         "2",
+    //         "3",
+    //         "4",
+    //         "5",
+    //         "6",
+    //         "7",
+    //         "8",
+    //         "9",
+    //         "10",
+    //         "11",
+    //         "12",
+    //         "13",
+    //         "14",
+    //         "15",
+    //         "16",
+    //     ];
+    //     background: white;
+    //     HorizontalLayout {
+    //         sgr2 := SwipeGestureHandler {
+    //             width: parent.width;
+    //             height: parent.height;
+    //             handle-swipe-up: true;
+    //             handle-swipe-down: true;
+    //             handle-swipe-left: false;
+    //             handle-swipe-right: false;
+    //             swiped => {
+    //                 if self.handle-swipe-down && self.current-position.y > self.pressed-position.y + (self.height / 8) {
+    //                     vert.target-y = 0;
+    //                 } else if self.handle-swipe-up && self.current-position.y < self.pressed-position.y - (self.height / 8) {
+    //                     vert.target-y = -vert.preferred-height + main2.height;
+    //                 }
+    //             }
+    //             vert := VerticalLayout {
+    //                 function get-duration() -> duration {
+    //                     vert.preferred-height / px-per-sec * 1s;
+    //                 }
+    //                 property <length> target-y;
+    //                 y: self.target-y;
+    //                 animate y {
+    //                     duration: get-duration();
+    //                     easing: ease-in-out;
+    //                 }
+    //                 Rectangle {
+    //                     height: 20px;
+    //                 }
+    //
+    //                 for item in items: Rectangle {
+    //                     height: 60px;
+    //                     background: lightskyblue;
+    //                     border-color: black;
+    //                     border-width: 1px;
+    //                     Text {
+    //                         text: item ;
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     Text {
+    //        width: 400px;
+    //         horizontal-alignment: left;
+    //         text: "preferred: \{vert.preferred-height/1px}\npx-per-sec: \{px-per-sec/1px}\nget-duration(): \{vert.get-duration()/1s} sec";
+    //         font-size: 20px;
+    //       }
+    // }
+    //
+    // if show == 2: main := Rectangle {
+    //     property <length> px-per-sec: 40px;
+    //     in-out property <[string]> top-items: [
+    //         "1",
+    //         "2",
+    //         "3",
+    //         "4",
+    //         "5",
+    //         "6",
+    //         "7",
+    //         "8",
+    //         "9",
+    //         "10",
+    //         "11",
+    //         "12",
+    //         "13",
+    //         "14",
+    //         "15",
+    //         "16",
+    //     ];
+    //     background: white;
+    //
+    //     HorizontalLayout {
+    //
+    //         Rectangle {
+    //             sgr3 := SwipeGestureHandler {
+    //                 width: parent.width;
+    //                 height: parent.height;
+    //                 handle-swipe-up: true;
+    //                 handle-swipe-down: true;
+    //                 handle-swipe-left: false;
+    //                 handle-swipe-right: false;
+    //                 swiped => {
+    //                     if self.handle-swipe-down && self.current-position.y > self.pressed-position.y + (self.height / 8) {
+    //                         list.target-y = 0px;
+    //                     } else if self.handle-swipe-up && self.current-position.y < self.pressed-position.y - (self.height / 8) {
+    //                         list.target-y = -list.preferred-height + main.height;
+    //                     }
+    //                 }
+    //                 list := VerticalLayout {
+    //                     property <length> target-y;
+    //                     y: self.target-y;
+    //                     animate y {
+    //                         duration: list.preferred-height / px-per-sec * 1s;
+    //                         easing: ease-in-out;
+    //                     }
+    //
+    //                     for item in top-items: MyButton {
+    //                         text: item;
+    //                         height: 56px;
+    //                         width: parent.width;
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 }

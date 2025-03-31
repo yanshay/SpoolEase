@@ -1239,13 +1239,13 @@ pub fn init(
     let printer_serial = if let Some(printer_serial) = &printer_config.serial {
         printer_serial.clone()
     } else {
-        return Err("Missing printer serial".to_string());
+        return Err("Error: Missing printer serial".to_string());
     };
 
     let printer_access_code = if let Some(printer_access_code) = &printer_config.access_code {
         printer_access_code.clone()
     } else {
-        return Err("Missing printer access code".to_string());
+        return Err("Error: Missing printer access code".to_string());
     };
 
     let printer_name = printer_config.name.clone();
@@ -1562,7 +1562,8 @@ pub async fn bambu_mqtt_task(
 pub struct TagInformation {
     pub filament: Option<FilamentInfo>,
     pub calibrations: HashMap<String, Calibration>,
-    pub core_weight: Option<i32>,
+    pub weight_core: Option<i32>,
+    pub weight_new: Option<i32>,
 }
 
 impl TagInformation {
@@ -1602,14 +1603,15 @@ impl TagInformation {
         };
         if let Some(filament) = &self.filament {
             Some(format!(
-                "{FILAMENT_URL_PREFIX}V1?ID={TAG_PLACEHOLDER}&M={}&C={}&NN={}&NX={}{}&FI={}{}",
+                "{FILAMENT_URL_PREFIX}V1?ID={TAG_PLACEHOLDER}{}{}&M={}&C={}&NN={}&NX={}{}&FI={}",
+                self.weight_core.map(|v| format!("&WC={}", v)).unwrap_or_default(),
+                self.weight_new.map(|v| format!("&WN={}", v)).unwrap_or_default(),
                 filament.tray_type,
                 filament.tray_color,
                 filament.nozzle_temp_min,
                 filament.nozzle_temp_max,
                 calibrations_part,
                 filament.tray_info_idx,
-                self.core_weight.map(|v| format!("&CW={}", v)).unwrap_or_default()
             ))
         } else {
             None
@@ -1621,7 +1623,8 @@ impl TagInformation {
     pub fn from_descriptor(descriptor: &str) -> Result<Self, Error> {
         let mut filament_info_result = FilamentInfo::new();
         let mut calibrations_result = HashMap::new();
-        let mut core_weight = None;
+        let mut weight_core = None;
+        let mut weight_new = None;
 
         if !(descriptor.starts_with(FILAMENT_URL_PREFIX)) {
             return Err(Error::ParseError);
@@ -1681,9 +1684,16 @@ impl TagInformation {
                         filament_info_result.tray_info_idx = String::from(param_value);
                         fi = true;
                     }
-                    "CW" => {
+                    "WC" => {
                         if let Ok(ret_val) = param_value.parse::<i32>() {
-                            core_weight = Some(ret_val);
+                            weight_core = Some(ret_val);
+                        } else {
+                            return Err(Error::ParseError);
+                        }
+                    }
+                    "WN" => {
+                        if let Ok(ret_val) = param_value.parse::<i32>() {
+                            weight_new = Some(ret_val);
                         } else {
                             return Err(Error::ParseError);
                         }
@@ -1739,7 +1749,8 @@ impl TagInformation {
             Ok(Self {
                 filament: Some(filament_info_result),
                 calibrations: calibrations_result,
-                core_weight,
+                weight_core: weight_core,
+                weight_new: weight_new,
             })
         } else {
             Err(Error::MissingFields)

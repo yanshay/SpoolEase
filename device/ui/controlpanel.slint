@@ -177,11 +177,11 @@ export component Ready inherits ControlPanelBase {
         AppBackend.clear-staging();
     }
     clicked2() => {
-        AppState.control-state = ControlState.EncodeSelected;
+        AppState.control-state = ControlState.EncodeSelectSource;
     }
 }
 
-export component EncodeSelected inherits ControlPanelBase {
+export component EncodeSelectSource inherits ControlPanelBase {
     message-text: (AppState.spool-staging-state == SpoolStagingState.Empty) ? "Press Slot to Encode" : "Press\nSlot or Staging\nto Encode";
     button2-text: "Cancel";
     button2-timeout: 10;
@@ -274,7 +274,7 @@ export component ControlPanel inherits HorizontalLayout {
     if AppState.control-state == ControlState.Ready: Ready {
         button-width: button-width;
     }
-    if AppState.control-state == ControlState.EncodeSelected: EncodeSelected {
+    if AppState.control-state == ControlState.EncodeSelectSource: EncodeSelectSource {
         button-width: button-width;
     }
     if AppState.control-state == ControlState.StagingSelected: StagingSelected {
@@ -292,13 +292,13 @@ export component ControlPanel inherits HorizontalLayout {
 
     trays-timer := Timer {
         interval: 0.3s;
-        running: AppState.control-state == ControlState.EncodeSelected || AppState.control-state == ControlState.StagingSelected;
+        running: AppState.control-state == ControlState.EncodeSelectSource || AppState.control-state == ControlState.StagingSelected;
         changed running => {
             AppState.highlight-trays = false;
             AppState.highlight-staging = false;
         }
         triggered() => {
-            if AppState.control-state == ControlState.EncodeSelected {
+            if AppState.control-state == ControlState.EncodeSelectSource {
                 AppState.highlight-trays = !AppState.highlight-trays;
                 if AppState.spool-staging-state == SpoolStagingState.Loaded {
                     AppState.highlight-staging = AppState.highlight-trays;

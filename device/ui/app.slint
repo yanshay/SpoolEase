@@ -1,5 +1,6 @@
 import { FrameworkState } from "framework/framework.slint";
-
+import { SelectorOption } from "framework/widgets.slint";
+import { SelectorOptionsList } from "framework/widgets.slint";
 // Types
 
 export enum UiTrayState { Unknown, Empty, Spool, Reading, Ready, Loading, Unloading, Loaded }
@@ -29,7 +30,7 @@ export struct UiSpoolInfo {
   color: color,
   material: string,
   k: string,
-  core-weight: int,
+  weight-core: int,
 }
 
 // Consts
@@ -48,7 +49,8 @@ export enum ControlState {
   ConnectingToPrinter ,
   BootFailed,
   Ready,
-  EncodeSelected,
+  EncodeSelectSource,
+  EncodeSetSpoolCore,
   StagingSelected,
   Encoding,
   Reading,
@@ -79,11 +81,14 @@ export enum SpoolStagingState {
 export global AppBackend {
     callback clear-staging();
     callback set-staging-to-tray(tray-id: int);
-    callback encode-tray-to-tag(tray-id: int) -> int; // returns how long it will try to encode, for timer
+    callback encode-tray-to-tag(tray-id: int, weight_core: int, weight_new: int) -> int; // returns how long it will try to encode, for timer
     callback cancel-encode();
     callback reset-printer();
     callback select-printer(printer: string);
     callback calibrate-scale(weight: int);
+    pure callback get-spools-core-list()-> [SelectorOption];
+    // pure callback get-spools-core-lists()-> [SelectorOptionsList]; // not relevant any longer
+    pure callback get-spool-core-weight(id: int) -> int;
 }
 
 export global AppState {
@@ -114,9 +119,9 @@ export global AppState {
 
     in-out property <SpoolScaleState> spool-scale-state: SpoolScaleState.Unknown;
     in-out property <int> spool-scale-weight: 0;
-    in-out property <int> spool-scale-net-weight: 0;
     in-out property <bool> spool-scale-flash: false;
     in-out property <SpoolScaleState> spool-scale-after-flash-state: SpoolScaleState.Unknown;
+    in-out property <int> tray_id_to_encode_after_setting_core_weight: -1;
 
     in-out property <bool> highlight-trays: false;
     in-out property <bool> highlight-staging: false;
@@ -184,7 +189,7 @@ export global AppState {
 
     public function empty-spool-staging() {
         self.spool-staging-state = SpoolStagingState.Empty;
-        self.spool-staging-info.core-weight = 0;
+        self.spool-staging-info.weight-core = 0;
     }
 
     public function encode-tag-found() {
@@ -230,8 +235,8 @@ export global AppState {
         }
     }
 
-    public function encode-start(tray-id: int) {
-        self.encode-timeout = AppBackend.encode-tray-to-tag(tray-id);
+    public function encode-start(tray-id: int, weight-core: int, weight-new: int) {
+        self.encode-timeout = AppBackend.encode-tray-to-tag(tray-id, weight-core, weight-new);
         AppState.start-highlight-tray-forever(tray-id);
         self.control-state = ControlState.Encoding;
         user-message = "Place Spool Tag to Encode";

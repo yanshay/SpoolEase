@@ -33,7 +33,7 @@ pub async fn ssdp_task(
         1,
     >,
 ) {
-    let (mut rx_buffer1, mut rx_buffer2) = ([0; 512], [0; 512]);
+    let (mut rx_buffer1, mut rx_buffer2) = (alloc::vec![0; 512], alloc::vec![0; 512]);
     let (mut tx_buffer1, mut tx_buffer2) = ([0; 0], [0; 0]);
     let (mut rx_meta1, mut rx_meta2) = (
         [embassy_net::udp::PacketMetadata::EMPTY; 16],
@@ -43,7 +43,7 @@ pub async fn ssdp_task(
         [embassy_net::udp::PacketMetadata::EMPTY; 16],
         [embassy_net::udp::PacketMetadata::EMPTY; 16],
     );
-    let (mut buf1, mut buf2) = ([0; 512], [0; 512]);
+    let (mut buf1, mut buf2) = (alloc::vec![0; 512], alloc::vec![0; 512]);
 
     let _ = stack.join_multicast_group(embassy_net::Ipv4Address::new(239, 255, 255, 250)).unwrap();
     let recv_source_endpoint1 = embassy_net::IpEndpoint {

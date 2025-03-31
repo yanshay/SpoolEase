@@ -1,4 +1,4 @@
-use alloc::{rc::Rc, vec::Vec};
+use alloc::{boxed::Box, rc::Rc, vec::Vec};
 use core::{cell::RefCell, net::SocketAddr, str::FromStr};
 use edge_http::{
     io::client::Connection,
@@ -37,7 +37,9 @@ pub trait SpoolScaleObserver {
 
 impl SpoolScale {
     pub fn calibrate(&self, weight: i32) {
-        self.console_to_scale.try_send(ConsoleToScale::Calibrate(weight)).unwrap_or_else(|e| error!("Failed sending calibrate request to scale {e:?}"));
+        self.console_to_scale
+            .try_send(ConsoleToScale::Calibrate(weight))
+            .unwrap_or_else(|e| error!("Failed sending calibrate request to scale {e:?}"));
     }
 
     pub fn process_message(&mut self, _frame_header: &FrameHeader, payload: &[u8]) {
@@ -169,7 +171,7 @@ pub async fn spool_scale_task(stack: Stack<'static>, spool_scale_rc: Rc<RefCell<
     //     printer_name = bambu_printer.borrow().configured_printer_name.clone().unwrap_or(String::from("Unknown"));
     // }
 
-    let tcp_buffers = TcpBuffers::<1, 4096, 4096>::new();
+    let tcp_buffers = Box::new(TcpBuffers::<1, 1024, 1024>::new());
     let tcp = Tcp::new(stack, &tcp_buffers);
     let tcp = edge_nal::WithTimeout::new(10000, tcp);
 
@@ -181,7 +183,8 @@ pub async fn spool_scale_task(stack: Stack<'static>, spool_scale_rc: Rc<RefCell<
         } else {
             Timer::after_secs(2).await;
         }
-        let mut conn_buf = [0_u8; 4096];
+        // let mut conn_buf = [0_u8; 1024];
+        let mut conn_buf = alloc::vec![0_u8; 1024];
         let mut conn: Connection<_> = Connection::new(&mut conn_buf, &tcp, SocketAddr::new(core::net::IpAddr::V4(spoolscale_ip), 81));
 
         let mut nonce = [0_u8; NONCE_LEN];
@@ -396,13 +399,17 @@ pub async fn spool_scale_task(stack: Stack<'static>, spool_scale_rc: Rc<RefCell<
                         }
                         Err(recv_header_err) => {
                             match recv_header_err {
-                                edge_ws::Error::Incomplete(_) => todo!(),
-                                edge_ws::Error::Invalid => todo!(),
-                                edge_ws::Error::BufferOverflow => todo!(),
-                                edge_ws::Error::InvalidLen => todo!(),
                                 edge_ws::Error::Io(io_err) => {
                                     error!("SpoolScale: IO error while reading header, disconnecting {io_err:?}");
                                     // breaking out of the loop, because when an IO error happens here, it happens continuously and turns to a busy loop
+                                    break 'send_recv_loop;
+                                }
+                                // edge_ws::Error::Incomplete(_) => todo!(),
+                                // edge_ws::Error::Invalid => todo!(),
+                                // edge_ws::Error::BufferOverflow => todo!(),
+                                // edge_ws::Error::InvalidLen => todo!(),
+                                _ => {
+                                    error!("SpoolScale: Error receiving web-socket header {recv_header_err:?}");
                                     break 'send_recv_loop;
                                 }
                             }
@@ -450,7 +457,8 @@ pub async fn spool_scale_task(stack: Stack<'static>, spool_scale_rc: Rc<RefCell<
                             error!("SpoolScale: Error serializing data {:?}, {:?}", console_to_scale, err)
                         }
                     }
-                }             }
+                }
+            }
         }
         spool_scale_rc.borrow_mut().disconnected();
     }
