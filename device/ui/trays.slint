@@ -191,7 +191,7 @@ export component Trays {
                             AppState.tray_id_to_encode_after_setting_core_weight = trays-state[index].id;
                             AppState.control-state = ControlState.EncodeSetSpoolCore
                         } else {
-                            AppState.encode-start(trays-state[index].id, 0, 0);
+                            AppState.encode-start(trays-state[index].id, 0, 0, "");
                         }
                     }
                 }

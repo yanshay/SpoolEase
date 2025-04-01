@@ -1,7 +1,7 @@
 import { MyButton, Title } from "framework/widgets.slint";
 import { SettingsButton } from "framework/settings.slint";
 import { ScaleCalibration } from "scale-calibration.slint";
-import { AppState, SpoolScaleState } from "app.slint";
+import { AppBackend, AppState, SpoolScaleState } from "app.slint";
 
 enum AppSettingsState {
   Buttons,
@@ -22,6 +22,12 @@ export component AppSettings inherits Rectangle {
             enabled: !(AppState.spool-scale-state == SpoolScaleState.Unknown || AppState.spool-scale-state == SpoolScaleState.Disconnected);
             clicked => {
                 root.state = AppSettingsState.ScaleCalibration;
+            }
+        }
+        SettingsButton {
+            text: "Erase Previously Used Spools List";
+            clicked => {
+                AppBackend.erase-previously-used-core-list();
             }
         }
     }

@@ -43,7 +43,6 @@ pub struct ViewModel {
     // Application
     #[allow(dead_code)]
     app_config: Rc<RefCell<AppConfig>>,
-    // bambu_printer_model: Rc<RefCell<bambu::BambuPrinter>>,
     bambu_printer_model: SelectedPrinter,
     spool_tag_model: Rc<RefCell<spool_tag::SpoolTag>>,
     spool_scale_model: Rc<RefCell<spool_scale::SpoolScale>>,
@@ -51,8 +50,8 @@ pub struct ViewModel {
     spawner: Spawner,
     tls: TlsReference<'static>,
     printers_view_state: HashMap<String, PrinterUiState>,
-    selector_options_vec_rc: slint::ModelRc<crate::app::SelectorOption>,
-    // spool_cores_selector_options_list_rc: slint::ModelRc<crate::app::SelectorOptionsList>,
+
+    cores_list_vec_rc: slint::ModelRc<crate::app::SelectorOption>,
     spools_cores_weights: HashMap<i32, i32>,
 }
 
@@ -93,10 +92,6 @@ impl ViewModel {
         let selector_options_vec: slint::VecModel<crate::app::SelectorOption> = slint::VecModel::default();
         let selector_options_vec_rc = slint::ModelRc::from(Rc::new(selector_options_vec));
 
-        // <- Can be removed , for previous implementation of multiple lists
-        // let selector_options_lists: slint::VecModel<crate::app::SelectorOptionsList> = slint::VecModel::default();
-        // let spool_cores_selector_options_list_rc = slint::ModelRc::from(Rc::new(selector_options_lists));
-
         // Create the ViewModel
         let view_model = ViewModel {
             // Framework
@@ -114,8 +109,7 @@ impl ViewModel {
             spawner,
             tls,
             printers_view_state: HashMap::new(),
-            selector_options_vec_rc,
-            // spool_cores_selector_options_list_rc,
+            cores_list_vec_rc: selector_options_vec_rc,
             spools_cores_weights,
         };
         let view_model_rc = Rc::new(RefCell::new(view_model));
@@ -278,46 +272,113 @@ impl ViewModel {
         // Initialize SpoolScale and weight related stuff
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
-        ui_app_backend.on_get_spools_core_list(move || moved_view_model.borrow().selector_options_vec_rc.clone());
+        ui_app_backend.on_get_spools_core_list(move || moved_view_model.borrow().cores_list_vec_rc.clone());
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         ui_app_backend.on_get_spool_core_weight(move |id| *moved_view_model.borrow().spools_cores_weights.get(&id).unwrap_or(&0));
 
-        // let moved_view_model = self.view_model.as_ref().unwrap().clone();
-        // ui_app_backend.on_get_spools_core_lists(move || moved_view_model.borrow().spool_cores_selector_options_list_rc.clone());
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        ui_app_backend.on_erase_previously_used_core_list(move || moved_view_model.borrow_mut().erase_previously_used_cores_list());
 
-        // Fill spool cores weights list 
+        self.regenerate_cores_weights_list();
+    }
+
+    pub fn regenerate_cores_weights_list(&mut self) {
+        // Fill spool cores weights list
 
         self.spools_cores_weights.clear();
-        
-        let selector_options_vec = self.selector_options_vec_rc.as_any().downcast_ref::<slint::VecModel<crate::app::SelectorOption>>().unwrap();
-        selector_options_vec.clear();
 
+        let cores_list_vec = self
+            .cores_list_vec_rc
+            .as_any()
+            .downcast_ref::<slint::VecModel<crate::app::SelectorOption>>()
+            .unwrap();
+        cores_list_vec.clear();
+
+        let mut id = -1;
+        let app_config_clone = self.app_config.clone();
+        if let Some(previously_used_cores) = &app_config_clone.borrow().previously_used_cores {
+            id = self.add_core_weights_csv_to_list(id, previously_used_cores.as_str(), "Previously Used");
+        }
+        let _id = self.add_core_weights_csv_to_list(id, include_str!("./Spool-Core-Weights.csv"), "Spools Weight Catalog");
+    }
+
+    pub fn add_to_previously_used_cores(&mut self, core_name: &str, core_weight: i32) {
+        if core_name.is_empty() {
+            return;
+        }
+        let line_start = format!("{core_name},"); // the ',' is important, because one name could include another
+        let mut app_config_borrow = self.app_config.borrow_mut();
+        let mut new_previously_used_cores;
+        if let Some(previously_used_cores) = app_config_borrow.previously_used_cores.as_mut() {
+            let line_found = previously_used_cores.lines().enumerate().find(|line| line.1.starts_with(&line_start));
+            if let Some((index, line)) = line_found {
+                if index == 0 {
+                    return;
+                } else {
+                    let line_to_remove = format!("{line}\r\n");
+                    new_previously_used_cores = previously_used_cores.replace(&line_to_remove, "");
+                    new_previously_used_cores.insert_str(0, &format!("{core_name},{core_weight}\r\n"));
+
+                }
+            } else {
+                new_previously_used_cores = format!("{core_name},{core_weight}\r\n{previously_used_cores}");
+            }
+        } else {
+            new_previously_used_cores = format!("{core_name},{core_weight}\r\n");
+        }
+
+        // limit to 9 previously used
+        if new_previously_used_cores.lines().count() > 9 {
+            if let Some(last_crlf) = new_previously_used_cores.rfind("\r\n") {
+                if let Some(last_2nd_crlf) = new_previously_used_cores[..last_crlf].rfind("\r\n") {
+                    new_previously_used_cores = new_previously_used_cores[..last_2nd_crlf + 2].to_string();
+                }
+            }
+        }
+
+        let _ = app_config_borrow.set_previously_used_cores(Some(new_previously_used_cores));
+        drop(app_config_borrow);
+        self.regenerate_cores_weights_list();
+    }
+    pub fn erase_previously_used_cores_list(&mut self) {
+        let _ = self.app_config.borrow_mut().set_previously_used_cores(None);
+        self.regenerate_cores_weights_list();
+    }
+
+    pub fn add_core_weights_csv_to_list(&mut self, last_id: i32, csv: &str, title: &str) -> i32 {
+        // returns last-id used
+
+        let cores_list = self
+            .cores_list_vec_rc
+            .as_any()
+            .downcast_ref::<slint::VecModel<crate::app::SelectorOption>>()
+            .unwrap();
         let mut selector_option = crate::app::SelectorOption::default();
+        let mut id = last_id;
         selector_option.id = -1;
-        selector_option.text = "Spools Weight Catalog (Scuk's)".into();
-        selector_options_vec.push(selector_option);
+        selector_option.text = title.into();
+        cores_list.push(selector_option);
 
-        let spool_cores_str = include_str!("./Spool-Core-Weights.csv");
-        let mut id = 0;
-        spool_cores_str.lines().enumerate().for_each(|(_, line)| {
+        csv.lines().for_each(|line| {
             let mut split = line.splitn(4, ',');
             loop {
                 if let (Some(desc), Some(weight)) = (split.next(), split.next()) {
                     if !desc.is_empty() && !weight.is_empty() {
+                        id += 1;
                         let mut selector_option = crate::app::SelectorOption::default();
                         selector_option.id = id as i32;
                         selector_option.text = desc.into();
-                        selector_options_vec.push(selector_option);
+                        cores_list.push(selector_option);
                         let weight: i32 = weight.parse().unwrap();
                         self.spools_cores_weights.insert(id, weight);
-                        id += 1;
                     }
                 } else {
                     break;
                 }
             }
         });
+        id
     }
 
     fn perform_select_printer(
@@ -429,11 +490,18 @@ impl ViewModel {
         let moved_bambu_printer = self.bambu_printer_model.clone();
         let moved_spool_tag = self.spool_tag_model.clone();
         let moved_ui = self.ui_weak.clone();
-        moved_ui
-            .unwrap()
-            .global::<crate::app::AppBackend>()
-            .on_encode_tray_to_tag(move |tray_id, weight_core, weight_new| {
+        let moved_view_model = self.view_model.clone().unwrap();
+        moved_ui.unwrap().global::<crate::app::AppBackend>().on_encode_tray_to_tag(
+            move |tray_id, weight_core, weight_new, core_name: SharedString| {
                 info!("Request to encode tag with {tray_id} info");
+                // Start with adding the core info to the previoysly used list
+                if !core_name.is_empty() {
+                    moved_view_model
+                        .borrow_mut()
+                        .add_to_previously_used_cores(core_name.as_str(), weight_core);
+                }
+
+                // Confinue to encode
                 let spool_tag = moved_spool_tag.borrow();
                 let tray_id = usize::try_from(tray_id).unwrap();
                 let borrowed_filament_staging = moved_filament_staging.borrow();
@@ -479,7 +547,8 @@ impl ViewModel {
                 info!("Sent the write request of tray {} over signal", tray_id);
                 // TODO: Get proper timeout fron config and pass it in the write_tag to spool_tag
                 10
-            });
+            },
+        );
 
         // handler for request from UI to reset printer, should work only on selected printer
         let moved_bambu_printer = self.bambu_printer_model.clone();

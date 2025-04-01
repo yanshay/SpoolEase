@@ -130,7 +130,7 @@ export component CoreEstimate inherits Rectangle {
                     height: 100px;
                     text: "Ok";
                     clicked => {
-                        AppState.encode-start(AppState.tray_id_to_encode_after_setting_core_weight, displayed-weight.calculated-core, AppState.spool-scale-weight);
+                        AppState.encode-start(AppState.tray_id_to_encode_after_setting_core_weight, displayed-weight.calculated-core, AppState.spool-scale-weight, "");
                         AppState.control-state = ControlState.Encoding;
                     }
                 }
@@ -141,8 +141,6 @@ export component CoreEstimate inherits Rectangle {
 
 export component SelectIfNewSpool inherits Rectangle {
     callback cancel-clicked;
-    // visible: state == SpoolCoreWeightState.NewSpoolSelect;
-    in property <int> selected-weight-core;
     background: white;
     VerticalLayout {
         alignment: center;
@@ -199,7 +197,7 @@ export component SelectIfNewSpool inherits Rectangle {
                             horizontal-alignment: center;
                             vertical-alignment: center;
                             height: 30px;
-                            text: "\{root.selected-weight-core} g";
+                            text: "\{AppState.core-weight-to-encode-after-select-if-new} g";
                             font-size: 20px;
                         }
                     }
@@ -244,7 +242,7 @@ export component SelectIfNewSpool inherits Rectangle {
                 width: 120px;
                 text: "Yes";
                 clicked => {
-                    AppState.encode-start(AppState.tray_id_to_encode_after_setting_core_weight, root.selected-weight-core, AppState.spool-scale-weight);
+                    AppState.encode-start(AppState.tray_id_to_encode_after_setting_core_weight, AppState.core-weight-to-encode-after-select-if-new, AppState.spool-scale-weight, AppState.core-name-to-encode-after-select-if-new);
                     AppState.control-state = ControlState.Encoding;
                 }
             }
@@ -254,7 +252,7 @@ export component SelectIfNewSpool inherits Rectangle {
                 width: 120px;
                 text: "No";
                 clicked => {
-                    AppState.encode-start(AppState.tray_id_to_encode_after_setting_core_weight, root.selected-weight-core, 0);
+                    AppState.encode-start(AppState.tray_id_to_encode_after_setting_core_weight, AppState.core-weight-to-encode-after-select-if-new, 0, AppState.core-name-to-encode-after-select-if-new);
                     AppState.control-state = ControlState.Encoding;
                 }
             }
@@ -278,7 +276,6 @@ enum SpoolCoreWeightState {
 }
 export component SpoolCoreWeight inherits Rectangle {
     property <SpoolCoreWeightState> state: SpoolCoreWeightState.EntryTabs;
-    property <int> selected-weight-core: 0;
 
     background: black;
     select-if-new-spool := SelectIfNewSpool {
@@ -313,7 +310,8 @@ export component SpoolCoreWeight inherits Rectangle {
 
                 select-list := Selector {
                     selected(text, pos-in-list, id) => {
-                        root.selected-weight-core = AppBackend.get-spool-core-weight(id);
+                        AppState.core-name-to-encode-after-select-if-new = text;
+                        AppState.core-weight-to-encode-after-select-if-new = AppBackend.get-spool-core-weight(id);
                         root.state = SpoolCoreWeightState.NewSpoolSelect;
                     }
                     visible: tabs.selected-index == 0;
@@ -337,7 +335,8 @@ export component SpoolCoreWeight inherits Rectangle {
                             max-digits: 3;
                             height: tabs.height;
                             ok-clicked => {
-                                root.selected-weight-core = self.number;
+                                AppState.core-name-to-encode-after-select-if-new = "Custom: \{self.number} g";
+                                AppState.core-weight-to-encode-after-select-if-new = self.number;
                                 root.state = SpoolCoreWeightState.NewSpoolSelect;
                             }
                         }

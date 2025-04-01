@@ -79,29 +79,6 @@ impl AppWithStateBuilder for NestedAppBuilder {
             }),
         );
 
-        let app_config_clone_post = app_config.clone();
-        let app_config_clone_get = app_config.clone();
-        let router = router.route(
-            "/api/tag-config",
-            post(move |State(Encryption(key)): State<Encryption>, TagConfigDTO { tag_scan_timeout }| {
-                ready(match app_config_clone_post.borrow_mut().set_tag_config(tag_scan_timeout) {
-                    Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                    Err(e) => SetConfigResponseDTO {
-                        error_text: Some(format!("{e:?}")),
-                    }
-                    .encrypt(&key.borrow()),
-                })
-            })
-            .get(move |State(Encryption(key)): State<Encryption>| {
-                ready(
-                    TagConfigDTO {
-                        tag_scan_timeout: app_config_clone_get.borrow().tag_scan_timeout,
-                    }
-                    .encrypt(&key.borrow()),
-                )
-            }),
-        );
-
         router
     }
 }

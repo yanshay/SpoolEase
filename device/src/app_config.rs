@@ -13,8 +13,10 @@ use framework::prelude::*;
 
 const PRINTER_CONFIG_KEY: &str = "_printer_"; // for backwards compatibility
 const PRINTERS_CONFIG_KEY: &str = "_printers_";
-const TAG_CONFIG_KEY: &str = "_tag_";
 const DEFAULT_PRINTER_CONFIG_KEY: &str = "_default_printer_";
+
+const PREVIOUSLY_USED_CORES_CONFIG_KEY: &str = "prev_cores";
+const USER_CORES_CONFIG_KEY: &str = "user_cores"; 
 
 fn serialize_option_ipv4<S>(ip: &Option<Ipv4Address>, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -66,22 +68,16 @@ pub struct DefaultPrinterConfig {
     pub serial: Option<String>,
 }
 
-// TODO: remove this one
-#[derive(serde::Deserialize, serde::Serialize)]
-struct TagConfig {
-    pub scan_timeout: u64,
-}
-//////////////////////////////////////////////////////////////////
-
 pub struct AppConfig {
     framework: Rc<RefCell<Framework>>,
     // configured are what configured
     pub configured_printers: PrintersConfig,
     pub configured_default_printer: DefaultPrinterConfig,
-    pub tag_scan_timeout: u64,
 
     config_processed_ok: Option<bool>,
     pn532_ok: Option<bool>,
+    pub user_cores: Option<String>,
+    pub previously_used_cores: Option<String>,
 }
 
 impl AppConfig {
@@ -114,15 +110,17 @@ impl AppConfig {
             framework,
             configured_printers: PrintersConfig { printers: Vec::new() },
             configured_default_printer: DefaultPrinterConfig { serial: None },
-            tag_scan_timeout: 10,
 
             config_processed_ok: None,
             pn532_ok: None,
+            user_cores: None,
+            previously_used_cores: None,
         }
     }
 
     // A function to parse the TOML-like string and populate the structure
     pub fn load_config_flash_then_toml(&mut self, toml_str: &str) -> Result<(), String> {
+        // Load printers configurtion
         let config = self.framework.borrow_mut().fetch(String::from(PRINTERS_CONFIG_KEY));
         if let Ok(Some(printers_store)) = config {
             if let Ok(printers_config) = serde_json::from_str::<PrintersConfig>(&printers_store) {
@@ -156,11 +154,16 @@ impl AppConfig {
                 self.configured_default_printer = printers_config;
             }
         }
+        // Load core weights configuration
 
-        if let Ok(Some(tag_store)) = self.framework.borrow_mut().fetch(String::from(TAG_CONFIG_KEY)) {
-            if let Ok(tag_config) = serde_json::from_str::<TagConfig>(&tag_store) {
-                self.tag_scan_timeout = tag_config.scan_timeout;
-            }
+        let config = self.framework.borrow_mut().fetch(String::from(PREVIOUSLY_USED_CORES_CONFIG_KEY));
+        if let Ok(previously_used_cores) = config {
+            self.previously_used_cores = previously_used_cores;
+        }
+
+        let config = self.framework.borrow_mut().fetch(String::from(USER_CORES_CONFIG_KEY));
+        if let Ok(user_cores) = config {
+            self.user_cores = user_cores;
         }
 
         let mut section = String::from("");
@@ -203,14 +206,6 @@ impl AppConfig {
                         toml_priner_config.serial = Some(String::from(value));
                     }
                     "printer_access_code" => toml_priner_config.access_code = Some(String::from(value)),
-                    "tag_timeout" => {
-                        if let Ok(tag_timeout) = value.parse::<u64>() {
-                            self.tag_scan_timeout = tag_timeout;
-                        } else {
-                            parse_errors = true;
-                            term_error!("config file format error at tag timeout");
-                        }
-                    }
                     _ => {
                         // allow unknown configs, ignore them
                     }
@@ -280,16 +275,25 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn set_tag_config(&mut self, tag_scan_timeout: u64) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
-        self.tag_scan_timeout = tag_scan_timeout;
-        let tag_config = TagConfig {
-            scan_timeout: self.tag_scan_timeout,
-        };
-        let tag_store = serde_json::to_string(&tag_config).unwrap();
-        self.framework.borrow().store(String::from(TAG_CONFIG_KEY), tag_store)
+    pub fn set_previously_used_cores (&mut self, previously_used_cores: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        if previously_used_cores.is_some() {
+            self.framework.borrow().store(PREVIOUSLY_USED_CORES_CONFIG_KEY.to_string(), previously_used_cores.as_ref().unwrap().clone())?;
+        } else {
+            self.framework.borrow().remove(PREVIOUSLY_USED_CORES_CONFIG_KEY.to_string())?;
+        }
+        self.previously_used_cores = previously_used_cores;
+        Ok(())
     }
 
-    // Events
+    pub fn set_user_cores (&mut self, user_cores: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        if user_cores.is_some() {
+            self.framework.borrow().store(USER_CORES_CONFIG_KEY.to_string(), user_cores.as_ref().unwrap().clone())?;
+        } else {
+            self.framework.borrow().remove(USER_CORES_CONFIG_KEY.to_string())?;
+        }
+        self.user_cores = user_cores;
+        Ok(())
+    }
 
 }
 

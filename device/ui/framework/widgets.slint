@@ -103,10 +103,10 @@ export component Selector inherits Rectangle {
                     swiped => {
                         if self.handle-swipe-down && self.current-position.y > self.pressed-position.y + (self.height / 8) {
                             // swipe down 
-                            list.set-target(list.viewport-y - 1.5 * list.height, "gesture");
+                            list.set-target(list.viewport-y - list.height, "gesture");
                         } else if self.handle-swipe-up && self.current-position.y < self.pressed-position.y - (self.height / 8) {
                             if list.preferred-height > list.height {
-                                list.set-target(list.viewport-y + 1.5 * list.height, "gesture");
+                                list.set-target(list.viewport-y + list.height, "gesture");
                             }
                         }
                     }
@@ -267,11 +267,11 @@ export component Selector inherits Rectangle {
                                 return;
                             }
                             thumb_y_during_drag = min(max(self.mouse-y - thumb.height / 2, 0), scrollbar.height - thumb.height);
-                            if abs(prev-update-y - self.mouse-y) > 10px {
+                            // if abs(prev-update-y - self.mouse-y) > 10px {
                                 list.set-target(thumb_y_during_drag / thumb-range * (list.viewport-height - list.height), "thumb");
                                 self.prev-update-y = self.mouse-y;
                                 thumb_y_during_drag = (list.target-viewport-y / (list.viewport-height - list.height)) * thumb-range;
-                            }
+                            // }
                         }
                     }
                 }
@@ -344,5 +344,11 @@ export component LeftTab inherits Rectangle {
                 root.botom-tab-pressed();
             }
         }
+    }
+    Rectangle {
+      width: root.width;
+      height: root.height;
+      border-color: black;
+      border-width: 1px;
     }
 }

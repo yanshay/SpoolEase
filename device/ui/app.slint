@@ -81,13 +81,13 @@ export enum SpoolStagingState {
 export global AppBackend {
     callback clear-staging();
     callback set-staging-to-tray(tray-id: int);
-    callback encode-tray-to-tag(tray-id: int, weight_core: int, weight_new: int) -> int; // returns how long it will try to encode, for timer
+    callback encode-tray-to-tag(tray-id: int, weight-core: int, weight-new: int, core-name: string) -> int; // returns how long it will try to encode, for timer
     callback cancel-encode();
     callback reset-printer();
     callback select-printer(printer: string);
     callback calibrate-scale(weight: int);
+    callback erase-previously-used-core-list();
     pure callback get-spools-core-list()-> [SelectorOption];
-    // pure callback get-spools-core-lists()-> [SelectorOptionsList]; // not relevant any longer
     pure callback get-spool-core-weight(id: int) -> int;
 }
 
@@ -122,6 +122,8 @@ export global AppState {
     in-out property <bool> spool-scale-flash: false;
     in-out property <SpoolScaleState> spool-scale-after-flash-state: SpoolScaleState.Unknown;
     in-out property <int> tray_id_to_encode_after_setting_core_weight: -1;
+    in-out property <int> core-weight-to-encode-after-select-if-new: 0;
+    in-out property <string> core-name-to-encode-after-select-if-new;
 
     in-out property <bool> highlight-trays: false;
     in-out property <bool> highlight-staging: false;
@@ -235,8 +237,8 @@ export global AppState {
         }
     }
 
-    public function encode-start(tray-id: int, weight-core: int, weight-new: int) {
-        self.encode-timeout = AppBackend.encode-tray-to-tag(tray-id, weight-core, weight-new);
+    public function encode-start(tray-id: int, weight-core: int, weight-new: int, core-name: string) {
+        self.encode-timeout = AppBackend.encode-tray-to-tag(tray-id, weight-core, weight-new, core-name);
         AppState.start-highlight-tray-forever(tray-id);
         self.control-state = ControlState.Encoding;
         user-message = "Place Spool Tag to Encode";
