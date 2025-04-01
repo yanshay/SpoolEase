@@ -79,6 +79,42 @@ impl AppWithStateBuilder for NestedAppBuilder {
             }),
         );
 
+
+        let app_config_clone_post = app_config.clone();
+        let app_config_clone_get = app_config.clone();
+        let router = router.route(
+            "/api/spools-config",
+            post(
+                move |State(Encryption(key)): State<Encryption>, SpoolsConfigDTO { spools }| {
+                    let spools = if let Some(spools) = spools {
+                        if !spools.trim().is_empty() {
+                            Some(spools.trim().replace("\r\n", "\n").replace("\n", "\r\n"))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    ready(match app_config_clone_post.borrow_mut().set_user_cores(spools) {
+                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                        Err(e) => SetConfigResponseDTO {
+                            error_text: Some(format!("{e:?}")),
+                        }
+                        .encrypt(&key.borrow()),
+                    })
+                },
+            )
+            .get(move |State(Encryption(key)): State<Encryption>| {
+                ready( {
+                        let borrowed_app_config = app_config_clone_get.borrow(); // notice the borrow, can't async here
+                        let spools = &borrowed_app_config.user_cores;
+                        let spools_config = SpoolsConfigDTO { spools: spools.clone() };
+                        spools_config.encrypt(&key.borrow())
+                    }
+                )
+            }),
+        );
+
         router
     }
 }
@@ -142,6 +178,12 @@ impl From<&PrintersConfig> for PrintersConfigDTO {
         }
     }
 }
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct SpoolsConfigDTO {
+    spools: Option<String>,
+}
+encrypted_input!(SpoolsConfigDTO);
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct TagConfigDTO {

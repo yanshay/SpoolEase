@@ -272,7 +272,18 @@ impl ViewModel {
         // Initialize SpoolScale and weight related stuff
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
-        ui_app_backend.on_get_spools_core_list(move || moved_view_model.borrow().cores_list_vec_rc.clone());
+        ui_app_backend.on_get_spools_core_list(move || {
+            let mut view_model_borrow = moved_view_model.borrow_mut();
+
+            // separated to not borrow twice
+            let user_cores_changed = view_model_borrow.app_config.borrow().user_cores_changed_by_web_config;
+
+            if user_cores_changed {
+                view_model_borrow.regenerate_cores_weights_list();
+                view_model_borrow.app_config.borrow_mut().user_cores_changed_by_web_config = false;
+            }
+            view_model_borrow.cores_list_vec_rc.clone()
+        });
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         ui_app_backend.on_get_spool_core_weight(move |id| *moved_view_model.borrow().spools_cores_weights.get(&id).unwrap_or(&0));
@@ -297,6 +308,9 @@ impl ViewModel {
 
         let mut id = -1;
         let app_config_clone = self.app_config.clone();
+        if let Some(user_cores) = &app_config_clone.borrow().user_cores {
+            id = self.add_core_weights_csv_to_list(id, user_cores.as_str(), "My Spools List");
+        }
         if let Some(previously_used_cores) = &app_config_clone.borrow().previously_used_cores {
             id = self.add_core_weights_csv_to_list(id, previously_used_cores.as_str(), "Previously Used");
         }
@@ -310,7 +324,13 @@ impl ViewModel {
         let line_start = format!("{core_name},"); // the ',' is important, because one name could include another
         let mut app_config_borrow = self.app_config.borrow_mut();
         let mut new_previously_used_cores;
-        if let Some(previously_used_cores) = app_config_borrow.previously_used_cores.as_mut() {
+        if let Some(user_cores) = &app_config_borrow.user_cores {
+            let line_found = user_cores.lines().find(|line| line.starts_with(&line_start));
+            if line_found.is_some() {
+                return;
+            }
+        }
+        if let Some(previously_used_cores) = &app_config_borrow.previously_used_cores {
             let line_found = previously_used_cores.lines().enumerate().find(|line| line.1.starts_with(&line_start));
             if let Some((index, line)) = line_found {
                 if index == 0 {
@@ -368,10 +388,13 @@ impl ViewModel {
                         id += 1;
                         let mut selector_option = crate::app::SelectorOption::default();
                         selector_option.id = id as i32;
-                        selector_option.text = desc.into();
+                        selector_option.text = desc.trim().into();
                         cores_list.push(selector_option);
-                        let weight: i32 = weight.parse().unwrap();
-                        self.spools_cores_weights.insert(id, weight);
+                        if let Ok(weight) = weight.trim().parse() {
+                            self.spools_cores_weights.insert(id, weight);
+                        } else {
+                            error!("Error in Spool Line: '{line}'");
+                        }
                     }
                 } else {
                     break;

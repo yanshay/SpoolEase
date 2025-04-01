@@ -201,6 +201,17 @@
         background-color: #f9f9f9;
         font-family: monospace;
       }
+
+      .spools-text {
+        font-size: 14px;
+        padding: 10px;
+        line-height: 1.5;
+        box-sizing: border-box;
+        resize: vertical;
+        width: 100%;
+        overflow: hidden;
+        min-height: 10em;
+      }
     </style>
   </head>
   <body>
@@ -375,6 +386,39 @@
       ></textarea>
     </div>
 
+    <!-- Spools Weights Section -->
+    <div class="section" id="spools-section">
+      <h2 class="section-title">My Spools Information</h2>
+
+      <div class="form-row">
+        <label for="spools-text">Spools CSV:</label>
+        <textarea
+          class="spools-text"
+          id="spools-text"
+          placeholder="- Example (weight is also in the description for display):
+eSUN - Plastic (Clear) - 209g,209
+ProtoPasta 500g - Cardboard - 84g,84"
+        ></textarea>
+      </div>
+
+      <button
+        id="spools-apply"
+        type="button"
+        class="apply-btn"
+        onclick="applySpoolsSettings()"
+        disabled
+      >
+        Apply
+      </button>
+
+      <textarea
+        style="display: none"
+        id="json-output"
+        placeholder="Printer configuration JSON..."
+        readonly
+      ></textarea>
+    </div>
+
     <!-- General Section -->
     <div class="section" id="general-section">
       <h2 class="section-title">General</h2>
@@ -400,9 +444,9 @@
         decrypt,
       } from "./pkg/device_wasm.js";
       // initialize wasm
-      console.log("-- waitning for wasm");
+      console.log("Waiting for wasm to initialize");
       await wasm();
-      console.log("-- done waitning for wasm");
+      console.log("Wasm initialized");
       window.securityKeyOnDerive = "";
       window.encryptionKey = derive_key("", "example_salt");
       window.derive_key = derive_key;
@@ -506,6 +550,7 @@
         await retryOperation(() => fetchWifiInitialConfig());
         await retryOperation(() => fetchDisplayInitialConfig());
         await retryOperation(() => fetchPrinterInitialConfig());
+        await retryOperation(() => fetchSpoolsInitialConfig());
       }
 
       async function fetchInitialSectionConfig(section) {
@@ -623,7 +668,7 @@
         // Add the first printer (cannot be removed)
         const firstPrinter = createPrinterTemplate(1, true);
         document.getElementById("printers-container").appendChild(firstPrinter);
-        updatePrinterNumbers(); 
+        updatePrinterNumbers();
         setupChangeListeners("wifi-section", "wifi-section-apply");
         setupChangeListeners(
           "verify-key-section",
@@ -633,6 +678,7 @@
         setupChangeListeners("set-fixed-key-section", "set-fixed-key-apply");
         setupChangeListeners("display-section", "display-section-apply");
         setupChangeListeners("printers-container", "printers-apply");
+        setupChangeListeners("spools-section", "spools-apply");
         // Setup IP fields
         setupIPFields(document.querySelectorAll(".ip-part"));
       });
@@ -676,25 +722,25 @@
                   ${isRemovable ? '<button class ="remove-btn" type="button" onclick="removePrinter(' + id + ')">Remove</button>' : ""}
                   <button class="add-btn" style="margin-left:auto" type="button" onclick="addPrinterAbove(this)">Add Printer Above</button>
                 </div>
-                
+
                 <div class="form-row">
                     <label>Serial Number: *</label>
                     <input type="text" class="serial" placeholder="Enter serial number">
                     <div class="error-message serial-error">Serial number is required</div>
                 </div>
-                
+
                 <div class="form-row">
                     <label>Access Code: *</label>
                     <input type="text" class="access-code" placeholder="Enter access code">
                     <div class="error-message access-code-error">Access code is required</div>
                 </div>
-                
+
                 <div class="form-row">
                     <label>Name:<span>Also used as multiprinter select</span></label>
                     <input type="text" class="name" placeholder="Enter printer name">
                     <div class="error-message name-error">Name is required when IP is provided</div>
                 </div>
-                
+
                 <div class="form-row">
                     <label>IP Address:<span>If set, requires also name</span></label>
                     <div class="ip-container">
@@ -713,7 +759,7 @@
                     </div>
                     <div class="error-message ip-error">IP requires name to be provided</div>
                 </div>
-                
+
                 <div style="display: flex; align-items: center;">
                   <button class="default-btn" type="button" onclick="setAsDefault(${id})">Set as Default</button>
                   <input class="printer-log-filter" type="checkbox" id="printer-log-filter">
@@ -763,16 +809,17 @@
           var logsEnabled = false;
           if (printer.log_filter) {
             switch (printer.log_filter) {
-              case 'OFF': 
-              case 'ERROR':
-              case 'WARN':
+              case "OFF":
+              case "ERROR":
+              case "WARN":
                 logsEnabled = false;
                 break;
               default:
                 logsEnabled = true;
             }
           }
-          newPrinterForm.querySelector(".printer-log-filter").checked = logsEnabled;
+          newPrinterForm.querySelector(".printer-log-filter").checked =
+            logsEnabled;
         });
 
         // Setup IP fields for all printers
@@ -864,7 +911,6 @@
       function updatePrinterNumbers() {
         const printerForms = document.querySelectorAll(".printer-form");
         const showRemoveButton = printerForms.length > 1;
-        console.log(`updatePrinterNumbers: ${showRemoveButton}`);
 
         printerForms.forEach((form, index) => {
           const newId = index + 1;
@@ -982,7 +1028,9 @@
           const serial = form.querySelector(".serial").value.trim();
           const accessCode = form.querySelector(".access-code").value.trim();
           const name = form.querySelector(".name").value.trim();
-          const logFilterEnabled = form.querySelector(".printer-log-filter").checked;
+          const logFilterEnabled = form.querySelector(
+            ".printer-log-filter",
+          ).checked;
 
           const ipParts = Array.from(form.querySelectorAll(".ip-part"));
           const ipValid = ipParts.every((part) => part.value.trim() !== "");
@@ -1030,6 +1078,55 @@
         return jsonData; // not really json, it's an object here
       }
 
+      // Spools Section
+      function adjustSpoolsAreaHeight() {
+        const spoolsTextArea = document.getElementById("spools-text");
+        if (spoolsTextArea.clientHeight < spoolsTextArea.scrollHeight) {
+          spoolsTextArea.style.height = "auto";
+          spoolsTextArea.style.height = spoolsTextArea.scrollHeight + "px";
+        }
+      }
+      document.addEventListener("input", (event) => {
+        if (event.target.id === "spools-text") {
+          adjustSpoolsAreaHeight();
+        }
+      });
+
+      function validateCSV(text) {
+        if (text.trim() == "") {
+          return true;
+        }
+        const lines = text.trim().split("\n");
+
+        for (const line of lines) {
+          const parts = line.split(",");
+          if (parts.length !== 2) return false; // Ensure exactly two columns
+
+          const secondColumn = parts[1].trim();
+          if (!/^\d{1,4}$/.test(secondColumn)) return false; // Ensure 1-4 digit number
+        }
+
+        return true;
+      }
+
+      function applySpoolsSettings() {
+        const spools = document.getElementById("spools-text").value;
+        if (!validateCSV(spools)) {
+          alert("Invalid spools information");
+          return;
+        }
+        const applyButton = document.getElementById("spools-apply");
+        const data = { spools };
+        sendConfigData("/api/spools-config", data, applyButton);
+      }
+
+      async function fetchSpoolsInitialConfig() {
+        const data = await fetchInitialSectionConfig("spools");
+
+        if (data) {
+          document.getElementById("spools-text").value = data.spools;
+        }
+      }
     </script>
 
     <!-- for debugging -->
@@ -1042,7 +1139,7 @@
           window.location.hostname === "localhost" ||
           window.location.hostname === "127.0.0.1"
         ) {
-          urlPrefix = "http://192.168.10.52";
+          urlPrefix = "http://192.168.10.53";
         }
       });
     </script>

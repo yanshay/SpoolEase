@@ -77,6 +77,7 @@ pub struct AppConfig {
     config_processed_ok: Option<bool>,
     pn532_ok: Option<bool>,
     pub user_cores: Option<String>,
+    pub user_cores_changed_by_web_config: bool,
     pub previously_used_cores: Option<String>,
 }
 
@@ -114,6 +115,7 @@ impl AppConfig {
             config_processed_ok: None,
             pn532_ok: None,
             user_cores: None,
+            user_cores_changed_by_web_config: false,
             previously_used_cores: None,
         }
     }
@@ -292,6 +294,7 @@ impl AppConfig {
             self.framework.borrow().remove(USER_CORES_CONFIG_KEY.to_string())?;
         }
         self.user_cores = user_cores;
+        self.user_cores_changed_by_web_config = true;
         Ok(())
     }
 
