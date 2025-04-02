@@ -201,8 +201,8 @@ impl ViewModel {
         });
 
         let moved_spool_tag = self.spool_tag_model.clone();
-        ui_app_backend.on_cancel_encode(move || {
-            moved_spool_tag.borrow().cancel_operation();
+        ui_app_backend.on_read_tag_mode(move || {
+            moved_spool_tag.borrow().read_tag();
         });
 
         // Spool Scale

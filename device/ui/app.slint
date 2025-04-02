@@ -82,7 +82,7 @@ export global AppBackend {
     callback clear-staging();
     callback set-staging-to-tray(tray-id: int);
     callback encode-tray-to-tag(tray-id: int, weight-core: int, weight-new: int, core-name: string) -> int; // returns how long it will try to encode, for timer
-    callback cancel-encode();
+    callback read-tag-mode();
     callback reset-printer();
     callback select-printer(printer: string);
     callback calibrate-scale(weight: int);
@@ -275,6 +275,13 @@ export global AppState {
         self.spool-scale-weight = weight;
         self.spool-scale-flash = true;
         self.spool-scale-after-flash-state = SpoolScaleState.Loaded;
+        // if started with simple encoding, and then loaded a spool on the scale
+        // interpret this as asking to encode also weight
+        if AppState.control-state == ControlState.Encoding {
+            AppBackend.read-tag-mode();
+            AppState.stop-highlight-tray();
+            AppState.control-state = ControlState.EncodeSetSpoolCore
+        }
     }
 
     public function spool-scale-load-changed(weight: int) {

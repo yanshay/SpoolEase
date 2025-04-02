@@ -88,7 +88,7 @@ where
             if res[0] != 0x00 {
                 // first byte signals if read was ok
                 last_err = res[0];
-                trace!("Error {} during NFC write of page {page_offset}, retrying", last_err);
+                trace!("Error {} during NFC write of page {page_offset}", last_err);
                 // continue 'retries; retries on write might be causing tag bricking? or was it a faulty PN532?
                 return Err(Error::Pn532ExtError(last_err));
             }
