@@ -21,6 +21,7 @@ use framework::{
     terminal::{self, term_mut, TerminalObserver},
 };
 
+use crate::app_config::SPOOLS_CATALOG;
 use crate::spool_scale::{self, SpoolScaleObserver};
 use crate::ssdp::{ssdp_task, SSDPPubSubChannel};
 use crate::{
@@ -88,7 +89,7 @@ impl ViewModel {
         let spool_scale_model = crate::spool_scale::init(stack, spawner, ssdp_pub_sub);
 
         // Prepare an empty spool weights lists, later we'll replace it
-        let spools_cores_weights: HashMap<i32, i32> = HashMap::with_capacity(200);
+        let spools_cores_weights: HashMap<i32, i32> = HashMap::with_capacity(300);
         let selector_options_vec: slint::VecModel<crate::app::SelectorOption> = slint::VecModel::default();
         let selector_options_vec_rc = slint::ModelRc::from(Rc::new(selector_options_vec));
 
@@ -314,7 +315,7 @@ impl ViewModel {
         if let Some(previously_used_cores) = &app_config_clone.borrow().previously_used_cores {
             id = self.add_core_weights_csv_to_list(id, previously_used_cores.as_str(), "Previously Used");
         }
-        let _id = self.add_core_weights_csv_to_list(id, include_str!("./Spool-Core-Weights.csv"), "Spools Weight Catalog");
+        let _id = self.add_core_weights_csv_to_list(id, SPOOLS_CATALOG, "SpoolEase Spools Catalog");
     }
 
     pub fn add_to_previously_used_cores(&mut self, core_name: &str, core_weight: i32) {

@@ -7,7 +7,7 @@ use alloc::rc::Rc;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use picoserve::response::Redirect;
-use picoserve::routing::get;
+use picoserve::routing::{get, get_service};
 use picoserve::{
     extract::{FromRequest, State},
     io::Read,
@@ -24,7 +24,7 @@ use framework::{
     prelude::*,
 };
 
-use crate::app_config::{AppConfig, DefaultPrinterConfig, PrinterConfig, PrintersConfig};
+use crate::app_config::{AppConfig, DefaultPrinterConfig, PrinterConfig, PrintersConfig, SPOOLS_CATALOG};
 
 pub struct NestedAppBuilder {
     pub framework: Rc<RefCell<Framework>>,
@@ -79,6 +79,10 @@ impl AppWithStateBuilder for NestedAppBuilder {
             }),
         );
 
+
+        let router = router.route(
+            "/spools-catalog",
+            get_service(picoserve::response::File::with_content_type("text/plain; charset=utf-8", SPOOLS_CATALOG.as_bytes())));
 
         let app_config_clone_post = app_config.clone();
         let app_config_clone_get = app_config.clone();

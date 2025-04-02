@@ -212,6 +212,13 @@
         overflow: hidden;
         min-height: 10em;
       }
+      .spools-chars-left {
+        margin-top: 0px;;
+        text-align: right;
+      }
+      .link-bullet {
+        margin-bottom: 10px;
+      }
     </style>
   </head>
   <body>
@@ -388,17 +395,28 @@
 
     <!-- Spools Weights Section -->
     <div class="section" id="spools-section">
-      <h2 class="section-title">My Spools Information</h2>
+      <h2 class="section-title">My Spools List</h2>
 
       <div class="form-row">
-        <label for="spools-text">Spools CSV:</label>
+        <label for="spools-text">Spools CSV:<a href="/spools-catalog" target="_blank">SpoolEase Spools Catalog</a></label>
         <textarea
           class="spools-text"
           id="spools-text"
+          oninput="handleSpoolsTextAreaInput(event)"
           placeholder="- Example (weight is also in the description for display):
 eSUN - Plastic (Clear) - 209g,209
 ProtoPasta 500g - Cardboard - 84g,84"
         ></textarea>
+      <p id="spools-chars-left" class="spools-chars-left">abcd</p>
+      <label>Sources for spool weights (sometimes with photos)</label>
+      <ul>
+        <li class="link-bullet"><a target="_blank" href="https://www.onlyspoolz.com/portfolio/">OnlySpoolz (included in SpoolEase Catalog)</a><br/></li>
+        <li class="link-bullet"><a target="_blank" href="https://www.printables.com/model/464663-empty-spool-weight-catalog">Scuk's Catalog (included in SpoolEase Catalog)</a></li>
+        <li class="link-bullet"><a target="_blank" href="https://www.reddit.com/r/3Dprinting/comments/4hlwse/empty_spool_weights_for_estimating_remaining/">Reddit discussion</a></li>
+        <li class="link-bullet"><a target="_blank" href="https://3dprinting.stackexchange.com/questions/6558/is-there-a-table-or-list-of-tare-weights-of-empty-spools-of-various-manufacturer">StackExchange discussion</a></li>
+        <li class="link-bullet"><a target="_blank" href="https://github.com/Donkie/SpoolmanDB/tree/main/filaments">SpoolmanDB (inaccuracies found)</a></li>
+      </ul>
+
       </div>
 
       <button
@@ -681,6 +699,8 @@ ProtoPasta 500g - Cardboard - 84g,84"
         setupChangeListeners("spools-section", "spools-apply");
         // Setup IP fields
         setupIPFields(document.querySelectorAll(".ip-part"));
+
+        handleSpoolsTextAreaInput();
       });
 
       function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
@@ -1079,18 +1099,19 @@ ProtoPasta 500g - Cardboard - 84g,84"
       }
 
       // Spools Section
-      function adjustSpoolsAreaHeight() {
+      function handleSpoolsTextAreaInput(event) {
+        let maxChars = 2000;
         const spoolsTextArea = document.getElementById("spools-text");
+        if (spoolsTextArea.value.length > maxChars) {
+          spoolsTextArea.value = spoolsTextArea.value.substring(0, maxChars); // Trim excess characters
+        }
         if (spoolsTextArea.clientHeight < spoolsTextArea.scrollHeight) {
           spoolsTextArea.style.height = "auto";
           spoolsTextArea.style.height = spoolsTextArea.scrollHeight + "px";
         }
+        let charsUsed = spoolsTextArea.value.length;
+        document.getElementById("spools-chars-left").textContent = `${charsUsed} / ${maxChars}`;
       }
-      document.addEventListener("input", (event) => {
-        if (event.target.id === "spools-text") {
-          adjustSpoolsAreaHeight();
-        }
-      });
 
       function validateCSV(text) {
         if (text.trim() == "") {
@@ -1125,6 +1146,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
 
         if (data) {
           document.getElementById("spools-text").value = data.spools;
+          handleSpoolsTextAreaInput();
         }
       }
     </script>
