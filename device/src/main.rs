@@ -153,7 +153,7 @@ async fn main(spawner: Spawner) {
     debug!("Setting up Flash Map");
 
     let blocking_async_storage = BlockingAsync::new(storage);
-    let flash_map = FlashMap::new_in_region(blocking_async_storage, "map", 1024, env!("CARGO_PKG_NAME")).await;
+    let flash_map = FlashMap::new_in_region(blocking_async_storage, "map", 2560, env!("CARGO_PKG_NAME")).await;
     let flash_map = match flash_map {
         Ok(v) => v,
         Err(err) => {
