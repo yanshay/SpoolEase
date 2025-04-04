@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, rc::Rc, vec::Vec};
+use alloc::{boxed::Box, rc::Rc, string::ToString, vec::Vec};
 use core::{cell::RefCell, net::SocketAddr, str::FromStr};
 use edge_http::{
     io::client::Connection,
@@ -15,7 +15,7 @@ use embedded_io_async::Write;
 use framework::{debug, error, info, mk_static, term_error, term_info, utils::random_u32, warn};
 use shared::scale::{ConsoleToScale, ScaleToConsole};
 
-use crate::ssdp::SSDPPubSubChannel;
+use crate::{app_config::AppConfig, ssdp::SSDPPubSubChannel};
 
 pub type ConsoleToScaleChannel = Channel<NoopRawMutex, ConsoleToScale, 5>;
 
@@ -123,7 +123,7 @@ impl SpoolScale {
     }
 }
 
-pub fn init(stack: Stack<'static>, spawner: Spawner, ssdp_pub_sub: &'static SSDPPubSubChannel) -> Rc<RefCell<SpoolScale>> {
+pub fn init(app_config: Rc<RefCell<AppConfig>>, stack: Stack<'static>, spawner: Spawner, ssdp_pub_sub: &'static SSDPPubSubChannel) -> Rc<RefCell<SpoolScale>> {
     let console_to_scale = mk_static!(ConsoleToScaleChannel, ConsoleToScaleChannel::new());
 
     let spool_scale_rc = Rc::new(RefCell::new(SpoolScale {
@@ -131,13 +131,13 @@ pub fn init(stack: Stack<'static>, spawner: Spawner, ssdp_pub_sub: &'static SSDP
         observers: Vec::new(),
         console_to_scale,
     }));
-    spawner.spawn(spool_scale_task(stack, spool_scale_rc.clone(), ssdp_pub_sub)).ok();
+    spawner.spawn(spool_scale_task(app_config, stack, spool_scale_rc.clone(), ssdp_pub_sub)).ok();
 
     spool_scale_rc
 }
 
 #[embassy_executor::task]
-pub async fn spool_scale_task(stack: Stack<'static>, spool_scale_rc: Rc<RefCell<SpoolScale>>, ssdp_pub_sub: &'static SSDPPubSubChannel) {
+pub async fn spool_scale_task(app_config: Rc<RefCell<AppConfig>>, stack: Stack<'static>, spool_scale_rc: Rc<RefCell<SpoolScale>>, ssdp_pub_sub: &'static SSDPPubSubChannel) {
     info!("Task spool_scale_task started");
     let console_to_scale = spool_scale_rc.borrow().console_to_scale;
     loop {
@@ -147,29 +147,42 @@ pub async fn spool_scale_task(stack: Stack<'static>, spool_scale_rc: Rc<RefCell<
         Timer::after_millis(250).await;
     }
 
+    let mut configured_ip = None;
+    let mut configured_name = None;
     let spoolscale_ip;
-    // if bambu_printer.borrow().configured_printer_ip.is_none() {
-    term_info!("No SpoolScale IP configured, discovering");
-    let mut ssdp_subscribe = ssdp_pub_sub.subscriber().unwrap();
-    loop {
-        let ssdp_info = ssdp_subscribe.next_message().await;
-        match ssdp_info {
-            embassy_sync::pubsub::WaitResult::Lagged(_) => (),
-            embassy_sync::pubsub::WaitResult::Message(ssdp_info) => {
-                if ssdp_info.nt.contains("urn:spoolease-io:device:spoolscale") {
-                    if let Ok(found_ip) = embassy_net::Ipv4Address::from_str(&ssdp_info.location) {
-                        spoolscale_ip = found_ip;
-                        term_info!("Discovered SpoolScale at {}", spoolscale_ip);
-                        break;
+
+    if let Some(configured_scale) = &app_config.borrow().configured_scale {
+        configured_ip = configured_scale.ip;
+        configured_name = configured_scale.name.clone();
+    }
+
+    if configured_ip.is_none() {
+        term_info!("No SpoolScale IP configured, discovering {}", configured_name.as_ref().unwrap_or(&"".to_string()));
+        let mut ssdp_subscribe = ssdp_pub_sub.subscriber().unwrap();
+        loop {
+            let ssdp_info = ssdp_subscribe.next_message().await;
+            match ssdp_info {
+                embassy_sync::pubsub::WaitResult::Lagged(_) => (),
+                embassy_sync::pubsub::WaitResult::Message(ssdp_info) => {
+                    if ssdp_info.nt.contains("urn:spoolease-io:device:spoolscale") {
+                        if let Some(spoolscale_name) = &configured_name {
+                            if ssdp_info.usn != *spoolscale_name {
+                                debug!("Found a SpoolScale, but with name {} and not {spoolscale_name}",ssdp_info.usn);
+                                continue;
+                            }
+                        }
+                        if let Ok(found_ip) = embassy_net::Ipv4Address::from_str(&ssdp_info.location) {
+                            spoolscale_ip = found_ip;
+                            term_info!("Discovered SpoolScale at {}", spoolscale_ip);
+                            break;
+                        }
                     }
                 }
             }
         }
+    } else {
+        spoolscale_ip = configured_ip.unwrap();
     }
-    // } else {
-    //     printer_ip = bambu_printer.borrow().configured_printer_ip.unwrap();
-    //     printer_name = bambu_printer.borrow().configured_printer_name.clone().unwrap_or(String::from("Unknown"));
-    // }
 
     let tcp_buffers = Box::new(TcpBuffers::<1, 1024, 1024>::new());
     let tcp = Tcp::new(stack, &tcp_buffers);
@@ -190,10 +203,11 @@ pub async fn spool_scale_task(stack: Stack<'static>, spool_scale_rc: Rc<RefCell<
         let mut nonce = [0_u8; NONCE_LEN];
         getrandom::getrandom(&mut nonce).unwrap();
         let mut nonce_base64_buf = [0_u8; MAX_BASE64_KEY_LEN];
-
-        term_info!("Connecting to SpoolScale");
+        if connect_error_counter % 5 == 0 {
+            term_info!("Connecting to SpoolScale at {}", spoolscale_ip);
+        }
         if let Err(err) = conn
-            .initiate_ws_upgrade_request(Some("192.168.10.79"), None, "/ws", None, &nonce, &mut nonce_base64_buf)
+            .initiate_ws_upgrade_request(Some(&spoolscale_ip.to_string()), None, "/ws", None, &nonce, &mut nonce_base64_buf)
             .await
         {
             if connect_error_counter % 5 == 0 && connect_error_counter != 0 {

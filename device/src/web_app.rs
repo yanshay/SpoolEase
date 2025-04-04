@@ -24,7 +24,7 @@ use framework::{
     prelude::*,
 };
 
-use crate::app_config::{AppConfig, DefaultPrinterConfig, PrinterConfig, PrintersConfig, SPOOLS_CATALOG};
+use crate::app_config::{AppConfig, DefaultPrinterConfig, PrinterConfig, PrintersConfig, ScaleConfig, SPOOLS_CATALOG};
 
 pub struct NestedAppBuilder {
     pub framework: Rc<RefCell<Framework>>,
@@ -79,6 +79,32 @@ impl AppWithStateBuilder for NestedAppBuilder {
             }),
         );
 
+        let app_config_clone_post = app_config.clone();
+        let app_config_clone_get = app_config.clone();
+        let router = router.route(
+            "/api/scale-config",
+            post(
+                move |State(Encryption(key)): State<Encryption>, scale_config_dto: ScaleConfigDTO| {
+                    ready(match app_config_clone_post.borrow_mut().set_scale_config(scale_config_dto.into()) {
+                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                        Err(e) => SetConfigResponseDTO {
+                            error_text: Some(format!("{e:?}")),
+                        }
+                        .encrypt(&key.borrow()),
+                    })
+                },
+            )
+            .get(move |State(Encryption(key)): State<Encryption>| {
+                ready( {
+                        let borrowed_app_config = app_config_clone_get.borrow(); // notice the borrow, can't async here
+                        let default_scale_config = ScaleConfig::default();
+                        let scale = borrowed_app_config.configured_scale.as_ref().unwrap_or(&default_scale_config);
+                        let scale_config = ScaleConfigDTO::from(scale);
+                        scale_config.encrypt(&key.borrow())
+                    }
+                )
+            }),
+        );
 
         let router = router.route(
             "/spools-catalog",
@@ -188,6 +214,30 @@ struct SpoolsConfigDTO {
     spools: Option<String>,
 }
 encrypted_input!(SpoolsConfigDTO);
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct ScaleConfigDTO {
+    name: Option<String>,
+    ip: Option<String>,
+}
+encrypted_input!(ScaleConfigDTO);
+
+impl From<ScaleConfigDTO> for ScaleConfig {
+    fn from (v: ScaleConfigDTO) -> Self {
+        Self {
+            ip: v.ip.and_then(|s| s.parse::<Ipv4Addr>().ok()),
+            name: v.name.filter(|s| !s.is_empty()), 
+        }
+    }
+}
+impl From<&ScaleConfig> for ScaleConfigDTO {
+    fn from (v: &ScaleConfig) -> Self {
+        Self {
+            ip: v.ip.and_then(|ip| Some(ip.to_string())),
+            name: v.name.clone(), 
+        }
+    }
+}
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct TagConfigDTO {

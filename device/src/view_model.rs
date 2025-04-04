@@ -86,7 +86,7 @@ impl ViewModel {
         spawner.spawn(ssdp_task(stack, ssdp_pub_sub)).ok();
 
         // Initialize spool_scale_model
-        let spool_scale_model = crate::spool_scale::init(stack, spawner, ssdp_pub_sub);
+        let spool_scale_model = crate::spool_scale::init(app_config.clone(), stack, spawner, ssdp_pub_sub);
 
         // Prepare an empty spool weights lists, later we'll replace it
         let spools_cores_weights: HashMap<i32, i32> = HashMap::with_capacity(300);

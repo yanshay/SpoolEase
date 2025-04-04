@@ -15,6 +15,7 @@ pub const SPOOLS_CATALOG: &str = include_str!("./Spool-Core-Weights.csv");
 const PRINTER_CONFIG_KEY: &str = "_printer_"; // for backwards compatibility
 const PRINTERS_CONFIG_KEY: &str = "_printers_";
 const DEFAULT_PRINTER_CONFIG_KEY: &str = "_default_printer_";
+const SCALE_CONFIG_KEY: &str = "_scale_"; // for backwards compatibility
 
 const PREVIOUSLY_USED_CORES_CONFIG_KEY: &str = "prev_cores";
 const USER_CORES_CONFIG_KEY: &str = "user_cores"; 
@@ -69,11 +70,19 @@ pub struct DefaultPrinterConfig {
     pub serial: Option<String>,
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Default, PartialEq, Debug, Clone)]
+pub struct ScaleConfig {
+    pub name: Option<String>,
+    #[serde(serialize_with = "serialize_option_ipv4", deserialize_with = "deserialize_option_ipv4")]
+    pub ip: Option<Ipv4Address>,
+}
+
 pub struct AppConfig {
     framework: Rc<RefCell<Framework>>,
     // configured are what configured
     pub configured_printers: PrintersConfig,
     pub configured_default_printer: DefaultPrinterConfig,
+    pub configured_scale: Option<ScaleConfig>,
 
     config_processed_ok: Option<bool>,
     pn532_ok: Option<bool>,
@@ -112,6 +121,7 @@ impl AppConfig {
             framework,
             configured_printers: PrintersConfig { printers: Vec::new() },
             configured_default_printer: DefaultPrinterConfig { serial: None },
+            configured_scale: None,
 
             config_processed_ok: None,
             pn532_ok: None,
@@ -167,6 +177,13 @@ impl AppConfig {
         let config = self.framework.borrow_mut().fetch(String::from(USER_CORES_CONFIG_KEY));
         if let Ok(user_cores) = config {
             self.user_cores = user_cores;
+        }
+
+        let config = self.framework.borrow_mut().fetch(String::from(SCALE_CONFIG_KEY));
+        if let Ok(Some(scale_store)) = config {
+            if let Ok(scale_config) = serde_json::from_str::<ScaleConfig>(&scale_store) {
+                self.configured_scale = Some(scale_config);
+            }
         }
 
         let mut section = String::from("");
@@ -275,6 +292,21 @@ impl AppConfig {
             .store(String::from(DEFAULT_PRINTER_CONFIG_KEY), default_printer_store)?;
         self.configured_printers = printers_config;
         self.configured_default_printer = default_printer_config;
+        Ok(())
+    }
+
+    pub fn set_scale_config(
+        &mut self,
+        scale_config: ScaleConfig,
+    ) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        if scale_config.name.is_none() && scale_config.ip.is_none() {
+            self.framework.borrow().remove(SCALE_CONFIG_KEY.to_string())?;
+            self.configured_scale = None;
+        } else {
+            let scale_store = serde_json::to_string(&scale_config).unwrap();
+            self.framework.borrow().store(String::from(SCALE_CONFIG_KEY), scale_store)?;
+            self.configured_scale = Some(scale_config);
+        }
         Ok(())
     }
 
