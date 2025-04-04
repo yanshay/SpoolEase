@@ -280,6 +280,32 @@
       </button>
     </div>
 
+    <!-- Device Name -->
+    <div class="section" id="device-name-section">
+      <h2 class="section-title">Device Name</h2>
+      <div class="form-row">
+        <label for="device-name">Device Name:</label>
+        <input
+          type="text"
+          maxlength="63"
+          pattern="[a-zA-Z0-9-]{1,63}"
+          oninput="filterDnsName(this)"
+          id="device-name"
+          placeholder="Enter Device Name"
+        />
+      </div>
+
+      <button
+        id="device-name-apply"
+        type="button"
+        class="apply-btn"
+        onclick="applyDeviceNameSettings()"
+        disabled
+      >
+        Apply
+      </button>
+    </div>
+
     <!-- General Section -->
     <div class="section" id="general-section">
       <h2 class="section-title">General</h2>
@@ -392,7 +418,7 @@
 
     <!-- Common Communication & UI Functions -->
     <script>
-      async function sendData(inurl, data) {
+      async function sendData(inurl, data, retries = 5) {
         // data is object, not json string
         const url = `${urlPrefix}${inurl}`;
         let encryptionKey = getEncryptionKey();
@@ -401,7 +427,7 @@
             method: "POST",
             headers: { "Content-Type": "application/text" },
             body: encrypt(encryptionKey, JSON.stringify(data)),
-          }),
+          }), retries
         );
         return response;
       }
@@ -448,6 +474,7 @@
 
       async function fetchSectionConfigs() {
         await retryOperation(() => fetchWifiInitialConfig());
+        await retryOperation(() => fetchDeviceNameInitialConfig());
       }
 
       async function fetchInitialSectionConfig(section) {
@@ -493,6 +520,9 @@
             document.getElementById("security-key-feedback").textContent =
               "Security Key validated";
             document.getElementById("verify-key-button").disabled = true;
+            document.getElementById("device-name-apply").disabled = true;
+            document.getElementById("wifi-section-apply").disabled = true;
+            document.getElementById("set-fixed-key-apply").disabled = true;
             document.getElementById("restart-device").disabled = false;
           }
         } catch (error) {
@@ -518,10 +548,18 @@
         }
       }
 
+      async function fetchDeviceNameInitialConfig() {
+        const data = await fetchInitialSectionConfig("device-name");
+
+        if (data) {
+          document.getElementById("device-name").value = data.name;
+        }
+      }
+
       // Function to reset the device
       function restartDevice() {
         const data = {};
-        sendData("/api/reset-device", data);
+        sendData("/api/reset-device", data, 1);
         alert(
           "Device restarted. Reactivate Web Config from device and refresh page to continue configuration",
         );
@@ -534,6 +572,20 @@
         const data = { ssid, password };
         const applyButton = document.getElementById("wifi-section-apply");
         sendConfigData("/api/wifi-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      function applyDeviceNameSettings() {
+        const name = document.getElementById("device-name").value;
+        const data = { name };
+        const applyButton = document.getElementById("device-name-section-apply");
+        sendConfigData("/api/device-name-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      function filterDnsName(el) {
+        el.value = el.value
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, '')   // remove invalid chars
+          .replace(/^-+/, '');          // trim leading hyphens (trailing also not allowed, but during typing it is there)
       }
 
       function applyFixedSecurityKeySettings() {
@@ -556,6 +608,7 @@
           "security-key-feedback",
         );
         setupChangeListeners("set-fixed-key-section", "set-fixed-key-apply");
+        setupChangeListeners("device-name-section", "device-name-apply");
         // setupChangeListeners("display-section", "display-section-apply");
       });
 
@@ -585,7 +638,7 @@
           window.location.hostname === "localhost" ||
           window.location.hostname === "127.0.0.1"
         ) {
-          urlPrefix = "http://192.168.10.79" + "urlPrefix";
+          urlPrefix = "http://192.168.10.82" + `${urlPrefix}`;
         }
       });
     </script>

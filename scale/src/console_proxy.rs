@@ -101,7 +101,7 @@ pub async fn init(
     framework
         .borrow()
         .spawner
-        .spawn(ssdp::ssdp_broadcast(framework.borrow().stack))
+        .spawn(ssdp::ssdp_broadcast(framework.clone()))
         .ok();
 
     scale_to_console_channel

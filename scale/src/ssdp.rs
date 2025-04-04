@@ -1,10 +1,15 @@
-use alloc::{format, string::ToString};
-use embassy_net::Stack;
+use core::cell::RefCell;
+
+use alloc::{format, rc::Rc, string::ToString};
 use embassy_time::Timer;
-use framework::error;
+use framework::{error, prelude::Framework};
 
 #[embassy_executor::task]
-pub async fn ssdp_broadcast(stack: Stack<'static>) {
+pub async fn ssdp_broadcast(framework: Rc<RefCell<Framework>>) {
+    let stack = framework.borrow().stack;
+
+    let device_name = framework.borrow().device_name.as_ref().unwrap_or(&"".to_string()).clone();
+
     let local_addr;
     loop {
         if let Some(config) = stack.config_v4() {
@@ -43,12 +48,13 @@ HOST: 239.255.255.250:1900
 Server: UPnP/1.0
 Location: {}
 NT: urn:spoolease-io:device:spoolscale:{}
-USN: name-given-by-user
+USN: {}
 Cache-Control: max-age=1800
 
 "#,
         local_addr.address().to_string(),
-        env!("CARGO_PKG_VERSION")
+        env!("CARGO_PKG_VERSION"),
+        device_name,
     );
 
     let buf = buf.replace("\n", "\r\n");
