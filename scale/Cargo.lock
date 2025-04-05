@@ -1377,6 +1377,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "edge-mdns"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9f618bf9df6b52043da1f8db87f527b6ee853fd6315ba29c016118d3f8d54c4"
+dependencies = [
+ "domain",
+ "edge-nal",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "heapless",
+ "log",
+]
+
+[[package]]
 name = "edge-nal"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1923,6 +1938,7 @@ dependencies = [
  "edge-captive",
  "edge-dhcp",
  "edge-http",
+ "edge-mdns",
  "edge-nal",
  "edge-nal-embassy",
  "embassy-embedded-hal",

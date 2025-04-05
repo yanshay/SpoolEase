@@ -49,8 +49,8 @@ use settings::{
 };
 use web_app::NestedAppBuilder;
 
-const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 4; // web-config listeners + potentially https captive + mqtt + USDP(?) + ota + captive dns
-const AP_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 4;
+const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + FRAMEWORK_STA_STACK_RESOURCES; // web-config listeners +  mqtt + USDP(?) + Framework resources
+const AP_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + FRAMEWORK_AP_STACK_RESOURCES;
 
 #[macro_export]
 macro_rules! heap_dram2_allocator {
@@ -229,7 +229,9 @@ async fn main(spawner: Spawner) {
 
         app_cargo_pkg_name: env!("CARGO_PKG_NAME"),
         app_cargo_pkg_version: env!("CARGO_PKG_VERSION"),
-        default_fixed_security_key: Some("Replace-Me!".to_string()),
+        default_fixed_security_key: Some("Change-Me!".to_string()),
+
+        mdns: true,
     };
 
     let framework = Framework::new(
