@@ -155,6 +155,9 @@ export component BootFailed inherits ControlPanelBase {
     message-text: "Boot Failed";
     message-type: StatusType.Error;
     button1-text: "Reboot";
+    clicked1 => {
+      FrameworkBackend.reset-device();
+    }
 }
 
 export component Ready inherits ControlPanelBase {
