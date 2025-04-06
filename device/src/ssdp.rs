@@ -18,7 +18,7 @@ pub struct SSDPInfo {
 }
 impl SSDPInfo {
     pub fn is_valid(&self) -> bool {
-        !(self.nt.is_empty() || self.usn.is_empty() || self.location.is_empty())
+        !(self.nt.is_empty() || self.location.is_empty())
     }
 }
 
