@@ -1,10 +1,11 @@
 use core::cell::RefCell;
 
 use alloc::{
-    rc::{Rc, Weak}, string::ToString
+    rc::{Rc, Weak},
+    string::ToString,
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, pubsub::PubSubBehavior};
-use embassy_time::{Duration, Timer};
+use embassy_time::{with_timeout, Duration, Timer};
 use esp_hal::{gpio::AnyPin, spi::AnySpi};
 use framework::{
     debug, error,
@@ -18,6 +19,8 @@ use num_traits::abs;
 use shared::scale::{ConsoleToScale, ScaleToConsole};
 
 use crate::{app_config::AppConfig, console_proxy, load_cell::LoadCell};
+
+const MIN_LOADED_WEIGHT: i32 = 5;
 
 #[embassy_executor::task]
 #[allow(clippy::too_many_arguments)]
@@ -78,34 +81,71 @@ pub async fn app_task(
         let scale_state = app.borrow().scale_state;
         match scale_state {
             ScaleState::Uncalibrated => {
-                // nothing to do ... wait for this to change
-                Timer::after_millis(500).await;
+                let uncalibrated = load_cell_reader.immediate_read_uncalibrated();
+                app.borrow()
+                    .send_to_console(ScaleToConsole::RawSamplesAvg(uncalibrated))
+                    .await;
+                Timer::after_millis(1000).await;
             }
-            ScaleState::Empty | ScaleState::Unknown => {
-                let read = load_cell_reader.read_changed().await;
-                if read > 10 {
+            ScaleState::Unknown => {
+                let unstable_read = load_cell_reader.immediate_read();
+                if unstable_read > MIN_LOADED_WEIGHT {
                     app.borrow()
-                        .send_to_console(ScaleToConsole::NewLoad(read))
+                        .send_to_console(ScaleToConsole::NewLoad(unstable_read))
                         .await;
-                    app.borrow_mut().scale_state = ScaleState::Loaded(read);
-                } else if read < 1 {
-                    LoadCell::tare(&load_cell).await;
+                    // this is an unstable read, so updating only that
+                    app.borrow_mut().scale_state = ScaleState::Loaded(0, unstable_read);
                 }
                 Timer::after_millis(250).await;
             }
-            ScaleState::Loaded(prev_read) => {
-                // debug!("In monitoring scale loop - loaded");
-                let read = load_cell_reader.read().await;
-                if abs(read) < 10 {
+            ScaleState::Empty => {
+                let unstable_read = load_cell_reader.read_changed(0).await;
+                if unstable_read > MIN_LOADED_WEIGHT {
                     app.borrow()
-                        .send_to_console(ScaleToConsole::LoadRemoved)
+                        .send_to_console(ScaleToConsole::NewLoad(unstable_read))
                         .await;
-                    app.borrow_mut().scale_state = ScaleState::Empty;
-                } else if read != prev_read {
-                    app.borrow()
-                        .send_to_console(ScaleToConsole::LoadChanged(read))
-                        .await;
-                    app.borrow_mut().scale_state = ScaleState::Loaded(read)
+                    // this is an unstable read, so updating only that
+                    app.borrow_mut().scale_state = ScaleState::Loaded(0, unstable_read);
+                }
+                Timer::after_millis(250).await;
+            }
+            ScaleState::Loaded(last_stable_read, last_unstable_read) => {
+                let read_res =
+                    with_timeout(Duration::from_millis(500), load_cell_reader.read_stable()).await;
+                match read_res {
+                    Ok(new_stable_read) => {
+                        if new_stable_read < 0 {
+                            LoadCell::tare(&load_cell).await;
+                        } else
+                        if abs(new_stable_read) < MIN_LOADED_WEIGHT {
+                            app.borrow()
+                                .send_to_console(ScaleToConsole::LoadRemoved)
+                                .await;
+                            app.borrow_mut().scale_state = ScaleState::Empty;
+                        } else if new_stable_read != last_stable_read || new_stable_read != last_unstable_read {
+                            app.borrow()
+                                .send_to_console(ScaleToConsole::LoadChangedStable(new_stable_read))
+                                .await;
+                            app.borrow_mut().scale_state =
+                                ScaleState::Loaded(new_stable_read, new_stable_read)
+                        }
+                    }
+                    Err(_timeout_err) => {
+                        // debug!("Read stable Timeout");
+                        if let Some(new_unstable_read) =
+                            load_cell_reader.try_read_changed(last_unstable_read)
+                        {
+                            if abs(new_unstable_read) >= MIN_LOADED_WEIGHT {
+                                app.borrow()
+                                    .send_to_console(ScaleToConsole::LoadChangedUnstable(
+                                        new_unstable_read,
+                                    ))
+                                    .await;
+                                app.borrow_mut().scale_state =
+                                    ScaleState::Loaded(last_stable_read, new_unstable_read);
+                            }
+                        }
+                    }
                 }
                 Timer::after_millis(500).await;
             }
@@ -113,12 +153,12 @@ pub async fn app_task(
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum ScaleState {
     Uncalibrated,
     Unknown,
     Empty,
-    Loaded(i32),
+    Loaded(i32, i32), // Stable-read, Unstable-read
 }
 
 pub struct App {
@@ -232,7 +272,7 @@ impl App {
                             .unwrap_or_else(|e| error!("Error storing calibration {e:?}"));
                         self.tare_during_calibration = None;
                         let read_weight = self.load_cell.borrow().immediate_read();
-                        self.scale_state = ScaleState::Loaded(read_weight);
+                        self.scale_state = ScaleState::Loaded(0, read_weight);
                         self.try_send_to_console(ScaleToConsole::NewLoad(read_weight));
                     } else {
                         error!("Calibration performed w/o first setting tare");
@@ -251,8 +291,11 @@ impl App {
             }
             ScaleState::Unknown => (),
             ScaleState::Empty => (), // No need and better not send LoadRemoved here. So client will show connected. It tracks connection as well, so will switch on its own to Empty
-            ScaleState::Loaded(weight) => {
-                self.try_send_to_console(ScaleToConsole::NewLoad(weight));
+            ScaleState::Loaded(stable_weight, unstable_weight) => {
+                self.try_send_to_console(ScaleToConsole::NewLoad(unstable_weight));
+                if stable_weight == unstable_weight {
+                    self.try_send_to_console(ScaleToConsole::LoadChangedStable(stable_weight));
+                }
             }
         }
     }
@@ -271,12 +314,14 @@ struct TerminalProxy {
 impl TerminalObserver for TerminalProxy {
     fn on_add_text(&self, text: &str) {
         // this is for optimizing comm and able to add "[S]" on console before message.
-        // term sends first \n and then the text as two separate strings, 
+        // term sends first \n and then the text as two separate strings,
         // here this is undone and on the console the \n is added
         if text == "\n" {
             return;
         } else {
-            self.app.borrow().try_send_to_console(ScaleToConsole::Term(text.to_string()));
+            self.app
+                .borrow()
+                .try_send_to_console(ScaleToConsole::Term(text.to_string()));
         }
     }
 }

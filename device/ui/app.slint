@@ -119,6 +119,8 @@ export global AppState {
 
     in-out property <SpoolScaleState> spool-scale-state: SpoolScaleState.Unknown;
     in-out property <int> spool-scale-weight: 0;
+    in-out property <bool> spool-scale-weight-stable: false;
+    in-out property <int> spool-scale-raw-data: 0;
     in-out property <bool> spool-scale-flash: false;
     in-out property <SpoolScaleState> spool-scale-after-flash-state: SpoolScaleState.Unknown;
     in-out property <int> tray_id_to_encode_after_setting_core_weight: -1;
@@ -270,9 +272,10 @@ export global AppState {
         self.spool-scale-after-flash-state = SpoolScaleState.Uncalibrated;
     }
 
-    public function spool-scale-loaded(weight: int) {
+    public function spool-scale-loaded(weight: int, stable: bool) {
         self.spool-scale-state = SpoolScaleState.Loaded;
         self.spool-scale-weight = weight;
+        self.spool-scale-weight-stable = stable;
         self.spool-scale-flash = true;
         self.spool-scale-after-flash-state = SpoolScaleState.Loaded;
         // if started with simple encoding, and then loaded a spool on the scale
@@ -284,15 +287,20 @@ export global AppState {
         }
     }
 
-    public function spool-scale-load-changed(weight: int) {
+    public function spool-scale-load-changed(weight: int, stable: bool) {
         self.spool-scale-weight = weight;
+        self.spool-scale-weight-stable = stable;
     }
 
     public function spool-scale-load-removed() {
         self.spool-scale-state = SpoolScaleState.Empty;
         self.spool-scale-weight = 0;
+        self.spool-scale-weight-stable = false;
         self.spool-scale-flash = false;
         self.spool-scale-after-flash-state = SpoolScaleState.Empty;
+    }
+    public function spool_scale_raw_samples_avg(raw-data: int) {
+        self.spool-scale-raw-data = raw-data;
     }
 
     in-out property <[UiTray]> trays-state: self.empty-trays-state();

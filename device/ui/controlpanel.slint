@@ -54,6 +54,13 @@ export component ControlPanelBase inherits HorizontalLayout {
 
     spacing: 4px;
     VerticalLayout {
+        function weight-display() -> string {
+          if AppState.spool-staging-state == SpoolStagingState.Loaded && AppState.spool-staging-info.weight-core != 0 {
+            return "\{AppState.spool-scale-weight - AppState.spool-staging-info.weight-core} g / \{AppState.spool-scale-weight} g";
+          } else {
+            return "\{AppState.spool-scale-weight}";
+          }
+        }
         spacing: AppConsts.trays-spacing;
         if AppState.spool-scale-state == SpoolScaleState.Loaded || 
            AppState.spool-scale-state == SpoolScaleState.Disconnected || 
@@ -86,6 +93,7 @@ export component ControlPanelBase inherits HorizontalLayout {
             border-width: text-border-timer.text-border-width;
             background: AppState.spool-scale-state == SpoolScaleState.Disconnected || AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? orangered : 
                         AppState.spool-scale-state == SpoolScaleState.Connected ? lightgreen : 
+                        AppState.spool-scale-state == SpoolScaleState.Loaded && !AppState.spool-scale-weight-stable ? yellow : 
                         lightskyblue;
             Text { 
               color: utils.contrasting_color(parent.background);
@@ -93,7 +101,7 @@ export component ControlPanelBase inherits HorizontalLayout {
               text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? "Scale Disconnected" :
                     AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Scale Not Calibrated" :
                     AppState.spool-scale-state == SpoolScaleState.Connected ? "Scale Connected" :
-                    AppState.spool-scale-state == SpoolScaleState.Loaded ? "\{AppState.spool-scale-weight} g" : 
+                    AppState.spool-scale-state == SpoolScaleState.Loaded ? weight-display() : 
                     "";
             }
         }

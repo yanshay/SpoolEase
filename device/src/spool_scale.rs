@@ -19,16 +19,25 @@ use crate::{app_config::AppConfig, ssdp::SSDPPubSubChannel};
 
 pub type ConsoleToScaleChannel = Channel<NoopRawMutex, ConsoleToScale, 5>;
 
+#[allow(dead_code)]
+pub enum ScaleWeight {
+    Unknown,
+    Stable(i32),
+    Unstable(i32)
+}
+
 pub struct SpoolScale {
-    pub weight: i32,
+    pub weight: ScaleWeight,
     observers: Vec<alloc::rc::Weak<RefCell<dyn SpoolScaleObserver>>>,
     console_to_scale: &'static ConsoleToScaleChannel,
 }
 
 pub trait SpoolScaleObserver {
     fn on_scale_loaded(&mut self, weight: i32);
-    fn on_scale_load_changed(&mut self, weight: i32);
+    fn on_scale_load_changed_stable(&mut self, weight: i32);
+    fn on_scale_load_changed_unstable(&mut self, weight: i32);
     fn on_scale_load_removed(&mut self);
+    fn on_scale_raw_samples_avg(&mut self, raw_data: i32);
     fn on_scale_connected(&mut self);
     fn on_scale_disconnected(&mut self);
     fn on_scale_uncalibrated(&mut self);
@@ -47,16 +56,23 @@ impl SpoolScale {
         if let Ok(scale_to_console) = parse_res {
             match scale_to_console {
                 ScaleToConsole::NewLoad(weight) => {
-                    self.weight = weight;
+                    self.weight = ScaleWeight::Unstable(weight);
                     self.notify_scale_loaded(weight);
                 }
-                ScaleToConsole::LoadChanged(weight) => {
-                    self.weight = weight;
-                    self.notify_scale_load_changed(weight);
+                ScaleToConsole::LoadChangedUnstable(weight) => {
+                    self.weight = ScaleWeight::Unstable(weight);
+                    self.notify_scale_load_changed_unstable(weight);
+                }
+                ScaleToConsole::LoadChangedStable(weight) => {
+                    self.weight = ScaleWeight::Stable(weight);
+                    self.notify_scale_load_changed_stable(weight);
                 }
                 ScaleToConsole::LoadRemoved => {
-                    self.weight = 0;
+                    self.weight = ScaleWeight::Stable(0);
                     self.notify_scale_load_removed();
+                }
+                ScaleToConsole::RawSamplesAvg(raw_data) => {
+                    self.notify_scale_raw_samples_avg(raw_data);
                 }
                 ScaleToConsole::WebConfigEnabled(_web_config_info) => todo!(),
                 ScaleToConsole::Uncalibrated => {
@@ -85,16 +101,28 @@ impl SpoolScale {
             observer.borrow_mut().on_scale_loaded(weight);
         }
     }
-    pub fn notify_scale_load_changed(&self, weight: i32) {
+    pub fn notify_scale_load_changed_stable(&self, weight: i32) {
         for weak_observer in self.observers.iter() {
             let observer = weak_observer.upgrade().unwrap();
-            observer.borrow_mut().on_scale_load_changed(weight);
+            observer.borrow_mut().on_scale_load_changed_stable(weight);
+        }
+    }
+    pub fn notify_scale_load_changed_unstable(&self, weight: i32) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_scale_load_changed_unstable(weight);
         }
     }
     pub fn notify_scale_load_removed(&self) {
         for weak_observer in self.observers.iter() {
             let observer = weak_observer.upgrade().unwrap();
             observer.borrow_mut().on_scale_load_removed();
+        }
+    }
+    pub fn notify_scale_raw_samples_avg(&self, raw_data: i32) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_scale_raw_samples_avg(raw_data);
         }
     }
     pub fn notify_scale_connected(&self) {
@@ -127,7 +155,7 @@ pub fn init(app_config: Rc<RefCell<AppConfig>>, stack: Stack<'static>, spawner: 
     let console_to_scale = mk_static!(ConsoleToScaleChannel, ConsoleToScaleChannel::new());
 
     let spool_scale_rc = Rc::new(RefCell::new(SpoolScale {
-        weight: 0,
+        weight: ScaleWeight::Unknown,
         observers: Vec::new(),
         console_to_scale,
     }));

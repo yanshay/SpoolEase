@@ -318,6 +318,32 @@
       </button>
     </div>
 
+    <!-- Device Name -->
+    <div class="section" id="device-name-section">
+      <h2 class="section-title">Device Name</h2>
+      <div class="form-row">
+        <label for="device-name">Device Name:<span>mDNS (http://devicename.local)</span></label>
+        <input
+          type="text"
+          maxlength="63"
+          pattern="[a-zA-Z0-9-]{1,63}"
+          oninput="filterDnsName(this)"
+          id="device-name"
+          placeholder="Enter Device Name"
+        />
+      </div>
+
+      <button
+        id="device-name-apply"
+        type="button"
+        class="apply-btn"
+        onclick="applyDeviceNameSettings()"
+        disabled
+      >
+        Apply
+      </button>
+    </div>
+
     <!-- Display Settings Section -->
     <div class="section" id="display-section">
       <h2 class="section-title">Display Settings</h2>
@@ -579,6 +605,9 @@ ProtoPasta 500g - Cardboard - 84g,84"
             document.getElementById("security-key-feedback").textContent =
               "Security Key validated";
             document.getElementById("verify-key-button").disabled = true;
+            document.getElementById("device-name-apply").disabled = true;
+            document.getElementById("wifi-section-apply").disabled = true;
+            document.getElementById("set-fixed-key-apply").disabled = true;
             document.getElementById("restart-device").disabled = false;
           }
         } catch (error) {
@@ -612,6 +641,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
         await retryOperation(() => fetchPrinterInitialConfig());
         await retryOperation(() => fetchSpoolsInitialConfig());
         await retryOperation(() => fetchScaleInitialConfig());
+        await retryOperation(() => fetchDeviceNameInitialConfig());
       }
 
       async function fetchInitialSectionConfig(section) {
@@ -636,6 +666,14 @@ ProtoPasta 500g - Cardboard - 84g,84"
         if (data) {
           document.getElementById("wifi-ssid").value = data.ssid;
           document.getElementById("wifi-password").value = data.password;
+        }
+      }
+
+      async function fetchDeviceNameInitialConfig() {
+        const data = await fetchInitialSectionConfig("device-name");
+
+        if (data) {
+          document.getElementById("device-name").value = data.name;
         }
       }
 
@@ -679,6 +717,20 @@ ProtoPasta 500g - Cardboard - 84g,84"
         const data = { ssid, password };
         const applyButton = document.getElementById("wifi-section-apply");
         sendConfigData("/api/wifi-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      function applyDeviceNameSettings() {
+        const name = document.getElementById("device-name").value;
+        const data = { name };
+        const applyButton = document.getElementById("device-name-section-apply");
+        sendConfigData("/api/device-name-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      function filterDnsName(el) {
+        el.value = el.value
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, '')   // remove invalid chars
+          .replace(/^-+/, '');          // trim leading hyphens (trailing also not allowed, but during typing it is there)
       }
 
       function applyFixedSecurityKeySettings() {
@@ -741,6 +793,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
         setupChangeListeners("printers-container", "printers-apply");
         setupChangeListeners("spools-section", "spools-apply");
         setupChangeListeners("scale-section", "scale-apply");
+        setupChangeListeners("device-name-section", "device-name-apply");
         // Setup IP fields
         setupIPFields(document.querySelectorAll(".ip-part"));
 

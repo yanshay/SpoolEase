@@ -849,11 +849,16 @@ impl FrameworkObserver for ViewModel {
             });
     }
 
-    fn on_webapp_url_update(&self, url: &str, ssid: &str) {
+    fn on_webapp_url_update(&self, ip_url: &str, name_url: Option<&str>, ssid: &str) {
+        let final_url = if let Some(name_url) = name_url {
+            &format!("{ip_url} / {name_url}")
+        } else {
+            ip_url
+        };
         self.ui_weak
             .unwrap()
             .global::<crate::app::FrameworkState>()
-            .invoke_set_web_config_url(SharedString::from(url), SharedString::from(ssid));
+            .invoke_set_web_config_url(final_url.to_shared_string(), SharedString::from(ssid));
     }
 
     fn on_initialization_completed(&self, status: bool) {
@@ -918,22 +923,35 @@ impl SpoolScaleObserver for ViewModel {
     fn on_scale_loaded(&mut self, weight: i32) {
         info!("Scale loaded with {weight} g");
         self.framework.borrow().undim_display();
-        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_loaded(weight);
+        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_loaded(weight, false);
     }
 
-    fn on_scale_load_changed(&mut self, weight: i32) {
-        debug!("Scale load changed to {weight}");
+    fn on_scale_load_changed_stable(&mut self, weight: i32) {
+        debug!("Scale load changed to stable {weight}");
         self.framework.borrow().undim_display();
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppState>()
-            .invoke_spool_scale_load_changed(weight);
+            .invoke_spool_scale_load_changed(weight, true);
+    }
+
+    fn on_scale_load_changed_unstable(&mut self, weight: i32) {
+        debug!("Scale load changed to unstable {weight}");
+        self.framework.borrow().undim_display();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppState>()
+            .invoke_spool_scale_load_changed(weight, false);
     }
 
     fn on_scale_load_removed(&mut self) {
         debug!("Scale load removed");
         self.framework.borrow().undim_display();
         self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_load_removed();
+    }
+    
+    fn on_scale_raw_samples_avg(&mut self, raw_data: i32) {
+        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_raw_samples_avg(raw_data);
     }
 
     fn on_scale_connected(&mut self) {

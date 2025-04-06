@@ -3,410 +3,367 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Captive Config</title>
+    <title>SpoolEase Basic Configuration</title>
     <style>
+      /* General Styles */
       body {
         display: none;
-      } /* Hide content initially */
-      * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-      }
-      body {
         font-family: Arial, sans-serif;
-        background-size: cover;
-        color: #333;
-        /* display: flex; */ /* Set in Script after wasm initialized */
-        justify-content: center;
-        padding: 20px;
-        margin: 20px;
-      }
-      .container {
-        background: rgba(255, 255, 255, 0.9);
-        padding: 20px;
         max-width: 500px;
-        width: 100%;
-        border-radius: 8px;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      h3 {
+        font-weight: normal;
       }
       h1 {
         text-align: center;
-        font-size: 1.8em;
-        margin-bottom: 20px;
-        color: #333;
-      }
-      .section {
-        margin-bottom: 20px;
-      }
-      .section h2 {
-        font-size: 1.2em;
-        color: #444;
         margin-bottom: 10px;
       }
-      .field {
+      .subtitle {
+        margin-top: 0px;
+        text-align: center;
+      }
+
+      /* Section Styles */
+      .section {
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+
+      .section-title {
+        margin-top: 0;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #eee;
+        color: #333;
+      }
+
+      /* Form Styles */
+      .form-row {
         margin-bottom: 15px;
-        position: relative;
       }
-      .field label {
-        display: block;
-        font-weight: bold;
-        margin-bottom: 5px;
-      }
-      .field input[type="text"],
-      .field input[type="password"],
-      .field input[type="number"],
-      .field input[type="range"] {
-        width: 100%;
-        padding: 8px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 1em;
-      }
-      .password-toggle {
-        display: inline-block;
-        margin-left: 10px;
-        font-size: 0.9em;
-        color: #007bff;
-        cursor: pointer;
-      }
-      .apply-button {
-        display: block;
-        width: 100%;
-        padding: 10px;
-        font-size: 1em;
-        color: #fff;
-        background-color: #28a745;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        margin-top: 10px;
-      }
-      .apply-button:disabled {
-        background-color: #cccccc;
-        cursor: not-allowed;
-      }
-      .apply-button:hover:enabled {
-        background-color: #218838;
-      }
-      /* IP input styling */
-      .ip-input {
+
+      label {
         display: flex;
-        gap: 5px;
-      }
-      .ip-input input {
-        width: 50px;
-        text-align: center;
-      }
-      /* Tooltip styling */
-      .tooltip {
-        position: relative;
-        display: inline-block;
-        cursor: pointer;
-        margin-left: 5px;
-        color: #888;
-        font-size: 0.9em;
-      }
-      .tooltip .tooltip-text {
-        visibility: hidden;
-        width: 200px;
-        background-color: #333;
-        color: #fff;
-        text-align: center;
-        padding: 5px;
-        border-radius: 4px;
-        position: absolute;
-        z-index: 1;
-        bottom: 125%; /* Position above the icon */
-        left: 50%;
-        margin-left: -100px; /* Center the tooltip */
-        opacity: 0;
-        transition: opacity 0.3s;
-      }
-      .tooltip:hover .tooltip-text {
-        visibility: visible;
-        opacity: 1;
-      }
-      /* Dimming percent display */
-      #dimming-percent-display {
+        justify-content: space-between;
+        margin-bottom: 5px;
         font-weight: bold;
-        margin-left: 10px;
-        color: #007bff;
+        color: #555;
       }
-      /* Grouped settings */
-      .grouped-section {
-        border-top: 1px solid #ddd;
-        padding-top: 10px;
+      label span {
+        font-weight: normal;
       }
+
       .feedback-label {
         display: block;
         text-align: center;
         margin: 10px auto 0;
       }
+
+      input[type="text"],
+      input[type="password"],
+      input[type="number"] {
+        width: 100%;
+        padding: 10px;
+        box-sizing: border-box;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+
+      input[type="number"] {
+        width: 150px;
+      }
+
+      .password-container {
+        position: relative;
+      }
+
+      .toggle-password {
+        position: absolute;
+        right: 10px;
+        top: 5px;
+        cursor: pointer;
+        color: #666;
+      }
+
+      /* Button Styles */
+
+      .button-container {
+        margin: 20px 0;
+        display: flex;
+        gap: 5px;
+      }
+
+      button {
+        padding: 10px 15px;
+        margin-right: 10px;
+        margin-top: 5px;
+        background-color: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      button:hover {
+        background-color: #45a049;
+      }
+
+      button.secondary {
+        background-color: #2196f3;
+      }
+
+      button.secondary:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+
+      button.secondary:hover {
+        background-color: #0b7dda;
+      }
+
+      button.danger {
+        background-color: #f44336;
+      }
+
+      button.danger:hover {
+        background-color: #d32f2f;
+      }
+
+      button.apply-btn {
+        width: 100%;
+      }
+
+      button.apply-btn:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+
+      button.add-btn {
+        background-color: #2196f3;
+        margin-bottom: 5px;
+      }
+
+      .error-message {
+        color: red;
+        font-size: 12px;
+        margin-top: 2px;
+        display: none;
+      }
+
+      #custom-alert {
+          position: fixed;
+          top: 0; left: 0; width: 100%; height: 100%;
+          background: rgba(0, 0, 0, 0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 9999;  /* Ensure this overlay is on top of all content */
+      }
+
+      #custom-alert-box {
+          background: white;
+          padding: 20px;
+          border-radius: 5px;
+          text-align: center;
+      }
     </style>
-    <script src="crypto-js-4.2.0.min.js"></script>
   </head>
   <body>
-    <div class="container">
-      <h1>Initial WiFi Setup</h1>
-      <!-- Encryption Key Section -->
-      <div class="section grouped-section" id="security-key-section">
-        <h2>Security Key</h2>
-        <div class="field">
+    <div id="custom-alert" style="display: none;">
+        <div id="custom-alert-box">
+            <p id="custom-alert-text"></p>
+            <button onclick="closeAlert()">OK</button>
+        </div>
+    </div>
+    <script>
+        function showAlert(message) {
+            document.getElementById("custom-alert-text").innerText = message;
+            document.getElementById("custom-alert").style.display = "flex";
+        }
+
+        function closeAlert() {
+            document.getElementById("custom-alert").style.display = "none";
+        }
+        window.alert = function(message) { showAlert(message); };
+    </script>
+
+    <h1>SpoolEase</h1>
+    <h3 class="subtitle">This is only connectivity configuration after completion, need to restart and continue to full application configuration!</h3>
+
+    <!-- Security Key Section -->
+    <div class="section" id="security-section">
+      <h2 class="section-title">Security Key</h2>
+
+      <div id="verify-key-section">
+        <div class="form-row">
           <label for="security-key"
-            >Key
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text"
-                >The key to secure communication, get it from the device
-                screen</span
-              >
-            </span>
-          </label>
+            >Key: * <span>Fill and verify key before configuring</span></label
+          >
           <input
             type="text"
-            maxlength="20"
             id="security-key"
-            name="security-key"
-            placeholder="Enter Security Key"
+            placeholder="Enter security key"
           />
         </div>
+
         <button
-          class="apply-button"
-          id="security-key-apply"
+          id="verify-key-button"
+          type="button"
+          class="secondary apply-btn"
           onclick="applyKeyFetchConfigs()"
           disabled
         >
-          Verify Key
+          Verify Key & Load Config
         </button>
         <label class="feedback-label" id="security-key-feedback"></label>
       </div>
-
-      <!-- WiFi Credentias Section -->
-      <div class="section grouped-section" id="wifi-section">
-        <h2>WiFi Credentials</h2>
-        <div class="field">
-          <label for="ssid"
-            >SSID
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text">The network name for WiFi.</span>
-            </span>
-          </label>
+      <div id="set-fixed-key-section">
+        <div class="form-row" style="margin-top: 20px">
+          <label for="fixed-security-key"
+            >Set a Fixed Key:<span>Optional, applies after restart</span></label
+          >
           <input
             type="text"
-            maxlength="32"
-            id="ssid"
-            name="ssid"
-            placeholder="Enter WiFi SSID"
+            id="fixed-security-key"
+            placeholder="Enter fixed security key"
           />
         </div>
-        <div class="field">
-          <label for="password"
-            >Password
-            <span class="tooltip"
-              >ⓘ
-              <span class="tooltip-text">Password for WiFi access.</span>
-            </span>
-          </label>
-          <input
-            type="password"
-            maxlength="32"
-            id="password"
-            name="password"
-            placeholder="Enter WiFi Password"
-          />
-          <span class="password-toggle" onclick="togglePassword()">Show</span>
-        </div>
+
         <button
-          class="apply-button"
-          id="wifi-apply"
-          onclick="applyWiFiSettings()"
+          id="set-fixed-key-apply"
+          type="button"
+          class="apply-btn"
+          onclick="applyFixedSecurityKeySettings()"
           disabled
         >
           Apply
         </button>
-        <label class="feedback-label" id="wifi-config-feedback"></label>
-      </div>
-      <div class="section grouped-section" id="general-section">
-        <h2>General</h2>
-        <button class="apply-button" id="reset-device" onclick="resetDevice()">
-          Restart/Reset Device
-        </button>
-        <label class="feedback-label" id="reset-device-feedback"></label>
       </div>
     </div>
+
+    <!-- WiFi Credentials Section -->
+    <div class="section" id="wifi-section">
+      <h2 class="section-title">WiFi Credentials</h2>
+
+      <div class="form-row">
+        <label for="wifi-ssid">SSID: *</label>
+        <input
+          type="text"
+          id="wifi-ssid"
+          placeholder="Enter WiFi network name"
+        />
+      </div>
+
+      <div class="form-row">
+        <label for="wifi-password">Password: *</label>
+        <div class="password-container">
+          <input
+            type="password"
+            id="wifi-password"
+            placeholder="Enter WiFi password"
+          />
+          <span
+            class="toggle-password"
+            onclick="togglePasswordVisibility('wifi-password', this)"
+            >👁️</span
+          >
+        </div>
+      </div>
+
+      <button
+        id="wifi-section-apply"
+        type="button"
+        class="apply-btn"
+        onclick="applyWiFiSettings()"
+        disabled
+      >
+        Apply
+      </button>
     </div>
+
+    <!-- Device Name -->
+    <div class="section" id="device-name-section">
+      <h2 class="section-title">Device Name</h2>
+      <div class="form-row">
+        <label for="device-name">Device Name:</label>
+        <input
+          type="text"
+          maxlength="63"
+          pattern="[a-zA-Z0-9-]{1,63}"
+          oninput="filterDnsName(this)"
+          id="device-name"
+          placeholder="Enter Device Name"
+        />
+      </div>
+
+      <button
+        id="device-name-apply"
+        type="button"
+        class="apply-btn"
+        onclick="applyDeviceNameSettings()"
+        disabled
+      >
+        Apply
+      </button>
+    </div>
+
+    <!-- General Section -->
+    <div class="section" id="general-section">
+      <h2 class="section-title">General</h2>
+
+      <button
+        id="restart-device"
+        type="button"
+        class="danger apply-btn"
+        onclick="restartDevice()"
+        disabled
+      >
+        Restart Device
+      </button>
+    </div>
+
+    <!-- Non Wasm Encryption Section -->
     <script>
-      document.body.style.display = "flex";
-      // window.securityKeyOnDerive = "";
-      // window.encryptionKey = derive_key("", "example_salt");
-
-      // Enable button on any input change
-      function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
-        const section = document.getElementById(sectionId);
-        const applyButton = document.getElementById(buttonId);
-        section.addEventListener("input", () => {
-          applyButton.disabled = false;
-          if (feedbackLabelId) {
-            const feedbackLabel = document.getElementById(feedbackLabelId);
-            feedbackLabel.textContent = "";
-          } 
-        });
-      }
-
-      function togglePassword() {
-        const passwordField = document.getElementById("password");
-        const toggleText = document.querySelector(".password-toggle");
-        if (passwordField.type === "password") {
-          passwordField.type = "text";
-          toggleText.textContent = "Hide";
-        } else {
-          passwordField.type = "password";
-          toggleText.textContent = "Show";
-        }
-      }
-
-      async function sendData(url, data) {
-        let encryptionKey = getEncryptionKey();
-        const response = await retryOperation(() =>
-          fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/text" },
-            body: encrypt(encryptionKey, JSON.stringify(data)),
-          }),
-        );
-        return response;
-      }
-      // Utility function to collect form data and send to the server
-      async function sendConfigData(
-        url,
-        data,
-        applyButton,
-        feedbackLabelId,
-      ) {
-        try {
-          let response = await sendData(url, data);
-          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
-          const encryptedText = await response.text();
-          const decryptedText = decrypt(encryptionKey, encryptedText);
-          const result = JSON.parse(decryptedText);
-          if (feedbackLabelId) {
-            const feedbackLabel = document.getElementById(feedbackLabelId);
-            feedbackLabel.textContent = "Settings applied successfully";
-          } 
-          if (applyButton) {
-            applyButton.disabled = true;
-          }
-        } catch (error) {
-          console.error("Failed to apply settings:", error);
-          if (feedbackLabelId) {
-            const feedbackLabel = document.getElementById(feedbackLabelId);
-            feedbackLabel.textContent = `Failed to apply settings: ${error.message}`;
-          } 
-        }
-      }
-
-      function getEncryptionKey() {
-        const securityKey = document.getElementById("security-key").value.trim();
-        if (securityKey != window.securityKeyOnDerive) {
-          window.encryptionKey = derive_key(securityKey, "example_salt");
-          window.securityKeyOnDerive = securityKey;
-        }
-        return window.encryptionKey;
-      }
-      // Function to test key
-      async function applyKeyFetchConfigs() {
-        const data = { test: "Hello" };
-        try {
-          let response = await sendData("/captive/api/test-key", data); // Replace with actual server endpoint
-          if (response.status == 403) {
-            document.getElementById('security-key-feedback').textContent = 'Security Key is incorrect';
-          } else if (response.ok) {
-            document.getElementById('security-key-feedback').textContent = 'Security Key validated';
-            await fetchSectionConfigs();
-          }
-        } catch (error) {
-          console.error("Failed to apply settings:", error);
-          document.getElementById('security-key-feedback').textContent = `Failed to check key, try again (${error.message})`;
-        }
-      }
-
-      // Function to reset the device
-      function resetDevice() {
-        const data = {};
-        sendData("/captive/api/reset-device", data); // Replace with actual server endpoint
-
-        document.getElementById('reset-device-feedback').textContent = "Device restarted. Reactivate Web Config from device and refresh page to continue configuration";
-      }
-
-      // Function to collect WiFi settings and send them as JSON
-      function applyWiFiSettings() {
-        const ssid = document.getElementById("ssid").value;
-        const password = document.getElementById("password").value;
-        const data = { ssid, password };
-        const applyButton = document.getElementById("wifi-apply");
-        sendConfigData("/captive/api/wifi-config", data, applyButton, "wifi-config-feedback"); // Replace with actual server endpoint
-      }
-
-      // Fetch initial configuration data and populate fields
-      async function fetchInitialSectionConfig(section) {
-        try {
-          const response = await fetch(`/captive/api/${section}-config`); // Replace with actual endpoint
-          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
-          const encryptedText = await response.text();
-          const decryptedText = decrypt(encryptionKey, encryptedText);
-          const data = JSON.parse(decryptedText);
-
-          // Populate WiFi credentials
-          return data;
-        } catch (error) {
-          console.error(`Failed to fetch ${section} configuration:`, error);
-          return null;
-        }
-      }
-
-      async function fetchWifiInitialConfig() {
-        const data = await fetchInitialSectionConfig("wifi");
-
-        if (data) {
-          document.getElementById("ssid").value = data.ssid;
-          document.getElementById("password").value = data.password;
-        }
-      }
-
-      async function fetchTagInitialConfig() {
-        const data = await fetchInitialSectionConfig("tag");
-
-        if (data) {
-          // Populate Tag scanning settings
-          document.getElementById("tag-scan-timeout").value =
-            data.tag_scan_timeout;
-        }
-      }
-
-      async function retryOperation(operation, retries = 5) {
+      async function loadScript(url, retries = 5, delay = 200) {
         for (let i = 0; i < retries; i++) {
           try {
-            return await operation();
-          } catch (error) {
-            if (i === retries - 1) throw error; // Throw error if it's the last retry
+            await new Promise((resolve, reject) => {
+              const script = document.createElement("script");
+              script.src = url;
+              script.async = true;
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+            });
+            return; // Exit if successful
+          } catch {
+            await new Promise((res) => setTimeout(res, delay)); // Wait before retrying
           }
         }
+        throw new Error(`Failed to load script: ${url}`);
       }
-
-      async function fetchSectionConfigs() {
-        await retryOperation(() => fetchWifiInitialConfig());
-      }
-
-      // Initialize listeners for each section
-      window.addEventListener("DOMContentLoaded", async () => {
-        // await retryOperation(() => fetchWifiInitialConfig());
-        setupChangeListeners("wifi-section", "wifi-apply");
-        setupChangeListeners("security-key-section", "security-key-apply", "security-key-feedback");
-      });
     </script>
+
     <script>
+      (async () => {
+        try {
+          await loadScript("crypto-js-4.2.0.min.js");
+          console.log("Script loaded successfully");
+        } catch (err) {
+          console.error(err);
+        }
+      })();
+
+      // no need to initialize wasm, so showing immediately
+      document.body.style.display = "block";
+
       function derive_key(password, salt) {
         // return CryptoJS.PBKDF2(password, CryptoJS.enc.Hex.parse(salt), { keySize: 256 / 32 });
         return CryptoJS.PBKDF2(password, salt, {
@@ -465,6 +422,266 @@
 
         return decrypted.toString(CryptoJS.enc.Utf8);
       }
+    </script>
+
+    <!-- Common Communication & UI Functions -->
+    <script>
+      async function sendData(inurl, data, retries = 5) {
+        // data is object, not json string
+        const url = `${urlPrefix}${inurl}`;
+        let encryptionKey = getEncryptionKey();
+        const response = await retryOperation(() =>
+          fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/text" },
+            body: encrypt(encryptionKey, JSON.stringify(data)),
+          }), retries
+        );
+        return response;
+      }
+
+      // Utility function to collect form data and send to the server
+      async function sendConfigData(url, data, applyButton) {
+        try {
+          let response = await sendData(`${url}`, data);
+          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+          const encryptedText = await response.text();
+          const decryptedText = decrypt(encryptionKey, encryptedText);
+          const result = JSON.parse(decryptedText);
+          alert(`Settings applied successfully`);
+          if (applyButton) {
+            applyButton.disabled = true;
+          }
+        } catch (error) {
+          console.error("Failed to apply settings:", error);
+          alert(`Failed to apply settings: ${error.message}`);
+        }
+      }
+
+      function getEncryptionKey() {
+        const securityKey = document
+          .getElementById("security-key")
+          .value.trim();
+        if (securityKey != window.securityKeyOnDerive) {
+          window.encryptionKey = derive_key(securityKey, "example_salt");
+          window.securityKeyOnDerive = securityKey;
+        }
+        return window.encryptionKey;
+      }
+
+      async function retryOperation(operation, retries = 5) {
+        for (let i = 0; i < retries; i++) {
+          try {
+            return await operation();
+          } catch (error) {
+            console.log(error);
+            if (i === retries - 1) throw error; // Throw error if it's the last retry
+          }
+        }
+      }
+
+      async function fetchSectionConfigs() {
+        await retryOperation(() => fetchWifiInitialConfig());
+        await retryOperation(() => fetchDeviceNameInitialConfig());
+      }
+
+      async function fetchInitialSectionConfig(section) {
+        try {
+          const response = await fetch(`${urlPrefix}/api/${section}-config`); // Replace with actual endpoint
+          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+          const encryptedText = await response.text();
+          const decryptedText = decrypt(encryptionKey, encryptedText);
+          const data = JSON.parse(decryptedText);
+
+          return data;
+        } catch (error) {
+          console.error(`Failed to fetch ${section} configuration:`, error);
+          return null;
+        }
+      }
+
+      function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
+        const section = document.getElementById(sectionId);
+        const applyButton = document.getElementById(buttonId);
+        section.addEventListener("input", () => {
+          applyButton.disabled = false;
+          if (feedbackLabelId) {
+            const feedbackLabel = document.getElementById(feedbackLabelId);
+            feedbackLabel.textContent = "";
+          }
+        });
+      }
+    </script>
+
+    <!-- Basic functionality relevant to any device (wifi, security key, restart device)-->
+    <script>
+      // Function to test key
+      async function applyKeyFetchConfigs() {
+        const data = { test: "Hello" };
+        try {
+          let response = await sendData("/api/test-key", data); // Replace with actual server endpoint
+          if (response.status == 400) {
+            document.getElementById("security-key-feedback").textContent =
+              "Security Key is incorrect";
+            document.getElementById("restart-device").disabled = true;
+          } else if (response.ok) {
+            document.getElementById("security-key-feedback").textContent =
+              "Security Key validated";
+            document.getElementById("verify-key-button").disabled = true;
+            document.getElementById("device-name-apply").disabled = true;
+            document.getElementById("wifi-section-apply").disabled = true;
+            document.getElementById("set-fixed-key-apply").disabled = true;
+            document.getElementById("restart-device").disabled = false;
+          }
+        } catch (error) {
+          console.error("Failed to apply settings:", error);
+          document.getElementById("security-key-feedback").textContent =
+            `Failed to check key, try again (${error.message})`;
+          return;
+        }
+        try {
+          await fetchSectionConfigs();
+        } catch (error) {
+          document.getElementById("security-key-feedback").textContent +=
+            " but Failed to Load Configs";
+        }
+      }
+
+      async function fetchWifiInitialConfig() {
+        const data = await fetchInitialSectionConfig("wifi");
+
+        if (data) {
+          document.getElementById("wifi-ssid").value = data.ssid;
+          document.getElementById("wifi-password").value = data.password;
+        }
+      }
+
+      async function fetchDeviceNameInitialConfig() {
+        const data = await fetchInitialSectionConfig("device-name");
+
+        if (data) {
+          document.getElementById("device-name").value = data.name;
+        }
+      }
+
+      // Function to reset the device
+      function restartDevice() {
+        const data = {};
+        sendData("/api/reset-device", data, 1);
+        alert(
+          "Device restarted. Reactivate Web Config from device and refresh page to continue configuration",
+        );
+      }
+
+      // Function to collect WiFi settings and send them as JSON
+      function applyWiFiSettings() {
+        const ssid = document.getElementById("wifi-ssid").value;
+        const password = document.getElementById("wifi-password").value;
+        const data = { ssid, password };
+        const applyButton = document.getElementById("wifi-section-apply");
+        sendConfigData("/api/wifi-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      function applyDeviceNameSettings() {
+        const name = document.getElementById("device-name").value;
+        const data = { name };
+        const applyButton = document.getElementById("device-name-section-apply");
+        sendConfigData("/api/device-name-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      function filterDnsName(el) {
+        el.value = el.value
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, '')   // remove invalid chars
+          .replace(/^-+/, '');          // trim leading hyphens (trailing also not allowed, but during typing it is there)
+      }
+
+      function applyFixedSecurityKeySettings() {
+        const key = document.getElementById("fixed-security-key").value;
+        const data = { key };
+        const applyButton = document.getElementById("set-fixed-key-apply");
+        sendConfigData("/api/fixed-key-config", data, applyButton); // Replace with actual server endpoint
+      }
+
+      // ==========================================
+      // Initialization
+      // ==========================================
+      document.addEventListener("DOMContentLoaded", function () {
+        // Initialize the form with data from server
+
+        setupChangeListeners("wifi-section", "wifi-section-apply");
+        setupChangeListeners(
+          "verify-key-section",
+          "verify-key-button",
+          "security-key-feedback",
+        );
+        setupChangeListeners("set-fixed-key-section", "set-fixed-key-apply");
+        setupChangeListeners("device-name-section", "device-name-apply");
+        // setupChangeListeners("display-section", "display-section-apply");
+      });
+
+      function togglePasswordVisibility(inputId, toggleButton) {
+        const passwordInput = document.getElementById(inputId);
+
+        if (passwordInput.type === "password") {
+          passwordInput.type = "text";
+          toggleButton.textContent = "🔒";
+        } else {
+          passwordInput.type = "password";
+          toggleButton.textContent = "👁️";
+        }
+      }
+    </script>
+
+    <!-- for debugging -->
+    <script>
+      var urlPrefix = "";
+      // for local debugging case
+      if (window.location.href.includes("captive")) {
+        urlPrefix = "/captive";
+      }
+      window.addEventListener("DOMContentLoaded", () => {
+        if (
+          window.location.hostname === "localhost" ||
+          window.location.hostname === "127.0.0.1"
+        ) {
+          urlPrefix = "http://192.168.10.82" + `${urlPrefix}`;
+        }
+      });
+    </script>
+
+    <!-- Script Example of added section -->
+    <script>
+      // async function fetchDisplayInitialConfig() {
+      //   const data = await fetchInitialSectionConfig("display");
+      //
+      //   if (data) {
+      //     document.getElementById("dimming-timeout").value =
+      //       data.dimming_timeout;
+      //     document.getElementById("dimming-percent").value =
+      //       data.dimming_percent;
+      //     document.getElementById("blackout-timeout").value =
+      //       data.blackout_timeout;
+      //     // document.getElementById("dimming-percent-display").textContent =
+      //     //   `${data.dimming_percent}%`;
+      //   }
+      // }
+
+      // // Function to collect Display settings and send them as JSON
+      // function applyDisplaySettings() {
+      //   const dimming_timeout = parseInt(
+      //     document.getElementById("dimming-timeout").value,
+      //   );
+      //   const dimming_percent = parseInt(
+      //     document.getElementById("dimming-percent").value,
+      //   );
+      //   const blackout_timeout = parseInt(
+      //     document.getElementById("blackout-timeout").value,
+      //   );
+      //   const data = { dimming_timeout, dimming_percent, blackout_timeout };
+      //   const applyButton = document.getElementById("display-section-apply");
+      //   sendConfigData("/api/display-config", data, applyButton); // Replace with actual server endpoint
+      // }
     </script>
   </body>
 </html>

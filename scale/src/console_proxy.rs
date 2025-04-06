@@ -221,7 +221,7 @@ impl ws::WebSocketCallback for ConsoleCommHandler {
                             }
                             Message::Ping(items) => {
                                 info!("Received Ping, replying Pong");
-                                ws_tx.send_pong(items).await.unwrap();
+                                ws_tx.send_pong(items).await.ok();
                             }
                             Message::Pong(items) => {
                                 let tick_res: Result<&[u8; 8], _> = items.try_into();

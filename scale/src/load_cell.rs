@@ -22,6 +22,7 @@ type ChangeWaiter = Watch<NoopRawMutex, i32, 5>;
 pub struct LoadCell {
     samples_per_read: usize,
     duration_between_reads: Duration,
+    change_threshold_g: i32,
     samples: Vec<i32>,
     next_sample_index: usize,
     calibration_weight: i64, // from calibration, shouldn't be changed
@@ -29,7 +30,7 @@ pub struct LoadCell {
     calibration_tare: i64,   // from calibration, shouldn't be changed
     current_tare: i64,       // could change during execution (like if negative number)
 
-    pub full_read_waiter: Rc<ReadWaiter>,
+    pub stable_read_waiter: Rc<ReadWaiter>,
     pub change_waiter: Rc<ChangeWaiter>,
     pub load_cell_weak: Weak<RefCell<Self>>,
 
@@ -51,6 +52,7 @@ impl LoadCell {
         let myself = Self {
             samples_per_read,
             duration_between_reads,
+            change_threshold_g: 5,
             samples: Vec::with_capacity(samples_per_read),
             next_sample_index: 0,
 
@@ -60,7 +62,7 @@ impl LoadCell {
             calibration_sample: 383722,
             current_tare: 63770,
 
-            full_read_waiter: Rc::new(ReadWaiter::new(0)),
+            stable_read_waiter: Rc::new(ReadWaiter::new(0)),
             change_waiter: Rc::new(ChangeWaiter::new()),
             load_cell_weak: Weak::new(),
             spi: Some(spi),
@@ -108,8 +110,8 @@ impl LoadCell {
         self.samples.iter().map(|&x| x as i64).sum::<i64>()
     }
 
-    fn full_read_waiter(&self) -> Rc<ReadWaiter> {
-        self.full_read_waiter.clone()
+    fn stable_read_waiter(&self) -> Rc<ReadWaiter> {
+        self.stable_read_waiter.clone()
     }
 
     pub fn reader(&self) -> LoadCellReader {
@@ -143,7 +145,7 @@ impl LoadCell {
     pub fn add_sample(&mut self, sample: i32) {
         if !self.samples.is_empty() && self.calibration_tare != 0 {
             let clear_samples_change_threshold =
-                5 * (self.calibration_sample - self.calibration_tare) / self.calibration_weight; // 5g // here need to use calibration tare
+                abs(self.change_threshold_g as i64 * (self.calibration_sample - self.calibration_tare) / self.calibration_weight); // 5g // here need to use calibration tare
             if abs(self.samples_sum() - sample as i64 * self.samples.len() as i64)
                 / self.samples.len() as i64
                 > clear_samples_change_threshold
@@ -163,11 +165,11 @@ impl LoadCell {
                 self.next_sample_index = 0;
             }
         }
-        let full_read_waiter = self.full_read_waiter();
+        let stable_read_waiter = self.stable_read_waiter();
         if self.samples.len() == self.samples_per_read {
-            full_read_waiter.set(1);
+            stable_read_waiter.set(1);
         } else {
-            full_read_waiter.set(0);
+            stable_read_waiter.set(0);
         }
     }
     pub async fn tare(myself: &Rc<RefCell<Self>>) {
@@ -199,22 +201,39 @@ pub struct LoadCellReader {
 }
 
 impl<'a> LoadCellReader {
-    pub async fn read(&self) -> i32 {
-        let read_waiter = self.load_cell.borrow().full_read_waiter();
-        read_waiter.acquire_all(1).await.unwrap();
-        read_waiter.release(1);
+    pub async fn read_stable(&self) -> i32 {
+        let stable_read_waiter = self.load_cell.borrow().stable_read_waiter();
+        stable_read_waiter.acquire_all(1).await.unwrap();
+        stable_read_waiter.release(1);
         self.load_cell.borrow().immediate_read()
     }
-    pub async fn read_changed(&self) -> i32 {
+
+    pub fn try_read_changed(&self, from: i32) -> Option<i32> {
+        let immediate_read = self.load_cell.borrow().immediate_read();
+        let change_threshold_g = self.load_cell.borrow().change_threshold_g;
+        if abs(immediate_read - from) > change_threshold_g {
+            Some(immediate_read)
+        } else {
+            None
+        }
+    }
+
+    pub async fn read_changed(&self, from: i32) -> i32 {
+        if let Some(change_read) = self.try_read_changed(from) {
+            return change_read;
+        }
         let change_waiter = self.load_cell.borrow().change_waiter.clone();
         let mut change_receiver = change_waiter.receiver().unwrap();
         change_receiver.changed().await;
         self.load_cell.borrow().immediate_read()
     }
 
-    #[allow(dead_code)]
     pub fn immediate_read(&self) -> i32 {
         self.load_cell.borrow().immediate_read()
+    }
+
+    pub fn immediate_read_uncalibrated(&self) -> i32 {
+        self.load_cell.borrow().immediate_read_uncalibrated()
     }
 }
 

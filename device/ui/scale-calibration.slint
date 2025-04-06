@@ -8,7 +8,7 @@ export component ScaleCalibration inherits VerticalLayout {
 
         my-title:= Title {
           height: 40px;
-          property <string> calibration-status:AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Uncalibrated" : "Calibrated";
+          property <string> calibration-status:AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Uncalibrated (\{AppState.spool-scale-raw-data})" : "Calibrated";
           text: "Scale Calibration - \{calibration-status}";
         }
         HorizontalLayout {

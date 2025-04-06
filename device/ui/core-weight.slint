@@ -1,6 +1,6 @@
 import { MyButton, Title, Selector, LeftTab } from "framework/widgets.slint";
 import { NumPad } from "numpad.slint";
-import { AppState, AppBackend, ControlState } from "app.slint";
+import { AppState, AppBackend, ControlState, SpoolScaleState } from "app.slint";
 
 export component CoreEstimate inherits Rectangle {
     background: white;
@@ -94,11 +94,18 @@ export component CoreEstimate inherits Rectangle {
                     height: 30px;
                     border-color: black;
                     border-width: 1px;
-                    background: lightskyblue;
+                    background: AppState.spool-scale-state == SpoolScaleState.Disconnected || AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? orangered : 
+                                AppState.spool-scale-state == SpoolScaleState.Connected ? lightgreen : 
+                                AppState.spool-scale-state == SpoolScaleState.Loaded && !AppState.spool-scale-weight-stable ? yellow : 
+                                lightskyblue;
                     Text {
                         font-size: 20px;
-                        text: "\{ AppState.spool-scale-weight} g";
-                    }
+                        text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? "Scale Disconnected" :
+                              AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Scale Not Calibrated" :
+                              AppState.spool-scale-state == SpoolScaleState.Connected ? "Scale Connected" :
+                              AppState.spool-scale-state == SpoolScaleState.Loaded ? "\{AppState.spool-scale-weight} g" : 
+                              "";
+                              }
                 }
 
                 Text {

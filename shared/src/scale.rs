@@ -15,8 +15,10 @@ pub enum ScaleToConsole {
     Term(String),
     Uncalibrated,
     NewLoad(Weight),
-    LoadChanged(Weight),
+    LoadChangedStable(Weight),
+    LoadChangedUnstable(Weight),
     LoadRemoved,
+    RawSamplesAvg(i32),
     WebConfigEnabled(WebConfigInfo),
 }
 

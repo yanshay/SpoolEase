@@ -369,8 +369,8 @@ async fn main(spawner: Spawner) {
         .spawn(crate::app::app_task(
             framework.clone(),
             app_config.clone(),
-            peripherals.GPIO4.into(),
             peripherals.GPIO5.into(),
+            peripherals.GPIO4.into(),
             peripherals.SPI3.into(),
         ))
         .ok();   // // yields for term initialization to complete until term is fixed to not require this
