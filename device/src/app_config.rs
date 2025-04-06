@@ -265,18 +265,21 @@ impl AppConfig {
         self.pn532_ok = Some(status);
     }
 
-    pub fn initialization_ok(&self, log: bool) -> bool {
-        self.framework.borrow().initialization_ok()
+    pub fn initialization_ok(&self) -> Option<bool> {
+        if self.pn532_ok.is_none() {
+            return None;
+        }
+        Some(self.framework.borrow().initialization_ok()
             && matches!(self.config_processed_ok, Some(true))
             && matches!(self.pn532_ok, Some(true))
-            && !self.missing_configs(log)
+            && !self.missing_configs())
             // && self.printer_serial != None
             // && self.printer_access_code != None
     }
 
     #[allow(dead_code)]
     pub fn boot_completed(&self) -> bool {
-        self.framework.borrow().boot_completed() && self.initialization_ok(false)
+        self.framework.borrow().boot_completed() && matches!(self.initialization_ok(), Some(true))
     }
 
     pub fn set_printers_config(
