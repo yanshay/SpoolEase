@@ -601,6 +601,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
             document.getElementById("security-key-feedback").textContent =
               "Security Key is incorrect";
             document.getElementById("restart-device").disabled = true;
+            return;
           } else if (response.ok) {
             document.getElementById("security-key-feedback").textContent =
               "Security Key validated";
