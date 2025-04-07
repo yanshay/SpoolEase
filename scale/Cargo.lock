@@ -13,6 +13,7 @@ dependencies = [
  "embassy-net",
  "embassy-sync",
  "embassy-time",
+ "embedded-hal-bus",
  "esp-alloc",
  "esp-backtrace",
  "esp-hal",
@@ -3631,6 +3632,9 @@ name = "log"
 version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "lyon_algorithms"
@@ -3687,6 +3691,17 @@ name = "managed"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ca88d725a0a943b096803bd34e73a4437208b6077654cc4ecb2947a5f91618d"
+
+[[package]]
+name = "maybe-async"
+version = "0.2.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5cf92c10c7e361d6b99666ec1c6f9805b0bea2c3bd8c78dc6fe98ac5bd78db11"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
 
 [[package]]
 name = "md5"
@@ -4496,6 +4511,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
+name = "pn532"
+version = "0.5.0"
+source = "git+https://github.com/yanshay/pn532?branch=yanshay_async_full#3313e1358b4738b5c0403da8231aeb9aec7d9a1d"
+dependencies = [
+ "embassy-time",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "maybe-async",
+ "nb 1.1.0",
+]
+
+[[package]]
 name = "png"
 version = "0.17.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5100,8 +5127,21 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "deku",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-hal-bus",
+ "esp-hal",
+ "esp-hal-app-framework",
+ "log",
+ "no_std_io",
+ "pn532",
  "serde",
  "serde_json",
+ "static_cell",
 ]
 
 [[package]]

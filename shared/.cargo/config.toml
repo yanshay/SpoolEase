@@ -1,2 +1,12 @@
+[build]
+rustflags = [
+  "-C", "link-arg=-Tlinkall.x",
+  "-C", "link-arg=-nostartfiles",
+  "--cfg", "getrandom_backend=\"custom\"",
+  # "-Z", "stack-protector=all",
+]
+
+target = "xtensa-esp32s3-none-elf"
+
 [unstable]
 build-std = ["alloc", "core"]

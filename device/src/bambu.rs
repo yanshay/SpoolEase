@@ -1,7 +1,8 @@
 // TODO:
 // Deal with when to clear tag information, when we know spool taken out
 // Deal with when to copy tag information between trays if only some data change but we know the spool is there
-use crate::{app_config::PrinterConfig, settings::MAX_NUM_PRINTERS, spool_tag::TAG_PLACEHOLDER, ssdp::{SSDPInfo, SSDPPubSubChannel}};
+use crate::{app_config::PrinterConfig, settings::MAX_NUM_PRINTERS, ssdp::{SSDPInfo, SSDPPubSubChannel}};
+use shared::spool_tag::TAG_PLACEHOLDER; 
 use alloc::{
     format,
     rc::Rc,

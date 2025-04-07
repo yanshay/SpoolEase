@@ -17,6 +17,7 @@ esp-hal-embassy = { version = "0.6.0", features = ["esp32s3"] }
 esp-mbedtls = { git = "https://github.com/esp-rs/esp-mbedtls.git", features = [ "async" ], rev = "1806f8f622b08a9b54de91814eea13c6b3d9ff1c" }
 esp-hal-ota = { version = "0.3.2" }
 esp-storage = { version = "0.4.0", features = [ "nor-flash", "esp32s3" ] }
+embedded-hal-bus = { version = "0.2.0", features = ["async"] }
 
 
 embassy-executor = { version = "0.7.0", features = ["task-arena-size-20480"] }
@@ -30,22 +31,17 @@ sequential-storage = { git = "https://github.com/tweedegolf/sequential-storage",
 
 critical-section = "1.2.0"
 once_cell = { version = "1.20.2", default-features = false, features = ["alloc"] }
-# picoserve = {version = "0.14.1", git = "https://github.com/sammhicks/picoserve", rev = "5d40ea410efa4c2e313cfaa19f62f844ece1fd55", features = ["alloc", "embassy"] }
 picoserve = {version = "0.15.1", features = ["alloc", "embassy"] }
 log = { version = "0.4.21" }
 static_cell = { version = "2.1.0", features = ["nightly"] }
 rand = { version = "0.8", default-features = false }
-#
-#
+
 serde = { version = "1.0.213", default-features = false, features = [ "derive", "alloc", ] }
 serde_json = { version = "1.0.132", default-features = false, features = [ "alloc", ] }
 framework = { package = "esp-hal-app-framework", path = "../../esp32-support/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial"] }
 
 getrandom = { version = "0.2.15", features = ["custom"] }
-#
 
-# for tests
-# esp-partition-table = { version = "0.1.2" }
 loadcell = { version = "0.3.0" }
 hx711_spi = { version = "0.7.0" } #, features = ["invert-sdo"]}
 num-traits = { version = "0.2.19", default-features = false }

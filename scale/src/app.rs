@@ -6,6 +6,7 @@ use alloc::{
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, pubsub::PubSubBehavior};
 use embassy_time::{with_timeout, Duration, Timer};
+use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::{gpio::AnyPin, spi::AnySpi};
 use framework::{
     debug, error,
@@ -16,7 +17,7 @@ use framework::{
     web_server::WebServerCommand,
 };
 use num_traits::abs;
-use shared::scale::{ConsoleToScale, ScaleToConsole};
+use shared::{scale::{ConsoleToScale, ScaleToConsole}, spool_tag::{self, SpoolTag, SpoolTagObserver}};
 
 use crate::{app_config::AppConfig, console_proxy, load_cell::LoadCell};
 
@@ -30,8 +31,12 @@ pub async fn app_task(
     loadcell_dt: AnyPin,
     loadcell_sck: AnyPin,
     loadcell_spi: AnySpi,
+    spi_device: ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
+    irq: esp_hal::gpio::Input<'static>,
 ) {
     let spawner = framework.borrow().spawner;
+
+    let spool_tag_model = spool_tag::init(spi_device, irq, spawner);
 
     let scale_to_console_channel = mk_static!(ScaleToConsoleChannel, ScaleToConsoleChannel::new());
     let web_server_commands = crate::mk_static!(WebServerCommands, WebServerCommands::new());
@@ -51,6 +56,7 @@ pub async fn app_task(
         app_config.clone(),
         scale_to_console_channel,
         load_cell.clone(),
+        spool_tag_model,
     );
 
     console_proxy::init(
@@ -169,6 +175,7 @@ pub struct App {
     scale_state: ScaleState,
     tare_during_calibration: Option<i32>,
     _terminal_proxy: Option<Rc<RefCell<TerminalProxy>>>, // to hold it alive
+    _spool_tag: Rc<RefCell<SpoolTag>>,
 }
 
 impl App {
@@ -176,6 +183,7 @@ impl App {
         app_config: Rc<RefCell<AppConfig>>,
         scale_to_console_channel: &'static ScaleToConsoleChannel,
         load_cell: Rc<RefCell<LoadCell>>,
+        spool_tag: Rc<RefCell<SpoolTag>>,
     ) -> Rc<RefCell<Self>> {
         let scale_state = if let Some(scale_config) = &app_config.borrow().configured_calibration {
             load_cell.borrow_mut().set_calibration(
@@ -196,8 +204,15 @@ impl App {
             scale_state,
             tare_during_calibration: None,
             _terminal_proxy: None,
+            _spool_tag: spool_tag.clone(),
         };
         let myself_rc = Rc::new(RefCell::new(myself));
+
+
+        // Subscribe to rust spool_tag events
+        let trait_for_spool_tag_rc: Rc<RefCell<dyn spool_tag::SpoolTagObserver>> = myself_rc.clone();
+        let trait_for_spool_tag_weak: Weak<RefCell<dyn spool_tag::SpoolTagObserver>> = Rc::downgrade(&trait_for_spool_tag_rc);
+        spool_tag.borrow_mut().subscribe(trait_for_spool_tag_weak);
 
         let terminal_proxy = Rc::new(RefCell::new(TerminalProxy {
             app: myself_rc.clone(),
@@ -322,6 +337,35 @@ impl TerminalObserver for TerminalProxy {
             self.app
                 .borrow()
                 .try_send_to_console(ScaleToConsole::Term(text.to_string()));
+        }
+    }
+}
+
+impl SpoolTagObserver for App {
+    fn on_tag_status(&mut self, status: &spool_tag::Status) {
+        match status { spool_tag::Status::FoundTagNowReading =>  {
+                self.try_send_to_console(ScaleToConsole::TagStatus(status.clone()));
+                info!("Tag found");
+        }
+            spool_tag::Status::FoundTagNowWriting => todo!(),
+            spool_tag::Status::WriteSuccess(_, _) => todo!(),
+            spool_tag::Status::ReadSuccess(tag) =>  {
+                self.try_send_to_console(ScaleToConsole::TagStatus(status.clone()));
+                info!("Tag Read: {tag}");
+            }
+            spool_tag::Status::Failure(failure) =>  {
+                self.try_send_to_console(ScaleToConsole::TagStatus(status.clone()));
+                info!("Tag failure: {failure:?}");
+            }
+        }
+    }
+
+    fn on_pn532_status(&mut self, status: bool) {
+        self.try_send_to_console(ScaleToConsole::PN532Status(status));
+        if status {
+            info!("PN532 Initialized Successfuly");
+        } else {
+            error!("Failed to initialize PN532");
         }
     }
 }

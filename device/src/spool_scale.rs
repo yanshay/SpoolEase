@@ -42,6 +42,8 @@ pub trait SpoolScaleObserver {
     fn on_scale_disconnected(&mut self);
     fn on_scale_uncalibrated(&mut self);
     fn on_term_text(&mut self, text: &str);
+    fn on_tag_status(&mut self, status: &shared::spool_tag::Status);
+    fn on_pn532_status(&mut self, status: bool);
 }
 
 impl SpoolScale {
@@ -80,6 +82,12 @@ impl SpoolScale {
                 }
                 ScaleToConsole::Term(text) => {
                     self.notify_term_text(&text);
+                }
+                ScaleToConsole::TagStatus(status) =>  {
+                    self.notify_tag_status(&status);
+                }
+                ScaleToConsole::PN532Status(status) => {
+                    self.notify_pn532_status(status);
                 }
             }
         }
@@ -147,6 +155,18 @@ impl SpoolScale {
         for weak_observer in self.observers.iter() {
             let observer = weak_observer.upgrade().unwrap();
             observer.borrow_mut().on_term_text(text);
+        }
+    }
+    pub fn notify_tag_status(&mut self, status: &shared::spool_tag::Status) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_tag_status(status);
+        }
+    }
+    pub fn notify_pn532_status(&mut self, status: bool) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_pn532_status(status);
         }
     }
 }

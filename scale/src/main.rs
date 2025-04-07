@@ -17,6 +17,15 @@ mod load_cell;
 mod ssdp;
 
 use alloc::{format, rc::Rc, string::ToString};
+use esp_hal::dma::DmaTxBuf;
+use esp_hal::dma_buffers;
+use esp_hal::gpio::Input;
+use esp_hal::gpio::Level;
+use esp_hal::gpio::Output;
+use esp_hal::gpio::Pull;
+use esp_hal::spi;
+use esp_hal::time::RateExtU32;
+use esp_hal::spi::master::Spi;
 use core::{cell::RefCell, net::Ipv4Addr};
 use esp_alloc as _;
 use esp_backtrace as _;
@@ -365,6 +374,40 @@ async fn main(spawner: Spawner) {
     // == Configure App ===============================================================
     // This initializes all the applicative stuff, and is provided with all the required hw access
 
+    // == Setup PN532 =================================================================
+
+    // PN532
+
+    let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(64);
+    let spi_dma_rx_buf = esp_hal::dma::DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
+    let spi_dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
+    let pn532_irq = Input::new(peripherals.GPIO8, Pull::None);
+
+    let sck = peripherals.GPIO15;
+    let miso = peripherals.GPIO16;
+    let mosi = Output::new(peripherals.GPIO17, Level::High);
+    let cs = Output::new(peripherals.GPIO18, Level::High);
+
+    let spi = Spi::new(
+        peripherals.SPI2,
+        esp_hal::spi::master::Config::default()
+            .with_frequency(200.kHz())
+            .with_mode(spi::Mode::_0)
+            .with_read_bit_order(spi::BitOrder::LsbFirst)
+            .with_write_bit_order(spi::BitOrder::LsbFirst),
+    )
+    .unwrap()
+    .with_sck(sck)
+    .with_mosi(mosi)
+    .with_miso(miso)
+    // .with_cs(cs) // cs is handled by the ExclusiveDevice
+    // .with_dma(spi_dma_channel.configure(false, esp_hal::dma::DmaPriority::Priority0))
+    .with_dma(peripherals.DMA_CH1)
+    .with_buffers(spi_dma_rx_buf, spi_dma_tx_buf)
+    .into_async();
+
+    let pn532_spi_device = embedded_hal_bus::spi::ExclusiveDevice::new(spi, cs, embassy_time::Delay).unwrap();
+
     spawner
         .spawn(crate::app::app_task(
             framework.clone(),
@@ -372,6 +415,8 @@ async fn main(spawner: Spawner) {
             peripherals.GPIO5.into(),
             peripherals.GPIO4.into(),
             peripherals.SPI3.into(),
+            pn532_spi_device,
+            pn532_irq,
         ))
         .ok();   // // yields for term initialization to complete until term is fixed to not require this
 
@@ -382,6 +427,8 @@ async fn main(spawner: Spawner) {
     info!("--------------------------------------------");
     info!(" Current security key is {}", framework.borrow().fixed_key.clone().unwrap_or("Ooops - no security key".to_string()));
     info!("--------------------------------------------");
+
+
 
     Framework::wait_for_wifi(&framework).await;// this is mostly to start the web app after all tasks initialized and won't miss this start message
     framework

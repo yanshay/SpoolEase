@@ -28,8 +28,8 @@ use crate::{
     app_config::AppConfig,
     bambu::{self, BambuPrinter, BambuPrinterObserver, TagInformation, TrayState},
     filament_staging::FilamentStaging,
-    spool_tag::{self, SpoolTagObserver, Status},
 };
+use shared::spool_tag::{self, SpoolTagObserver, Status};
 
 struct PrinterUiState {
     curr_ams: Option<i32>,
@@ -79,9 +79,11 @@ impl ViewModel {
         // Setup empty printers
         let set_of_printers: Vec<Rc<RefCell<BambuPrinter>>> = Vec::new();
         let selected_printer = SelectedPrinter::new(set_of_printers, 0);
+        
+        // Initialize SpoolTag
+        let spool_tag_model = spool_tag::init(spi_device, irq, spawner);
 
         // Initialize ssdp
-        let spool_tag_model = spool_tag::init(spi_device, irq, spawner);
         let ssdp_pub_sub = mk_static!(SSDPPubSubChannel, SSDPPubSubChannel::new());
         spawner.spawn(ssdp_task(stack, ssdp_pub_sub)).ok();
 
@@ -979,5 +981,17 @@ impl SpoolScaleObserver for ViewModel {
             .unwrap()
             .global::<crate::app::FrameworkState>()
             .invoke_add_term_text(text.into());
+    }
+
+    fn on_tag_status(&mut self, status: &shared::spool_tag::Status) {
+        SpoolTagObserver::on_tag_status(self, status);
+    }
+
+    fn on_pn532_status(&mut self, status: bool) {
+        if status {
+            term_info!("[S] Scale initialized the NFC module successfuly");
+        } else {
+            term_info!("[S] Warning: Scale failed to initialize the NFC module");
+        }
     }
 }

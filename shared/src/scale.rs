@@ -19,6 +19,8 @@ pub enum ScaleToConsole {
     LoadChangedUnstable(Weight),
     LoadRemoved,
     RawSamplesAvg(i32),
+    TagStatus(crate::spool_tag::Status),
+    PN532Status(bool),
     WebConfigEnabled(WebConfigInfo),
 }
 

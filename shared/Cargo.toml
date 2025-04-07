@@ -3,6 +3,41 @@ name = "shared"
 version = "0.1.0"
 edition = "2021"
 
+[profile.release]
+codegen-units = 1
+debug = 2
+debug-assertions = false
+incremental = false
+opt-level = 's'
+lto = 'fat'
+overflow-checks = false
+
+[patch.crates-io]
+bitvec = { git = "https://github.com/arctic-alpaca/ferrilab" }
+radium = { git = "https://github.com/arctic-alpaca/ferrilab" }
+
 [dependencies]
 serde = { version = "1.0.213", default-features = false, features = [ "derive", "alloc", ] }
 serde_json = { version = "1.0.132", default-features = false, features = [ "alloc", ] }
+
+
+framework = { package = "esp-hal-app-framework", path = "../../esp32-support/esp-hal-app-framework/", features = ["esp32s3"] }
+deku = { version = "0.17.0", default-features = false, features = ["alloc"] }
+pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_async_full", default-features = false }
+embassy-time = { version = "0.4.0", features = ["generic-queue-8"] }
+esp-hal = { version = "0.23.1" }
+embassy-sync = { version = "0.6.2" }
+no_std_io = { version = "0.6.0", default-features = false, features = [ "alloc" ] }
+log = { version = "0.4.22", features = ["serde"] }
+static_cell = { version = "2.1", features = ["nightly"] }
+base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
+embassy-futures = { version = "0.1.1" }
+embedded-hal-bus = { version = "0.2.0", features = ["async"] }
+embassy-executor = { version = "0.7.0", features = ["nightly"] }
+
+[features]
+default = ["esp32s3"]
+
+esp32s3 = [
+  "esp-hal/esp32s3",
+]

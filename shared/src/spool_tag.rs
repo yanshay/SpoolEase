@@ -8,6 +8,7 @@ use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
 
 use framework::prelude::*;
+use serde::{Deserialize, Serialize};
 
 pub const TAG_PLACEHOLDER: &str = "$tag-id$";
 
@@ -69,14 +70,14 @@ enum TagOperation {
     ReadTag(ReadTagRequest),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[allow(clippy::enum_variant_names)]
 pub enum Failure {
     TagWriteFailure,
     TagReadFailure,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Status {
     FoundTagNowReading,
     FoundTagNowWriting,

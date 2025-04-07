@@ -5649,8 +5649,21 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "deku",
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync",
+ "embassy-time",
+ "embedded-hal-bus",
+ "esp-hal",
+ "esp-hal-app-framework",
+ "log",
+ "no_std_io",
+ "pn532",
  "serde",
  "serde_json",
+ "static_cell",
 ]
 
 [[package]]
