@@ -9,8 +9,6 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 
 use framework::prelude::*;
 
-use crate::app_config::AppConfig;
-
 pub const TAG_PLACEHOLDER: &str = "$tag-id$";
 
 pub struct SpoolTag {
@@ -20,6 +18,7 @@ pub struct SpoolTag {
 
 pub trait SpoolTagObserver {
     fn on_tag_status(&mut self, status: &Status);
+    fn on_pn532_status(&mut self, status: bool);
 }
 
 impl SpoolTag {
@@ -38,10 +37,17 @@ impl SpoolTag {
         self.observers.push(observer);
     }
 
-    pub fn notify_status(&self, status: Status) {
+    pub fn notify_tag_status(&self, status: Status) {
         for weak_observer in self.observers.iter() {
             let observer = weak_observer.upgrade().unwrap();
             observer.borrow_mut().on_tag_status(&status);
+        }
+    }
+
+    pub fn notify_pn532_status(&self, status: bool) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_pn532_status(status);
         }
     }
 }
@@ -102,7 +108,6 @@ impl Uid {
 pub fn init(
     spi_device: ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
     irq: esp_hal::gpio::Input<'static>,
-    app_config: Rc<RefCell<AppConfig>>,
     spawner: Spawner,
 ) -> Rc<RefCell<SpoolTag>> {
     let tag_operation = mk_static!(
@@ -116,7 +121,7 @@ pub fn init(
     }));
 
     spawner
-        .spawn(nfc_task(spool_tag_rc.clone(), spi_device, irq, tag_operation, app_config))
+        .spawn(nfc_task(spool_tag_rc.clone(), spi_device, irq, tag_operation))
         .ok();
 
     spool_tag_rc
@@ -130,7 +135,6 @@ pub async fn nfc_task(
     spi_device: ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
     irq: esp_hal::gpio::Input<'static>,
     tag_operation: &'static embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, TagOperation>,
-    app_config: Rc<RefCell<AppConfig>>,
 ) {
     // To switch from using IRQ to not using IRQ:
     //   1. use None::<pn532::spi::NoIRQ> instead of Some(irq)
@@ -182,10 +186,10 @@ pub async fn nfc_task(
     }
 
     if !initialization_succeeded {
-        app_config.borrow_mut().report_pn532(false);
+        spool_tag_rc.borrow().notify_pn532_status(false);
         return;
     } else {
-        app_config.borrow_mut().report_pn532(true);
+        spool_tag_rc.borrow().notify_pn532_status(true);
     }
 
     if let Ok(fw) = pn532
@@ -194,10 +198,10 @@ pub async fn nfc_task(
     {
         trace!("PN532 Firmware Version response: {:?}", fw);
         term_info!("Established communication with Tag Reader ({})", successful_retry);
-        app_config.borrow_mut().report_pn532(true);
+        spool_tag_rc.borrow().notify_pn532_status(true);
     } else {
         term_error!("Failed to communicate with Tag Reader");
-        app_config.borrow_mut().report_pn532(false);
+        spool_tag_rc.borrow().notify_pn532_status(false);
         return;
     }
 
@@ -275,7 +279,7 @@ pub async fn nfc_task(
 
                         match &curr_operation_with_tag.as_ref() {
                             Some(TagOperation::WriteTag(write_tag_reuest)) => {
-                                spool_tag_rc.borrow().notify_status(Status::FoundTagNowWriting);
+                                spool_tag_rc.borrow().notify_tag_status(Status::FoundTagNowWriting);
                                 let tag_uid = URL_SAFE_NO_PAD.encode(last_seen_tag.as_ref().unwrap().uid());
                                 let final_tag_text = write_tag_reuest.text.replace(TAG_PLACEHOLDER, &tag_uid);
                                 match crate::nfc::write_ndef_url_record(&mut pn532, &final_tag_text, Duration::from_secs(2)).await {
@@ -283,7 +287,7 @@ pub async fn nfc_task(
                                         debug!("Wrote {} to tag", final_tag_text);
                                         spool_tag_rc
                                             .borrow()
-                                            .notify_status(Status::WriteSuccess(write_tag_reuest.tray_id, final_tag_text));
+                                            .notify_tag_status(Status::WriteSuccess(write_tag_reuest.tray_id, final_tag_text));
                                         curr_operation_with_tag = Some(TagOperation::ReadTag(ReadTagRequest {}));
                                         previous_operation_tag_last_seen_time = Instant::now();
                                         previous_operation_tag = last_seen_tag;
@@ -291,16 +295,16 @@ pub async fn nfc_task(
                                     }
                                     Err(e) => {
                                         term_error!("Error writing to tag {:?}", e);
-                                        spool_tag_rc.borrow().notify_status(Status::Failure(Failure::TagWriteFailure));
+                                        spool_tag_rc.borrow().notify_tag_status(Status::Failure(Failure::TagWriteFailure));
                                     }
                                 }
                             }
                             Some(TagOperation::ReadTag(_read_tag_request)) => {
-                                spool_tag_rc.borrow().notify_status(Status::FoundTagNowReading);
+                                spool_tag_rc.borrow().notify_tag_status(Status::FoundTagNowReading);
                                 match crate::nfc::read_ndef_record(&mut pn532, Duration::from_millis(500)).await {
                                     Ok(read_record) => {
                                         debug!("{}", read_record.url_payload());
-                                        spool_tag_rc.borrow().notify_status(Status::ReadSuccess(read_record.url_payload()));
+                                        spool_tag_rc.borrow().notify_tag_status(Status::ReadSuccess(read_record.url_payload()));
                                         curr_operation_with_tag = Some(TagOperation::ReadTag(ReadTagRequest {}));
                                         previous_operation_tag_last_seen_time = Instant::now();
                                         previous_operation_tag = last_seen_tag;
@@ -308,7 +312,7 @@ pub async fn nfc_task(
                                     }
                                     Err(e) => {
                                         error!("Error reading tag {:?}", e);
-                                        spool_tag_rc.borrow().notify_status(Status::Failure(Failure::TagReadFailure));
+                                        spool_tag_rc.borrow().notify_tag_status(Status::Failure(Failure::TagReadFailure));
                                     }
                                 }
                             }
@@ -334,10 +338,10 @@ pub async fn nfc_task(
                             warn!("Error when waiting for tag {:?}", e);
                             match &curr_operation_with_tag {
                                 Some(TagOperation::WriteTag(_write_tag_request)) => {
-                                    spool_tag_rc.borrow().notify_status(Status::Failure(Failure::TagWriteFailure));
+                                    spool_tag_rc.borrow().notify_tag_status(Status::Failure(Failure::TagWriteFailure));
                                 }
                                 Some(TagOperation::ReadTag(_read_tag_request)) => {
-                                    spool_tag_rc.borrow().notify_status(Status::Failure(Failure::TagReadFailure));
+                                    spool_tag_rc.borrow().notify_tag_status(Status::Failure(Failure::TagReadFailure));
                                 }
                                 None => {}
                             }

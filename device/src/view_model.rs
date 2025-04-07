@@ -81,7 +81,7 @@ impl ViewModel {
         let selected_printer = SelectedPrinter::new(set_of_printers, 0);
 
         // Initialize ssdp
-        let spool_tag_model = spool_tag::init(spi_device, irq, app_config.clone(), spawner);
+        let spool_tag_model = spool_tag::init(spi_device, irq, spawner);
         let ssdp_pub_sub = mk_static!(SSDPPubSubChannel, SSDPPubSubChannel::new());
         spawner.spawn(ssdp_task(stack, ssdp_pub_sub)).ok();
 
@@ -792,6 +792,10 @@ impl SpoolTagObserver for ViewModel {
                     .invoke_read_tag_failed(SharedString::from("Error: Failed to Scan Tag"));
             }
         }
+    }
+
+    fn on_pn532_status(&mut self, status: bool) {
+        self.app_config.borrow_mut().report_pn532(status);
     }
 }
 
