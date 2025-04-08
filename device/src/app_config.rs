@@ -106,7 +106,7 @@ impl AppConfig {
         }
         if log {
             if missing {
-                term_error!("Missing complete printer information");
+                term_error!("Missing printer(s) information");
             } else
             if partial_missing {
                 term_error!("At least one printer is missing serial/access_code configuration");
@@ -243,20 +243,13 @@ impl AppConfig {
         }
         if toml_priner_config != PrinterConfig::default() {
             self.configured_printers.printers.push(toml_priner_config);
-            // if let Err(err) = self.set_current_printer_to_default() {
-            //     term_info!("Bad printer configuration {}", err);
-            // }
         }
+
+        // If after all, no printer configured, fill in an empty printer config
         if self.configured_printers.printers.is_empty() {
-            let empty_printer_config = PrinterConfig {
-                ip: None,
-                name: None,
-                serial: None,
-                access_code: None,
-                log_filter: None,
-            };
-            self.configured_printers.printers.push(empty_printer_config);
+            self.configured_printers.printers.push(PrinterConfig::default());
         }
+
         self.config_processed_ok = Some(true);
         Ok(())
     }
@@ -265,21 +258,19 @@ impl AppConfig {
         self.pn532_ok = Some(status);
     }
 
-    pub fn initialization_ok(&self) -> Option<bool> {
+    pub fn initialization_ok(&self, log: bool) -> Option<bool> {
         if self.pn532_ok.is_none() {
             return None;
         }
         Some(self.framework.borrow().initialization_ok()
             && matches!(self.config_processed_ok, Some(true))
             && matches!(self.pn532_ok, Some(true))
-            && !self.missing_configs())
-            // && self.printer_serial != None
-            // && self.printer_access_code != None
+            && !self.missing_configs(log))
     }
 
     #[allow(dead_code)]
     pub fn boot_completed(&self) -> bool {
-        self.framework.borrow().boot_completed() && matches!(self.initialization_ok(), Some(true))
+        self.framework.borrow().boot_completed() && matches!(self.initialization_ok(false), Some(true))
     }
 
     pub fn set_printers_config(

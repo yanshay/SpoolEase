@@ -462,7 +462,7 @@ async fn main(spawner: Spawner) {
     term_info!("Booting from partition {}", boot_partition);
 
     loop {
-        if app_config.borrow().initialization_ok().is_some() {
+        if app_config.borrow().initialization_ok(false).is_some() {
             break;
         }
         Timer::after(Duration::from_millis(250)).await;
@@ -470,7 +470,7 @@ async fn main(spawner: Spawner) {
 
     framework
         .borrow()
-        .notify_initialization_completed(app_config.borrow().initialization_ok().unwrap());
+        .notify_initialization_completed(app_config.borrow().initialization_ok(true).unwrap());
 
     loop {
         Timer::after(Duration::from_secs(60)).await;

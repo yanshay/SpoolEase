@@ -10,25 +10,27 @@
 
 mod app;
 mod app_config;
-mod settings;
-mod web_app;
 mod console_proxy;
 mod load_cell;
+mod settings;
 mod ssdp;
+mod web_app;
 
 use alloc::{format, rc::Rc, string::ToString};
+use core::{cell::RefCell, net::Ipv4Addr};
+use esp_alloc as _;
+use esp_backtrace as _;
 use esp_hal::dma::DmaTxBuf;
 use esp_hal::dma_buffers;
 use esp_hal::gpio::Input;
 use esp_hal::gpio::Level;
 use esp_hal::gpio::Output;
 use esp_hal::gpio::Pull;
+use esp_hal::peripherals::LPWR;
+use esp_hal::ram;
 use esp_hal::spi;
-use esp_hal::time::RateExtU32;
 use esp_hal::spi::master::Spi;
-use core::{cell::RefCell, net::Ipv4Addr};
-use esp_alloc as _;
-use esp_backtrace as _;
+use esp_hal::time::RateExtU32;
 use esp_hal_ota::Ota;
 use esp_mbedtls::Tls;
 use esp_storage::FlashStorage;
@@ -89,6 +91,11 @@ fn init_psram_heap(start: *mut u8, size: usize) {
     }
 }
 
+// #[ram(rtc_slow, persistent)]
+// static mut QUICK_BOOT_COUNTER: i32 = 0;
+// #[ram(rtc_slow, persistent)]
+// static mut PREV_BOOT_TIME: u64 = 0;
+
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
     // ==================================================================================================================================================
@@ -100,6 +107,22 @@ async fn main(spawner: Spawner) {
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let mut peripherals = esp_hal::init(config);
+    let _rtc: Rtc<'static> = Rtc::new(peripherals.LPWR);
+
+    // let mut reset_connectivity_info = false;
+    // let now = rtc.time_since_boot().to_millis();
+    // unsafe {
+    //     if now - PREV_BOOT_TIME < 5000 {
+    //         QUICK_BOOT_COUNTER += 1;
+    //         if QUICK_BOOT_COUNTER >= 5 {
+    //             reset_connectivity_info = true;
+    //         }
+    //         PREV_BOOT_TIME = now;
+    //     } else {
+    //         QUICK_BOOT_COUNTER = 0;
+    //     }
+    //     PREV_BOOT_TIME = now;
+    // }
 
     // == Setup Standard Random Generator =============================================
 
@@ -124,7 +147,7 @@ async fn main(spawner: Spawner) {
     // == Setup timers & delay ========================================================
 
     let _delay = esp_hal::delay::Delay::new();
-    let _rtc: Rtc<'static> = Rtc::new(peripherals.LPWR); // don't move from here, will cause all kinds of timer/embassy
+    // let _rtc: Rtc<'static> = Rtc::new(peripherals.LPWR); // don't move from here, will cause all kinds of timer/embassy
     let timg0 = TimerGroup::new(peripherals.TIMG0);
 
     // == Create Tls ==================================================================
@@ -249,8 +272,30 @@ async fn main(spawner: Spawner) {
         spawner,
         sta_stack,
         tls.reference(),
-        Some(peripherals.GPIO0.into())
+        None,
     );
+
+
+    let mut counter;
+    let quick_boot_counter_fetch_res = framework.borrow().fetch("_c_".to_string());
+    if let Ok(quick_boot_counter) =  quick_boot_counter_fetch_res {
+        counter = if let Some(quick_boot_counter) = quick_boot_counter {
+            quick_boot_counter.as_str().parse::<u32>().unwrap_or(0)
+        } else {
+            0
+        };
+        counter += 1;
+        let _ = framework.borrow().store("_c_".to_string(), format!("{counter}"));
+        spawner.spawn(reset_quick_boot_sequence(framework.clone())).ok();
+        debug!("Quick boot Counter: {counter}");
+        if counter >= 5 { // 5 resets
+            info!( "-------------------------------------------------------------------------------------");
+            info!( "Identified fast boot sequence, erasing stored WiFi credentials and fixed security key");
+            info!( "-------------------------------------------------------------------------------------");
+            framework.borrow_mut().erase_stored_wifi_credentials();
+            framework.borrow_mut().erase_stored_fixed_key();
+        } 
+    }
 
     // == Configure the App UI ========================================================
     // (need to be done after the call to slint::platform::set_platform)
@@ -298,9 +343,7 @@ async fn main(spawner: Spawner) {
 
     for id in 0..WEB_SERVER_NUM_LISTENERS {
         debug!("Spawning web-task {id}");
-        spawner
-            .spawn(web_server_task(web_app_runner, id))
-            .unwrap();
+        spawner.spawn(web_server_task(web_app_runner, id)).unwrap();
     }
 
     // == Mark current app ota is working =============================================
@@ -331,6 +374,20 @@ async fn main(spawner: Spawner) {
     let _ = app_config
         .borrow_mut()
         .load_config_flash_then_toml(&config_toml);
+
+    // if reset_connectivity_info {
+    //     framework.borrow_mut().erase_stored_wifi_credentials();
+    //     framework.borrow_mut().erase_stored_fixed_key();
+    //     info!(
+    //         "-------------------------------------------------------------------------------------"
+    //     );
+    //     info!(
+    //         "Identified fast boot sequence, erasing stored WiFi credentials and fixed security key"
+    //     );
+    //     info!(
+    //         "-------------------------------------------------------------------------------------"
+    //     );
+    // }
 
     // == Setup Serial for Improv Wifi ================================================
 
@@ -406,7 +463,8 @@ async fn main(spawner: Spawner) {
     .with_buffers(spi_dma_rx_buf, spi_dma_tx_buf)
     .into_async();
 
-    let pn532_spi_device = embedded_hal_bus::spi::ExclusiveDevice::new(spi, cs, embassy_time::Delay).unwrap();
+    let pn532_spi_device =
+        embedded_hal_bus::spi::ExclusiveDevice::new(spi, cs, embassy_time::Delay).unwrap();
 
     spawner
         .spawn(crate::app::app_task(
@@ -418,19 +476,24 @@ async fn main(spawner: Spawner) {
             pn532_spi_device,
             pn532_irq,
         ))
-        .ok();   // // yields for term initialization to complete until term is fixed to not require this
+        .ok(); // // yields for term initialization to complete until term is fixed to not require this
 
     framework
         .borrow()
         .notify_initialization_completed(app_config.borrow().initialization_ok());
 
     info!("--------------------------------------------");
-    info!(" Current security key is {}", framework.borrow().fixed_key.clone().unwrap_or("Ooops - no security key".to_string()));
+    info!(
+        " Current security key is {}",
+        framework
+            .borrow()
+            .fixed_key
+            .clone()
+            .unwrap_or("Ooops - no security key".to_string())
+    );
     info!("--------------------------------------------");
 
-
-
-    Framework::wait_for_wifi(&framework).await;// this is mostly to start the web app after all tasks initialized and won't miss this start message
+    Framework::wait_for_wifi(&framework).await; // this is mostly to start the web app after all tasks initialized and won't miss this start message
     framework
         .borrow()
         .start_web_app(sta_stack, framework::framework::WebConfigMode::STA);
@@ -446,4 +509,12 @@ async fn web_server_task(
     id: usize,
 ) {
     runner.run(id).await;
+}
+
+
+#[embassy_executor::task]
+async fn reset_quick_boot_sequence(framework: Rc<RefCell<Framework>>) {
+    Timer::after_secs(5).await;
+    framework.borrow().remove("_c_".to_string()).ok();
+    info!("Normal run, not a quick boot sequence, resetting quick boot counter");
 }

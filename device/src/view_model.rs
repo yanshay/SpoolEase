@@ -251,26 +251,29 @@ impl ViewModel {
                     printer_index += 1; // index is increased only if printer is added to array
                 }
                 Err(e) => {
-                    term_info!("[{}] Error initializing printer {}", printer_number, e);
+                    term_info!("[{}] Error initializing printer: {}", printer_number, e);
                 }
             }
             printer_number += 1; // printer_number is always increased, even if printer is bad config
         }
-        let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index]
-            .borrow()
-            .printer_selector_name
-            .to_shared_string();
-        let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers));
-        ui_app_state.invoke_set_printers_info(available_printers, default_printer.clone());
-        ui_app_state.invoke_set_curr_printer(default_printer);
-        self.register_printer_related_listeners();
-        let moved_ui = self.ui_weak.clone();
-        let moved_view_model = self.view_model.as_ref().unwrap().clone();
-        // this select_printer handler CAN'T depend on printer because then it would need to change itself while running
-        ui_app_backend.on_select_printer(move |selected_printer: SharedString| {
-            // First stored UI for this printer for when we switch back to it
-            Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), &selected_printer);
-        });
+        if !self.bambu_printer_model.printers.is_empty() {
+            let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index]
+                .borrow()
+                .printer_selector_name
+                .to_shared_string();
+            let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers));
+            ui_app_state.invoke_set_printers_info(available_printers, default_printer.clone());
+            ui_app_state.invoke_set_curr_printer(default_printer);
+            self.register_printer_related_listeners();
+
+            let moved_ui = self.ui_weak.clone();
+            let moved_view_model = self.view_model.as_ref().unwrap().clone();
+            // this select_printer handler CAN'T depend on printer because then it would need to change itself while running
+            ui_app_backend.on_select_printer(move |selected_printer: SharedString| {
+                // First stored UI for this printer for when we switch back to it
+                Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), &selected_printer);
+            });
+        }
 
         // Initialize SpoolScale and weight related stuff
 

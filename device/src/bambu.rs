@@ -1240,13 +1240,13 @@ pub fn init(
     let printer_serial = if let Some(printer_serial) = &printer_config.serial {
         printer_serial.clone()
     } else {
-        return Err("Error: Missing printer serial".to_string());
+        return Err("Missing printer serial".to_string());
     };
 
     let printer_access_code = if let Some(printer_access_code) = &printer_config.access_code {
         printer_access_code.clone()
     } else {
-        return Err("Error: Missing printer access code".to_string());
+        return Err("Missing printer access code".to_string());
     };
 
     let printer_name = printer_config.name.clone();
