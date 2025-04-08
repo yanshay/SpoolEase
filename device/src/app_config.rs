@@ -86,7 +86,7 @@ pub struct AppConfig {
 
 impl AppConfig {
     #[allow(dead_code)]
-    pub fn missing_configs(&self) -> bool {
+    pub fn missing_configs(&self, log: bool) -> bool {
         let mut missing = true;
         let mut partial_missing = false;
         for printer in &self.configured_printers.printers {
@@ -97,12 +97,13 @@ impl AppConfig {
                 partial_missing = true;
             }
         }
-
-        if missing {
-            term_error!("Missing complete printer information");
-        }
-        if partial_missing {
-            term_error!("At least one printer is missing serial/access_code configuration");
+        if log {
+            if missing {
+                term_error!("Missing complete printer information");
+            } else
+            if partial_missing {
+                term_error!("At least one printer is missing serial/access_code configuration");
+            }
         }
 
         missing
@@ -231,6 +232,16 @@ impl AppConfig {
             //     term_info!("Bad printer configuration {}", err);
             // }
         }
+        if self.configured_printers.printers.is_empty() {
+            let empty_printer_config = PrinterConfig {
+                ip: None,
+                name: None,
+                serial: None,
+                access_code: None,
+                log_filter: None,
+            };
+            self.configured_printers.printers.push(empty_printer_config);
+        }
         self.config_processed_ok = Some(true);
         Ok(())
     }
@@ -239,18 +250,18 @@ impl AppConfig {
         self.pn532_ok = Some(status);
     }
 
-    pub fn initialization_ok(&self) -> bool {
+    pub fn initialization_ok(&self, log: bool) -> bool {
         self.framework.borrow().initialization_ok()
             && matches!(self.config_processed_ok, Some(true))
             && matches!(self.pn532_ok, Some(true))
-            && !self.missing_configs()
+            && !self.missing_configs(log)
             // && self.printer_serial != None
             // && self.printer_access_code != None
     }
 
     #[allow(dead_code)]
     pub fn boot_completed(&self) -> bool {
-        self.framework.borrow().boot_completed() && self.initialization_ok()
+        self.framework.borrow().boot_completed() && self.initialization_ok(false)
     }
 
     pub fn set_printers_config(

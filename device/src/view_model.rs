@@ -228,31 +228,33 @@ impl ViewModel {
             }
             printer_number += 1; // printer_number is always increased, even if printer is bad config
         }
-        let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index]
-            .borrow()
-            .printer_selector_name
-            .to_shared_string();
-        let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers));
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::AppState>()
-            .invoke_set_printers_info(available_printers, default_printer.clone());
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::AppState>()
-            .invoke_set_curr_printer(default_printer);
-        self.register_printer_related_listeners();
+        if !self.bambu_printer_model.printers.is_empty() {
+            let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index]
+                .borrow()
+                .printer_selector_name
+                .to_shared_string();
+            let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers));
+            self.ui_weak
+                .unwrap()
+                .global::<crate::app::AppState>()
+                .invoke_set_printers_info(available_printers, default_printer.clone());
+            self.ui_weak
+                .unwrap()
+                .global::<crate::app::AppState>()
+                .invoke_set_curr_printer(default_printer);
+            self.register_printer_related_listeners();
 
-        let moved_ui = self.ui_weak.clone();
-        let moved_view_model = self.view_model.as_ref().unwrap().clone();
-        // this select_printer handler CAN'T depend on printer because then it would need to change itself while running
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::AppBackend>()
-            .on_select_printer(move |selected_printer: SharedString| {
-                // First stored UI for this printer for when we switch back to it
-                Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), &selected_printer);
-            });
+                let moved_ui = self.ui_weak.clone();
+                let moved_view_model = self.view_model.as_ref().unwrap().clone();
+                // this select_printer handler CAN'T depend on printer because then it would need to change itself while running
+                self.ui_weak
+                    .unwrap()
+                    .global::<crate::app::AppBackend>()
+                    .on_select_printer(move |selected_printer: SharedString| {
+                        // First stored UI for this printer for when we switch back to it
+                        Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), &selected_printer);
+                    });
+            }
     }
 
     fn perform_select_printer(
