@@ -32,6 +32,8 @@ Notice: This is a new project currently in its early stages, with testing limite
 - If you want to try your luck with immediate online response, try the [Discord Server](https://discord.gg/6brKUCERcQ)
 - It would be real cool if you post your build in the [Introduce Your Build Discussion](https://github.com/yanshay/SpoolEase/discussions/8)
 
+I’d also greatly appreciate it if you could star my GitHub repo.
+
 ## Recommendations for Use at This Stage
 
 - Please ensure you read through this page fully before building or using the device—several important guidelines and tips are provided.
