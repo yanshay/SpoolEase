@@ -1,6 +1,6 @@
 import { MyButton } from "widgets.slint";
 import { FrameworkState, FrameworkBackend, OtaState, WebConfigState, ResetWifiCredentialsState, ResetFixedSecurityKeyState, RestartDeviceState } from "framework.slint";
-import { Title } from "widgets.slint";
+import { Title, LeftTab } from "widgets.slint";
 
 export component MyText inherits Text {
     height: 22px;
@@ -95,16 +95,8 @@ export component SettingsConfirm inherits VerticalLayout {
 
 ////////////////////////////////////
 
-export component Settings inherits Rectangle {
-    property <bool> buttons-visible:  FrameworkState.restart-device-state == RestartDeviceState.NotStarted && FrameworkState.reset-fixed-security-key-state == ResetFixedSecurityKeyState.NotStarted && FrameworkState.ota-state == OtaState.NotStarted && FrameworkState.web-config-state == WebConfigState.Stopped && FrameworkState.reset-wifi-credentials-state == ResetWifiCredentialsState.NotStarted;
-    if buttons-visible: buttons := VerticalLayout {
-        height: parent.height;
-        width: parent.width;
-
-        Title {
-            text: "  Installed firmware: \{FrameworkState.app-info.name} \{ FrameworkState.app-info.version}";
-        }
-
+export component FrameworkSettingsButtons inherits VerticalLayout {
+    VerticalLayout {
         WebConfigButton { }
 
         ResetWifiCredentialsButton { }
@@ -115,8 +107,12 @@ export component Settings inherits Rectangle {
 
         OtaButton { }
     }
+}
+
 
 // Reset Wifi Credentials
+export component FrameworkSettingsDetails inherits Rectangle {
+    background: white;
     if FrameworkState.reset-wifi-credentials-state == ResetWifiCredentialsState.UserInput: 
         SettingsConfirm {
         title: "Reset Wifi Credentials";
@@ -244,5 +240,40 @@ export component Settings inherits Rectangle {
 
         if FrameworkState.web-config-state != WebConfigState.Started-AP: WebConfigButton { } // when STA - Will show disable button
         if FrameworkState.web-config-state == WebConfigState.Started-AP: RestartDeviceButton { } // when AP - Will show restart device button
+    }
+}
+
+export component Settings inherits Rectangle {
+    in-out property <string> selected-tab: tabs.selected-index;
+    in-out property <length> x-offset: tabs.width;
+    in-out property <length> y-offset: title.height;
+    in-out property <length> buttons-width: self.width - x-offset;
+    in-out property <[string]> tabs;
+
+    property <bool> framework-buttons-visible:  FrameworkState.restart-device-state == RestartDeviceState.NotStarted && FrameworkState.reset-fixed-security-key-state == ResetFixedSecurityKeyState.NotStarted && FrameworkState.ota-state == OtaState.NotStarted && FrameworkState.web-config-state == WebConfigState.Stopped && FrameworkState.reset-wifi-credentials-state == ResetWifiCredentialsState.NotStarted;
+    in property <bool> framework-tab-selected;
+    VerticalLayout {
+        title := Title {
+            text: "  Installed firmware: \{FrameworkState.app-info.name} \{ FrameworkState.app-info.version}";
+        }
+
+        tabs := LeftTab {
+            tabs: root.tabs;
+        }
+    }
+
+    // Settings includes by default the framework settings, everything else is added where used
+
+    if framework-tab-selected && framework-buttons-visible: 
+      FrameworkSettingsButtons {
+        x: x-offset;
+        y: y-offset;
+        width: buttons-width;
+    }
+
+    FrameworkSettingsDetails {
+        visible: framework-tab-selected && !framework-buttons-visible;
+        width: parent.width;
+        height: parent.height;
     }
 }
