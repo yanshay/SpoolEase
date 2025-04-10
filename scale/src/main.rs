@@ -355,20 +355,6 @@ async fn main(spawner: Spawner) {
         .borrow_mut()
         .load_config_flash_then_toml(&config_toml);
 
-    // if reset_connectivity_info {
-    //     framework.borrow_mut().erase_stored_wifi_credentials();
-    //     framework.borrow_mut().erase_stored_fixed_key();
-    //     info!(
-    //         "-------------------------------------------------------------------------------------"
-    //     );
-    //     info!(
-    //         "Identified fast boot sequence, erasing stored WiFi credentials and fixed security key"
-    //     );
-    //     info!(
-    //         "-------------------------------------------------------------------------------------"
-    //     );
-    // }
-
     // == Setup Serial for Improv Wifi ================================================
 
     // let mut uart1 = Uart::new(
