@@ -217,6 +217,7 @@ encrypted_input!(SpoolsConfigDTO);
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct ScaleConfigDTO {
+    available: bool,
     name: Option<String>,
     ip: Option<String>,
 }
@@ -225,6 +226,7 @@ encrypted_input!(ScaleConfigDTO);
 impl From<ScaleConfigDTO> for ScaleConfig {
     fn from (v: ScaleConfigDTO) -> Self {
         Self {
+            available: v.available,
             ip: v.ip.and_then(|s| s.parse::<Ipv4Addr>().ok()),
             name: v.name.filter(|s| !s.is_empty()), 
         }
@@ -233,6 +235,7 @@ impl From<ScaleConfigDTO> for ScaleConfig {
 impl From<&ScaleConfig> for ScaleConfigDTO {
     fn from (v: &ScaleConfig) -> Self {
         Self {
+            available: v.available,
             ip: v.ip.and_then(|ip| Some(ip.to_string())),
             name: v.name.clone(), 
         }

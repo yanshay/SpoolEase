@@ -445,6 +445,9 @@
       <!-- Scale Settings -->
       <div class="section" id="scale-section">
         <h2 class="section-title">Scale Settings</h2>
+        <div class="form-row" style="display: flex; flex-direction: row; gap: 6px;">
+          <input type="Checkbox" id="scale-available"><label for="scale-available">SpoolEase Scale Available</label>
+        </div>
         <div class="form-row">
           <label for="scale-name"
             >Scale Device Name:<span
@@ -1405,6 +1408,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
       function applyScaleSettings() {
         const scaleForm = document.getElementById("scale-section");
         const name = document.getElementById("scale-name").value;
+        const available = document.getElementById("scale-available").checked; 
         const ipParts = Array.from(scaleForm.querySelectorAll(".ip-part"));
         const ipValid = ipParts.every((part) => part.value.trim() !== "");
 
@@ -1414,7 +1418,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
         }
 
         const applyButton = document.getElementById("scale-apply");
-        const data = { name, ip };
+        const data = { available, name, ip };
         sendConfigData("/api/scale-config", data, applyButton);
       }
 
@@ -1422,6 +1426,11 @@ ProtoPasta 500g - Cardboard - 84g,84"
         const scaleForm = document.getElementById("scale-section");
         const data = await fetchInitialSectionConfig("scale");
 
+        if (data.available) {
+          document.getElementById("scale-available").checked = data.available;
+        } else {
+          document.getElementById("scale-available").checked = false;
+        }
         // Set IP if available
         if (data.ip) {
           const ipParts = data.ip.split(".");

@@ -72,6 +72,7 @@ pub struct DefaultPrinterConfig {
 
 #[derive(serde::Deserialize, serde::Serialize, Default, PartialEq, Debug, Clone)]
 pub struct ScaleConfig {
+    pub available: bool,
     pub name: Option<String>,
     #[serde(serialize_with = "serialize_option_ipv4", deserialize_with = "deserialize_option_ipv4")]
     pub ip: Option<Ipv4Address>,
@@ -293,7 +294,7 @@ impl AppConfig {
         &mut self,
         scale_config: ScaleConfig,
     ) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
-        if scale_config.name.is_none() && scale_config.ip.is_none() {
+        if scale_config.available == false && scale_config.name.is_none() && scale_config.ip.is_none() {
             self.framework.borrow().remove(SCALE_CONFIG_KEY.to_string())?;
             self.configured_scale = None;
         } else {

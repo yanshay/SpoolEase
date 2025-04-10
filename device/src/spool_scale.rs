@@ -179,7 +179,12 @@ pub fn init(app_config: Rc<RefCell<AppConfig>>, stack: Stack<'static>, spawner: 
         observers: Vec::new(),
         console_to_scale,
     }));
-    spawner.spawn(spool_scale_task(app_config, stack, spool_scale_rc.clone(), ssdp_pub_sub)).ok();
+
+    if let Some(spool_scale_config) = &app_config.clone().borrow().configured_scale {
+        if spool_scale_config.available == true {
+            spawner.spawn(spool_scale_task(app_config, stack, spool_scale_rc.clone(), ssdp_pub_sub)).ok();
+        }
+    }
 
     spool_scale_rc
 }
