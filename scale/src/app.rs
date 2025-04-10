@@ -7,7 +7,7 @@ use alloc::{
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, pubsub::PubSubBehavior};
 use embassy_time::{with_timeout, Duration, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
-use esp_hal::{gpio::AnyPin, spi::AnySpi};
+use esp_hal::{gpio::AnyPin, peripherals::RMT, spi::AnySpi};
 use framework::{
     debug, error,
     framework::{FrameworkObserver, WebConfigMode, WebServerCommands},
@@ -19,7 +19,7 @@ use framework::{
 use num_traits::abs;
 use shared::{scale::{ConsoleToScale, ScaleToConsole}, spool_tag::{self, SpoolTag, SpoolTagObserver}};
 
-use crate::{app_config::AppConfig, console_proxy, load_cell::LoadCell};
+use crate::{app_config::AppConfig, console_proxy, load_cell::LoadCell, rgb_led::rgb_led_task};
 
 const MIN_LOADED_WEIGHT: i32 = 5;
 
@@ -33,6 +33,8 @@ pub async fn app_task(
     loadcell_spi: AnySpi,
     spi_device: ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
     irq: esp_hal::gpio::Input<'static>,
+    led_pin: AnyPin,
+    rmt: RMT
 ) {
     let spawner = framework.borrow().spawner;
 
@@ -59,6 +61,8 @@ pub async fn app_task(
         spool_tag_model,
         framework.clone(),
     );
+
+    spawner.spawn(rgb_led_task(app.clone(), framework.clone(), led_pin, rmt)).ok();
 
     console_proxy::init(
         framework.clone(),
@@ -161,7 +165,7 @@ pub async fn app_task(
 }
 
 #[derive(Clone, Copy, Debug)]
-enum ScaleState {
+pub enum ScaleState {
     Uncalibrated,
     Unknown,
     Empty,
@@ -171,10 +175,10 @@ enum ScaleState {
 pub struct App {
     framework: Rc<RefCell<Framework>>,
     app_config: Rc<RefCell<AppConfig>>,
-    connected: bool,
+    pub connected: bool,
     pub scale_to_console_channel: &'static ScaleToConsoleChannel,
     pub load_cell: Rc<RefCell<LoadCell>>,
-    scale_state: ScaleState,
+    pub scale_state: ScaleState,
     tare_during_calibration: Option<i32>,
     _terminal_proxy: Option<Rc<RefCell<TerminalProxy>>>, // to hold it alive
     _spool_tag: Rc<RefCell<SpoolTag>>,

@@ -48,6 +48,9 @@ num-traits = { version = "0.2.19", default-features = false }
 
 shared = { path = "../shared/" }
 
+esp-hal-smartled = { git = "https://github.com/esp-rs/esp-hal-community", rev = "ad75112"}
+smart-leds = "0.4.0"
+
 
 [profile.dev]
 # Rust debug is too slow.

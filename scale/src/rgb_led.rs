@@ -1,0 +1,93 @@
+use core::cell::RefCell;
+
+use crate::app::ScaleState;
+use alloc::rc::Rc;
+use embassy_time::Timer;
+use esp_hal::{gpio::AnyPin, peripherals::RMT, rmt::Rmt, time::RateExtU32};
+use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
+use framework::{framework::OtaState, info, prelude::Framework};
+use smart_leds::{colors::*, SmartLedsWrite, RGB8};
+
+enum LedState {
+    Steady(RGB8),
+    Flash(RGB8, RGB8),
+}
+
+pub const MY_YELLOW: RGB8 = RGB8 {
+    r: 0x20,
+    g: 0x20,
+    b: 0x00,
+};
+pub const MY_BLUE: RGB8 = RGB8 {
+    r: 0x20,
+    g: 0x00,
+    b: 0x40,
+};
+
+use crate::app::App;
+#[embassy_executor::task]
+pub async fn rgb_led_task(
+    app: Rc<RefCell<App>>,
+    framework: Rc<RefCell<Framework>>,
+    led_pin: AnyPin,
+    rmt: RMT,
+) {
+    let rmt = Rmt::new(rmt, 80.MHz()).unwrap();
+
+    let rmt_buffer = smartLedBuffer!(1);
+    let mut led = SmartLedsAdapter::new(rmt.channel0, led_pin, rmt_buffer);
+
+    // decide on state based view
+    let mut curr_color = BLACK;
+    let mut led_state;
+    loop {
+        if !framework.borrow().wifi_ok.as_ref().unwrap_or(&false) {
+            led_state = LedState::Flash(RED, BLACK);
+        } else if !app.borrow().connected {
+            led_state = LedState::Steady(RED);
+        } else if matches!(
+            framework.borrow().ota_state,
+            Some(OtaState::Started) | Some(OtaState::InProgress(_))
+        ) {
+            led_state = LedState::Flash(GREEN, BLUE);
+        } else {
+            match app.borrow().scale_state {
+                ScaleState::Uncalibrated => {
+                    led_state = LedState::Steady(ORANGE);
+                }
+                ScaleState::Unknown => {
+                    led_state = LedState::Steady(BLACK);
+                }
+                ScaleState::Empty => {
+                    led_state = LedState::Steady(BLACK);
+                }
+                ScaleState::Loaded(stable, unstable) => {
+                    if stable == unstable {
+                        info!("Stable");
+                        led_state = LedState::Steady(MY_BLUE);
+                    } else {
+                        info!("Unstable");
+                        led_state = LedState::Steady(MY_YELLOW);
+                    }
+                }
+            }
+        }
+
+        match led_state {
+            LedState::Steady(color) => {
+                led.write([color]).unwrap();
+                curr_color = color;
+            }
+            LedState::Flash(color1, color2) => {
+                if curr_color == color1 {
+                    led.write([color1]).unwrap();
+                    curr_color = color2
+                } else {
+                    led.write([color2]).unwrap();
+                    curr_color = color1;
+                }
+            }
+        }
+        Timer::after_millis(250).await;
+    }
+}

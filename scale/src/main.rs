@@ -15,6 +15,7 @@ mod load_cell;
 mod settings;
 mod ssdp;
 mod web_app;
+mod rgb_led;
 
 use alloc::{format, rc::Rc, string::ToString};
 use settings::OTA_CERTS;
@@ -441,6 +442,8 @@ async fn main(spawner: Spawner) {
             peripherals.SPI3.into(),
             pn532_spi_device,
             pn532_irq,
+            peripherals.GPIO48.into(),
+            peripherals.RMT,
         ))
         .ok(); // // yields for term initialization to complete until term is fixed to not require this
 

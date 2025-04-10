@@ -20,6 +20,7 @@ dependencies = [
  "esp-hal-app-framework",
  "esp-hal-embassy",
  "esp-hal-ota",
+ "esp-hal-smartled",
  "esp-mbedtls",
  "esp-println",
  "esp-storage",
@@ -36,6 +37,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shared",
+ "smart-leds",
  "static_cell",
 ]
 
@@ -2041,6 +2043,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
+]
+
+[[package]]
+name = "esp-hal-smartled"
+version = "0.14.0"
+source = "git+https://github.com/esp-rs/esp-hal-community?rev=ad75112#ad75112ae5d4b4fe2fe927356dc281283cafedfc"
+dependencies = [
+ "document-features",
+ "esp-hal",
+ "fugit",
+ "smart-leds-trait",
 ]
 
 [[package]]
@@ -5233,6 +5246,24 @@ name = "smallvec"
 version = "1.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fcf8323ef1faaee30a44a340193b1ac6814fd9b7b4e88e9d4519a3e4abe1cfd"
+
+[[package]]
+name = "smart-leds"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66df34e571fa9993fa6f99131a374d58ca3d694b75f9baac93458fe0d6057bf0"
+dependencies = [
+ "smart-leds-trait",
+]
+
+[[package]]
+name = "smart-leds-trait"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edeb89c73244414bb0568611690dd095b2358b3fda5bae65ad784806cca00157"
+dependencies = [
+ "rgb",
+]
 
 [[package]]
 name = "smol_str"
