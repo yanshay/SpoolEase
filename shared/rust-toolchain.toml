@@ -1,0 +1,5 @@
+[toolchain]
+channel = "esp"
+# components = ["rust-src"]
+# targets = ["xtensa-esp32-none-elf", "xtensa-esp32-none-elf"]
+targets = ["xtensa-esp32s3-none-elf"]

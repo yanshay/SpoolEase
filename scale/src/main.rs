@@ -17,6 +17,7 @@ mod ssdp;
 mod web_app;
 
 use alloc::{format, rc::Rc, string::ToString};
+use settings::OTA_CERTS;
 use core::{cell::RefCell, net::Ipv4Addr};
 use esp_alloc as _;
 use esp_backtrace as _;
@@ -26,8 +27,6 @@ use esp_hal::gpio::Input;
 use esp_hal::gpio::Level;
 use esp_hal::gpio::Output;
 use esp_hal::gpio::Pull;
-use esp_hal::peripherals::LPWR;
-use esp_hal::ram;
 use esp_hal::spi;
 use esp_hal::spi::master::Spi;
 use esp_hal::time::RateExtU32;
@@ -91,11 +90,6 @@ fn init_psram_heap(start: *mut u8, size: usize) {
     }
 }
 
-// #[ram(rtc_slow, persistent)]
-// static mut QUICK_BOOT_COUNTER: i32 = 0;
-// #[ram(rtc_slow, persistent)]
-// static mut PREV_BOOT_TIME: u64 = 0;
-
 #[esp_hal_embassy::main]
 async fn main(spawner: Spawner) {
     // ==================================================================================================================================================
@@ -108,21 +102,6 @@ async fn main(spawner: Spawner) {
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let mut peripherals = esp_hal::init(config);
     let _rtc: Rtc<'static> = Rtc::new(peripherals.LPWR);
-
-    // let mut reset_connectivity_info = false;
-    // let now = rtc.time_since_boot().to_millis();
-    // unsafe {
-    //     if now - PREV_BOOT_TIME < 5000 {
-    //         QUICK_BOOT_COUNTER += 1;
-    //         if QUICK_BOOT_COUNTER >= 5 {
-    //             reset_connectivity_info = true;
-    //         }
-    //         PREV_BOOT_TIME = now;
-    //     } else {
-    //         QUICK_BOOT_COUNTER = 0;
-    //     }
-    //     PREV_BOOT_TIME = now;
-    // }
 
     // == Setup Standard Random Generator =============================================
 
@@ -142,7 +121,7 @@ async fn main(spawner: Spawner) {
     heap_dram2_allocator!(64 * 1024);
 
     // Last, reserve from 'standard' area, if need additional memory for esp-wifi/esp-mbedtls, need to increase this
-    esp_alloc::heap_allocator!(32 * 1024);
+    esp_alloc::heap_allocator!(64 * 1024);
 
     // == Setup timers & delay ========================================================
 
@@ -243,7 +222,7 @@ async fn main(spawner: Spawner) {
         ota_domain: OTA_DOMAIN,
         ota_path: OTA_PATH,
         ota_toml_filename: OTA_TOML_FILENAME,
-        ota_certs: concat!(include_str!("./certs/ota-certs.pem"), "\0"),
+        ota_certs: OTA_CERTS,
 
         ap_addr: AP_ADDR,
 
@@ -275,6 +254,7 @@ async fn main(spawner: Spawner) {
         None,
     );
 
+    // == Identify Quick Resets for Clearing Connectivity Info =============================
 
     let mut counter;
     let quick_boot_counter_fetch_res = framework.borrow().fetch("_c_".to_string());

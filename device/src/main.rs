@@ -61,7 +61,7 @@ use framework::prelude::*;
 use framework::wt32_sc01_plus::{WT32SC01Plus, WT32SC01PlusPeripherals, WT32SC01PlusRunner};
 
 use app_config::AppConfig;
-use settings::{AP_ADDR, MAX_NUM_PRINTERS};
+use settings::{AP_ADDR, MAX_NUM_PRINTERS, OTA_TLS_CERTIFICATE};
 use settings::WEB_SERVER_NUM_LISTENERS;
 use settings::{
     OTA_DOMAIN, OTA_PATH, OTA_TOML_FILENAME, WEB_APP_DOMAIN, WEB_APP_KEY_DERIVATION_ITERATIONS, WEB_APP_SALT, WEB_APP_SECURITY_KEY_LENGTH,
@@ -205,7 +205,7 @@ async fn main(spawner: Spawner) {
         ota_domain: OTA_DOMAIN,
         ota_path: OTA_PATH,
         ota_toml_filename: OTA_TOML_FILENAME,
-        ota_certs: concat!(include_str!("./certs/raw.githubusercontent.com.pem"), "\0"),
+        ota_certs: OTA_TLS_CERTIFICATE, 
 
         ap_addr: AP_ADDR,
 

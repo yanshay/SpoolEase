@@ -10,7 +10,7 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 use esp_hal::{gpio::AnyPin, spi::AnySpi};
 use framework::{
     debug, error,
-    framework::WebServerCommands,
+    framework::{FrameworkObserver, WebConfigMode, WebServerCommands},
     info, mk_static,
     prelude::Framework,
     terminal::{self, term_mut, TerminalObserver},
@@ -57,6 +57,7 @@ pub async fn app_task(
         scale_to_console_channel,
         load_cell.clone(),
         spool_tag_model,
+        framework.clone(),
     );
 
     console_proxy::init(
@@ -168,6 +169,7 @@ enum ScaleState {
 }
 
 pub struct App {
+    framework: Rc<RefCell<Framework>>,
     app_config: Rc<RefCell<AppConfig>>,
     connected: bool,
     pub scale_to_console_channel: &'static ScaleToConsoleChannel,
@@ -184,6 +186,7 @@ impl App {
         scale_to_console_channel: &'static ScaleToConsoleChannel,
         load_cell: Rc<RefCell<LoadCell>>,
         spool_tag: Rc<RefCell<SpoolTag>>,
+        framework: Rc<RefCell<Framework>>,
     ) -> Rc<RefCell<Self>> {
         let scale_state = if let Some(scale_config) = &app_config.borrow().configured_calibration {
             load_cell.borrow_mut().set_calibration(
@@ -197,6 +200,7 @@ impl App {
         };
 
         let myself = Self {
+            framework: framework.clone(),
             app_config,
             connected: false,
             scale_to_console_channel,
@@ -213,6 +217,10 @@ impl App {
         let trait_for_spool_tag_rc: Rc<RefCell<dyn spool_tag::SpoolTagObserver>> = myself_rc.clone();
         let trait_for_spool_tag_weak: Weak<RefCell<dyn spool_tag::SpoolTagObserver>> = Rc::downgrade(&trait_for_spool_tag_rc);
         spool_tag.borrow_mut().subscribe(trait_for_spool_tag_weak);
+
+        let trait_for_framework_rc: Rc<RefCell<dyn FrameworkObserver>> = myself_rc.clone();
+        let trait_for_framework_weak: Weak<RefCell<dyn FrameworkObserver>> = Rc::downgrade(&trait_for_framework_rc);
+        framework.borrow_mut().subscribe(trait_for_framework_weak);
 
         let terminal_proxy = Rc::new(RefCell::new(TerminalProxy {
             app: myself_rc.clone(),
@@ -367,5 +375,44 @@ impl SpoolTagObserver for App {
         } else {
             error!("Failed to initialize PN532");
         }
+    }
+}
+
+impl FrameworkObserver for App {
+    fn on_webapp_url_update(&self, _ip_url: &str, _name_url: Option<&str>, _ssid: &str) {
+    }
+
+    fn on_initialization_completed(&self, _status: bool) {
+    }
+
+    fn on_ota_version_available(&self, _version: &str, _newer: bool) {
+    }
+
+    fn on_ota_start(&self) {
+    }
+
+    fn on_ota_status(&self, text: &str) {
+        info!("OTA Status: {text}");
+    }
+
+    fn on_ota_failed(&self, text: &str) {
+        info!("OTA Failed: {text}");
+    }
+
+    fn on_ota_completed(&self, text: &str) {
+        info!("OTA completed: {text}");
+    }
+
+    fn on_web_config_started(&self, key: &str, mode: WebConfigMode) {
+        info!("Web Config Started: key: {key}, mode: {mode:?}");
+    }
+
+    fn on_web_config_stopped(&self) {
+        info!("Web Config Stopped");
+    }
+
+    fn on_wifi_sta_connected(&self) {
+        info!("Connected to WiFi");
+        self.framework.borrow().check_firmware_ota();
     }
 }

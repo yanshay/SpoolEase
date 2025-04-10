@@ -56,6 +56,27 @@
         margin: 10px auto 0;
       }
 
+      .status-text {
+        width: 100%;
+        padding: 10px;
+        box-sizing: border-box;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+        margin: 0;
+        min-height: 2rem;
+        height: 2rem;
+        display: flex;
+        align-items: center;
+      }
+
+      .next-to-status-button {
+        height: 2rem; 
+        margin: 0; 
+        margin-left: 10px; 
+        padding: 0 10px;
+      }
+
       input[type="text"],
       input[type="password"],
       input[type="number"] {
@@ -124,7 +145,7 @@
         background-color: #f44336;
       }
 
-      button.danger:hover {
+      button.danger:not(:disabled):hover {
         background-color: #d32f2f;
       }
 
@@ -132,7 +153,7 @@
         width: 100%;
       }
 
-      button.apply-btn:disabled {
+      button:disabled {
         background-color: #cccccc;
         cursor: not-allowed;
       }
@@ -213,7 +234,7 @@
         min-height: 10em;
       }
       .spools-chars-left {
-        margin-top: 0px;;
+        margin-top: 0px;
         text-align: right;
       }
       .link-bullet {
@@ -322,7 +343,9 @@
     <div class="section" id="device-name-section">
       <h2 class="section-title">Device Name</h2>
       <div class="form-row">
-        <label for="device-name">Device Name:<span>mDNS (http://devicename.local)</span></label>
+        <label for="device-name"
+          >Device Name:<span>mDNS (http://devicename.local)</span></label
+        >
         <input
           type="text"
           maxlength="63"
@@ -392,62 +415,92 @@
 
     <!-- Printer Settings Section -->
     <div class="section" id="printer-section">
-      <h2 class="section-title">Printer Settings</h2>
+        <h2 class="section-title">Printer Settings</h2>
 
-      <div id="printers-container">
-        <!-- Printer forms will be added here dynamically -->
+        <div id="printers-container">
+          <!-- Printer forms will be added here dynamically -->
+        </div>
+
+        <div class="button-container">
+          <button
+            id="printers-apply"
+            type="button"
+            class="apply-btn"
+            onclick="applyPrintersSettings()"
+            disabled
+          >
+            Apply
+          </button>
+          <!-- <button type="button" class="add-btn" onclick="addPrinter()">Add&nbsp;Printer</button> -->
+        </div>
+
+        <textarea
+          style="display: none"
+          id="json-output"
+          placeholder="Printer configuration JSON..."
+          readonly
+        ></textarea>
       </div>
 
-      <div class="button-container">
-        <button
-          id="printers-apply"
-          type="button"
-          class="apply-btn"
-          onclick="applyPrintersSettings()"
-          disabled
+      <!-- Scale Settings -->
+      <div class="section" id="scale-section">
+        <h2 class="section-title">Scale Settings</h2>
+        <div class="form-row">
+          <label for="scale-name"
+            >Scale Device Name:<span
+              >Optional, in case of several scales</span
+            ></label
+          >
+          <input
+            type="text"
+            id="scale-name"
+            placeholder="Enter Scale Device Name"
+          />
+        </div>
+
+        <div class="form-row">
+          <label
+          >Scale IP Address:<span
+            >Optional, instead of auto discovery</span
+          ></label
         >
-          Apply
-        </button>
-        <!-- <button type="button" class="add-btn" onclick="addPrinter()">Add&nbsp;Printer</button> -->
-      </div>
-
-      <textarea
-        style="display: none"
-        id="json-output"
-        placeholder="Printer configuration JSON..."
-        readonly
-      ></textarea>
-    </div>
-
-    <!-- Scale Settings -->
-    <div class="section" id="scale-section">
-      <h2 class="section-title">Scale Settings</h2>
-      <div class="form-row">
-        <label for="scale-name">Scale Device Name:<span>Optional, in case of several scales</span></label>
-        <input
-          type="text"
-          id="scale-name"
-          placeholder="Enter Scale Device Name"
-        />
-      </div>
-
-      <div class="form-row">
-          <label>Scale IP Address:<span>Optional, instead of auto discovery</span></label>
-          <div class="ip-container">
-              <div class="ip-segment">
-                  <input type="text" class="ip-part" maxlength="3" placeholder="000">
-              </div>
-              <div class="ip-segment">
-                  <input type="text" class="ip-part" maxlength="3" placeholder="000">
-              </div>
-              <div class="ip-segment">
-                  <input type="text" class="ip-part" maxlength="3" placeholder="000">
-              </div>
-              <div class="ip-segment">
-                  <input type="text" class="ip-part" maxlength="3" placeholder="000">
-              </div>
+        <div class="ip-container">
+          <div class="ip-segment">
+            <input
+              type="text"
+              class="ip-part"
+              maxlength="3"
+              placeholder="000"
+            />
           </div>
-          <div class="error-message ip-error">IP requires name to be provided</div>
+          <div class="ip-segment">
+            <input
+              type="text"
+              class="ip-part"
+              maxlength="3"
+              placeholder="000"
+            />
+          </div>
+          <div class="ip-segment">
+            <input
+              type="text"
+              class="ip-part"
+              maxlength="3"
+              placeholder="000"
+            />
+          </div>
+          <div class="ip-segment">
+            <input
+              type="text"
+              class="ip-part"
+              maxlength="3"
+              placeholder="000"
+            />
+          </div>
+        </div>
+        <div class="error-message ip-error">
+          IP requires name to be provided
+        </div>
       </div>
 
       <button
@@ -466,7 +519,11 @@
       <h2 class="section-title">My Spools List</h2>
 
       <div class="form-row">
-        <label for="spools-text">Spools CSV:<a href="/spools-catalog" target="_blank">SpoolEase Spools Catalog</a></label>
+        <label for="spools-text"
+          >Spools CSV:<a href="/spools-catalog" target="_blank"
+            >SpoolEase Spools Catalog</a
+          ></label
+        >
         <textarea
           class="spools-text"
           id="spools-text"
@@ -475,16 +532,43 @@
 eSUN - Plastic (Clear) - 209g,209
 ProtoPasta 500g - Cardboard - 84g,84"
         ></textarea>
-      <p id="spools-chars-left" class="spools-chars-left">abcd</p>
-      <label>Sources for spool weights (sometimes with photos)</label>
-      <ul>
-        <li class="link-bullet"><a target="_blank" href="https://www.onlyspoolz.com/portfolio/">OnlySpoolz (included in SpoolEase Catalog)</a><br/></li>
-        <li class="link-bullet"><a target="_blank" href="https://www.printables.com/model/464663-empty-spool-weight-catalog">Scuk's Catalog (included in SpoolEase Catalog)</a></li>
-        <li class="link-bullet"><a target="_blank" href="https://www.reddit.com/r/3Dprinting/comments/4hlwse/empty_spool_weights_for_estimating_remaining/">Reddit discussion</a></li>
-        <li class="link-bullet"><a target="_blank" href="https://3dprinting.stackexchange.com/questions/6558/is-there-a-table-or-list-of-tare-weights-of-empty-spools-of-various-manufacturer">StackExchange discussion</a></li>
-        <li class="link-bullet"><a target="_blank" href="https://github.com/Donkie/SpoolmanDB/tree/main/filaments">SpoolmanDB (inaccuracies found)</a></li>
-      </ul>
-
+        <p id="spools-chars-left" class="spools-chars-left">abcd</p>
+        <label>Sources for spool weights (sometimes with photos)</label>
+        <ul>
+          <li class="link-bullet">
+            <a target="_blank" href="https://www.onlyspoolz.com/portfolio/"
+              >OnlySpoolz (included in SpoolEase Catalog)</a
+            ><br />
+          </li>
+          <li class="link-bullet">
+            <a
+              target="_blank"
+              href="https://www.printables.com/model/464663-empty-spool-weight-catalog"
+              >Scuk's Catalog (included in SpoolEase Catalog)</a
+            >
+          </li>
+          <li class="link-bullet">
+            <a
+              target="_blank"
+              href="https://www.reddit.com/r/3Dprinting/comments/4hlwse/empty_spool_weights_for_estimating_remaining/"
+              >Reddit discussion</a
+            >
+          </li>
+          <li class="link-bullet">
+            <a
+              target="_blank"
+              href="https://3dprinting.stackexchange.com/questions/6558/is-there-a-table-or-list-of-tare-weights-of-empty-spools-of-various-manufacturer"
+              >StackExchange discussion</a
+            >
+          </li>
+          <li class="link-bullet">
+            <a
+              target="_blank"
+              href="https://github.com/Donkie/SpoolmanDB/tree/main/filaments"
+              >SpoolmanDB (inaccuracies found)</a
+            >
+          </li>
+        </ul>
       </div>
 
       <button
@@ -503,6 +587,45 @@ ProtoPasta 500g - Cardboard - 84g,84"
         placeholder="Printer configuration JSON..."
         readonly
       ></textarea>
+    </div>
+
+    <!-- OTA Section -->
+
+    <div class="section" id="ota-section">
+      <h2 class="section-title">Network Firmware Upgrade</h2>
+
+      <div class="form-row">
+        <label for="curr-version">Current firmware version:</label>
+        <p class="status-text" id="curr-version"></p>
+      </div>
+
+      <button
+        id="ota-request"
+        type="button"
+        class="apply-btn"
+        onclick="requestOta()"
+        disabled
+        style="margin-bottom: 10px"
+      >
+        Start Network Upgrade
+      </button>
+
+      <div class="form-row">
+        <label for="ota-status">OTA Status:</label>
+        <div style="display: flex; flex-direction: row;align-items: center;">
+          <p style="height: 3rem" class="status-text" id="ota-status"></p>
+          <button
+             style="height: 3rem"
+            class="next-to-status-button "
+            id="ota-status-update"
+            type="button"
+            onclick="fetchOtaStatus()"
+            disabled
+          >
+            Update<br/>Status
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- General Section -->
@@ -548,12 +671,14 @@ ProtoPasta 500g - Cardboard - 84g,84"
         let encryptionKey = getEncryptionKey();
         console.log(`in sendData with url: ${url}`);
         console.log(encryptionKey);
-        const response = await retryOperation(() =>
-          fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/text" },
-            body: encrypt(encryptionKey, JSON.stringify(data)),
-          }), retries
+        const response = await retryOperation(
+          () =>
+            fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/text" },
+              body: encrypt(encryptionKey, JSON.stringify(data)),
+            }),
+          retries,
         );
         return response;
       }
@@ -596,19 +721,25 @@ ProtoPasta 500g - Cardboard - 84g,84"
         const data = { test: "Hello" };
         try {
           let response = await sendData("/api/test-key", data); // Replace with actual server endpoint
+          document.getElementById("device-name-apply").disabled = true;
+          document.getElementById("wifi-section-apply").disabled = true;
+          document.getElementById("set-fixed-key-apply").disabled = true;
+          document.getElementById("display-section-apply").disabled = true;
+          document.getElementById("printers-apply").disabled = true;
+          document.getElementById("scale-apply").disabled = true;
+          document.getElementById("spools-apply").disabled = true;
           console.log(`REspnse status ${response.status}`);
           if (response.status == 400) {
-            document.getElementById("security-key-feedback").textContent =
-              "Security Key is incorrect";
+            document.getElementById("security-key-feedback").textContent = "Security Key is incorrect";
+            document.getElementById("ota-request").disabled = true;
+            document.getElementById("ota-status-update").disabled = true;
             document.getElementById("restart-device").disabled = true;
             return;
           } else if (response.ok) {
-            document.getElementById("security-key-feedback").textContent =
-              "Security Key validated";
+            document.getElementById("security-key-feedback").textContent = "Security Key validated";
             document.getElementById("verify-key-button").disabled = true;
-            document.getElementById("device-name-apply").disabled = true;
-            document.getElementById("wifi-section-apply").disabled = true;
-            document.getElementById("set-fixed-key-apply").disabled = true;
+            document.getElementById("ota-request").disabled = false;
+            document.getElementById("ota-status-update").disabled = false;
             document.getElementById("restart-device").disabled = false;
           }
         } catch (error) {
@@ -638,6 +769,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
 
       async function fetchSectionConfigs() {
         await retryOperation(() => fetchWifiInitialConfig());
+        await retryOperation(() => fetchOtaStatus());
         await retryOperation(() => fetchDisplayInitialConfig());
         await retryOperation(() => fetchPrinterInitialConfig());
         await retryOperation(() => fetchSpoolsInitialConfig());
@@ -667,6 +799,25 @@ ProtoPasta 500g - Cardboard - 84g,84"
         if (data) {
           document.getElementById("wifi-ssid").value = data.ssid;
           document.getElementById("wifi-password").value = data.password;
+        }
+      }
+
+      async function fetchOtaStatus() {
+        const data = await fetchInitialSectionConfig("ota");
+
+        if (data) {
+          document.getElementById("ota-status").textContent = data.status;
+          document.getElementById("curr-version").textContent = data.curr_ver;
+        }
+      }
+
+      function requestOta() {
+        if (confirm("Do you want to upgrade firmware now?")) {
+          const data = { request: "Update" };
+          sendData("/api/ota-request", data, 1);
+          alert(
+            "Request to start network upgrade sent, press [Updat Status] to see progress",
+          );
         }
       }
 
@@ -723,15 +874,17 @@ ProtoPasta 500g - Cardboard - 84g,84"
       function applyDeviceNameSettings() {
         const name = document.getElementById("device-name").value;
         const data = { name };
-        const applyButton = document.getElementById("device-name-section-apply");
+        const applyButton = document.getElementById(
+          "device-name-section-apply",
+        );
         sendConfigData("/api/device-name-config", data, applyButton); // Replace with actual server endpoint
       }
 
       function filterDnsName(el) {
         el.value = el.value
           .toLowerCase()
-          .replace(/[^a-z0-9-]/g, '')   // remove invalid chars
-          .replace(/^-+/, '');          // trim leading hyphens (trailing also not allowed, but during typing it is there)
+          .replace(/[^a-z0-9-]/g, "") // remove invalid chars
+          .replace(/^-+/, ""); // trim leading hyphens (trailing also not allowed, but during typing it is there)
       }
 
       function applyFixedSecurityKeySettings() {
@@ -1208,7 +1361,8 @@ ProtoPasta 500g - Cardboard - 84g,84"
           spoolsTextArea.style.height = spoolsTextArea.scrollHeight + "px";
         }
         let charsUsed = spoolsTextArea.value.length;
-        document.getElementById("spools-chars-left").textContent = `${charsUsed} / ${maxChars}`;
+        document.getElementById("spools-chars-left").textContent =
+          `${charsUsed} / ${maxChars}`;
       }
 
       function validateCSV(text) {
@@ -1273,11 +1427,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const ipParts = data.ip.split(".");
           const ipInputs = scaleForm.querySelectorAll(".ip-part");
 
-          for (
-            let i = 0;
-            i < Math.min(ipParts.length, ipInputs.length);
-            i++
-          ) {
+          for (let i = 0; i < Math.min(ipParts.length, ipInputs.length); i++) {
             ipInputs[i].value = ipParts[i];
           }
         }

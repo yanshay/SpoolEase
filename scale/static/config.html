@@ -56,6 +56,27 @@
         margin: 10px auto 0;
       }
 
+      .status-text {
+        width: 100%;
+        padding: 10px;
+        box-sizing: border-box;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+        margin: 0;
+        min-height: 2rem;
+        height: 2rem;
+        display: flex;
+        align-items: center;
+      }
+
+      .next-to-status-button {
+        height: 2rem; 
+        margin: 0; 
+        margin-left: 10px; 
+        padding: 0 10px;
+      }
+
       input[type="text"],
       input[type="password"],
       input[type="number"] {
@@ -124,7 +145,7 @@
         background-color: #f44336;
       }
 
-      button.danger:hover {
+      button.danger:not(:disabled):hover {
         background-color: #d32f2f;
       }
 
@@ -132,7 +153,7 @@
         width: 100%;
       }
 
-      button.apply-btn:disabled {
+      button:disabled {
         background-color: #cccccc;
         cursor: not-allowed;
       }
@@ -308,6 +329,45 @@
       </button>
     </div>
 
+    <!-- OTA Section -->
+
+    <div class="section" id="ota-section">
+      <h2 class="section-title">Network Firmware Upgrade</h2>
+
+      <div class="form-row">
+        <label for="curr-version">Current firmware version:</label>
+        <p class="status-text" id="curr-version"></p>
+      </div>
+
+      <button
+        id="ota-request"
+        type="button"
+        class="danger apply-btn"
+        onclick="requestOta()"
+        disabled
+        style="margin-bottom: 10px"
+      >
+        Start Network Upgrade
+      </button>
+
+      <div class="form-row">
+        <label for="ota-status">Status:</label>
+        <div style="display: flex; flex-direction: row;align-items: center;">
+          <p style="height: 3rem" class="status-text" id="ota-status"></p>
+          <button
+             style="height: 3rem"
+            class="next-to-status-button "
+            id="ota-status-update"
+            type="button"
+            onclick="fetchOtaStatus()"
+            disabled
+          >
+            Update<br/>Status
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- General Section -->
     <div class="section" id="general-section">
       <h2 class="section-title">General</h2>
@@ -404,6 +464,7 @@
 
       async function fetchSectionConfigs() {
         await retryOperation(() => fetchWifiInitialConfig());
+        await retryOperation(() => fetchOtaStatus());
         await retryOperation(() => fetchDeviceNameInitialConfig());
       }
 
@@ -442,18 +503,23 @@
         const data = { test: "Hello" };
         try {
           let response = await sendData("/api/test-key", data); // Replace with actual server endpoint
+          document.getElementById("wifi-section-apply").disabled = true;
+          document.getElementById("device-name-apply").disabled = true;
+          document.getElementById("set-fixed-key-apply").disabled = true;
           if (response.status == 400) {
-            document.getElementById("security-key-feedback").textContent =
-              "Security Key is incorrect";
+            document.getElementById("security-key-feedback").textContent = "Security Key is incorrect";
+
+            document.getElementById("ota-request").disabled = true;
+            document.getElementById("ota-status-update").disabled = true;
             document.getElementById("restart-device").disabled = true;
+
             return;
           } else if (response.ok) {
-            document.getElementById("security-key-feedback").textContent =
-              "Security Key validated";
             document.getElementById("verify-key-button").disabled = true;
-            document.getElementById("device-name-apply").disabled = true;
-            document.getElementById("wifi-section-apply").disabled = true;
-            document.getElementById("set-fixed-key-apply").disabled = true;
+            document.getElementById("security-key-feedback").textContent = "Security Key validated";
+
+            document.getElementById("ota-request").disabled = false;
+            document.getElementById("ota-status-update").disabled = false;
             document.getElementById("restart-device").disabled = false;
           }
         } catch (error) {
@@ -476,6 +542,25 @@
         if (data) {
           document.getElementById("wifi-ssid").value = data.ssid;
           document.getElementById("wifi-password").value = data.password;
+        }
+      }
+
+      async function fetchOtaStatus() {
+        const data = await fetchInitialSectionConfig("ota");
+
+        if (data) {
+          document.getElementById("ota-status").textContent = data.status;
+          document.getElementById("curr-version").textContent = data.curr_ver;
+        }
+      }
+
+      function requestOta() {
+        if (confirm("Do you want to upgrade firmware now?")) {
+          const data = { request: "Update" };
+          sendData("/api/ota-request", data, 1);
+          alert(
+            "Request to start network upgrade sent, press [Updat Status] to see progress",
+          );
         }
       }
 
@@ -570,7 +655,7 @@
           window.location.hostname === "localhost" ||
           window.location.hostname === "127.0.0.1"
         ) {
-          urlPrefix = "http://192.168.10.82" + `${urlPrefix}`;
+          urlPrefix = "http://192.168.10.79" + `${urlPrefix}`;
         }
       });
     </script>
