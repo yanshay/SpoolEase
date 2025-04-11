@@ -8,8 +8,6 @@
 #![feature(associated_type_defaults)]
 #![recursion_limit = "256"] // due to picoserve complex types & embassy
 
-slint::include_modules!();
-
 mod app;
 mod app_config;
 mod bambu;
@@ -32,6 +30,7 @@ use esp_mbedtls::Tls;
 use esp_storage::FlashStorage;
 use esp_wifi::{init, EspWifiController};
 use framework::{framework::FrameworkSettings, RNG};
+use slint::ComponentHandle;
 
 extern crate alloc;
 
