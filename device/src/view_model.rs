@@ -54,6 +54,7 @@ pub struct ViewModel {
 
     cores_list_vec_rc: slint::ModelRc<crate::app::SelectorOption>,
     spools_cores_weights: HashMap<i32, i32>,
+    spools_cores_filter: String,
 }
 
 impl ViewModel {
@@ -114,6 +115,7 @@ impl ViewModel {
             printers_view_state: HashMap::new(),
             cores_list_vec_rc: selector_options_vec_rc,
             spools_cores_weights,
+            spools_cores_filter: String::new(),
         };
         let view_model_rc = Rc::new(RefCell::new(view_model));
 
@@ -278,14 +280,16 @@ impl ViewModel {
         // Initialize SpoolScale and weight related stuff
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
-        ui_app_backend.on_get_spools_core_list(move || {
+        ui_app_backend.on_get_spools_core_list(move |filter | {
             let mut view_model_borrow = moved_view_model.borrow_mut();
 
             // separated to not borrow twice
             let user_cores_changed = view_model_borrow.app_config.borrow().user_cores_changed_by_web_config;
+            let spools_cores_filter = &view_model_borrow.spools_cores_filter;
 
-            if user_cores_changed {
-                view_model_borrow.regenerate_cores_weights_list();
+            if user_cores_changed || spools_cores_filter != filter.as_str() {
+                view_model_borrow.regenerate_cores_weights_list(filter.as_str());
+                view_model_borrow.spools_cores_filter = filter.to_string();
                 view_model_borrow.app_config.borrow_mut().user_cores_changed_by_web_config = false;
             }
             view_model_borrow.cores_list_vec_rc.clone()
@@ -297,10 +301,11 @@ impl ViewModel {
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         ui_app_backend.on_erase_previously_used_core_list(move || moved_view_model.borrow_mut().erase_previously_used_cores_list());
 
-        self.regenerate_cores_weights_list();
+        let spools_core_filter = self.spools_cores_filter.clone();
+        self.regenerate_cores_weights_list(&spools_core_filter);
     }
 
-    pub fn regenerate_cores_weights_list(&mut self) {
+    pub fn regenerate_cores_weights_list(&mut self, filter: &str) {
         // Fill spool cores weights list
 
         self.spools_cores_weights.clear();
@@ -315,12 +320,12 @@ impl ViewModel {
         let mut id = -1;
         let app_config_clone = self.app_config.clone();
         if let Some(user_cores) = &app_config_clone.borrow().user_cores {
-            id = self.add_core_weights_csv_to_list(id, user_cores.as_str(), "My Spools List");
+            id = self.add_core_weights_csv_to_list(id, user_cores.as_str(), "My Spools List", filter);
         }
         if let Some(previously_used_cores) = &app_config_clone.borrow().previously_used_cores {
-            id = self.add_core_weights_csv_to_list(id, previously_used_cores.as_str(), "Previously Used");
+            id = self.add_core_weights_csv_to_list(id, previously_used_cores.as_str(), "Previously Used", filter);
         }
-        let _id = self.add_core_weights_csv_to_list(id, SPOOLS_CATALOG, "SpoolEase Spools Catalog");
+        let _id = self.add_core_weights_csv_to_list(id, SPOOLS_CATALOG, "SpoolEase Spools Catalog", filter);
     }
 
     pub fn add_to_previously_used_cores(&mut self, core_name: &str, core_weight: i32) {
@@ -365,14 +370,16 @@ impl ViewModel {
 
         let _ = app_config_borrow.set_previously_used_cores(Some(new_previously_used_cores));
         drop(app_config_borrow);
-        self.regenerate_cores_weights_list();
+        let spools_cores_filter = self.spools_cores_filter.clone();
+        self.regenerate_cores_weights_list(&spools_cores_filter);
     }
     pub fn erase_previously_used_cores_list(&mut self) {
         let _ = self.app_config.borrow_mut().set_previously_used_cores(None);
-        self.regenerate_cores_weights_list();
+        let spools_cores_filter = self.spools_cores_filter.clone();
+        self.regenerate_cores_weights_list(&spools_cores_filter);
     }
 
-    pub fn add_core_weights_csv_to_list(&mut self, last_id: i32, csv: &str, title: &str) -> i32 {
+    pub fn add_core_weights_csv_to_list(&mut self, last_id: i32, csv: &str, title: &str, filter:&str) -> i32 {
         // returns last-id used
 
         let cores_list = self
@@ -390,7 +397,7 @@ impl ViewModel {
             let mut split = line.splitn(4, ',');
             loop {
                 if let (Some(desc), Some(weight)) = (split.next(), split.next()) {
-                    if !desc.is_empty() && !weight.is_empty() {
+                    if !desc.is_empty() && !weight.is_empty() && (filter.is_empty() || desc.to_uppercase().contains(filter)) {
                         id += 1;
                         let mut selector_option = crate::app::SelectorOption::default();
                         selector_option.id = id as i32;

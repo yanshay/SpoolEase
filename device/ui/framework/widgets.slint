@@ -71,8 +71,14 @@ export struct SelectorOptionsList {
 }
 
 export component Selector inherits Rectangle {
+    public function jump-to(position: int) {
+          list.set-target(position * option-height, "gesture");
+    }
     callback selected(text: string, pos-in-list: int, id: int);
     in-out property <[SelectorOption]> options-list;
+    changed options-list => {
+        list.set-target(0, "change-data");
+    }
     in property <length> option-height: 56px;
     in property <length> page-buttons-height: 56px;
     in property <length> thumb-height: 56px;

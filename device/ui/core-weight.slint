@@ -94,18 +94,11 @@ export component CoreEstimate inherits Rectangle {
                     height: 30px;
                     border-color: black;
                     border-width: 1px;
-                    background: AppState.spool-scale-state == SpoolScaleState.Disconnected || AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? orangered : 
-                                AppState.spool-scale-state == SpoolScaleState.Connected ? lightgreen : 
-                                AppState.spool-scale-state == SpoolScaleState.Loaded && !AppState.spool-scale-weight-stable ? yellow : 
-                                lightskyblue;
+                    background: AppState.spool-scale-state == SpoolScaleState.Disconnected || AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? orangered : AppState.spool-scale-state == SpoolScaleState.Connected ? lightgreen : AppState.spool-scale-state == SpoolScaleState.Loaded && !AppState.spool-scale-weight-stable ? yellow : lightskyblue;
                     Text {
                         font-size: 20px;
-                        text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? "Scale Disconnected" :
-                              AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Scale Not Calibrated" :
-                              AppState.spool-scale-state == SpoolScaleState.Connected ? "Scale Connected" :
-                              AppState.spool-scale-state == SpoolScaleState.Loaded ? "\{AppState.spool-scale-weight} g" : 
-                              "";
-                              }
+                        text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? "Scale Disconnected" : AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Scale Not Calibrated" : AppState.spool-scale-state == SpoolScaleState.Connected ? "Scale Connected" : AppState.spool-scale-state == SpoolScaleState.Loaded ? "\{AppState.spool-scale-weight} g" : "";
+                    }
                 }
 
                 Text {
@@ -277,6 +270,63 @@ export component SelectIfNewSpool inherits Rectangle {
     }
 }
 
+export component CharSelect inherits Rectangle {
+    callback clicked-ok;
+    callback clicked-cancel();
+    in-out property <string> typed-text;
+    property <[[string]]> keys: [
+        ["A", "B", "C", "D", "E", "F", "G", "H"],
+        ["I", "J", "L", "M", "N", "O", "P", "Q"],
+        ["R", "S", "T", "U", "V", "W", "X", "Y"],
+        ["Z", "3"],
+    ];
+    callback key-clicked(char: string);
+    background: white;
+    VerticalLayout {
+        Rectangle {
+            height: 56px;
+            width: root.width;
+            Text {
+                text: root.typed-text;
+                font-size: 20px;
+            }
+        }
+
+        for row[y] in keys: HorizontalLayout {
+            for col in row: MyButton {
+                height: 56px;
+                width: 60px;
+                text: col;
+                clicked => {
+                    root.typed-text = "\{root.typed-text}\{self.text}";
+                }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        x: root.width - 60px * 4;
+        y: root.height - 56px;
+        MyButton {
+            width: 120px;
+            height: 56px;
+            text: "Ok";
+            clicked => {
+                root.clicked-ok();
+            }
+        }
+
+        MyButton {
+            width: 120px;
+            height: 56px;
+            text: "Cancel";
+            clicked => {
+                root.clicked-cancel();
+            }
+        }
+    }
+}
+
 enum SpoolCoreWeightState {
     EntryTabs,
     NewSpoolSelect,
@@ -293,61 +343,87 @@ export component SpoolCoreWeight inherits Rectangle {
     }
 
     VerticalLayout {
+        property <bool> show-char-select;
         visible: state == SpoolCoreWeightState.EntryTabs;
         alignment: stretch;
-        title := Title {
-            text: "Core Weight - " + (tabs.selected-index == 0 ? "Select from List" : tabs.selected-index == 1 ? "Estimate for New Spool" : tabs.selected-index == 2 ? "Manually Entered" : "");
-            z: 1;
-        }
-
-        HorizontalLayout {
-            height: root.height - title.height;
-            tabs := LeftTab {
-                height: root.height - title.height;
-                tabs: ["List", "Est", "1234"];
-                bottom-tab: "Cancel";
-                botom-tab-pressed => {
-                    AppState.control-state = ControlState.Ready;
-                }
-                width: 70px;
+        Rectangle {
+            title := Title {
+                text: "Core Weight - " + (tabs.selected-index == 0 ? "Select from List" : tabs.selected-index == 1 ? "Estimate for New Spool" : tabs.selected-index == 2 ? "Manually Entered" : "");
+                z: 1;
             }
 
-            tab-cards := Window {
-                width: root.width - tabs.width;
+            if tabs.selected-index == 0: MyButton {
+                x: root.width - self.width -1px;
+                height: title.height;
+                width: 57px;
+                text: "ABC";
+                z: 2;
+                clicked => {
+                    show-char-select = true;
+                }
+            }
+        }
 
-                select-list := Selector {
-                    selected(text, pos-in-list, id) => {
-                        AppState.core-name-to-encode-after-select-if-new = text;
-                        AppState.core-weight-to-encode-after-select-if-new = AppBackend.get-spool-core-weight(id);
-                        root.state = SpoolCoreWeightState.NewSpoolSelect;
+        Window {
+            HorizontalLayout {
+                height: root.height - title.height;
+                tabs := LeftTab {
+                    height: root.height - title.height;
+                    tabs: ["List", "Est", "1234"];
+                    bottom-tab: "Cancel";
+                    botom-tab-pressed => {
+                        AppState.control-state = ControlState.Ready;
                     }
-                    visible: tabs.selected-index == 0;
-                    preferred-width: 1000px;
-                    option-alignment: left;
-                    options-list: AppBackend.get-spools-core-list();
-                    // options-lists: AppBackend.get-spools-core-lists();
+                    width: 70px;
                 }
 
-                estimate := CoreEstimate {
-                    visible: tabs.selected-index == 1;
-                }
+                tab-cards := Window {
+                    width: root.width - tabs.width;
 
-                type-weight := Rectangle {
-                    visible: tabs.selected-index == 2;
-                    background: black;
-                    HorizontalLayout {
-                        width: root.width - tabs.width;
-                        alignment: space-around;
-                        NumPad {
-                            max-digits: 3;
-                            height: tabs.height;
-                            ok-clicked => {
-                                AppState.core-name-to-encode-after-select-if-new = "Custom: \{self.number} g";
-                                AppState.core-weight-to-encode-after-select-if-new = self.number;
-                                root.state = SpoolCoreWeightState.NewSpoolSelect;
+                    select-list := Selector {
+                        property <string> filter;
+                        selected(text, pos-in-list, id) => {
+                            AppState.core-name-to-encode-after-select-if-new = text;
+                            AppState.core-weight-to-encode-after-select-if-new = AppBackend.get-spool-core-weight(id);
+                            root.state = SpoolCoreWeightState.NewSpoolSelect;
+                        }
+                        visible: tabs.selected-index == 0;
+                        preferred-width: 1000px;
+                        option-alignment: left;
+                        options-list: AppBackend.get-spools-core-list(filter);
+                    }
+
+                    estimate := CoreEstimate {
+                        visible: tabs.selected-index == 1;
+                    }
+
+                    type-weight := Rectangle {
+                        visible: tabs.selected-index == 2;
+                        background: black;
+                        HorizontalLayout {
+                            width: root.width - tabs.width;
+                            alignment: space-around;
+                            NumPad {
+                                max-digits: 3;
+                                height: tabs.height;
+                                ok-clicked => {
+                                    AppState.core-name-to-encode-after-select-if-new = "Custom: \{self.number} g";
+                                    AppState.core-weight-to-encode-after-select-if-new = self.number;
+                                    root.state = SpoolCoreWeightState.NewSpoolSelect;
+                                }
                             }
                         }
                     }
+                }
+            }
+
+            if show-char-select: CharSelect {
+                clicked-ok => {
+                    select-list.filter = self.typed-text;
+                    show-char-select = false;
+                }
+                clicked-cancel => {
+                    show-char-select = false;
                 }
             }
         }
