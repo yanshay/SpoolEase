@@ -53,6 +53,7 @@ This project (including hardware designs, software, and case files) is freely av
 - Selling kits or components packaged for this project
 - Charging for the software or hardware designs
 - Selling modified versions or derivatives
+- Integrating the product, with or without modifications, into a commercial server offering, whether cloud-based or on-premise
 - Offering paid installation, configuration, or support services specific to this project
 
 To be clear: You CAN use this device in your business operations, even if those operations generate revenue. You CANNOT make money by selling, distributing, or providing services specifically related to this project or its components.
