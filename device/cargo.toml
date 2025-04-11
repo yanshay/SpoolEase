@@ -33,8 +33,8 @@ slint-build = "1.9.1"
 
 [dependencies]
 #TODO: Important - lock to specific tag when released
-# framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag ="0.1.0" }
-framework = { package = "esp-hal-app-framework", path = "../../esp32-support/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
+framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"], tag="v0.2.0" }
+# framework = { package = "esp-hal-app-framework", path = "../../esp32-support/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
 esp32s3 = { version = "0.30.0" }
 
 # Esp-Hal Crates
