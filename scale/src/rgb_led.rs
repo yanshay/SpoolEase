@@ -5,7 +5,7 @@ use alloc::rc::Rc;
 use embassy_time::Timer;
 use esp_hal::{gpio::AnyPin, peripherals::RMT, rmt::Rmt, time::RateExtU32};
 use esp_hal_smartled::{smartLedBuffer, SmartLedsAdapter};
-use framework::{framework::OtaState, info, prelude::Framework};
+use framework::{framework::OtaState, prelude::Framework};
 use smart_leds::{colors::*, SmartLedsWrite, RGB8};
 
 enum LedState {
@@ -63,10 +63,8 @@ pub async fn rgb_led_task(
                 }
                 ScaleState::Loaded(stable, unstable) => {
                     if stable == unstable {
-                        info!("Stable");
                         led_state = LedState::Steady(MY_BLUE);
                     } else {
-                        info!("Unstable");
                         led_state = LedState::Steady(MY_YELLOW);
                     }
                 }
