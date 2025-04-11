@@ -11,7 +11,7 @@ codegen-units = 1
 debug = 2
 debug-assertions = false
 incremental = false
-opt-level = 's'
+opt-level = 'z'
 lto = 'fat'
 overflow-checks = false
 
