@@ -74,6 +74,10 @@ where
             buf[page_byte_offset + 2],
             buf[page_byte_offset + 3],
         ];
+        // don't write page 3
+        if page + u8::try_from(page_offset).unwrap() == 3 {
+            continue;
+        }
         'retries: loop {
             if Instant::now() > end_time {
                 return Err(Error::Pn532ExtError(last_err));
