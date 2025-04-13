@@ -757,16 +757,14 @@ impl BambuPrinter {
             let payload = serde_json::to_string_pretty(&cmd).unwrap();
             self.publish_payload(payload);
 
-            if let Some(calibration) = &matching_calibration {
-                let cmd = crate::bambu_api::ExtrusionCaliSelCommand::new(
-                    &self.nozzle_diameter.clone().unwrap_or_default(),
-                    tray_id,                 // here we need the original tray_id
-                    &filament.tray_info_idx, // tray_info_idx is filament_id in this command
-                    Some(calibration.cali_idx),
-                );
-                let payload = serde_json::to_string_pretty(&cmd).unwrap();
-                self.publish_payload(payload);
-            }
+            let cmd = crate::bambu_api::ExtrusionCaliSelCommand::new(
+                &self.nozzle_diameter.clone().unwrap_or_default(),
+                tray_id,                 // here we need the original tray_id
+                &filament.tray_info_idx, // tray_info_idx is filament_id in this command
+                if let Some(calibration) = &matching_calibration { Some(calibration.cali_idx) } else { Some(-1)},
+            );
+            let payload = serde_json::to_string_pretty(&cmd).unwrap();
+            self.publish_payload(payload);
             if tray_id == 254 {
                 self.virt_tray.tag_info = Some(tag_info.clone())
             } else {
