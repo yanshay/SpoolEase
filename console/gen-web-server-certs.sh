@@ -14,7 +14,7 @@ openssl req \
   -out $CERTS_DIR/ca_cert.pem \
   -nodes \
   -days 365 \
-  -subj "/CN=device.spoolease.io/O=CA\ Certificate"
+  -subj "/CN=console.spoolease.io/O=CA\ Certificate"
 
 
 # Generate certificate signing request (CSR)
@@ -23,7 +23,7 @@ openssl req \
     -keyout $CERTS_DIR/web-server-private-key.pem \
     -out $CERTS_DIR/csr.pem \
     -nodes \
-    -subj "/CN=device.spoolease.io"
+    -subj "/CN=console.spoolease.io"
 
 # Sign key with CA certificates from CSR
 openssl x509 \
