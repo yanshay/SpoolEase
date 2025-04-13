@@ -40,7 +40,7 @@ serde = { version = "1.0.213", default-features = false, features = [ "derive", 
 serde_json = { version = "1.0.132", default-features = false, features = [ "alloc", ] }
 
 framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", features = ["esp32s3", "improv-jtag-serial"], tag="v0.2.0" }
-# framework = { package = "esp-hal-app-framework", path = "../../esp32-support/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial"] }
+# framework = { package = "esp-hal-app-framework", path = "../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial"] }
 
 getrandom = { version = "0.2.15", features = ["custom"] }
 

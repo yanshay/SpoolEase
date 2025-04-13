@@ -22,9 +22,10 @@ serde_json = { version = "1.0.132", default-features = false, features = [ "allo
 
 
 framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", features = ["esp32s3"], tag="v0.2.0" }
-# framework = { package = "esp-hal-app-framework", path = "../../esp32-support/esp-hal-app-framework/", features = ["esp32s3"] }
+# framework = { package = "esp-hal-app-framework", path = "../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3"] }
 deku = { version = "0.17.0", default-features = false, features = ["alloc"] }
 pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_async_full", default-features = false }
+# pn532 = { path = "../../../../../OpenSourceProj/forked/pn532/", default-features = false }
 embassy-time = { version = "0.4.0", features = ["generic-queue-8"] }
 esp-hal = { version = "0.23.1" }
 embassy-sync = { version = "0.6.2" }

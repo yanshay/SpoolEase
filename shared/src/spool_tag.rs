@@ -233,7 +233,6 @@ pub async fn nfc_task(
                 Either::First(ref f) => Either::First(f.clone()),
                 Either::Second(s) => match s {
                     Ok(response) => {
-
                         let number_of_tags_found = response[0];
                         if number_of_tags_found == 0 { // no tag found, shouldn't occure
                             continue;

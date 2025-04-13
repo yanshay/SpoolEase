@@ -11,7 +11,7 @@ codegen-units = 1
 debug = 2
 debug-assertions = false
 incremental = false
-opt-level = 'z'
+opt-level = 's'
 lto = 'fat'
 overflow-checks = false
 
@@ -28,13 +28,20 @@ opt-level = 3
 bitvec = { git = "https://github.com/arctic-alpaca/ferrilab" }
 radium = { git = "https://github.com/arctic-alpaca/ferrilab" }
 
+edge-nal-embassy = { git = "https://github.com/yanshay/edge-net" }
+edge-http = { git = "https://github.com/yanshay/edge-net" } 
+edge-dhcp = { git = "https://github.com/yanshay/edge-net" } 
+edge-nal = { git = "https://github.com/yanshay/edge-net" } 
+edge-captive = { git = "https://github.com/yanshay/edge-net" } 
+edge-ws = { git = "https://github.com/yanshay/edge-net" } 
+
 [build-dependencies]
 slint-build = "1.9.1"
 
 [dependencies]
 #TODO: Important - lock to specific tag when released
 framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"], tag="v0.2.0" }
-# framework = { package = "esp-hal-app-framework", path = "../../esp32-support/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
+# framework = { package = "esp-hal-app-framework", path = "../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
 esp32s3 = { version = "0.30.0" }
 
 # Esp-Hal Crates

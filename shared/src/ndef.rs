@@ -184,15 +184,6 @@ impl Record {
 
 #[derive(Debug, PartialEq, DekuRead, DekuWrite)]
 pub struct NDEFStructure {
-    // page 3 - capability container
-    #[deku(update = "0xe1")]
-    magic: u8,
-    #[deku(update = "0x10")]
-    doc_version: u8,
-    #[deku(update = "(self.record.to_bytes().unwrap().len()+7)/8")] // need to set this to entire ndef space / 8
-    ndef_size: u8,
-    #[deku(update = "0x00")]
-    read_write: u8,
     // page 4
     // tlv
     #[deku(update = "0x03")]
@@ -207,10 +198,6 @@ pub struct NDEFStructure {
 impl NDEFStructure {
     pub fn new(record: Record) -> Self {
         let mut res = NDEFStructure {
-            magic: 0,
-            doc_version: 0,
-            ndef_size: 0,
-            read_write: 0,
             message_start: 0,
             message_size: 0,
             record,
