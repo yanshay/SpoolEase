@@ -1,7 +1,7 @@
 pub const AP_ADDR: (u8,u8,u8,u8) = (192, 168, 2, 1);
 
 pub const OTA_DOMAIN: &str = "raw.githubusercontent.com";
-pub const OTA_PATH: &str = "/yanshay/spoolease-bin/refs/heads/main/bins/ota/";
+pub const OTA_PATH: &str = "/yanshay/spoolease-bin/refs/heads/main/bins/console/ota/";
 pub const OTA_TOML_FILENAME: &str = "ota.toml";
 pub const OTA_TLS_CERTIFICATE: &str = concat!(include_str!("./certs/raw.githubusercontent.com.pem"), "\0");
 
