@@ -60,8 +60,8 @@ use settings::{
 };
 use web_app::NestedAppBuilder;
 
-const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + FRAMEWORK_STA_STACK_RESOURCES; // web-config listeners +  mqtt + USDP(?) + Framework resources
-const AP_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + FRAMEWORK_AP_STACK_RESOURCES;
+const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 1 + FRAMEWORK_STA_STACK_RESOURCES; // web-config listeners +  mqtt + USDP(?) + Framework resources
+const AP_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 1 + FRAMEWORK_AP_STACK_RESOURCES;
 
 #[macro_export]
 macro_rules! heap_dram2_allocator {
