@@ -79,8 +79,8 @@ For components sourcing from Amazon EU/US, check out [this discussion](https://g
 
 ## Detailed Instructions
 
-- [Build](documentation/build.md)
-- [Setup](documentation/setup.md)
+- [Build](documentation/console-build.md)
+- [Setup](documentation/console-setup.md)
 - [Usage](documentation/usage.md)
 - [Troubleshooting](documentation/troubleshooting.md)
 
