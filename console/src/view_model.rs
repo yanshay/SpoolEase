@@ -215,6 +215,35 @@ impl ViewModel {
             moved_spool_scale_model.borrow_mut().calibrate(weight);
         });
 
+        let moved_spool_scale_model = self.spool_scale_model.clone();
+        ui_app_backend.on_get_connected_scale_info(move || {
+            let connected_scale = &moved_spool_scale_model.borrow().connected_scale;
+            if let Some(connected_scale) = connected_scale {
+                let scale_name = match &connected_scale.0 {
+                    Some(s) if !s.is_empty() => s.as_str(),
+                    _ => "<Unnamed Scale/IP set w/o name>",
+                };
+                format!("{} - {}", connected_scale.1, scale_name).to_shared_string()
+            } else {
+                "<No Scale Connected>".to_shared_string()
+            }
+        });
+
+        let moved_spool_scale_model = self.spool_scale_model.clone();
+        ui_app_backend.on_get_available_scales_info(move || {
+            let available_scales = &moved_spool_scale_model.borrow().available_scales;
+            let mut available_scales_res = Vec::<SharedString>::new();
+
+            for scale in available_scales {
+                let scale_name = match &scale.0 {
+                    Some(s) if !s.is_empty() => s.as_str(),
+                    _ => "<Unnamed Scale>",
+                };
+                available_scales_res.push(format!("{} - {}", scale.1, scale_name).to_shared_string());
+            }
+            slint::ModelRc::new(slint::VecModel::from(available_scales_res))
+        });
+
         // Initialize Printers ///////////////////////////
 
         let mut default_printer_set = false;

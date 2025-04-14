@@ -16,7 +16,7 @@ pub fn create_slint_app() -> AppWindow {
     AppWindow::new().expect("Failed to load UI")
 }
 
-pub const MAX_NUM_SSDP_LISTENERS: usize = MAX_NUM_PRINTERS + 1; // 1 for spool_scale
+pub const MAX_NUM_SSDP_LISTENERS: usize = MAX_NUM_PRINTERS + 2; // 2 for spool_scale (monitor scales + connected scale)
 
 #[embassy_executor::task]
 #[allow(clippy::too_many_arguments)]

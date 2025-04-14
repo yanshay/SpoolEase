@@ -1,5 +1,9 @@
 import { ListView } from "std-widgets.slint";
 
+export component MyText inherits Text {
+  font-size: 20px;
+}
+
 export component MyButton {
     in property <string> text;
     in property <length> text-padding;

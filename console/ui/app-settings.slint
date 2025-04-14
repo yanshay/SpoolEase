@@ -1,4 +1,4 @@
-import { MyButton, Title } from "framework/widgets.slint";
+import { MyText, MyButton, Title } from "framework/widgets.slint";
 import { SettingsButton } from "framework/settings.slint";
 import { ScaleCalibration } from "scale-calibration.slint";
 import { AppBackend, AppState, SpoolScaleState } from "app.slint";
@@ -7,6 +7,51 @@ import { Settings } from "framework/settings.slint";
 enum AppSettingsState {
   Buttons,
   ScaleCalibration,
+  ScalesInformation,
+}
+
+export component ScalesInformation inherits Rectangle {
+    callback clicked;
+
+    background: white;
+    VerticalLayout {
+        alignment: space-between;
+        VerticalLayout {
+            alignment: start;
+            title := Title {
+                width: root.width;
+                text: "Connected Scale";
+            }
+
+            MyText {
+                vertical-alignment: center;
+                width: root.width;
+                height: title.height;
+                text: AppBackend.get-connected-scale-info();
+            }
+
+            Title {
+                width: root.width;
+                text: "Scales on Network (close & reopen to update)";
+            }
+
+            for scale in AppBackend.get-available-scales-info(): MyText {
+                vertical-alignment: center;
+                width: root.width;
+                height: 30px;
+                text: scale;
+            }
+        }
+
+        MyButton {
+            clicked => {
+                root.clicked()
+            }
+            width: root.width;
+            height: 56px;
+            text: "Ok";
+        }
+    }
 }
 
 export component AppSettings inherits Settings {
@@ -35,6 +80,13 @@ export component AppSettings inherits Settings {
                 AppBackend.erase-previously-used-core-list();
             }
         }
+
+        SettingsButton {
+            text: "Scale(s) Information";
+            clicked => {
+                root.state = AppSettingsState.ScalesInformation;
+            }
+        }
     }
 
     if state == AppSettingsState.ScaleCalibration: ScaleCalibration {
@@ -43,7 +95,13 @@ export component AppSettings inherits Settings {
         }
         ok-clicked => {
             root.state = AppSettingsState.Buttons;
-            // done();
+            // root.done();
+        }
+    }
+
+    if state == AppSettingsState.ScalesInformation: ScalesInformation {
+        clicked => {
+            root.state = AppSettingsState.Buttons;
         }
     }
 }

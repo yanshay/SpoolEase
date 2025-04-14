@@ -89,6 +89,8 @@ export global AppBackend {
     callback erase-previously-used-core-list();
     pure callback get-spools-core-list(filter: string)-> [SelectorOption];
     callback get-spool-core-weight(id: int) -> int;
+    pure callback get-connected-scale-info() -> string;
+    pure callback get-available-scales-info() -> [string];
 }
 
 export global AppState {
