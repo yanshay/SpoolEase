@@ -73,7 +73,6 @@ If you're interested in commercial licensing, redistribution rights, or other ac
 ## Required Components for SpoolEase Console
 
 - **[WT32-SC01 Plus](https://www.aliexpress.com/item/3256805864064800.html)**  
-
   **Important:** make sure to pick the board and not accessories
 - **7 wire cable with JST 1.25mm connector**  
   I received one in the box together with WT32-SC01-Plus
@@ -121,15 +120,17 @@ For components sourcing from Amazon EU/US, check out [this discussion](https://g
   Currently serves as an extra tag scanning point. Future features may utilize this scanning point differently than the main SpoolEase console.
 
 ## Detailed Instructions
-1. SpoolEase Console
-- [Build](documentation/console-build.md)
-- [Setup](documentation/console-setup.md)
-2. SpoolEase Scale
-- [Build](documentation/scale-build.md)
-- [Setup](documentation/scale-setup.md)
-3. General Information 
-- [Usage](documentation/usage.md)
-- [Troubleshooting](documentation/troubleshooting.md)
+- **SpoolEase Console**  
+  [Build](documentation/console-build.md)  
+  [Setup](documentation/console-setup.md)  
+
+- **SpoolEase Scale**  
+  [Build](documentation/scale-build.md)  
+  [Setup](documentation/scale-setup.md)
+
+- **System Information**  
+  [Usage](documentation/usage.md)  
+  [Troubleshooting](documentation/troubleshooting.md)
 
 ## Licensing
 
