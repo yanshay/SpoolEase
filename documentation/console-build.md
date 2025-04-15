@@ -1,8 +1,8 @@
-# SpoolEase Build Guide
+# SpoolEase Console Build Guide
 
 This guide provides step-by-step instructions for connecting the WT32-SC01-Plus board to a PN532 NFC module.
 
-Once wiring is done, print the 3D Model of SpoolEase and fit the WT32-SC01-Plus into its location, the PN532 to its location with the Antenna facing outwards, use screws wherever required and close the case. Make sure that the wiring don't interfere with the NFC reception.
+Once wiring is done, print the 3D Model of SpoolEase Console and fit the WT32-SC01-Plus into its location, the PN532 to its location with the Antenna facing outwards, use screws wherever required and close the case. Make sure that the wiring don't interfere with the NFC reception.
 
 Build is done.
 

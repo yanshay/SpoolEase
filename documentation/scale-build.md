@@ -1,4 +1,4 @@
-# SpoolEase Build Guide
+# SpoolEase Scale Build Guide
 
 This guide provides step-by-step instructions for building SpoolEase Scale - the filament weight module of the SpoolEase system.
 

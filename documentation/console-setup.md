@@ -1,8 +1,8 @@
-# SpoolEase Setup Guide
+# SpoolEase Console Setup Guide
 
 ## Overview
 
-After building SpoolEase, you’ll need to set it up for your 3D printer. Follow these simple steps to complete the process.
+After building SpoolEase Console, you’ll need to set it up for your 3D printer. Follow these simple steps to complete the process.
 
 ### What You’ll Need
 
