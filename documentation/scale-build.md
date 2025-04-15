@@ -4,8 +4,8 @@ This guide provides step-by-step instructions for building SpoolEase Scale - the
 
 ## Required Components
 - **[ESP32-S3-DevKit N16R8 board](https://www.aliexpress.com/item/1005005051294262.html)**  
-  *Important:* Select this specific board model as the 3D case was designed around its dimensions and component placement. Choose the **N16R8 welded** version to avoid difficult pin soldering.  
-  It’s especially important if you get this component from a different source—make sure it’s the exact same board. Carefully check button and LED placement, pin availability, dimensions, etc., as other similar DevKits exist and compatibility, especially physical, is not guaranteed.
+  **Important**: Select the **ESP32-S3 N16R8 welded version**. This specific model is required due to its memory configuration—other variants will not work. The welded version avoids difficult pin soldering, making assembly easier. The 3D case was also designed around this board’s exact dimensions and component layout, including button and LED placement.  
+  If you’re sourcing the board from a different supplier, double-check that it’s the exact same version. Look closely at the physical layout, available pins, and component positions—similar-looking DevKits exist, but may not be compatible.
 
 - **[HX711 AD Module + LoadCell](https://www.aliexpress.com/item/1005001537354199.html)**  
   Select a LoadCell based on the heaviest spool you plan to measure. Typical 1kg spools usually weigh around 1.25kg. Choose a 2-5kg capacity load cell for optimal accuracy. SpoolEase Scale has been tested with 2kg and 3kg load cells.
