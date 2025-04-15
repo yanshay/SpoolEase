@@ -24,7 +24,7 @@ This guide provides step-by-step instructions for building SpoolEase Scale - the
 
 - **2x M4x30 Socket head screws**
 
-- [**Printed 3D Model parts for the SpoolEase Scale case**](https://makerworld.com/en/models/1323092-spoolease-scale-easy-filament-weight-tracking)  
+- [**Printed 3D Model parts for the SpoolEase Scale case**](https://makerworld.com/en/models/1323092)  
   While printing the model, feel free to boost it, and Star the GitHub Repo. Thanks!
 
 - **Optional: [PN532 NFC reader module](https://www.aliexpress.com/item/3256806852006648.html)** (ensure you select the module, not accessories)  
