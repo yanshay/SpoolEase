@@ -2,9 +2,11 @@
 
 ## Overview
 
-Setup of SpoolEase Scale should begin before completing the build to verify all connections are working properly before closing the case and installing the final two screws.
+***Important:** SpoolEase Scale requires the SpoolEase Console to be installed with version 0.3.0 or later, and the Scale must be enabled via SpoolEase Console Web-Config.
 
-The setup process is similar to the SpoolEase Console setup you've already completed, with a few differences due to the lack of a display on SpoolEase Scale.
+The setup for SpoolEase Scale should begin partway through the build process—before the case is closed and the final two screws are installed. The instructions below specify the exact point where it’s best to pause the build and perform the setup.
+
+The setup process is similar to the one you followed for the SpoolEase Console, with a few differences since the SpoolEase Scale doesn’t have a display.
 
 ### What You'll Need
 
