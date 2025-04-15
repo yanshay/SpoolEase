@@ -22,7 +22,7 @@ The setup process is similar to the SpoolEase Console setup you've already compl
 The easiest way to flash the firmware is through Chrome or Edge (other browsers are not supported).
 
 1. Connect the SpoolEase Scale device to your computer using a USB-C cable.
-2. Visit [https://www.spoolease.io/scale.html](https://www.spoolease.io/scale.html)
+2. Visit [https://www.spoolease.io/scale.html#firmware](https://www.spoolease.io/scale.html#firmware)
 3. Press the "New Install" button for the version you want to flash at the bottom of the page.
 4. Select the correct port for the board and click **Connect**.
 5. A dialog titled "SpoolEaseScale" should appear. Click **Install SpoolEaseScale** and confirm by pressing **Install**.
@@ -34,7 +34,7 @@ The easiest way to flash the firmware is through Chrome or Edge (other browsers 
 
 ## Setting Up WiFi - The Easy Way
 
-> **If you encounter issues, retry by visiting** [http://www.spoolease.io/scale.html](http://www.spoolease.io/scale.html) **and clicking "New Install" again.**
+> **If you encounter issues, retry by visiting** [https://www.spoolease.io/scale.html#firmware](https://www.spoolease.io/scale.html#firmware) **and clicking "New Install" again.**
 
 1. Press **Next** on the "Installation complete!" dialog. This opens the **Configure WiFi** screen.
 2. Select your WiFi network or enter it manually, then enter your WiFi password.
