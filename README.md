@@ -1,3 +1,6 @@
+> **Note:** This repository is currently being updated to include a second module: SpoolEase Scale, which adds weight-related features. You may notice references to SpoolEase Scale that aren’t fully available yet—they’re coming soon.  
+> This module is additive—the original SpoolEase product and its build process remain fully valid. If you’re placing an order and want to prepare for SpoolEase Scale, check [SpoolEase Scale Build](documentation/scale-build.md) file for the additional components needed.
+
 # SpoolEase
 
 This project is an ESP32S3 based add-on device for Bambulab 3D printers (X1, P1, A1 product lines) to encode and decode NFC tags attached to filament spools. The tags store filament information, which can be used to automatically configure printer settings when loading spools, whether through AMS or an external spool. It also provides visibility to the filaments currently loaded into the AMS's and the External Spool.
