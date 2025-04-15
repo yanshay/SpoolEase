@@ -26,8 +26,8 @@ After building SpoolEase Console, you’ll need to set it up for your 3D printer
 The easiest way to flash the firmware is through Chrome or Edge (other browsers are not supported).
 
 1. Connect the device to your computer using a USB-C cable.
-2. Visit [https://www.spoolease.io/flash.html](https://www.spoolease.io/flash.html) /  [https://yanshay.github.io/SpoolEase-Web/flash.html](https://yanshay.github.io/SpoolEase-Web/flash.html).
-3. Click **"Web Flash Firmware"**.
+2. Visit [https://www.spoolease.io/console.html#firmware](https://www.spoolease.io/console.html#firmware).
+3. Press New Install on the version you want to install (recommended to start with "Current Version").
 4. Select the correct port (it may contain “JTag” in its name) and click **Connect**.
 5. A dialog titled "SpoolEase" should appear. Click **Install SpoolEase** and confirm by pressing **Install**.
 6. The device will erase old data (displaying "Erasing") and then install the new firmware (showing progress). This may take a few minutes.
@@ -38,7 +38,7 @@ The easiest way to flash the firmware is through Chrome or Edge (other browsers 
 
 ## Setting Up WiFi - The Easy Way
 
-> **If you encounter issues, retry by visiting** [http://spoolease.io/flash.html](http://spoolease.io/flash.html) **and clicking "Web Flash Firmware" again.**
+> **If you encounter issues, retry by visiting** [http://www.spoolease.io/console.html#firmware](http://www.spoolease.io/console.html#firmware) **and clicking "New Install" again.**
 
 1. Press **Next** on the "Installation complete!" dialog. This opens the **Configure WiFi** screen.
 2. Select your WiFi network or enter it manually, then enter your WiFi password.
