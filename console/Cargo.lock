@@ -196,9 +196,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.97"
+version = "1.0.98"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcfed56ad506cb2c684a14971b8861fdc3baaaae314b9e5f9bb532cbe3ba7a4f"
+checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
 name = "arbitrary"
@@ -1223,9 +1223,9 @@ dependencies = [
 
 [[package]]
 name = "data-encoding"
-version = "2.8.0"
+version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "575f75dfd25738df5b91b8e43e14d44bda14637a58fae779fd2b064f8bf3e010"
+checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "data-url"
@@ -2045,7 +2045,7 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework"
 version = "0.2.0"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=v0.2.0#2ee3dc3763c6ed7037ebd419409aa62170d783c5"
+source = "git+https://github.com/yanshay/esp-hal-app/?tag=v0.2.0#9db95fa8166c88370c3f293c028fc2e60c4521dd"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -3748,9 +3748,9 @@ checksum = "744a4c881f502e98c2241d2e5f50040ac73b30194d64452bb6260393b53f0dc9"
 
 [[package]]
 name = "libc"
-version = "0.2.171"
+version = "0.2.172"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c19937216e9d3aa9956d9bb8dfc0b0c8beb6058fc4f7a4dc4d850edf86a237d6"
+checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
 
 [[package]]
 name = "libfuzzer-sys"
@@ -4662,9 +4662,9 @@ dependencies = [
 
 [[package]]
 name = "orion"
-version = "0.17.9"
+version = "0.17.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf2e0b749a7c5fb3d43f06f19eff59b253b5480fa146533676cea27c3606530b"
+checksum = "ccc95d369bc6b5cf404c562cd33de439ae9ca6dc4b044cd2625b2072ca0b81e4"
 dependencies = [
  "fiat-crypto",
  "subtle",
@@ -4704,9 +4704,9 @@ checksum = "f38d5652c16fde515bb1ecef450ab0f6a219d619a7274976324d5e377f7dceba"
 
 [[package]]
 name = "pasetors"
-version = "0.7.3"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24e22fcef72afc51db287cf09a6893c735d4deff6f51d51bd97c01dd2debff17"
+checksum = "cb798c661c80718af935bea17997928937822e7369cd087667ff4179f9146551"
 dependencies = [
  "ct-codecs",
  "ed25519-compact",
@@ -4847,7 +4847,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 [[package]]
 name = "pn532"
 version = "0.5.0"
-source = "git+https://github.com/yanshay/pn532?branch=yanshay_async_full#3313e1358b4738b5c0403da8231aeb9aec7d9a1d"
+source = "git+https://github.com/yanshay/pn532?branch=yanshay_async_full#86fed1f8b68b1d5e915cc928c04d379aff5afec3"
 dependencies = [
  "embassy-time",
  "embedded-hal 1.0.0",
@@ -5036,9 +5036,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.94"
+version = "1.0.95"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a31971752e70b8b2686d7e46ec17fb38dad4051d94024c88df49b667caea9c84"
+checksum = "02b3e5e68a3a1a02aad3ec490a98007cbc13c37cbe84a3cd7b8e406d76e7f778"
 dependencies = [
  "unicode-ident",
 ]
@@ -5176,9 +5176,9 @@ dependencies = [
 
 [[package]]
 name = "ravif"
-version = "0.11.11"
+version = "0.11.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2413fd96bd0ea5cdeeb37eaf446a22e6ed7b981d792828721e74ded1980a45c6"
+checksum = "d6a5f31fcf7500f9401fea858ea4ab5525c99f2322cfcee732c0e6c74208c0c6"
 dependencies = [
  "avif-serialize",
  "imgref",
