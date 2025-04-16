@@ -586,7 +586,7 @@
       function applyDeviceNameSettings() {
         const name = document.getElementById("device-name").value;
         const data = { name };
-        const applyButton = document.getElementById("device-name-section-apply");
+        const applyButton = document.getElementById("device-name-apply");
         sendConfigData("/api/device-name-config", data, applyButton); // Replace with actual server endpoint
       }
 
