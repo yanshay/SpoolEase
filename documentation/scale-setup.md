@@ -50,8 +50,9 @@ The easiest way to flash the firmware is through Chrome or Edge (other browsers 
 1. Enter "Change-Me!" as Security Key and click **Verify Key**. A "Security Key Validated" message should appear.
 2. It is recommended to change the security key by filling in the "Set a Fixed Key" field and pressing "Apply".
 3. It is recommended to give the device a name so it can be identified as "<devicename>.local" on the network (this will work depending on the client you use) instead of using its IP address, which would be more difficult to find.
-4. Restart the device from the browser by pressing **Restart Device**.
-5. After rebooting, the front RGB LED will flash red until the device connects to the network, then it will remain steady red until SpoolEase Console connects to it.
+4. Enable or disable the NFC Module option (the one in SpoolEase Scale), depending on whether you installed it (by default it is enabled).
+5. Restart the device from the browser by pressing **Restart Device**.
+6. After rebooting, the front RGB LED will flash red until the device connects to the network, then it will remain steady red until SpoolEase Console connects to it.
 
 **Congratulations! Setup is complete.** Please continue to verify that everything is working properly.
 
@@ -85,7 +86,7 @@ The easiest way to flash the firmware is through Chrome or Edge (other browsers 
 
 ## Verifying that the NFC Reader is Working Properly
 
-Scan a tag using SpoolEase Scale, and it should appear on SpoolEase Console as if you scanned it there.
+If you installed the NFC Module, scan a tag using SpoolEase Scale, and it should appear on SpoolEase Console as if you scanned it there.
 
 ---
 

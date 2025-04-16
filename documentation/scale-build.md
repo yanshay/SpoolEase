@@ -111,6 +111,8 @@ Note: The ESP32-S3 GND is on one side of the board, while the other pins are on 
 
 ### 5. Optional PN532 Installation
 
+As mentioned earlier, this step is optional and only needed if you want to add a tag reader to SpoolEase Scale. However, if you skip it, make sure to disable the NFC module in the SpoolScale Web Config to avoid errors.
+
 1. **Connect wires to PN532:**
    - Similar to the HX711, connect 7 Dupont wires to the PN532
    - Install wires so they come out on the side opposite to the antenna (not the electronics side) (**image below is a bad example and doesn't follow this recommendation**)
