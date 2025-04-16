@@ -38,7 +38,13 @@ pub async fn app_task(
 ) {
     let spawner = framework.borrow().spawner;
 
-    let spool_tag_model = spool_tag::init(spi_device, irq, spawner);
+    let spool_tag_model = if app_config.borrow().nfc_module_available() {
+        info!("NFC Module available");
+        Some(spool_tag::init(spi_device, irq, spawner))
+    } else { 
+        info!("NFC Module not available");
+        None
+    };
 
     let scale_to_console_channel = mk_static!(ScaleToConsoleChannel, ScaleToConsoleChannel::new());
     let web_server_commands = crate::mk_static!(WebServerCommands, WebServerCommands::new());
@@ -181,7 +187,7 @@ pub struct App {
     pub scale_state: ScaleState,
     tare_during_calibration: Option<i32>,
     _terminal_proxy: Option<Rc<RefCell<TerminalProxy>>>, // to hold it alive
-    _spool_tag: Rc<RefCell<SpoolTag>>,
+    _spool_tag: Option<Rc<RefCell<SpoolTag>>>,
 }
 
 impl App {
@@ -189,7 +195,7 @@ impl App {
         app_config: Rc<RefCell<AppConfig>>,
         scale_to_console_channel: &'static ScaleToConsoleChannel,
         load_cell: Rc<RefCell<LoadCell>>,
-        spool_tag: Rc<RefCell<SpoolTag>>,
+        spool_tag: Option<Rc<RefCell<SpoolTag>>>,
         framework: Rc<RefCell<Framework>>,
     ) -> Rc<RefCell<Self>> {
         let scale_state = if let Some(scale_config) = &app_config.borrow().configured_calibration {
@@ -220,7 +226,9 @@ impl App {
         // Subscribe to rust spool_tag events
         let trait_for_spool_tag_rc: Rc<RefCell<dyn spool_tag::SpoolTagObserver>> = myself_rc.clone();
         let trait_for_spool_tag_weak: Weak<RefCell<dyn spool_tag::SpoolTagObserver>> = Rc::downgrade(&trait_for_spool_tag_rc);
-        spool_tag.borrow_mut().subscribe(trait_for_spool_tag_weak);
+        if let Some(spool_tag) = spool_tag {
+            spool_tag.borrow_mut().subscribe(trait_for_spool_tag_weak);
+        }
 
         let trait_for_framework_rc: Rc<RefCell<dyn FrameworkObserver>> = myself_rc.clone();
         let trait_for_framework_weak: Weak<RefCell<dyn FrameworkObserver>> = Rc::downgrade(&trait_for_framework_rc);

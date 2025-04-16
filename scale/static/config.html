@@ -71,9 +71,9 @@
       }
 
       .next-to-status-button {
-        height: 2rem; 
-        margin: 0; 
-        margin-left: 10px; 
+        height: 2rem;
+        margin: 0;
+        margin-left: 10px;
         padding: 0 10px;
       }
 
@@ -171,40 +171,45 @@
       }
 
       #custom-alert {
-          position: fixed;
-          top: 0; left: 0; width: 100%; height: 100%;
-          background: rgba(0, 0, 0, 0.5);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 9999;  /* Ensure this overlay is on top of all content */
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999; /* Ensure this overlay is on top of all content */
       }
 
       #custom-alert-box {
-          background: white;
-          padding: 20px;
-          border-radius: 5px;
-          text-align: center;
+        background: white;
+        padding: 20px;
+        border-radius: 5px;
+        text-align: center;
       }
     </style>
   </head>
   <body>
-    <div id="custom-alert" style="display: none;">
-        <div id="custom-alert-box">
-            <p id="custom-alert-text"></p>
-            <button onclick="closeAlert()">OK</button>
-        </div>
+    <div id="custom-alert" style="display: none">
+      <div id="custom-alert-box">
+        <p id="custom-alert-text"></p>
+        <button onclick="closeAlert()">OK</button>
+      </div>
     </div>
     <script>
-        function showAlert(message) {
-            document.getElementById("custom-alert-text").innerText = message;
-            document.getElementById("custom-alert").style.display = "flex";
-        }
+      function showAlert(message) {
+        document.getElementById("custom-alert-text").innerText = message;
+        document.getElementById("custom-alert").style.display = "flex";
+      }
 
-        function closeAlert() {
-            document.getElementById("custom-alert").style.display = "none";
-        }
-        window.alert = function(message) { showAlert(message); };
+      function closeAlert() {
+        document.getElementById("custom-alert").style.display = "none";
+      }
+      window.alert = function (message) {
+        showAlert(message);
+      };
     </script>
 
     <h1>SpoolEase-Scale</h1>
@@ -240,9 +245,7 @@
       <div id="set-fixed-key-section">
         <div class="form-row" style="margin-top: 20px">
           <label for="fixed-security-key"
-            >Set a Fixed Key:<span
-              >Optional, applies after restart</span
-            ></label
+            >Set a Fixed Key:<span>Optional, applies after restart</span></label
           >
           <input
             type="text"
@@ -307,7 +310,11 @@
     <div class="section" id="device-name-section">
       <h2 class="section-title">Device Name</h2>
       <div class="form-row">
-        <label for="device-name">Device Name:<span>mDNS (http://devicename.local) & discovery</span></label>
+        <label for="device-name"
+          >Device Name:<span
+            >mDNS (http://devicename.local) & discovery</span
+          ></label
+        >
         <input
           type="text"
           maxlength="63"
@@ -323,6 +330,29 @@
         type="button"
         class="apply-btn"
         onclick="applyDeviceNameSettings()"
+        disabled
+      >
+        Apply
+      </button>
+    </div>
+
+    <!-- NFC Module Settings -->
+    <div class="section" id="nfc-module-section">
+      <h2 class="section-title">NFC Module Settings</h2>
+      <div
+        class="form-row"
+        style="display: flex; flex-direction: row; gap: 6px"
+      >
+        <input type="Checkbox" id="nfc-module-available" /><label
+          for="nfc-module-available"
+          >Scale NFC Module Available</label
+        >
+      </div>
+      <button
+        id="nfc-module-apply"
+        type="button"
+        class="apply-btn"
+        onclick="applyNfcModuleSettings()"
         disabled
       >
         Apply
@@ -352,17 +382,17 @@
 
       <div class="form-row">
         <label for="ota-status">Status:</label>
-        <div style="display: flex; flex-direction: row;align-items: center;">
+        <div style="display: flex; flex-direction: row; align-items: center">
           <p style="height: 3rem" class="status-text" id="ota-status"></p>
           <button
-             style="height: 3rem"
-            class="next-to-status-button "
+            style="height: 3rem"
+            class="next-to-status-button"
             id="ota-status-update"
             type="button"
             onclick="fetchOtaStatus()"
             disabled
           >
-            Update<br/>Status
+            Update<br />Status
           </button>
         </div>
       </div>
@@ -382,7 +412,6 @@
         Restart Device
       </button>
     </div>
-
 
     <!-- Wasm Section -->
     <script type="module">
@@ -412,12 +441,14 @@
         // data is object, not json string
         const url = `${urlPrefix}${inurl}`;
         let encryptionKey = getEncryptionKey();
-        const response = await retryOperation(() =>
-          fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/text" },
-            body: encrypt(encryptionKey, JSON.stringify(data)),
-          }), retries
+        const response = await retryOperation(
+          () =>
+            fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/text" },
+              body: encrypt(encryptionKey, JSON.stringify(data)),
+            }),
+          retries,
         );
         return response;
       }
@@ -466,6 +497,7 @@
         await retryOperation(() => fetchWifiInitialConfig());
         await retryOperation(() => fetchOtaStatus());
         await retryOperation(() => fetchDeviceNameInitialConfig());
+        await retryOperation(() => fetchNfcModuleInitialConfig());
       }
 
       async function fetchInitialSectionConfig(section) {
@@ -506,8 +538,10 @@
           document.getElementById("wifi-section-apply").disabled = true;
           document.getElementById("device-name-apply").disabled = true;
           document.getElementById("set-fixed-key-apply").disabled = true;
+          document.getElementById("nfc-module-apply").disabled = true;
           if (response.status == 400) {
-            document.getElementById("security-key-feedback").textContent = "Security Key is incorrect";
+            document.getElementById("security-key-feedback").textContent =
+              "Security Key is incorrect";
 
             document.getElementById("ota-request").disabled = true;
             document.getElementById("ota-status-update").disabled = true;
@@ -516,7 +550,8 @@
             return;
           } else if (response.ok) {
             document.getElementById("verify-key-button").disabled = true;
-            document.getElementById("security-key-feedback").textContent = "Security Key validated";
+            document.getElementById("security-key-feedback").textContent =
+              "Security Key validated";
 
             document.getElementById("ota-request").disabled = false;
             document.getElementById("ota-status-update").disabled = false;
@@ -593,15 +628,17 @@
       function applyDeviceNameSettings() {
         const name = document.getElementById("device-name").value;
         const data = { name };
-        const applyButton = document.getElementById("device-name-section-apply");
+        const applyButton = document.getElementById(
+          "device-name-section-apply",
+        );
         sendConfigData("/api/device-name-config", data, applyButton); // Replace with actual server endpoint
       }
 
       function filterDnsName(el) {
         el.value = el.value
           .toLowerCase()
-          .replace(/[^a-z0-9-]/g, '')   // remove invalid chars
-          .replace(/^-+/, '');          // trim leading hyphens (trailing also not allowed, but during typing it is there)
+          .replace(/[^a-z0-9-]/g, "") // remove invalid chars
+          .replace(/^-+/, ""); // trim leading hyphens (trailing also not allowed, but during typing it is there)
       }
 
       function applyFixedSecurityKeySettings() {
@@ -610,7 +647,27 @@
         const applyButton = document.getElementById("set-fixed-key-apply");
         sendConfigData("/api/fixed-key-config", data, applyButton); // Replace with actual server endpoint
       }
-    
+
+      function applyNfcModuleSettings() {
+        const scaleForm = document.getElementById("nfc-module-section");
+        const available = document.getElementById("nfc-module-available").checked; 
+
+        const applyButton = document.getElementById("nfc-module-apply");
+        const data = { available };
+        sendConfigData("/api/nfc-module-config", data, applyButton);
+      }
+
+      async function fetchNfcModuleInitialConfig() {
+        const scaleForm = document.getElementById("nfc-module-section");
+        const data = await fetchInitialSectionConfig("nfc-module");
+
+        if (data.available) {
+          document.getElementById("nfc-module-available").checked = data.available;
+        } else {
+          document.getElementById("nfc-module-available").checked = false;
+        }
+      }
+
       // ==========================================
       // Initialization
       // ==========================================
@@ -625,6 +682,7 @@
         );
         setupChangeListeners("set-fixed-key-section", "set-fixed-key-apply");
         setupChangeListeners("device-name-section", "device-name-apply");
+        setupChangeListeners("nfc-module-section", "nfc-module-apply");
         // setupChangeListeners("display-section", "display-section-apply");
       });
 
@@ -640,8 +698,6 @@
         }
       }
     </script>
-      
-    </script>
 
     <!-- for debugging -->
     <script>
@@ -655,43 +711,10 @@
           window.location.hostname === "localhost" ||
           window.location.hostname === "127.0.0.1"
         ) {
-          urlPrefix = "http://192.168.10.79" + `${urlPrefix}`;
+          urlPrefix = "http://192.168.10.82" + `${urlPrefix}`;
         }
       });
     </script>
 
-    <!-- Script Example of added section -->
-    <script>
-      // async function fetchDisplayInitialConfig() {
-      //   const data = await fetchInitialSectionConfig("display");
-      //
-      //   if (data) {
-      //     document.getElementById("dimming-timeout").value =
-      //       data.dimming_timeout;
-      //     document.getElementById("dimming-percent").value =
-      //       data.dimming_percent;
-      //     document.getElementById("blackout-timeout").value =
-      //       data.blackout_timeout;
-      //     // document.getElementById("dimming-percent-display").textContent =
-      //     //   `${data.dimming_percent}%`;
-      //   }
-      // }
-
-      // // Function to collect Display settings and send them as JSON
-      // function applyDisplaySettings() {
-      //   const dimming_timeout = parseInt(
-      //     document.getElementById("dimming-timeout").value,
-      //   );
-      //   const dimming_percent = parseInt(
-      //     document.getElementById("dimming-percent").value,
-      //   );
-      //   const blackout_timeout = parseInt(
-      //     document.getElementById("blackout-timeout").value,
-      //   );
-      //   const data = { dimming_timeout, dimming_percent, blackout_timeout };
-      //   const applyButton = document.getElementById("display-section-apply");
-      //   sendConfigData("/api/display-config", data, applyButton); // Replace with actual server endpoint
-      // }
-    </script>
   </body>
 </html>
