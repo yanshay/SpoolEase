@@ -25,7 +25,7 @@ And most importantly, even though it’s an open-source project, it’s easy to 
 
 ## Press Below for Video Demonstration of SpoolEase Scale
 <div align="center">
-  <a href="https://www.youtube.com/watch?v=ne-LQNAfNa8">
+  <a href="https://www.youtube.com/watch?v=3tB1VMCOK6c">
     <img src="documentation/scale-youtube-cover.jpg" height="400px">
   </a>
 </div>
