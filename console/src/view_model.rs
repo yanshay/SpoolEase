@@ -885,6 +885,11 @@ impl FrameworkObserver for ViewModel {
     }
 
     fn on_ota_version_available(&self, version: &str, newer: bool) {
+        if newer {
+            info!("OTA: New version {version}");
+        } else {
+            info!("OTA: Up to date with available version {version}");
+        }
         self.ui_weak
             .unwrap()
             .global::<crate::app::FrameworkState>()
