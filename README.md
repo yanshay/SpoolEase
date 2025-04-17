@@ -1,15 +1,12 @@
-> **Note:** This repository is currently being updated to include a second module: SpoolEase Scale, which adds weight-related features. You may notice references to SpoolEase Scale that aren’t fully available yet—they’re coming soon.  
-> This module is additive—the original SpoolEase product and its build process remain fully valid. If you’re placing an order and want to prepare for SpoolEase Scale, check [SpoolEase Scale Build](documentation/scale-build.md) file for the additional components needed.
-
 # SpoolEase System
 
 This project is an ESP32-S3–based add-ons for Bambulab 3D printers (X1, P1, and A1 series) that simplifies filament spool management.
 
 It includes two products:  
 - **SpoolEase Console** – Encodes and decodes NFC tags attached to filament spools. These tags store filament data and spool weight, enabling automatic printer configuration when loading spools via the AMS or an external spool. It also shows which filaments are currently loaded.  
-ℹ️ SpoolEase Console can be used on its own and does not require SpoolEase Scale.  
+ℹ️ SpoolEase Console works independently and does not require SpoolEase Scale.  
 - **SpoolEase Scale** – Newly released, this module weighs spools to track available filament, laying the foundation for a broader filament inventory system.  
-ℹ️ SpoolEase Scale requires SpoolEase Console to function.
+ℹ️ SpoolEase Scale depends on SpoolEase Console to operate.
 
 And most importantly, even though it’s an open-source project, it’s easy to build and surprisingly simple to set up!
 
