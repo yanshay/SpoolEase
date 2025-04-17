@@ -7,8 +7,7 @@ import { Selector, MyButton, Title, LeftTab } from "framework/widgets.slint";
 
 import { Utils } from "utils.slint";
 import { Trays } from "trays.slint";
-import { AppBackend, AppState, AppConsts, ControlState, SpoolStagingState, SpoolScaleState, UiTray, UiTrayState, UiFilamentState, UiSpoolInfo } from "app.slint";
-import { SpoolStaging } from "spoolstaging.slint";
+import { AppBackend, AppState, AppConsts, ControlState, SpoolScaleState, UiTray, UiTrayState, UiFilamentState, UiSpoolInfo } from "app.slint";
 import { ControlPanel } from "controlpanel.slint";
 import { SelectPrinter } from "select-printer.slint";
 import { AppSettings } from "app-settings.slint";
@@ -103,6 +102,10 @@ export component AppWindow inherits Window {
                 }
 
                 bottom := ControlPanel {
+                    clicked-ota => {
+                        root.current-page = 2;
+                        FrameworkState.ota-state = OtaState.UserInput;
+                    }
                     staging-section-width: external.width;
                     button-width: external.width;
                 }

@@ -45,7 +45,8 @@ struct AppInfo {
 
 struct OtaInfo {
     version: string,
-    newer: bool}
+    newer: bool
+}
 
 export global FrameworkState {
     in-out property <AppInfo> app-info: { name: "AppName", version: "?.?.?" };

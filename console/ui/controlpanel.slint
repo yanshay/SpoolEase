@@ -266,10 +266,12 @@ export component PostAction inherits ControlPanelBase {
 }
 
 export component ControlPanel inherits HorizontalLayout {
+    callback clicked-ota;
     in property <length> staging-section-width;
     in property <length> button-width;
     padding-top: 5px;
     staging := SpoolStaging {
+        clicked-ota => { root.clicked-ota(); }
         width: staging-section-width;
     }
 
