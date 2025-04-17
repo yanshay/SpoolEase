@@ -137,6 +137,11 @@ For components sourcing from Amazon EU/US, check out [this discussion](https://g
   [Usage](documentation/usage.md)  
   [Troubleshooting](documentation/troubleshooting.md)
 
+## Third Party Attributions
+SpoolScale uses the following sources for it's Spools Catalog:  
+- Scuk's "Empty Spool Weight Catalog": https://www.printables.com/model/464663-empty-spool-weight-catalog
+- https://www.onlyspoolz.com/portfolio/
+
 ## Licensing
 
 This software is licensed under Apache License, Version 2.0 **with Commons Clause** - see [LICENSE.md](LICENSE.md).
