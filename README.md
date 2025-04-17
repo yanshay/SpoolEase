@@ -30,6 +30,8 @@ And most importantly, even though it’s an open-source project, it’s easy to 
   </a>
 </div>
 
+---
+
 **Notice:** This is a new project currently in its early stages. While it has been installed by many happy users, new users should be aware that there are no warranties, liabilities, or guarantees, and they assume all risks involved.
 ## Collaboration
 
