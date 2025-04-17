@@ -23,8 +23,14 @@ And most importantly, even though it’s an open-source project, it’s easy to 
   </a>
 </div>
 
-**Notice:** This is a new project currently in its early stages. While it has been installed by many happy users, new users should be aware that there are no warranties, liabilities, or guarantees, and they assume all risks involved.
+## Press Below for Video Demonstration of SpoolEase Scale
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=ne-LQNAfNa8">
+    <img src="documentation/scale-youtube-cover.jpg" height="400px">
+  </a>
+</div>
 
+**Notice:** This is a new project currently in its early stages. While it has been installed by many happy users, new users should be aware that there are no warranties, liabilities, or guarantees, and they assume all risks involved.
 ## Collaboration
 
 - For questions, feedback, comments, etc. please use the [repo discussions area](https://github.com/yanshay/SpoolEase/discussions)
