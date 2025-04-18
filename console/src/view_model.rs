@@ -575,7 +575,7 @@ impl ViewModel {
                     if let Some(staging_tag_info) = borrowed_filament_staging.tag_info.clone() {
                         staging_tag_info
                     } else {
-                        return 10;
+                        return 0; // signals an error, UI will not continue
                     }
                 } else {
                     match moved_bambu_printer.borrow().get_tag_info_to_encode(tray_id) {
@@ -586,7 +586,7 @@ impl ViewModel {
                                 .unwrap()
                                 .global::<crate::app::AppState>()
                                 .invoke_encoding_failed(err.to_shared_string());
-                            return 10;
+                            return 0; // signals an error, UI will not continue
                         }
                     }
                 };

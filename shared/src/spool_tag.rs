@@ -221,6 +221,7 @@ pub async fn nfc_task(
     loop {
         debug!("Waiting for Tag");
 
+        // This section is to avoid borrow checker issues, creating a res that does not require keeping borrowed PN532
         let copied_res = {
             // This complexity is to deal with compiler borrowing issues in select, copying the result to be separate from pn532 internal buffers (only because of select and the borrow checker)
             let res = select(
@@ -233,8 +234,10 @@ pub async fn nfc_task(
                 Either::First(ref f) => Either::First(f.clone()),
                 Either::Second(s) => match s {
                     Ok(response) => {
+                        debug!("Full inlist response: {response:x?}");
                         let number_of_tags_found = response[0];
                         if number_of_tags_found == 0 { // no tag found, shouldn't occure
+                            error!("PN532 inlisted 0 tags found, should not occur!");
                             continue;
                         }
                         if number_of_tags_found != 1 {
@@ -254,8 +257,10 @@ pub async fn nfc_task(
             }
         };
 
+        // Now the real work
         match copied_res {
             Either::First(tag_operation) => {
+                debug!("Received request for operation {tag_operation:?} from now on");
                 curr_operation_with_tag = Some(tag_operation);
                 in_switch_operation = true;
                 previous_operation_tag_last_seen_time = last_seen_tag_time;
@@ -279,6 +284,7 @@ pub async fn nfc_task(
 
                         match &curr_operation_with_tag.as_ref() {
                             Some(TagOperation::WriteTag(write_tag_reuest)) => {
+                                debug!("Performing write tag operation");
                                 spool_tag_rc.borrow().notify_tag_status(Status::FoundTagNowWriting);
                                 let tag_uid = URL_SAFE_NO_PAD.encode(last_seen_tag.as_ref().unwrap().uid());
                                 let final_tag_text = write_tag_reuest.text.replace(TAG_PLACEHOLDER, &tag_uid);
@@ -300,6 +306,7 @@ pub async fn nfc_task(
                                 }
                             }
                             Some(TagOperation::ReadTag(_read_tag_request)) => {
+                                debug!("Performing read tag operation");
                                 spool_tag_rc.borrow().notify_tag_status(Status::FoundTagNowReading);
                                 match crate::nfc::read_ndef_record(&mut pn532, Duration::from_millis(500)).await {
                                     Ok(read_record) => {

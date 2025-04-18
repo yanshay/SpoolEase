@@ -92,7 +92,7 @@ component Spool inherits Rectangle {
     }
 
     tray-border := Rectangle {
-        border-width: area.pressed || AppState.highlight-trays || (AppState.highlight-tray == tray-state.id && AppState.highlight-tray-flash)  ? 4px 
+        border-width: area.pressed || (AppState.highlight-trays && tray-state.filament.state == UiFilamentState.Known) || (AppState.highlight-tray == tray-state.id && AppState.highlight-tray-flash)  ? 4px 
                       : 1px;
         border-color: self.border-width == 1px ? black : utils.contrasting_color(root.background);
     }
@@ -186,7 +186,7 @@ export component Trays {
                     AppState.tray_id_to_encode_after_setting_core_weight = trays-state[index].id; // set this even if no spool loaded, in case spool is loaded while encoding
                     if AppState.control-state == ControlState.StagingSelected {
                         AppBackend.set-staging-to-tray(trays-state[index].id);
-                    } else if AppState.control-state == ControlState.EncodeSelectSource {
+                    } else if AppState.control-state == ControlState.EncodeSelectSource && trays-state[index].filament.state == UiFilamentState.Known {
                        // if a spool is on the scale, we move to set core weight
                         if AppState.spool-scale-state == SpoolScaleState.Loaded {
                             AppState.control-state = ControlState.EncodeSetSpoolCore

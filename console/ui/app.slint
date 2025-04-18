@@ -96,6 +96,9 @@ export global AppBackend {
 export global AppState {
     in-out property <bool> select-printer: false;
     in-out property <ControlState> control-state: ControlState.Booting;
+    changed control-state => {
+      self.stop-highlight-trays();
+    }
 
     in-out property <SpoolStagingState> spool-staging-state: SpoolStagingState.Empty;
     in-out property <UiSpoolInfo> spool-staging-info;
@@ -148,6 +151,10 @@ export global AppState {
         AppState.highlight-tray = -1;
         AppState.highlight-tray-flash = false;
         AppState.highlight-tray-counter = AppState.highlight-tray-counter-length;
+    }
+    public function stop-highlight-trays() {
+        AppState.highlight-trays = false;
+        AppState.highlight-staging = false;
     }
 
 // Functions called locally fom Rust
@@ -207,15 +214,13 @@ export global AppState {
     public function encoding-timeout() {
         self.control-state = ControlState.PostAction;
         self.user-message = "Encoding Tag Timed Out";
-        self.user-message-type = StatusType.Error
+        self.user-message-type = StatusType.Error;
     }
 
     public function encoding-failed(err-txt: string) {
-        if self.control-state == ControlState.Reading {
-            self.control-state = ControlState.PostAction;
-            self.user-message = "Encoding Tag Failed\n\{err-txt}";
-            self.user-message-type = StatusType.Error;
-        }
+        self.control-state = ControlState.PostAction;
+        self.user-message = "Encoding Tag Failed\n\{err-txt}";
+        self.user-message-type = StatusType.Error;
     }
     public function encoding-succeeded(ams-id: int, tray-id: int) {
       // 254 - External Tray
@@ -242,11 +247,13 @@ export global AppState {
     }
 
     public function encode-start(tray-id: int, weight-core: int, weight-new: int, core-name: string) {
-        self.encode-timeout = AppBackend.encode-tray-to-tag(tray-id, weight-core, weight-new, core-name);
-        AppState.start-highlight-tray-forever(tray-id);
-        self.control-state = ControlState.Encoding;
-        user-message = "Place Spool Tag to Encode";
-        user-message-type = StatusType.Normal;
+          self.encode-timeout = AppBackend.encode-tray-to-tag(tray-id, weight-core, weight-new, core-name);
+          if self.encode-timeout != 0 { // return value of 0 means there was an error, error will be reported separately
+              AppState.start-highlight-tray-forever(tray-id);
+              self.control-state = ControlState.Encoding;
+              user-message = "Place Spool Tag to Encode";
+              user-message-type = StatusType.Normal;
+          }
     }
 
     public function new_single_tray_loading(tray_id: int) {
