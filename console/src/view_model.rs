@@ -558,7 +558,7 @@ impl ViewModel {
         let moved_view_model = self.view_model.clone().unwrap();
         moved_ui.unwrap().global::<crate::app::AppBackend>().on_encode_tray_to_tag(
             move |tray_id, weight_core, weight_new, core_name: SharedString| {
-                info!("Request to encode tag with {tray_id} info");
+                info!("Request to encode tag with tray {tray_id} info");
                 // Start with adding the core info to the previoysly used list
                 if !core_name.is_empty() {
                     moved_view_model
