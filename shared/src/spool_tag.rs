@@ -148,7 +148,7 @@ pub async fn nfc_task(
 
     let timer = crate::pn532_ext::Esp32TimerAsync::new();
 
-    let mut pn532: pn532::Pn532<_, _, 32> = pn532::Pn532::new(interface, timer);
+    let mut pn532: pn532::Pn532<_, _, 64> = pn532::Pn532::new(interface, timer);
     // pn532.wake_up().await.unwrap();
 
     info!("Configuring pn532");

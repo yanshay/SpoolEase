@@ -209,4 +209,22 @@ impl NDEFStructure {
     }
 }
 
+#[derive(Debug, PartialEq, DekuRead, DekuWrite)]
+pub struct NDEFStructureType4 {
+    #[deku(endian="big", update = "self.record.to_bytes().unwrap().len()")]
+    message_len: u16,
+    pub record: Record,
+}
+impl NDEFStructureType4 {
+    pub fn new(record: Record) -> Self {
+        let mut res = NDEFStructureType4 {
+            message_len: 0,
+            record,
+        };
+        res.record.update().unwrap();
+        res.update().unwrap();
+        res
+    }
+}
+
 /////////////////////////////////////////////////////////////////////////////////////////
