@@ -1025,12 +1025,13 @@ impl FilamentInfo {
     }
 }
 
-const ENCODING_TABLE: [(char, &str); 8] = [
+const ENCODING_TABLE: [(char, &str); 9] = [
     ('%', "%25"),
     ('/', "%2F"),
     ('&', "%26"),
     ('?', "%3F"),
     (' ', "%20"),
+    ('#', "%23"),
     ('(', "%28"),
     (')', "%29"),
     ('~', "%7E"),
