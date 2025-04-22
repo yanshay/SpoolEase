@@ -83,6 +83,7 @@ export global AppBackend {
     callback set-staging-to-tray(tray-id: int);
     callback encode-tray-to-tag(tray-id: int, weight-core: int, weight-new: int, core-name: string) -> int; // returns how long it will try to encode, for timer
     callback read-tag-mode();
+    callback emulate-tag-web-config();
     callback reset-printer();
     callback select-printer(printer: string);
     callback calibrate-scale(weight: int);

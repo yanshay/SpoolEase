@@ -665,6 +665,12 @@ ProtoPasta 500g - Cardboard - 84g,84"
       window.decrypt = decrypt;
       window.encrypt = encrypt;
       document.body.style.display = "block";
+
+      const secKeyOnUrl = getHashParam('sk');
+      if (secKeyOnUrl) {
+        document.getElementById("security-key").value = secKeyOnUrl;
+        applyKeyFetchConfigs();
+      }
     </script>
     <script>
       async function sendData(inurl, data, retries = 5) {
@@ -956,6 +962,11 @@ ProtoPasta 500g - Cardboard - 84g,84"
 
         handleSpoolsTextAreaInput();
       });
+
+      function getHashParam(key) {
+        const params = new URLSearchParams(location.hash.slice(1));
+        return params.get(key) ?? null;
+      }
 
       function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
         const section = document.getElementById(sectionId);
@@ -1457,7 +1468,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           window.location.hostname === "localhost" ||
           window.location.hostname === "127.0.0.1"
         ) {
-          urlPrefix = "http://192.168.10.53";
+          urlPrefix = "http://192.168.10.52";
         }
       });
     </script>

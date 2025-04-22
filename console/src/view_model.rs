@@ -162,7 +162,7 @@ impl ViewModel {
         let framework = self.framework.clone();
         let stack = self.stack;
         ui_framework_backend.on_start_web_config(move || {
-            framework.borrow().start_web_app(stack, WebConfigMode::STA);
+            framework.borrow_mut().start_web_app(stack, WebConfigMode::STA);
         });
 
         let framework = self.framework.clone();
@@ -207,6 +207,16 @@ impl ViewModel {
         let moved_spool_tag = self.spool_tag_model.clone();
         ui_app_backend.on_read_tag_mode(move || {
             moved_spool_tag.borrow().read_tag();
+        });
+
+        let moved_spool_tag = self.spool_tag_model.clone();
+        let moved_framework = self.framework.clone();
+        ui_app_backend.on_emulate_tag_web_config(move || {
+            let borrowed_framework = moved_framework.borrow();
+            let web_config_ip_url = &borrowed_framework.web_config_ip_url;
+            let web_config_key = &borrowed_framework.web_config_key;
+            let full_web_config_url = format!("{web_config_ip_url}#sk={web_config_key}");
+            moved_spool_tag.borrow().emulate_tag(&full_web_config_url);
         });
 
         // Spool Scale

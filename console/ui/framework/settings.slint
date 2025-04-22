@@ -1,6 +1,7 @@
 import { MyButton } from "widgets.slint";
 import { FrameworkState, FrameworkBackend, OtaState, WebConfigState, ResetWifiCredentialsState, ResetFixedSecurityKeyState, RestartDeviceState } from "framework.slint";
 import { Title, LeftTab } from "widgets.slint";
+import { AppBackend } from "../app.slint";
 
 export component MyText inherits Text {
     height: 22px;
@@ -19,10 +20,12 @@ export component WebConfigButton inherits SettingsButton {
             // Order is important
             FrameworkState.web-config-state = WebConfigState.Starting;
             FrameworkBackend.start-web-config();
+            AppBackend.emulate-tag-web-config();
         } else {
             // Order is important
             FrameworkState.web-config-state = WebConfigState.Stopping;
             FrameworkBackend.stop-web-config();
+            AppBackend.read-tag-mode();
         }
     }
 }
@@ -213,7 +216,8 @@ export component FrameworkSettingsDetails inherits Rectangle {
                 }
 
                 MyText {
-                    text: "2. Browse to the URL" + (FrameworkState.web-config-state == WebConfigState.Started-AP ? " (if not shown automatically)" : "");
+                    text: "2. Browse to URL" + 
+                          (FrameworkState.web-config-state == WebConfigState.Started-AP ? " (if not shown automatically)" : " (or scan NFC with your phone)");
                 }
 
                 MyText {

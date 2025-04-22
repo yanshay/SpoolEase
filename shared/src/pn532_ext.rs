@@ -325,7 +325,8 @@ pub async fn emulate_tag<I, T, const N: usize>(
     pn532: &mut pn532::Pn532<I, T, N>,
     ndef_record: crate::ndef::Record,
     short_uid: Option<[u8; 3]>,
-) -> Result<(), String>
+    timeout: Duration,
+) -> Result<bool, String>
 where
     I: pn532::Interface,
     T: pn532::CountDown<Time = embassy_time::Duration>,
@@ -333,9 +334,9 @@ where
     // info!("---- Sending TG_INIT_AS_TARGET");
     match pn532
         .process(
-            &pn532::Request::tg_init_as_target(None, short_uid),
+            &pn532::Request::tg_init_as_target(Some(5), short_uid),
             37,
-            Duration::from_secs(60),
+            timeout,
         )
         .await
     {
@@ -343,10 +344,12 @@ where
             // info!("TG_INIT_AS_TARGET response: {:x?}", v);
         }
         Err(err) => {
-            return Err(format!("Failed to communicate with Tag Reader: {err:?}"));
+            match err {
+                pn532::Error::TimeoutResponse => return Ok(false),
+                _ => return Err(format!("Error resopnse emulating tag: {err:?}")),
+            }
         }
     }
-
 
     let ndef_structure = crate::ndef::NDEFStructureType4::new(ndef_record);
 
@@ -368,7 +371,7 @@ where
             Ok(v) => {
                 if v.len() <= 1 {
                     if sent_entire_ndef {
-                        break; // and return Ok
+                        return Ok(true);
                     } else {
                         return Err("Received empty tgGetData response before sending entire NDEF".to_string());
                     }
@@ -377,7 +380,7 @@ where
                 let status = v[0];
                 if status != 0 {
                     if sent_entire_ndef {
-                        break; // and return Ok
+                        return Ok(true);
                     } else {
                         return Err(format!("Received error status 0x{status:x} in tgGetData response before sending entire NDEF"));
                     }
@@ -491,7 +494,6 @@ where
             }
         }
     }
-    Ok(())
 }
 
 fn get_data_to_set<'a, 'b, 'c>(send_buf: &'a mut [u8], payload: &'b [u8], command: &'c [u8;2]) -> &'a [u8] {

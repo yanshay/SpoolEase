@@ -21,7 +21,7 @@ serde = { version = "1.0.213", default-features = false, features = [ "derive", 
 serde_json = { version = "1.0.132", default-features = false, features = [ "alloc", ] }
 
 
-framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", features = ["esp32s3"], tag="v0.2.0" }
+framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", features = ["esp32s3"] }
 # framework = { package = "esp-hal-app-framework", path = "../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3"] }
 deku = { version = "0.17.0", default-features = false, features = ["alloc"] }
 pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_async_full", default-features = false }
@@ -36,6 +36,7 @@ base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 embassy-futures = { version = "0.1.1" }
 embedded-hal-bus = { version = "0.2.0", features = ["async"] }
 embassy-executor = { version = "0.7.0", features = ["nightly"] }
+getrandom = { version = "0.2.15", features = ["custom"] }
 
 [features]
 default = ["esp32s3"]

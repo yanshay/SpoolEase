@@ -2055,7 +2055,7 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework"
 version = "0.2.0"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=v0.2.0#39284b2cf4c8beb3a9bf31b17ffc865ac93c2429"
+source = "git+https://github.com/yanshay/esp-hal-app/#e679fe0422b57a4b722f96f5c3615f6e6812cbaf"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -4859,7 +4859,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 [[package]]
 name = "pn532"
 version = "0.5.0"
-source = "git+https://github.com/yanshay/pn532?branch=yanshay_async_full#181f0e25fa366bfe34d65301dbd104f606055dec"
+source = "git+https://github.com/yanshay/pn532?branch=yanshay_async_full#c393130d06724dadaebf65c06526aea688d43f2a"
 dependencies = [
  "embassy-time",
  "embedded-hal 1.0.0",
@@ -5595,6 +5595,7 @@ dependencies = [
  "embedded-hal-bus",
  "esp-hal",
  "esp-hal-app-framework",
+ "getrandom 0.2.15",
  "log",
  "no_std_io",
  "pn532",
