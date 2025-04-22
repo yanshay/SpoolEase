@@ -464,7 +464,7 @@ async fn main(spawner: Spawner) {
 
     Framework::wait_for_wifi(&framework).await; // this is mostly to start the web app after all tasks initialized and won't miss this start message
     framework
-        .borrow()
+        .borrow_mut()
         .start_web_app(sta_stack, framework::framework::WebConfigMode::STA);
 
     loop {
