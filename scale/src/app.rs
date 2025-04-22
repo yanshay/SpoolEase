@@ -1,8 +1,7 @@
 use core::cell::RefCell;
 
 use alloc::{
-    rc::{Rc, Weak},
-    string::ToString,
+    format, rc::{Rc, Weak}, string::ToString
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, pubsub::PubSubBehavior};
 use embassy_time::{with_timeout, Duration, Timer};
@@ -19,7 +18,7 @@ use framework::{
 use num_traits::abs;
 use shared::{scale::{ConsoleToScale, ScaleToConsole}, spool_tag::{self, SpoolTag, SpoolTagObserver}};
 
-use crate::{app_config::AppConfig, console_proxy, load_cell::LoadCell, rgb_led::rgb_led_task};
+use crate::{app_config::AppConfig, console_proxy, load_cell::LoadCell, rgb_led::rgb_led_task, scale_button::scale_button_task};
 
 const MIN_LOADED_WEIGHT: i32 = 5;
 
@@ -34,7 +33,8 @@ pub async fn app_task(
     spi_device: ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
     irq: esp_hal::gpio::Input<'static>,
     led_pin: AnyPin,
-    rmt: RMT
+    rmt: RMT,
+    button_pin: AnyPin,
 ) {
     let spawner = framework.borrow().spawner;
 
@@ -69,6 +69,7 @@ pub async fn app_task(
     );
 
     spawner.spawn(rgb_led_task(app.clone(), framework.clone(), led_pin, rmt)).ok();
+    spawner.spawn(scale_button_task(app.clone(), framework.clone(), button_pin)).ok();
 
     console_proxy::init(
         framework.clone(),
@@ -178,6 +179,12 @@ pub enum ScaleState {
     Loaded(i32, i32), // Stable-read, Unstable-read
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Pn532State {
+    InlistPassiveTarget,
+    InitAsTarget,
+}
+
 pub struct App {
     framework: Rc<RefCell<Framework>>,
     app_config: Rc<RefCell<AppConfig>>,
@@ -187,7 +194,8 @@ pub struct App {
     pub scale_state: ScaleState,
     tare_during_calibration: Option<i32>,
     _terminal_proxy: Option<Rc<RefCell<TerminalProxy>>>, // to hold it alive
-    _spool_tag: Option<Rc<RefCell<SpoolTag>>>,
+    pub spool_tag: Option<Rc<RefCell<SpoolTag>>>,
+    pub pn532_state: Pn532State,
 }
 
 impl App {
@@ -218,7 +226,8 @@ impl App {
             scale_state,
             tare_during_calibration: None,
             _terminal_proxy: None,
-            _spool_tag: spool_tag.clone(),
+            spool_tag: spool_tag.clone(),
+            pn532_state: Pn532State::InlistPassiveTarget,
         };
         let myself_rc = Rc::new(RefCell::new(myself));
 
@@ -338,6 +347,21 @@ impl App {
         self.connected = false;
         self.scale_to_console_channel.clear();
     }
+    pub fn notify_button_long_press(&mut self) {
+        if let Some(spool_tag) = self.spool_tag.clone() {
+            if matches!(self.pn532_state, Pn532State::InlistPassiveTarget) {
+                let borrowed_framework = self.framework.borrow();
+                let web_config_ip_url = &borrowed_framework.web_config_ip_url;
+                let web_config_key = &borrowed_framework.web_config_key;
+                let full_web_config_url = format!("{web_config_ip_url}#sk={web_config_key}");
+                spool_tag.borrow().emulate_tag(&full_web_config_url);
+                self.pn532_state = Pn532State::InitAsTarget;
+            } else {
+                spool_tag.borrow().read_tag();
+                self.pn532_state = Pn532State::InlistPassiveTarget;
+            }
+        }
+    }
 }
 
 pub type ScaleToConsoleChannel = Channel<NoopRawMutex, ScaleToConsole, 5>;
@@ -386,6 +410,13 @@ impl SpoolTagObserver for App {
             info!("PN532 Initialized Successfuly");
         } else {
             error!("Failed to initialize PN532");
+        }
+    }
+
+    fn on_emulated_tag_read(&mut self) {
+        if let Some(spool_tag) = self.spool_tag.clone() {
+            spool_tag.borrow().read_tag();
+            self.pn532_state = Pn532State::InlistPassiveTarget;
         }
     }
 }

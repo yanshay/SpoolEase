@@ -18,3 +18,10 @@
 - Multi-printer support
 
 
+## 0.3.0 
+- Introduced SpoolEase Scale
+- Improved Encoding to be more reliable
+- Various bug fixes
+
+## Next (not released yet)
+- Easy Web-Config: Web config can be accessed by scanning the NFC module (PN532) with a mobile phone and security-key is filled automatically

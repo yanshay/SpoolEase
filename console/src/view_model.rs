@@ -848,6 +848,10 @@ impl SpoolTagObserver for ViewModel {
     fn on_pn532_status(&mut self, status: bool) {
         self.app_config.borrow_mut().report_pn532(status);
     }
+
+    fn on_emulated_tag_read(&mut self) {
+        info!("Emulated tag scanned");
+    }
 }
 
 impl FrameworkObserver for ViewModel {

@@ -28,6 +28,7 @@ pub struct SpoolTag {
 pub trait SpoolTagObserver {
     fn on_tag_status(&mut self, status: &Status);
     fn on_pn532_status(&mut self, status: bool);
+    fn on_emulated_tag_read(&mut self);
 }
 
 impl SpoolTag {
@@ -59,6 +60,13 @@ impl SpoolTag {
         for weak_observer in self.observers.iter() {
             let observer = weak_observer.upgrade().unwrap();
             observer.borrow_mut().on_tag_status(&status);
+        }
+    }
+
+    pub fn notify_emulated_tag_read(&self) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_emulated_tag_read();
         }
     }
 
@@ -286,6 +294,12 @@ pub async fn nfc_task(
                     Ok(tag_fully_read) => {
                         if tag_fully_read {
                             debug!("Emulated Tag fully read");
+                            // Let phone time to move away, so wallet app won't pop when moving to read (maybe better do that on switch to read based on time of emulate scan)
+                            Timer::after_millis(1000).await;
+                            // We notify after so whatever client does is not based on assumption that it has moved to read, maybe need to add events on switch of mode and realy on that rather on the commands on the client
+                            spool_tag_rc
+                                .borrow()
+                                .notify_emulated_tag_read();
                         } else {
                             debug!("Emulated Tag not (fully) read");
                         }

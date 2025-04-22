@@ -433,6 +433,12 @@
       window.decrypt = decrypt;
       window.encrypt = encrypt;
       document.body.style.display = "block";
+
+      const secKeyOnUrl = getHashParam('sk');
+      if (secKeyOnUrl) {
+        document.getElementById("security-key").value = secKeyOnUrl;
+        applyKeyFetchConfigs();
+      }
     </script>
 
     <!-- Common Communication & UI Functions -->
@@ -513,6 +519,11 @@
           console.error(`Failed to fetch ${section} configuration:`, error);
           return null;
         }
+      }
+
+      function getHashParam(key) {
+        const params = new URLSearchParams(location.hash.slice(1));
+        return params.get(key) ?? null;
       }
 
       function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
