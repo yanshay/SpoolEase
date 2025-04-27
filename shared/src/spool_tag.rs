@@ -286,6 +286,27 @@ pub async fn nfc_task(
             match res {
                 Either::First(new_tag_operation) => {
                     debug!("Received request for operation {new_tag_operation:?} from now on");
+                    if !matches!(new_tag_operation, TagOperation::EmulateUrlTag(_)) {
+                        // Need to wake up the device from powedown during tag emulation
+                        // First try fails on TimeOutAck and 2nd pass.
+                        // Using the inrelease command because this is what used in the Elechouse C++ code, not sure the command is relevant
+                        // debug!(">>>>> Swtiching from emulate, so doing inrelease to wake up, first time will be an error");
+                        const RELEASE_TAG_ALL: pn532::Request<1> =
+                            pn532::Request::new(pn532::requests::Command::InRelease, [0]);
+                        let mut power_up_ok = false;
+                        for _i in 0..5 {
+                            let res = pn532
+                                .process(&RELEASE_TAG_ALL, 1, Duration::from_millis(10))
+                                .await;
+                            if res.is_ok() {
+                                power_up_ok = true;
+                                break;
+                            }
+                        }
+                        if !power_up_ok {
+                            error!("Failed to power on PN532 after emulating tag");
+                        }
+                    }
                     curr_operation_with_tag = Some(new_tag_operation.clone());
                     in_switch_operation = true;
                     continue;
@@ -297,13 +318,10 @@ pub async fn nfc_task(
                             // Let phone time to move away, so wallet app won't pop when moving to read (maybe better do that on switch to read based on time of emulate scan)
                             Timer::after_millis(1000).await;
                             // We notify after so whatever client does is not based on assumption that it has moved to read, maybe need to add events on switch of mode and realy on that rather on the commands on the client
-                            spool_tag_rc
-                                .borrow()
-                                .notify_emulated_tag_read();
+                            spool_tag_rc.borrow().notify_emulated_tag_read();
                         } else {
                             debug!("Emulated Tag not (fully) read");
                         }
-
                     }
                     Err(err) => {
                         error!("Error while emulating tag : {err:?}");

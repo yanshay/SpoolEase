@@ -13,6 +13,7 @@ import { SelectPrinter } from "select-printer.slint";
 import { AppSettings } from "app-settings.slint";
 import { NumPad } from "numpad.slint";
 import { SpoolCoreWeight } from "core-weight.slint";
+import { EncodeEditing } from "encode-editing.slint";
 
 // reexport to rust
 
@@ -23,7 +24,7 @@ export component AppWindow inherits Window {
     width: 480px;
     height: 320px;
 
-    property <int> current-page: (FrameworkState.web-config-state == WebConfigState.Started-AP || FrameworkState.web-config-state == WebConfigState.Started-STA) ? 2 : (AppState.control-state == ControlState.Booting || AppState.control-state == ControlState.ConnectingToPrinter || AppState.control-state == ControlState.BootFailed) ? 0 : 1;
+    property <int> current-page: FrameworkState.web-config-state == WebConfigState.Started-AP ? 2 : (AppState.control-state == ControlState.Booting || AppState.control-state == ControlState.ConnectingToPrinter || AppState.control-state == ControlState.BootFailed) ? 0 : 1;
     changed current-page => {
         if FrameworkState.web-config-state == WebConfigState.Starting || FrameworkState.web-config-state == WebConfigState.Started-STA || FrameworkState.web-config-state == WebConfigState.Started-AP {
             if current-page != 2 {
@@ -35,7 +36,7 @@ export component AppWindow inherits Window {
     }
     property <int> current-page-x: 0;
 
-    if AppState.control-state != ControlState.EncodeSetSpoolCore: sgr := SwipeGestureHandler {
+    if AppState.control-state != ControlState.EncodeEditing: sgr := SwipeGestureHandler {
         width: parent.width;
         height: parent.height;
         handle-swipe-up: current-page < 2 && (!AppState.select-printer);
@@ -138,8 +139,14 @@ export component AppWindow inherits Window {
         }
     }
 
-    if AppState.control-state == ControlState.EncodeSetSpoolCore: core-weight := 
+    if AppState.control-state == ControlState.EncodeEditing: encode-editing :=
+    EncodeEditing {
+        height: root.height;
+    }
+
+    if AppState.control-state == ControlState.EncodeEditing: core-weight :=
     SpoolCoreWeight {
+        visible: AppState.encoding-spool-core-visible;
         height: root.height;
     }
 }

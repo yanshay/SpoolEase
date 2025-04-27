@@ -11,7 +11,8 @@ use serde::{Deserialize, Deserializer, Serializer};
 
 use framework::prelude::*;
 
-pub const SPOOLS_CATALOG: &str = include_str!("./Spool-Core-Weights.csv"); 
+pub const SPOOLS_CATALOG: &str = include_str!("../data/Spool-Core-Weights.csv"); 
+pub const BASE_FILAMENTS: &str = include_str!("../data/base-filaments-index.csv"); 
 const PRINTER_CONFIG_KEY: &str = "_printer_"; // for backwards compatibility
 const PRINTERS_CONFIG_KEY: &str = "_printers_";
 const DEFAULT_PRINTER_CONFIG_KEY: &str = "_default_printer_";
@@ -19,6 +20,7 @@ const SCALE_CONFIG_KEY: &str = "_scale_"; // for backwards compatibility
 
 const PREVIOUSLY_USED_CORES_CONFIG_KEY: &str = "prev_cores";
 const USER_CORES_CONFIG_KEY: &str = "user_cores"; 
+const CUSTOM_FILAMENTS_CONFIG_KEY: &str = "custom_filaments";
 
 fn serialize_option_ipv4<S>(ip: &Option<Ipv4Address>, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -90,6 +92,7 @@ pub struct AppConfig {
     pub user_cores: Option<String>,
     pub user_cores_changed_by_web_config: bool,
     pub previously_used_cores: Option<String>,
+    pub custom_filaments: Option<String>,
 }
 
 impl AppConfig {
@@ -129,6 +132,7 @@ impl AppConfig {
             user_cores: None,
             user_cores_changed_by_web_config: false,
             previously_used_cores: None,
+            custom_filaments: None,
         }
     }
 
@@ -178,6 +182,11 @@ impl AppConfig {
         let config = self.framework.borrow_mut().fetch(String::from(USER_CORES_CONFIG_KEY));
         if let Ok(user_cores) = config {
             self.user_cores = user_cores;
+        }
+
+        let config = self.framework.borrow_mut().fetch(String::from(CUSTOM_FILAMENTS_CONFIG_KEY));
+        if let Ok(custom_filaments) = config {
+            self.custom_filaments = custom_filaments;
         }
 
         let config = self.framework.borrow_mut().fetch(String::from(SCALE_CONFIG_KEY));
@@ -323,6 +332,20 @@ impl AppConfig {
         }
         self.user_cores = user_cores;
         self.user_cores_changed_by_web_config = true;
+        Ok(())
+    }
+
+    pub fn set_filaments (&mut self, custom_filaments: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        if let Some(custom_filaments) = &custom_filaments {
+            if let Some(curr_custom_filaments) = &self.custom_filaments {
+                if curr_custom_filaments != custom_filaments {
+                    self.framework.borrow().store(CUSTOM_FILAMENTS_CONFIG_KEY.to_string(), custom_filaments.clone())?;
+                }
+            }
+        } else {
+            self.framework.borrow().remove(CUSTOM_FILAMENTS_CONFIG_KEY.to_string())?;
+        }
+        self.custom_filaments = custom_filaments;
         Ok(())
     }
 

@@ -100,9 +100,9 @@ export component SpoolStaging inherits Window {
                 if AppState.control-state == ControlState.EncodeSelectSource {
                     if AppState.spool-scale-state == SpoolScaleState.Loaded {
                         AppState.tray_id_to_encode_after_setting_core_weight = 999;
-                        AppState.control-state = ControlState.EncodeSetSpoolCore
+                        AppState.control-state = ControlState.EncodeEditing
                     } else {
-                        AppState.encode-start(999, 0, 0, "");
+                        AppState.encode-select-tray(999);
                     }
                 } else {
                     AppState.control-state = ControlState.StagingSelected;

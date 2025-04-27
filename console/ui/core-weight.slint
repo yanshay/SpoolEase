@@ -130,8 +130,8 @@ export component CoreEstimate inherits Rectangle {
                     height: 100px;
                     text: "Ok";
                     clicked => {
-                        AppState.encode-start(AppState.tray_id_to_encode_after_setting_core_weight, displayed-weight.calculated-core, AppState.spool-scale-weight, "");
-                        AppState.control-state = ControlState.Encoding;
+                        AppState.encode-set-core-info(displayed-weight.calculated-core, AppState.spool-scale-weight, "");
+                        AppState.encoding-spool-core-visible = false;
                     }
                 }
             }
@@ -242,8 +242,8 @@ export component SelectIfNewSpool inherits Rectangle {
                 width: 120px;
                 text: "Yes";
                 clicked => {
-                    AppState.encode-start(AppState.tray_id_to_encode_after_setting_core_weight, AppState.core-weight-to-encode-after-select-if-new, AppState.spool-scale-weight, AppState.core-name-to-encode-after-select-if-new);
-                    AppState.control-state = ControlState.Encoding;
+                    AppState.encode-set-core-info(AppState.core-weight-to-encode-after-select-if-new, AppState.spool-scale-weight, AppState.core-name-to-encode-after-select-if-new);
+                    AppState.encoding-spool-core-visible = false;
                 }
             }
 
@@ -252,8 +252,8 @@ export component SelectIfNewSpool inherits Rectangle {
                 width: 120px;
                 text: "No";
                 clicked => {
-                    AppState.encode-start(AppState.tray_id_to_encode_after_setting_core_weight, AppState.core-weight-to-encode-after-select-if-new, 0, AppState.core-name-to-encode-after-select-if-new);
-                    AppState.control-state = ControlState.Encoding;
+                    AppState.encode-set-core-info(AppState.core-weight-to-encode-after-select-if-new, 0, AppState.core-name-to-encode-after-select-if-new);
+                    AppState.encoding-spool-core-visible = false;
                 }
             }
 
@@ -270,7 +270,7 @@ export component SelectIfNewSpool inherits Rectangle {
     }
 }
 
-export component CharSelect inherits Rectangle {
+export component Keyboard inherits Rectangle {
     callback clicked-ok;
     callback clicked-cancel();
     in-out property <string> typed-text;
@@ -343,7 +343,7 @@ export component SpoolCoreWeight inherits Rectangle {
     }
 
     VerticalLayout {
-        property <bool> show-char-select;
+        property <bool> show-keyboard;
         visible: state == SpoolCoreWeightState.EntryTabs;
         alignment: stretch;
         Rectangle {
@@ -359,7 +359,7 @@ export component SpoolCoreWeight inherits Rectangle {
                 text: "ABC";
                 z: 2;
                 clicked => {
-                    show-char-select = true;
+                    show-keyboard = true;
                 }
             }
         }
@@ -372,7 +372,7 @@ export component SpoolCoreWeight inherits Rectangle {
                     tabs: ["List", "Est", "1234"];
                     bottom-tab: "Cancel";
                     botom-tab-pressed => {
-                        AppState.control-state = ControlState.Ready;
+                        AppState.encoding-spool-core-visible = false;
                     }
                     width: 70px;
                 }
@@ -382,6 +382,9 @@ export component SpoolCoreWeight inherits Rectangle {
 
                     select-list := Selector {
                         property <string> filter;
+                        changed filter => {
+                            self.jump-to(0);
+                        }
                         selected(text, pos-in-list, id) => {
                             AppState.core-name-to-encode-after-select-if-new = text;
                             AppState.core-weight-to-encode-after-select-if-new = AppBackend.get-spool-core-weight(id);
@@ -417,13 +420,13 @@ export component SpoolCoreWeight inherits Rectangle {
                 }
             }
 
-            if show-char-select: CharSelect {
+            if show-keyboard: Keyboard {
                 clicked-ok => {
                     select-list.filter = self.typed-text;
-                    show-char-select = false;
+                    show-keyboard = false;
                 }
                 clicked-cancel => {
-                    show-char-select = false;
+                    show-keyboard = false;
                 }
             }
         }

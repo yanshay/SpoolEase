@@ -187,12 +187,7 @@ export component Trays {
                     if AppState.control-state == ControlState.StagingSelected {
                         AppBackend.set-staging-to-tray(trays-state[index].id);
                     } else if AppState.control-state == ControlState.EncodeSelectSource && trays-state[index].filament.state == UiFilamentState.Known {
-                       // if a spool is on the scale, we move to set core weight
-                        if AppState.spool-scale-state == SpoolScaleState.Loaded {
-                            AppState.control-state = ControlState.EncodeSetSpoolCore
-                        } else {
-                            AppState.encode-start(trays-state[index].id, 0, 0, "");
-                        }
+                        AppState.encode-select-tray(index);
                     }
                 }
             }

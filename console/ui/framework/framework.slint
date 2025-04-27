@@ -21,11 +21,13 @@ export enum RestartDeviceState {
   UserInput
 }
 
+//TODO: Think if to simplify now that WebConfig is always on, either STA or AP (test that AP wasn't hurt by changes)
 export enum WebConfigState {
   Stopped,
   Starting,
   Started-AP,
   Started-STA,
+  Started-STA-Displayed,
   Stopping,
 }
 

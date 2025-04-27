@@ -21,7 +21,7 @@ use embassy_net::Stack;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel};
 use embassy_time::{Instant, Timer};
 use embedded_io_async::Write;
-use framework::{debug, error, info, mk_static, term_error, term_info, utils::random_u32, warn};
+use framework::{debug, error, info, mk_static, prelude::Framework, term_error, term_info, utils::random_u32, warn};
 use hashbrown::HashSet;
 use shared::scale::{ConsoleToScale, ScaleToConsole};
 
@@ -184,6 +184,7 @@ impl SpoolScale {
 }
 
 pub fn init(
+    framework:Rc<RefCell<Framework>>,
     app_config: Rc<RefCell<AppConfig>>,
     stack: Stack<'static>,
     spawner: Spawner,
@@ -206,7 +207,7 @@ pub fn init(
     if let Some(spool_scale_config) = &app_config.clone().borrow().configured_scale {
         if spool_scale_config.available == true {
             spawner
-                .spawn(spool_scale_task(app_config, stack, spool_scale_rc.clone(), ssdp_pub_sub))
+                .spawn(spool_scale_task(framework, app_config, stack, spool_scale_rc.clone(), ssdp_pub_sub))
                 .ok();
         }
     }
@@ -239,6 +240,7 @@ pub async fn monitor_scales_task(
 
 #[embassy_executor::task]
 pub async fn spool_scale_task(
+    framework: Rc<RefCell<Framework>>,
     app_config: Rc<RefCell<AppConfig>>,
     stack: Stack<'static>,
     spool_scale_rc: Rc<RefCell<SpoolScale>>,
@@ -299,11 +301,12 @@ pub async fn spool_scale_task(
 
     let tcp_buffers = Box::new(TcpBuffers::<1, 1024, 1024>::new());
     let tcp = Tcp::new(stack, &tcp_buffers);
-    let tcp = edge_nal::WithTimeout::new(10000, tcp);
+    let tcp = edge_nal::WithTimeout::new(15000, tcp);
 
     let mut first_connect = true;
     let mut connect_error_counter = 0;
     'connect_loop: loop {
+        Framework::wait_for_wifi(&framework).await;
         if first_connect {
             first_connect = false;
         } else {
@@ -316,14 +319,14 @@ pub async fn spool_scale_task(
         let mut nonce = [0_u8; NONCE_LEN];
         getrandom::getrandom(&mut nonce).unwrap();
         let mut nonce_base64_buf = [0_u8; MAX_BASE64_KEY_LEN];
-        if connect_error_counter % 5 == 0 {
+        if connect_error_counter % 10 == 0 {
             term_info!("Connecting to SpoolScale at {}", spoolscale_ip);
         }
         if let Err(err) = conn
             .initiate_ws_upgrade_request(Some(&spoolscale_ip.to_string()), None, "/ws", None, &nonce, &mut nonce_base64_buf)
             .await
         {
-            if connect_error_counter % 5 == 0 && connect_error_counter != 0 {
+            if connect_error_counter % 10 == 0 && connect_error_counter != 0 {
                 term_error!("SpoolScale: Error initiating web socket request {:?}", err);
             }
             connect_error_counter += 1;
@@ -394,14 +397,13 @@ pub async fn spool_scale_task(
                                             debug!("SpoolScale: Sent Ping");
                                         }
                                         Err(send_ping_flush_err) => {
-                                            error!("SpoolScale: Error sending Ping payload {send_ping_flush_err:?}, disconnecting");
+                                            error!("SpoolScale: Error sending Ping payload (1) {send_ping_flush_err:?}, disconnecting");
                                             break 'send_recv_loop;
-                                            // continue 'connect_loop;
                                         }
                                     }
                                 }
                                 Err(send_ping_payload_err) => {
-                                    error!("SpoolScale: Error sending Ping payload {send_ping_payload_err:?}");
+                                    error!("SpoolScale: Error sending Ping payload (2) {send_ping_payload_err:?}");
                                 }
                             }
                         }
@@ -448,7 +450,7 @@ pub async fn spool_scale_task(
                                                         }
                                                     }
                                                     Err(err) => {
-                                                        error!("SpoolScale: Error sending Pong payload {err:?}");
+                                                        error!("SpoolScale: Error sending Pong payload (3) {err:?}");
                                                         break 'send_recv_loop;
                                                     }
                                                 }

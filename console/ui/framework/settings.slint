@@ -13,20 +13,25 @@ export component SettingsButton inherits MyButton {
 }
 
 export component WebConfigButton inherits SettingsButton {
-    enabled: FrameworkState.web-config-state == WebConfigState.Stopped || FrameworkState.web-config-state == WebConfigState.Started-STA;
-    text: (FrameworkState.web-config-state == WebConfigState.Stopped ? "Enable Web Config" : "Disable Web Config");
+    // enabled: FrameworkState.web-config-state == WebConfigState.Stopped || FrameworkState.web-config-state == WebConfigState.Started-STA;
+    text: (FrameworkState.web-config-state == WebConfigState.Started-STA ? "Web Config Instructions" : "Close");
     clicked => {
-        if FrameworkState.web-config-state == WebConfigState.Stopped {
-            // Order is important
-            FrameworkState.web-config-state = WebConfigState.Starting;
-            FrameworkBackend.start-web-config();
-            AppBackend.emulate-tag-web-config();
-        } else {
-            // Order is important
-            FrameworkState.web-config-state = WebConfigState.Stopping;
-            FrameworkBackend.stop-web-config();
-            AppBackend.read-tag-mode();
+        if FrameworkState.web-config-state == WebConfigState.Started-STA {
+            FrameworkState.web-config-state = WebConfigState.Started-STA-Displayed;
+        } else if FrameworkState.web-config-state == WebConfigState.Started-STA-Displayed {
+            FrameworkState.web-config-state = WebConfigState.Started-STA; 
         }
+        // if FrameworkState.web-config-state == WebConfigState.Stopped {
+        //     // Order is important
+        //     FrameworkState.web-config-state = WebConfigState.Starting;
+        //     FrameworkBackend.start-web-config();
+        //     AppBackend.emulate-tag-web-config();
+        // } else {
+        //     // Order is important
+        //     FrameworkState.web-config-state = WebConfigState.Stopping;
+        //     FrameworkBackend.stop-web-config();
+        //     AppBackend.read-tag-mode();
+        // }
     }
 }
 
@@ -194,7 +199,7 @@ export component FrameworkSettingsDetails inherits Rectangle {
 
 // Web Config
 
-    if (FrameworkState.web-config-state == WebConfigState.Started-STA || FrameworkState.web-config-state == WebConfigState.Started-AP): web-config := VerticalLayout {
+    if (FrameworkState.web-config-state == WebConfigState.Started-STA-Displayed || FrameworkState.web-config-state == WebConfigState.Started-AP): web-config := VerticalLayout {
         alignment: stretch;
         Rectangle {
             height: 320px - 56px; // TODO: why need to specify height? should be automatic by layout
@@ -254,7 +259,12 @@ export component Settings inherits Rectangle {
     in-out property <length> buttons-width: self.width - x-offset;
     in-out property <[string]> tabs;
 
-    property <bool> framework-buttons-visible:  FrameworkState.restart-device-state == RestartDeviceState.NotStarted && FrameworkState.reset-fixed-security-key-state == ResetFixedSecurityKeyState.NotStarted && FrameworkState.ota-state == OtaState.NotStarted && FrameworkState.web-config-state == WebConfigState.Stopped && FrameworkState.reset-wifi-credentials-state == ResetWifiCredentialsState.NotStarted;
+    property <bool> framework-buttons-visible:  FrameworkState.restart-device-state == RestartDeviceState.NotStarted && 
+                                                FrameworkState.reset-fixed-security-key-state == ResetFixedSecurityKeyState.NotStarted && 
+                                                FrameworkState.ota-state == OtaState.NotStarted && 
+                                                FrameworkState.web-config-state != WebConfigState.Started-STA-Displayed && 
+                                                FrameworkState.web-config-state != WebConfigState.Started-AP && 
+                                                FrameworkState.reset-wifi-credentials-state == ResetWifiCredentialsState.NotStarted;
     in property <bool> framework-tab-selected;
     VerticalLayout {
         title := Title {

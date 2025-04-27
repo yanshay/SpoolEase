@@ -120,7 +120,7 @@ async fn main(spawner: Spawner) {
     heap_dram2_allocator!(64 * 1024);
 
     // Last, reserve from 'standard' area, if need additional memory for esp-wifi/esp-mbedtls, need to increase this
-    esp_alloc::heap_allocator!(132 * 1024);
+    esp_alloc::heap_allocator!(100 * 1024);
 
     // == Setup timers & delay ========================================================
 
@@ -270,50 +270,6 @@ async fn main(spawner: Spawner) {
 
     let app_config = Rc::new(RefCell::new(AppConfig::new(framework.clone())));
 
-    // == Setup Web Application and Run Web Server ====================================
-
-    let web_app_builder = framework::framework_web_app::WebAppBuilder::<NestedAppBuilder> {
-        framework: framework.clone(),
-        captive_html: include_str!("../static/captive.html"),
-        web_app_html: include_str!("../static/config.html"),
-        app_builder: NestedAppBuilder {
-            framework: framework.clone(),
-            app_config: app_config.clone(),
-        },
-    };
-
-    let web_app_router = mk_static!(
-        picoserve::AppRouter<framework::framework_web_app::WebAppBuilder<NestedAppBuilder>>,
-        picoserve::AppWithStateBuilder::build_app(web_app_builder)
-    );
-
-    let web_app_state = mk_static!(
-        framework::framework_web_app::WebAppState,
-        framework::framework_web_app::WebAppState::new(framework.borrow().encryption_key)
-    );
-
-    let config = picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(5)),
-        read_request: Some(Duration::from_millis(5000)),
-        write: Some(Duration::from_millis(5000)),
-    })
-    .keep_connection_alive();
-
-    let web_server_runner = mk_static!(
-        framework::web_server::WebAppRunner<NestedAppBuilder>,
-        framework::web_server::WebAppRunner::new(
-            framework.clone(),
-            web_app_router,
-            web_app_state,
-            config
-        )
-    );
-
-    for id in 0..WEB_SERVER_NUM_LISTENERS {
-        debug!("// spawning web-task {id}");
-        spawner.spawn(web_server_task(web_server_runner, id)).unwrap();
-    }
-
     // == Mark current app ota is working =============================================
     let boot_partition;
     {
@@ -441,17 +397,59 @@ async fn main(spawner: Spawner) {
     // == Configure App ===============================================================
     // This initializes all the applicative stuff, and is provided with all the required hw access
 
-    spawner
-        .spawn(crate::app::app_task(
+    let view_model = crate::app::init_app(
             sta_stack,
             ui.as_weak(),
             framework.clone(),
-            tls.reference(),
             app_config.clone(),
             pn532_spi_device,
             pn532_irq,
-        ))
-        .ok();
+        );
+
+    // == Setup Web Application and Run Web Server ====================================
+
+    let web_app_builder = framework::framework_web_app::WebAppBuilder::<NestedAppBuilder> {
+        framework: framework.clone(),
+        captive_html: include_str!("../static/captive.html"),
+        web_app_html: include_str!("../static/config.html"),
+        app_builder: NestedAppBuilder {
+            framework: framework.clone(),
+            app_config: app_config.clone(),
+            view_model: view_model.clone(),
+        },
+    };
+
+    let web_app_router = mk_static!(
+        picoserve::AppRouter<framework::framework_web_app::WebAppBuilder<NestedAppBuilder>>,
+        picoserve::AppWithStateBuilder::build_app(web_app_builder)
+    );
+
+    let web_app_state = mk_static!(
+        framework::framework_web_app::WebAppState,
+        framework::framework_web_app::WebAppState::new(framework.borrow().encryption_key)
+    );
+
+    let config = picoserve::Config::new(picoserve::Timeouts {
+        start_read_request: Some(Duration::from_secs(5)),
+        read_request: Some(Duration::from_millis(5000)),
+        write: Some(Duration::from_millis(5000)),
+    })
+    .keep_connection_alive();
+
+    let web_server_runner = mk_static!(
+        framework::web_server::WebAppRunner<NestedAppBuilder>,
+        framework::web_server::WebAppRunner::new(
+            framework.clone(),
+            web_app_router,
+            web_app_state,
+            config
+        )
+    );
+
+    for id in 0..WEB_SERVER_NUM_LISTENERS {
+        spawner.spawn(web_server_task(web_server_runner, id)).unwrap();
+    }
+
 
     // yields for term initialization to complete until term is fixed to not require this
     yield_now().await;
@@ -470,6 +468,11 @@ async fn main(spawner: Spawner) {
     framework
         .borrow()
         .notify_initialization_completed(app_config.borrow().initialization_ok(true).unwrap());
+
+    Framework::wait_for_wifi(&framework).await; // this is mostly to start the web app after all tasks initialized and won't miss this start message
+    framework
+        .borrow_mut()
+        .start_web_app(sta_stack, framework::framework::WebConfigMode::STA);
 
     loop {
         Timer::after(Duration::from_secs(60)).await;

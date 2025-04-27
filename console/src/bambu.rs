@@ -13,9 +13,8 @@ use alloc::{
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use core::{cell::RefCell, str::FromStr};
 use derivative::Derivative;
-use embassy_executor::Spawner;
 use embassy_futures::select::{select, Either};
-use embassy_net::{Ipv4Address, Stack};
+use embassy_net::Ipv4Address;
 use embassy_sync::{
     blocking_mutex::{
         raw::{CriticalSectionRawMutex, NoopRawMutex},
@@ -25,7 +24,6 @@ use embassy_sync::{
     pubsub::PubSubChannel,
 };
 use embassy_time::{with_timeout, Duration, Timer};
-use esp_mbedtls::TlsReference;
 use hashbrown::HashMap;
 use mqttrust::QoS;
 use once_cell::sync::Lazy;
@@ -191,7 +189,7 @@ impl BambuPrinter {
         "".to_string()
     }
 
-    fn get_cali_k_value(&self, nozzle_diameter: &str, cali_idx: i32) -> Option<String> {
+    fn get_calibration(&self, nozzle_diameter: &str, cali_idx: i32) -> Option<&Calibration> {
         let nozzle_calibrations = match self.calibrations.get(nozzle_diameter) {
             Some(calibrations) => calibrations,
             None => return None,
@@ -200,8 +198,25 @@ impl BambuPrinter {
             Some(calibration) => calibration,
             None => return None,
         };
+        Some(calibration)
+    }
 
-        Some(calibration.k_value.clone())
+    fn get_cali_k_value(&self, nozzle_diameter: &str, cali_idx: i32) -> Option<String> {
+        if let Some(calibration) = self.get_calibration(nozzle_diameter, cali_idx) {
+            Some(calibration.k_value.clone())
+        } else {
+            None
+        }
+        // let nozzle_calibrations = match self.calibrations.get(nozzle_diameter) {
+        //     Some(calibrations) => calibrations,
+        //     None => return None,
+        // };
+        // let calibration = match nozzle_calibrations.get(&cali_idx) {
+        //     Some(calibration) => calibration,
+        //     None => return None,
+        // };
+        //
+        // Some(calibration.k_value.clone())
     }
 
     pub fn get_tray_resolved_k_value(&self, tray: &Tray) -> String {
@@ -218,6 +233,15 @@ impl BambuPrinter {
             };
         }
         k_result
+    }
+
+    pub fn get_tray_calibration(&self, tray: &Tray) -> Option<&Calibration> {
+        if let Some(cali_idx) = tray.cali_idx {
+            if let Some(nozzle_diameter) = &self.nozzle_diameter {
+                return self.get_calibration(nozzle_diameter, cali_idx);
+            }
+        }
+        None
     }
 
     fn tray_from_update(&self, tray_update: &PrintTray) -> Result<Option<Tray>, String> {
@@ -1174,11 +1198,11 @@ impl From<&bambu_api::PrintTray> for FilamentInfo {
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Calibration {
-    filament_id: String,
+    pub filament_id: String,
     pub k_value: String,
     n_coef: f32,
     setting_id: String,
-    name: String,
+    pub name: String,
     cali_idx: i32,
 }
 
@@ -1227,15 +1251,14 @@ impl Calibration {
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 pub fn init(
+    framework: Rc<RefCell<Framework>>,
     printer_number: usize, // number of printer in user's configuration,
     printer_index: usize, // index of printer in the array of printers, if a config is not good and skipped, then index would be different than number
     printer_config: &PrinterConfig,
-    stack: Stack<'static>,
     app_config: Rc<RefCell<AppConfig>>,
-    tls: TlsReference<'static>,
-    spawner: Spawner,
     ssdp_pub_sub: &'static SSDPPubSubChannel,
 ) -> Result<Rc<RefCell<BambuPrinter>>, String> {
+    let spawner = framework.borrow().spawner;
     let printer_serial = if let Some(printer_serial) = &printer_config.serial {
         printer_serial.clone()
     } else {
@@ -1288,13 +1311,12 @@ pub fn init(
 
     spawner
         .spawn(restartable_mqtt_task(
-            stack,
+            framework,
             8192,
             4096,
             read_packets.clone(),
             write_packets,
             bambu_printer.clone(),
-            tls,
             restart_printer,
             ssdp_pub_sub,
         ))
@@ -1429,25 +1451,23 @@ pub async fn incoming_messages_task(
 #[embassy_executor::task(pool_size = MAX_NUM_PRINTERS)]
 // #[embassy_executor::task]
 pub async fn restartable_mqtt_task(
-    stack: Stack<'static>,
+    framework: Rc<RefCell<Framework>>,
     rx_socket_buffer_size: usize,
     tx_socket_buffer_size: usize,
     read_packets: Arc<PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>>,
     write_packets: Arc<Channel<NoopRawMutex, BufferedMqttPacket, 3>>,
     bambu_printer: Rc<RefCell<BambuPrinter>>,
-    tls: TlsReference<'static>,
     restart_printer: Arc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
     ssdp_pub_sub: &'static SSDPPubSubChannel,
 ) {
     loop {
         let printer_mqtt_task = bambu_mqtt_task(
+            framework.clone(),
             bambu_printer.clone(),
-            stack,
             rx_socket_buffer_size,
             tx_socket_buffer_size,
             read_packets.clone(),
             write_packets.clone(),
-            tls,
             ssdp_pub_sub,
         );
         match select(printer_mqtt_task, restart_printer.wait()).await {
@@ -1468,15 +1488,15 @@ pub async fn restartable_mqtt_task(
 // https://github.com/embassy-rs/embassy/issues/2454#issuecomment-2336644031
 // This is specific to the hw and required detailes (buffer sizes, etc.)
 pub async fn bambu_mqtt_task(
+    framework: Rc<RefCell<Framework>>,
     bambu_printer: Rc<RefCell<BambuPrinter>>,
-    stack: Stack<'static>,
     rx_socket_buffer_size: usize,
     tx_socket_buffer_size: usize,
     read_packets: Arc<PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>>,
     write_packets: Arc<Channel<NoopRawMutex, BufferedMqttPacket, 3>>,
-    tls: TlsReference<'static>,
     ssdp_pub_sub: &'static SSDPPubSubChannel,
 ) {
+    let stack = framework.borrow().stack;
     let printer_serial = bambu_printer.borrow().printer_serial.clone();
     let printer_log_id = bambu_printer.borrow().printer_number;
     let log_level = bambu_printer.borrow().log_filter;
@@ -1540,20 +1560,19 @@ pub async fn bambu_mqtt_task(
     };
 
     crate::my_mqtt::generic_mqtt_task(
+        framework,
         remote_endpoint,
         &printer_serial,
         Some("bblp"),
         password,
         0,
         &subscribe_topics,
-        stack,
         rx_socket_buffer_size,
         tx_socket_buffer_size,
         write_packets,
         read_packets,
         Duration::from_secs(20),
         bambu_printer,
-        tls,
     )
     .await
 }
@@ -1564,6 +1583,10 @@ pub struct TagInformation {
     pub calibrations: HashMap<String, Calibration>,
     pub weight_core: Option<i32>,
     pub weight_new: Option<i32>,
+    pub brand: Option<String>,
+    pub filament_subtype: Option<String>,
+    pub color_name: Option<String>,
+    pub note: Option<String>,
 }
 
 impl TagInformation {
@@ -1584,6 +1607,11 @@ impl TagInformation {
         };
         let k_postfix = if !k_prefix.is_empty() { ")" } else { "" };
 
+        let brand_part = self.brand.as_ref().map(|s| format!("&B={}", my_encode_to_url_part(s))).unwrap_or_default();
+        let filament_subtype_part = self.filament_subtype.as_ref().map(|s| format!("&MS={}", my_encode_to_url_part(s))).unwrap_or_default();
+        let color_name_part = self.color_name.as_ref().map(|s| format!("&CN={}", my_encode_to_url_part(s))).unwrap_or_default();
+        let note_part = self.note.as_ref().map(|s| format!("&N={}", my_encode_to_url_part(s))).unwrap_or_default();
+
         for calibration_kv in self.calibrations.iter() {
             if let Some(cal_nozzle_diameter_char) = calibration_kv.0.chars().nth(2) {
                 let calibration = calibration_kv.1;
@@ -1603,7 +1631,7 @@ impl TagInformation {
         };
         if let Some(filament) = &self.filament {
             Some(format!(
-                "{FILAMENT_URL_PREFIX}V1?ID={TAG_PLACEHOLDER}{}{}&M={}&C={}&NN={}&NX={}{}&FI={}",
+                "{FILAMENT_URL_PREFIX}V1?ID={TAG_PLACEHOLDER}{}{}&M={}&C={}&NN={}&NX={}{}&FI={}{brand_part}{filament_subtype_part}{color_name_part}{note_part}",
                 self.weight_core.map(|v| format!("&WC={}", v)).unwrap_or_default(),
                 self.weight_new.map(|v| format!("&WN={}", v)).unwrap_or_default(),
                 filament.tray_type,
@@ -1625,6 +1653,10 @@ impl TagInformation {
         let mut calibrations_result = HashMap::new();
         let mut weight_core = None;
         let mut weight_new = None;
+        let mut brand = None;
+        let mut filament_subtype = None;
+        let mut color_name = None;
+        let mut note = None;
 
         if !(descriptor.starts_with(FILAMENT_URL_PREFIX)) {
             return Err(Error::ParseError);
@@ -1698,12 +1730,27 @@ impl TagInformation {
                             return Err(Error::ParseError);
                         }
                     }
+                    "B" => {
+                        brand = Some(my_decode_from_url_part(param_value));
+                    }
+                    "MS" => { // Material Subtype
+                        filament_subtype = Some(my_decode_from_url_part(param_value));
+                    }
+                    "CN" => {
+                        color_name = Some(my_decode_from_url_part(param_value));
+                    }
+                    "N" => {
+                        note = Some(my_decode_from_url_part(param_value));
+                    }
                     _ => (), //return Err(Error::ParseError), TODO: verify match to pattern, or even run what's coming next inside here
                 }
             }
         }
 
         // Processing of K Factor //////////////////
+        // TODO: IMPORTANT: This assumes a single printer info, the printer name is thrown away.
+        // Therefore, scanning/encoding to/from the staging at this point probably change information to current printer, which is not good in case of multiple printers
+        // An easy solution is to store also copy of original string in staging and just encode it directly
 
         // First just collect data from tag
 
@@ -1749,8 +1796,12 @@ impl TagInformation {
             Ok(Self {
                 filament: Some(filament_info_result),
                 calibrations: calibrations_result,
-                weight_core: weight_core,
-                weight_new: weight_new,
+                weight_core,
+                weight_new,
+                brand,
+                filament_subtype,
+                color_name,
+                note,
             })
         } else {
             Err(Error::MissingFields)

@@ -25,3 +25,5 @@
 
 ## Next (not released yet)
 - Easy Web-Config: Web config can be accessed by scanning the NFC module (PN532) with a mobile phone and security-key is filled automatically
+- Web-Config always enabled
+- Add optional manually entered Brand, Material Subtype, Color Name and Note to tag information, through mobile phone

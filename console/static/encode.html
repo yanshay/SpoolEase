@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpoolEase Encoding Extra Info</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <!-- Mandatory Section for security -->
+    <div class="section" style="display:none;" id="security-section">
+      <h2 class="section-title">Security Key</h2>
+      <div id="verify-key-section">
+        <div class="form-row">
+          <label for="security-key"
+            >Key: * <span>Fill and verify key before you continue</span></label
+          >
+          <input
+            type="text"
+            id="security-key"
+            placeholder="Enter security key"
+          />
+        </div>
+        <button
+          id="verify-key-button"
+          type="button"
+          class="secondary apply-btn"
+          onclick="applyKeyFetchConfigs()"
+          disabled
+        >
+          Verify Key & Load Config
+        </button>
+        <label class="feedback-label" id="security-key-feedback"></label>
+      </div>
+    </div>
+     <!-- Applicative Section -->
+
+    <div class="section" id="encode-info-section">
+      <h2 class="section-title">Encode Information</h2>
+        <div class="form-row">
+          <label for="brand"
+            >Brand:</label
+          >
+          <input
+            type="text"
+            id="brand"
+            spellcheck="false" 
+            autocomplete="off"
+            placeholder="Filament brand name"
+          />
+        </div>
+        <div class="form-row">
+          <label for="filament-subtype"
+            >Sub Type:</label
+          >
+          <input
+            type="text"
+            id="filament-subtype"
+            spellcheck="false" 
+            autocomplete="off"
+            placeholder="Filament sub-type (e.g. High-Speed, Flexible)"
+          />
+        </div>
+        <div class="form-row">
+          <label for="color-name"
+            >Color Name:</label
+          >
+          <input
+            type="text"
+            id="color-name"
+            spellcheck="false" 
+            autocomplete="off"
+            placeholder="Filament color name"
+          />
+        </div>
+        <div class="form-row">
+          <label for="note"
+            >Note:</label
+          >
+          <input
+            type="text"
+            id="note"
+            spellcheck="false" 
+            autocomplete="off"
+            placeholder="Free text note"
+          />
+        </div>
+        <button
+          id="encode-info-apply"
+          type="button"
+          class="secondary apply-btn"
+          onclick="applyEncodeInfo()"
+          disabled
+        >
+          Apply
+        </button>
+        <label class="feedback-label" id="encode-info-feedback"></label>
+    </div>
+
+    <!-- Common Scripts -->
+    <script type="module">
+      // Importing WASM as a JS module requires us to call an init function provided by the default export.
+      // This is planned to be changed in the future.
+      import {
+        default as wasm,
+        derive_key,
+        encrypt,
+        decrypt,
+      } from "./pkg/device_wasm.js";
+      // initialize wasm
+      console.log("Waiting for wasm to initialize");
+      await wasm();
+      console.log("Wasm initialized");
+      window.securityKeyOnDerive = "";
+      window.encryptionKey = derive_key("", "example_salt");
+      window.derive_key = derive_key;
+      window.decrypt = decrypt;
+      window.encrypt = encrypt;
+      document.body.style.display = "block";
+
+      const secKeyOnUrl = getHashParam("sk");
+      if (secKeyOnUrl) {
+        document.getElementById("security-key").value = secKeyOnUrl;
+        applyKeyFetchConfigs(true);
+      } else {
+        document.getElementById("security-section").style.display = "block";
+      }
+
+      function getHashParam(key) {
+        const params = new URLSearchParams(location.hash.slice(1));
+        return params.get(key) ?? null;
+      }
+    </script>
+
+    <script>
+      async function sendData(inurl, data, retries = 5) {
+        // data is object, not json string
+        const url = `${urlPrefix}${inurl}`;
+        let encryptionKey = getEncryptionKey();
+        const response = await retryOperation(
+          () =>
+            fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/text" },
+              body: encrypt(encryptionKey, JSON.stringify(data)),
+            }),
+          retries,
+        );
+        return response;
+      }
+
+      // Utility function to collect form data and send to the server
+      async function sendConfigData(url, data, applyButton, feedbackLabel) {
+        try {
+          let response = await sendData(`${url}`, data);
+          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+          const encryptedText = await response.text();
+          const decryptedText = decrypt(encryptionKey, encryptedText);
+          const result = JSON.parse(decryptedText);
+          if (feedbackLabel) {
+              document.getElementById(feedbackLabel).textContent = "Form Submitted";
+          } else {
+              alert(`Settings applied successfully`);
+          }
+          if (applyButton) {
+            applyButton.disabled = true;
+          }
+        } catch (error) {
+          console.error("Failed to apply settings:", error);
+          alert(`Failed to apply settings: ${error.message}`);
+        }
+      }
+
+      function getEncryptionKey() {
+        const securityKey = document
+          .getElementById("security-key")
+          .value.trim();
+        if (securityKey != window.securityKeyOnDerive) {
+          window.encryptionKey = derive_key(securityKey, "example_salt");
+          window.securityKeyOnDerive = securityKey;
+        }
+        return window.encryptionKey;
+      }
+
+      async function retryOperation(operation, retries = 5) {
+        for (let i = 0; i < retries; i++) {
+          try {
+            return await operation();
+          } catch (error) {
+            console.log(error);
+            if (i === retries - 1) throw error; // Throw error if it's the last retry
+          }
+        }
+      }
+
+      async function fetchInitialSectionConfig(section) {
+        try {
+          const response = await fetch(`${urlPrefix}/api/${section}-config`); // Replace with actual endpoint
+          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+          const encryptedText = await response.text();
+          const decryptedText = decrypt(encryptionKey, encryptedText);
+          const data = JSON.parse(decryptedText);
+
+          // Populate WiFi credentials
+          return data;
+        } catch (error) {
+          console.error(`Failed to fetch ${section} configuration:`, error);
+          return null;
+        }
+      }
+
+      async function fetchSectionData(section) {
+        try {
+          const response = await fetch(`${urlPrefix}/api/${section}`); // Replace with actual endpoint
+          if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+          const encryptedText = await response.text();
+          const decryptedText = decrypt(encryptionKey, encryptedText);
+          const data = JSON.parse(decryptedText);
+
+          // Populate WiFi credentials
+          return data;
+        } catch (error) {
+          console.error(`Failed to fetch ${section} information:`, error);
+          return null;
+        }
+      }
+
+      function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
+        const section = document.getElementById(sectionId);
+        const applyButton = document.getElementById(buttonId);
+        section.addEventListener("input", () => {
+          applyButton.disabled = false;
+          if (feedbackLabelId) {
+            const feedbackLabel = document.getElementById(feedbackLabelId);
+            feedbackLabel.textContent = "";
+          }
+        });
+      }
+    </script>
+
+    <!-- Applicative Scripts, required functions to fill in, called by common sections -->
+    <script>
+      // ==========================================
+      // Initialization
+      // ==========================================
+      document.addEventListener("DOMContentLoaded", function () {
+        setupChangeListeners(
+          "verify-key-section",
+          "verify-key-button",
+          "security-key-feedback",
+        );
+        setupChangeListeners("encode-info-section", "encode-info-apply", "encode-info-feedback");
+        // Initialize the form with data from server
+
+        // setupChangeListeners("wifi-section", "wifi-section-apply");
+      });
+
+      // Function to test key
+      async function applyKeyFetchConfigs(hideSectionOnSuccess=false) {
+        const data = { test: "Hello" };
+        try {
+          let response = await sendData("/api/test-key", data); // Replace with actual server endpoint
+          // document.getElementById("device-name-apply").disabled = true;
+          if (response.status == 400) {
+            document.getElementById("security-section").style.display = "block";
+            document.getElementById("security-key-feedback").textContent = "Security Key is incorrect";
+            // Disable operations not related data change
+            // document.getElementById("restart-device").disabled = true;
+            return;
+          } else if (response.ok) {
+            if (hideSectionOnSuccess) {
+                document.getElementById("security-section").style.display = "none";
+            }
+            document.getElementById("security-key-feedback").textContent = "Security Key validated";
+            document.getElementById("verify-key-button").disabled = true;
+            // Enable operations unrelated to data change
+            // document.getElementById("restart-device").disabled = false;
+          }
+        } catch (error) {
+          console.error("Failed to apply settings:", error);
+          document.getElementById("security-key-feedback").textContent =
+            `Failed to check key, try again (${error.message})`;
+          return;
+        }
+        try {
+          await fetchSectionConfigs();
+        } catch (error) {
+          document.getElementById("security-key-feedback").textContent +=
+            " but Failed to Load Information";
+        }
+      }
+
+      async function fetchSectionConfigs() {
+        // await retryOperation(() => fetchWifiInitialConfig());
+        await retryOperation(() => fetchEncodeInfo());
+      }
+    </script>
+
+    <!-- Applicative Scripts, specific to application, use common section functions -->
+    <script>
+      function applyEncodeInfo() {
+        const brand = document.getElementById("brand").value;
+        const color_name = document.getElementById("color-name").value;
+        const filament_subtype = document.getElementById("filament-subtype").value;
+        const note = document.getElementById("note").value;
+        const data = { brand, color_name, filament_subtype, note };
+        const applyButton = document.getElementById("encode-info-apply");
+        sendConfigData("/api/encode-info", data, applyButton, "encode-info-feedback"); // Replace with actual server endpoint
+      }
+      async function fetchEncodeInfo() {
+          const data = await fetchSectionData("encode-info");
+          document.getElementById("brand").value = data.brand;
+          document.getElementById("color-name").value = data.color_name;
+          document.getElementById("filament-subtype").value = data.filament_subtype;
+          document.getElementById("note").value = data.note;
+      }
+    </script>
+
+    <!-- for debugging -->
+    <script>
+      var urlPrefix = "";
+      // for local debugging case
+      window.addEventListener("DOMContentLoaded", () => {
+        const installButton = document.getElementById("install-button");
+        if (
+          window.location.hostname === "localhost" ||
+          window.location.hostname === "127.0.0.1"
+        ) {
+          urlPrefix = "http://192.168.10.52";
+        }
+      });
+    </script>
+  </body>
+</html>

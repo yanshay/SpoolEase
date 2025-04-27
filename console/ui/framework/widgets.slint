@@ -52,9 +52,11 @@ export component Title inherits Rectangle {
     background: green.brighter(1.0);
     border-color: black;
     border-width: 1px;
+    in property <TextHorizontalAlignment> horizontal-alignment: center;
     Text {
+        width: root.width;
         vertical-alignment: center;
-        horizontal-alignment: center;
+        horizontal-alignment: horizontal-alignment;
         height: 40px;
         text: text;
         font-size: 20px;

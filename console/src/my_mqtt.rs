@@ -13,7 +13,6 @@ use embassy_futures::select::Either3;
 use embassy_net::tcp::State;
 use embassy_net::tcp::TcpSocket;
 use embassy_net::IpEndpoint;
-use embassy_net::Stack;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::pubsub::PubSubChannel;
@@ -21,7 +20,6 @@ use embassy_time::Duration;
 use embassy_time::Timer;
 use embedded_io_async::Write;
 use esp_mbedtls::TlsError;
-use esp_mbedtls::TlsReference;
 use esp_mbedtls::X509;
 use mqttrust::encoding::v4::decode_slice;
 use mqttrust::{
@@ -338,21 +336,22 @@ pub async fn generic_mqtt_task<
     const SUBS: usize,
     const PUBS: usize,
 >(
+    framework: Rc<RefCell<Framework>>,
     remote_endpoint: E,
     printer_serial: &String,
     username: Option<&str>,
     password: Option<Vec<u8>>,
     keep_alive_secs: u16,
     subscribe_topics: &[SubscribeTopic<'_>],
-    stack: Stack<'static>,
     rx_socket_buffer_size: usize,
     tx_socket_buffer_size: usize,
     write_packets: Arc<Channel<M, BufferedMqttPacket, N>>,
     read_packets: Arc<PubSubChannel<M, BufferedMqttPacket, CAP, SUBS, PUBS>>,
     write_timeout: Duration,
     bambu_printer: Rc<RefCell<BambuPrinter>>,
-    tls: TlsReference<'static>,
 ) -> ! {
+    let stack = framework.borrow().stack;
+    let tls = framework.borrow().tls;
     let printer_log_id = bambu_printer.borrow().printer_number;
     let printer_name = bambu_printer.borrow().printer_name.clone();
 
@@ -363,6 +362,7 @@ pub async fn generic_mqtt_task<
     let socket_tx_buffer = socket_tx_buffer.as_mut_slice();
 
     'establish_communication: loop {
+        Framework::wait_for_wifi(&framework).await;
         let mut socket = TcpSocket::new(stack, socket_rx_buffer, socket_tx_buffer);
 
         loop {

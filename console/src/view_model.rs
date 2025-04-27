@@ -8,10 +8,8 @@ use alloc::{
     string::ToString,
     vec::Vec,
 };
-use embassy_executor::Spawner;
 use embassy_net::Stack;
 use embedded_hal_bus::spi::ExclusiveDevice;
-use esp_mbedtls::TlsReference;
 use hashbrown::HashMap;
 use slint::{ComponentHandle, Model, SharedString, ToSharedString};
 
@@ -21,9 +19,10 @@ use framework::{
     terminal::{self, term_mut, TerminalObserver},
 };
 
-use crate::app_config::SPOOLS_CATALOG;
+use crate::app_config::{BASE_FILAMENTS, SPOOLS_CATALOG};
 use crate::spool_scale::{self, SpoolScaleObserver};
 use crate::ssdp::{ssdp_task, SSDPPubSubChannel};
+use crate::web_app::EncodeInfoDTO;
 use crate::{
     app_config::AppConfig,
     bambu::{self, BambuPrinter, BambuPrinterObserver, TagInformation, TrayState},
@@ -48,8 +47,6 @@ pub struct ViewModel {
     spool_tag_model: Rc<RefCell<spool_tag::SpoolTag>>,
     spool_scale_model: Rc<RefCell<spool_scale::SpoolScale>>,
     filament_staging: Rc<RefCell<FilamentStaging>>,
-    spawner: Spawner,
-    tls: TlsReference<'static>,
     printers_view_state: HashMap<String, PrinterUiState>,
 
     cores_list_vec_rc: slint::ModelRc<crate::app::SelectorOption>,
@@ -66,11 +63,10 @@ impl ViewModel {
         // Application
         app_config: Rc<RefCell<AppConfig>>,
         // bambu_printer_model: Rc<RefCell<bambu::BambuPrinter>>,
-        spawner: Spawner,
-        tls: TlsReference<'static>,
         spi_device: ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
         irq: esp_hal::gpio::Input<'static>,
     ) -> Rc<RefCell<ViewModel>> {
+        let spawner = framework.borrow().spawner;
         // Setup Terminal
         let terminal_view_model = Rc::new(RefCell::new(TerminalViewModel { ui_weak: ui_weak.clone() }));
         let trait_for_terminal_rc: Rc<RefCell<dyn terminal::TerminalObserver>> = terminal_view_model.clone();
@@ -80,7 +76,7 @@ impl ViewModel {
         // Setup empty printers
         let set_of_printers: Vec<Rc<RefCell<BambuPrinter>>> = Vec::new();
         let selected_printer = SelectedPrinter::new(set_of_printers, 0);
-        
+
         // Initialize SpoolTag
         let spool_tag_model = spool_tag::init(spi_device, irq, spawner);
 
@@ -89,7 +85,7 @@ impl ViewModel {
         spawner.spawn(ssdp_task(stack, ssdp_pub_sub)).ok();
 
         // Initialize spool_scale_model
-        let spool_scale_model = crate::spool_scale::init(app_config.clone(), stack, spawner, ssdp_pub_sub);
+        let spool_scale_model = crate::spool_scale::init(framework.clone(), app_config.clone(), stack, spawner, ssdp_pub_sub);
 
         // Prepare an empty spool weights lists, later we'll replace it
         let spools_cores_weights: HashMap<i32, i32> = HashMap::with_capacity(300);
@@ -110,8 +106,6 @@ impl ViewModel {
             spool_scale_model: spool_scale_model.clone(),
             app_config: app_config.clone(),
             filament_staging: Rc::new(RefCell::new(FilamentStaging::new())),
-            spawner,
-            tls,
             printers_view_state: HashMap::new(),
             cores_list_vec_rc: selector_options_vec_rc,
             spools_cores_weights,
@@ -219,6 +213,16 @@ impl ViewModel {
             moved_spool_tag.borrow().emulate_tag(&full_web_config_url);
         });
 
+        let moved_spool_tag = self.spool_tag_model.clone();
+        let moved_framework = self.framework.clone();
+        ui_app_backend.on_emulate_tag_encoding_info(move || {
+            let borrowed_framework = moved_framework.borrow();
+            let web_config_ip_url = &borrowed_framework.web_config_ip_url;
+            let web_config_key = &borrowed_framework.web_config_key;
+            let full_web_config_url = format!("{web_config_ip_url}/encode.html#sk={web_config_key}");
+            moved_spool_tag.borrow().emulate_tag(&full_web_config_url);
+        });
+
         // Spool Scale
         let moved_spool_scale_model = self.spool_scale_model.clone();
         ui_app_backend.on_calibrate_scale(move |weight| {
@@ -262,13 +266,11 @@ impl ViewModel {
         let mut available_printers: Vec<SharedString> = Vec::new();
         for printer_config in &self.app_config.borrow().configured_printers.printers {
             match bambu::init(
+                self.framework.clone(),
                 printer_number,
                 printer_index,
                 &printer_config,
-                self.stack,
                 self.app_config.clone(),
-                self.tls,
-                self.spawner,
                 ssdp_pub_sub,
             ) {
                 Ok(bambu_printer_model) => {
@@ -319,7 +321,7 @@ impl ViewModel {
         // Initialize SpoolScale and weight related stuff
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
-        ui_app_backend.on_get_spools_core_list(move |filter | {
+        ui_app_backend.on_get_spools_core_list(move |filter| {
             let mut view_model_borrow = moved_view_model.borrow_mut();
 
             // separated to not borrow twice
@@ -389,7 +391,6 @@ impl ViewModel {
                     let line_to_remove = format!("{line}\r\n");
                     new_previously_used_cores = previously_used_cores.replace(&line_to_remove, "");
                     new_previously_used_cores.insert_str(0, &format!("{core_name},{core_weight}\r\n"));
-
                 }
             } else {
                 new_previously_used_cores = format!("{core_name},{core_weight}\r\n{previously_used_cores}");
@@ -418,7 +419,7 @@ impl ViewModel {
         self.regenerate_cores_weights_list(&spools_cores_filter);
     }
 
-    pub fn add_core_weights_csv_to_list(&mut self, last_id: i32, csv: &str, title: &str, filter:&str) -> i32 {
+    pub fn add_core_weights_csv_to_list(&mut self, last_id: i32, csv: &str, title: &str, filter: &str) -> i32 {
         // returns last-id used
 
         let cores_list = self
@@ -495,6 +496,33 @@ impl ViewModel {
         }
     }
 
+    pub fn web_app_set_encode_info(&self, encode_info: &EncodeInfoDTO) {
+        let ui = self.ui_weak.unwrap();
+
+        // Initialize UI FrameworkState with framework information
+        let ui_app_state = ui.global::<crate::app::AppState>();
+        let mut encode_request = ui_app_state.get_curr_encode_request();
+        encode_request.brand = encode_info.brand.to_shared_string();
+        encode_request.color_name = encode_info.color_name.to_shared_string();
+        encode_request.filament_subtype = encode_info.filament_subtype.to_shared_string();
+        encode_request.note = encode_info.note.to_shared_string();
+        ui_app_state.set_curr_encode_request(encode_request);
+    }
+
+    pub fn web_app_get_encode_info(&self) -> EncodeInfoDTO {
+        let ui = self.ui_weak.unwrap();
+
+        // Initialize UI FrameworkState with framework information
+        let ui_app_state = ui.global::<crate::app::AppState>();
+        let encode_request = ui_app_state.get_curr_encode_request();
+        EncodeInfoDTO {
+            brand: encode_request.brand.into(),
+            color_name: encode_request.color_name.into(),
+            filament_subtype: encode_request.filament_subtype.into(),
+            note: encode_request.note.into(),
+        }
+    }
+
     fn set_staging_to_tray_direct(
         &mut self,
         filament_staging: &Rc<RefCell<FilamentStaging>>,
@@ -566,64 +594,58 @@ impl ViewModel {
         let moved_spool_tag = self.spool_tag_model.clone();
         let moved_ui = self.ui_weak.clone();
         let moved_view_model = self.view_model.clone().unwrap();
-        moved_ui.unwrap().global::<crate::app::AppBackend>().on_encode_tray_to_tag(
-            move |tray_id, weight_core, weight_new, core_name: SharedString| {
-                info!("Request to encode tag with tray {tray_id} info");
-                // Start with adding the core info to the previoysly used list
-                if !core_name.is_empty() {
-                    moved_view_model
-                        .borrow_mut()
-                        .add_to_previously_used_cores(core_name.as_str(), weight_core);
-                }
+        moved_ui.unwrap().global::<crate::app::AppBackend>().on_encode_tag(move |encode_request| {
+            info!("Request to encode tag with tray {} info", encode_request.tray_id);
+            // Start with adding the core info to the previoysly used list
+            if !encode_request.core_name.is_empty() {
+                moved_view_model
+                    .borrow_mut()
+                    .add_to_previously_used_cores(encode_request.core_name.as_str(), encode_request.weight_core);
+            }
 
-                // Confinue to encode
-                let spool_tag = moved_spool_tag.borrow();
-                let tray_id = usize::try_from(tray_id).unwrap();
-                let borrowed_filament_staging = moved_filament_staging.borrow();
-                let mut tag_info_to_encode = if tray_id == 999 {
-                    // Encode from Staging
-                    if let Some(staging_tag_info) = borrowed_filament_staging.tag_info.clone() {
-                        staging_tag_info
-                    } else {
+            // Continue to encode
+            let spool_tag = moved_spool_tag.borrow();
+            let tray_id = usize::try_from(encode_request.tray_id).unwrap();
+            let borrowed_filament_staging = moved_filament_staging.borrow();
+            let mut tag_info_to_encode = if tray_id == 999 {
+                // Encode from Staging
+                if let Some(staging_tag_info) = borrowed_filament_staging.tag_info.clone() {
+                    staging_tag_info
+                } else {
+                    return 0; // signals an error, UI will not continue
+                }
+            } else {
+                match moved_bambu_printer.borrow().get_tag_info_to_encode(tray_id) {
+                    Ok(tag_info) => tag_info,
+                    Err(err) => {
+                        // hopefully no borrowing issues since calling into ui in a callback
+                        moved_ui
+                            .unwrap()
+                            .global::<crate::app::AppState>()
+                            .invoke_encoding_failed(err.to_shared_string());
                         return 0; // signals an error, UI will not continue
                     }
-                } else {
-                    match moved_bambu_printer.borrow().get_tag_info_to_encode(tray_id) {
-                        Ok(tag_info) => tag_info,
-                        Err(err) => {
-                            // hopefully no borrowing issues since calling into ui in a callback
-                            moved_ui
-                                .unwrap()
-                                .global::<crate::app::AppState>()
-                                .invoke_encoding_failed(err.to_shared_string());
-                            return 0; // signals an error, UI will not continue
-                        }
-                    }
-                };
-                // let spool_scale_weight = moved_spool_scale.borrow().weight;
-                tag_info_to_encode.weight_core = None;
-                tag_info_to_encode.weight_new = None;
-                if weight_core != 0 {
-                    tag_info_to_encode.weight_core = Some(weight_core);
                 }
-                if weight_new != 0 {
-                    tag_info_to_encode.weight_new = Some(weight_new);
-                }
-                // TODO: Only for experiments
-                // if spool_scale_weight > 1100 {
-                //     tag_info_to_encode.core_weight = Some(spool_scale_weight - 1000);
-                // }
-                let bambu_printer_borrow = moved_bambu_printer.borrow();
-                if let Some(descriptor) =
-                    &tag_info_to_encode.to_descriptor(&bambu_printer_borrow.printer_name, &bambu_printer_borrow.printer_uuid_to_encode)
-                {
-                    spool_tag.write_tag(&descriptor, tray_id);
-                }
-                info!("Sent the write request of tray {} over signal", tray_id);
-                // TODO: Get proper timeout fron config and pass it in the write_tag to spool_tag
-                10
-            },
-        );
+            };
+            // let spool_scale_weight = moved_spool_scale.borrow().weight;
+            tag_info_to_encode.weight_new = (encode_request.weight_new != 0).then(|| encode_request.weight_new);
+            tag_info_to_encode.weight_core = (encode_request.weight_core != 0).then(|| encode_request.weight_core);
+            tag_info_to_encode.brand = (!encode_request.brand.trim().is_empty()).then(|| encode_request.brand.trim().to_string());
+            tag_info_to_encode.filament_subtype =
+                (!encode_request.filament_subtype.trim().is_empty()).then(|| encode_request.filament_subtype.trim().to_string());
+            tag_info_to_encode.color_name = (!encode_request.color_name.trim().is_empty()).then(|| encode_request.color_name.trim().to_string());
+            tag_info_to_encode.note = (!encode_request.note.trim().is_empty()).then(|| encode_request.note.trim().to_string());
+
+            let bambu_printer_borrow = moved_bambu_printer.borrow();
+            if let Some(descriptor) =
+                &tag_info_to_encode.to_descriptor(&bambu_printer_borrow.printer_name, &bambu_printer_borrow.printer_uuid_to_encode)
+            {
+                spool_tag.write_tag(&descriptor, tray_id);
+            }
+            info!("Sent the write request of tray {}", tray_id);
+            // TODO: Get proper timeout fron config and pass it in the write_tag to spool_tag
+            15
+        });
 
         // handler for request from UI to reset printer, should work only on selected printer
         let moved_bambu_printer = self.bambu_printer_model.clone();
@@ -632,6 +654,134 @@ impl ViewModel {
             moved_bambu_printer.borrow_mut().reset_printer();
             moved_ui.unwrap().global::<crate::app::AppState>().invoke_reset_printer();
         });
+
+        // handle encoding related listener(s) - this depends on current printer
+        let moved_ui = self.ui_weak.clone();
+        let moved_staging = self.filament_staging.clone();
+        let moved_bambu = self.bambu_printer_model.clone();
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_calc_encode_request_display(move || {
+                let moved_ui = moved_ui.unwrap();
+                let ui_app_state = moved_ui.global::<crate::app::AppState>();
+                let mut encode_request = ui_app_state.get_curr_encode_request();
+                let mut encode_request_display = ui_app_state.get_curr_encode_request_display();
+                encode_request_display.pa_line1 = "".into();
+                encode_request_display.pa_line2 = "".into();
+                let tray_id = encode_request.tray_id;
+
+                let staging_borrow = moved_staging.borrow();
+                let bambu_borrow = moved_bambu.borrow();
+                let (filament_info, tag_info) = match tray_id {
+                    999 => { // Staging
+                        if let Some(tag_info) = &staging_borrow.tag_info {
+                            if let Some(filament_info) = &tag_info.filament {
+                                (Some(filament_info.clone()), &staging_borrow.tag_info)
+                            } else {
+                                (None, &None)
+                            }
+                        } else {
+                            (None, &None)
+                        }
+                    }
+                    254 => { // External Tray
+                        let tray = &bambu_borrow.virt_tray;
+                        if let Some(calibration) = bambu_borrow.get_tray_calibration(&tray) {
+                            encode_request_display.pa_line2 = format!("{}, {}", calibration.k_value, calibration.name,).into();
+                        }
+                        if let bambu::Filament::Known(filament_info) = &tray.filament {
+                            (Some(filament_info.clone()), &tray.tag_info)
+                        } else {
+                            (None, &None)
+                        }
+                    }
+                    0..15 => { // Standard trays
+                        // let bambu = moved_bambu.borrow();
+                        let tray = &bambu_borrow.ams_trays[tray_id as usize];
+                        if let Some(calibration) = bambu_borrow.get_tray_calibration(&tray) {
+                            encode_request_display.pa_line2 = format!("{}, {}", calibration.k_value, calibration.name,).into();
+                        }
+                        if let bambu::Filament::Known(filament_info) = &tray.filament {
+                            (Some(filament_info.clone()), &tray.tag_info)
+                        } else {
+                            (None, &None)
+                        }
+                    }
+                    _ => {
+                        error!("UI request to update display for tray out of range, software error or pringer issue");
+                        (None, &None)
+                    }
+                };
+
+                if let Some(filament_info) = filament_info {
+                    let first_request_to_display = encode_request_display.filament_type.is_empty(); // checking tray_type is empty to know if it is the first time, later if user changes to empty some value it shouldn't be overriden
+                    if first_request_to_display {
+                        if let Some(tag_info) = tag_info {
+                            if encode_request.brand.is_empty() && tag_info.brand.is_some() {
+                                encode_request.brand = tag_info.brand.as_ref().unwrap().to_shared_string();
+                            }
+                            if encode_request.filament_subtype.is_empty() && tag_info.filament_subtype.is_some() {
+                                encode_request.filament_subtype = tag_info.filament_subtype.as_ref().unwrap().to_shared_string();
+                            }
+                            if encode_request.color_name.is_empty() && tag_info.color_name.is_some() {
+                                encode_request.color_name = tag_info.color_name.as_ref().unwrap().to_shared_string();
+                            }
+                            if encode_request.note.is_empty() && tag_info.note.is_some() {
+                                encode_request.note = tag_info.note.as_ref().unwrap().to_shared_string();
+                            }
+                        }
+                    }
+
+                    encode_request_display.color_code = filament_info.tray_color[..filament_info.tray_color.len().min(6)].into();
+                    encode_request_display.temp_min = filament_info.nozzle_temp_min.try_into().unwrap_or_default();
+                    encode_request_display.temp_max = filament_info.nozzle_temp_max.try_into().unwrap_or_default();
+                    encode_request_display.filament_type = filament_info.tray_type.into();
+                    // TODO: Add support for custom filaments here
+
+                    let mut found_filament_name = false;
+                    for line in BASE_FILAMENTS.lines() {
+                        if let Some((code, name)) = line.split_once(',') {
+                            if code == filament_info.tray_info_idx {
+                                encode_request_display.slicer_name = format!("{name} (Base)").into();
+                                found_filament_name = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !found_filament_name {
+                        let view_model_borrow = moved_view_model.borrow();
+                        let app_config_borrow = view_model_borrow.app_config.borrow();
+                        if let Some(custom_filaments) = &app_config_borrow.custom_filaments {
+                            for line in custom_filaments.lines() {
+                                if let Some((code, name)) = line.split_once(',') {
+                                    if code == filament_info.tray_info_idx {
+                                        encode_request_display.slicer_name = format!("{name} (Custom)").into();
+                                        found_filament_name = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !found_filament_name {
+                        encode_request_display.slicer_name = "Unknown Filament".into();
+                    }
+                    if !encode_request_display.pa_line2.is_empty() {
+                        encode_request_display.pa_line1 = format!(
+                            "{}, {}",
+                            moved_bambu.borrow().printer_name,
+                            moved_bambu.borrow().nozzle_diameter.as_ref().unwrap_or(&"Unknown".to_string())
+                        )
+                        .into();
+                    }
+                    ui_app_state.set_curr_encode_request_display(encode_request_display);
+                    if first_request_to_display {
+                        ui_app_state.set_curr_encode_request(encode_request);
+                    }
+                }
+            });
     }
 
     fn tag_info_to_ui_spool_info(&self, tag_info: &TagInformation) -> Option<crate::app::UiSpoolInfo> {
@@ -851,6 +1001,8 @@ impl SpoolTagObserver for ViewModel {
 
     fn on_emulated_tag_read(&mut self) {
         info!("Emulated tag scanned");
+        let ui = self.ui_weak.clone();
+        ui.unwrap().global::<crate::app::AppState>().invoke_emulated_tag_scanned();
     }
 }
 
@@ -987,7 +1139,10 @@ impl SpoolScaleObserver for ViewModel {
     fn on_scale_loaded(&mut self, weight: i32) {
         info!("Scale loaded with {weight} g");
         self.framework.borrow().undim_display();
-        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_loaded(weight, false);
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppState>()
+            .invoke_spool_scale_loaded(weight, false);
     }
 
     fn on_scale_load_changed_stable(&mut self, weight: i32) {
@@ -1013,9 +1168,12 @@ impl SpoolScaleObserver for ViewModel {
         self.framework.borrow().undim_display();
         self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_load_removed();
     }
-    
+
     fn on_scale_raw_samples_avg(&mut self, raw_data: i32) {
-        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_raw_samples_avg(raw_data);
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppState>()
+            .invoke_spool_scale_raw_samples_avg(raw_data);
     }
 
     fn on_scale_connected(&mut self) {

@@ -18,7 +18,17 @@ export component ControlPanelBase inherits HorizontalLayout {
     callback timeout-clicked2;
     callback manual-clicked2;
     in-out property <int> button1-timeout: 0;
+    changed button1-timeout => {
+        if button1-timeout > 0 {
+            button1-timer-count = button1-timeout;
+        }
+    }
     in-out property <int> button2-timeout: 0;
+    changed button2-timeout => {
+        if button2-timeout > 0 {
+            button2-timer-count = button2-timeout;
+        }
+    }
     in-out property <length> button-width;
     in-out property <length> text-border-width: 1px;
 
@@ -55,17 +65,14 @@ export component ControlPanelBase inherits HorizontalLayout {
     spacing: 4px;
     VerticalLayout {
         function weight-display() -> string {
-          if AppState.spool-staging-state == SpoolStagingState.Loaded && AppState.spool-staging-info.weight-core != 0 {
-            return "\{AppState.spool-scale-weight - AppState.spool-staging-info.weight-core} g / \{AppState.spool-scale-weight} g";
-          } else {
-            return "\{AppState.spool-scale-weight}";
-          }
+            if AppState.spool-staging-state == SpoolStagingState.Loaded && AppState.spool-staging-info.weight-core != 0 {
+                return "\{AppState.spool-scale-weight - AppState.spool-staging-info.weight-core} g / \{AppState.spool-scale-weight} g";
+            } else {
+                return "\{AppState.spool-scale-weight}";
+            }
         }
         spacing: AppConsts.trays-spacing;
-        if AppState.spool-scale-state == SpoolScaleState.Loaded || 
-           AppState.spool-scale-state == SpoolScaleState.Disconnected || 
-           AppState.spool-scale-state == SpoolScaleState.Uncalibrated || 
-           AppState.spool-scale-state == SpoolScaleState.Connected : 
+        if AppState.spool-scale-state == SpoolScaleState.Loaded || AppState.spool-scale-state == SpoolScaleState.Disconnected || AppState.spool-scale-state == SpoolScaleState.Uncalibrated || AppState.spool-scale-state == SpoolScaleState.Connected: 
            scale := Rectangle {
             text-border-timer := Timer {
                 property <int> counter: 20;
@@ -88,21 +95,15 @@ export component ControlPanelBase inherits HorizontalLayout {
                     }
                 }
             }
+
             height: 30px;
             border-color: black;
             border-width: text-border-timer.text-border-width;
-            background: AppState.spool-scale-state == SpoolScaleState.Disconnected || AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? orangered : 
-                        AppState.spool-scale-state == SpoolScaleState.Connected ? lightgreen : 
-                        AppState.spool-scale-state == SpoolScaleState.Loaded && !AppState.spool-scale-weight-stable ? yellow : 
-                        lightskyblue;
-            Text { 
-              color: utils.contrasting_color(parent.background);
-              font-size: 20px;
-              text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? "Scale Disconnected" :
-                    AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Scale Not Calibrated" :
-                    AppState.spool-scale-state == SpoolScaleState.Connected ? "Scale Connected" :
-                    AppState.spool-scale-state == SpoolScaleState.Loaded ? weight-display() : 
-                    "";
+            background: AppState.spool-scale-state == SpoolScaleState.Disconnected || AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? orangered : AppState.spool-scale-state == SpoolScaleState.Connected ? lightgreen : AppState.spool-scale-state == SpoolScaleState.Loaded && !AppState.spool-scale-weight-stable ? yellow : lightskyblue;
+            Text {
+                color: utils.contrasting_color(parent.background);
+                font-size: 20px;
+                text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? "Scale Disconnected" : AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Scale Not Calibrated" : AppState.spool-scale-state == SpoolScaleState.Connected ? "Scale Connected" : AppState.spool-scale-state == SpoolScaleState.Loaded ? weight-display() : "";
             }
         }
 
@@ -156,7 +157,7 @@ export component BootFailed inherits ControlPanelBase {
     message-type: StatusType.Error;
     button1-text: "Reboot";
     clicked1 => {
-      FrameworkBackend.reset-device();
+        FrameworkBackend.reset-device();
     }
 }
 
@@ -189,6 +190,7 @@ export component Ready inherits ControlPanelBase {
     }
     clicked2() => {
         AppState.control-state = ControlState.EncodeSelectSource;
+        AppBackend.emulate-tag-encoding-info();
     }
 }
 
@@ -198,6 +200,7 @@ export component EncodeSelectSource inherits ControlPanelBase {
     button2-timeout: 10;
     clicked2() => {
         AppState.control-state = ControlState.Ready;
+        AppBackend.read-tag-mode();
     }
 }
 
@@ -216,9 +219,10 @@ export component StagingSelected inherits ControlPanelBase {
 
 export component OperationBase inherits ControlPanelBase {
     message-text: AppState.user-message;
-    button1-text: "Cancel";
+    button2-text: "Cancel";
 }
-
+// TODO: No need for OperationBase and Reading sharing with Encoding the Operation Base
+// Need just Encoding and Reading, share maybe only the user-message, or maybe some alternative to that in form of state
 export component Encoding inherits OperationBase {
     text-border-timer := Timer {
         property <length> text-border-width: 1px;
@@ -234,23 +238,23 @@ export component Encoding inherits OperationBase {
     }
 
     text-border-width: text-border-timer.text-border-width;
-    button1-timeout: AppState.encode-timeout;
-    timeout-clicked1 => {
+    button2-timeout: AppState.encode-timeout;
+    timeout-clicked2 => {
         AppState.encoding-timeout();
         AppState.stop-highlight-tray();
     }
-    manual-clicked1 => {
+    manual-clicked2 => {
         AppState.control-state = ControlState.Ready;
         AppState.stop-highlight-tray();
     }
-    clicked1 => {
+    clicked2 => {
         AppBackend.read-tag-mode();
         AppState.stop-highlight-tray();
     }
 }
 
 export component Reading inherits OperationBase {
-    clicked1 => {
+    clicked2 => {
     }
 }
 

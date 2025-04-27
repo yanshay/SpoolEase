@@ -4,243 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SpoolEase Configuration</title>
-    <style>
-      /* General Styles */
-      body {
-        display: none;
-        font-family: Arial, sans-serif;
-        max-width: 500px;
-        margin: 0 auto;
-        padding: 20px;
-        background-color: #f5f5f5;
-      }
-      h3 {
-        font-weight: normal;
-      }
-
-      /* Section Styles */
-      .section {
-        background-color: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        padding: 20px;
-        margin-bottom: 20px;
-      }
-
-      .section-title {
-        margin-top: 0;
-        padding-bottom: 10px;
-        border-bottom: 1px solid #eee;
-        color: #333;
-      }
-
-      /* Form Styles */
-      .form-row {
-        margin-bottom: 15px;
-      }
-
-      label {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 5px;
-        font-weight: bold;
-        color: #555;
-      }
-      label span {
-        font-weight: normal;
-      }
-
-      .feedback-label {
-        display: block;
-        text-align: center;
-        margin: 10px auto 0;
-      }
-
-      .status-text {
-        width: 100%;
-        padding: 10px;
-        box-sizing: border-box;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 14px;
-        margin: 0;
-        min-height: 2rem;
-        height: 2rem;
-        display: flex;
-        align-items: center;
-      }
-
-      .next-to-status-button {
-        height: 2rem; 
-        margin: 0; 
-        margin-left: 10px; 
-        padding: 0 10px;
-      }
-
-      input[type="text"],
-      input[type="password"],
-      input[type="number"] {
-        width: 100%;
-        padding: 10px;
-        box-sizing: border-box;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 14px;
-      }
-
-      input[type="number"] {
-        width: 150px;
-      }
-
-      .password-container {
-        position: relative;
-      }
-
-      .toggle-password {
-        position: absolute;
-        right: 10px;
-        top: 5px;
-        cursor: pointer;
-        color: #666;
-      }
-
-      /* Button Styles */
-
-      .button-container {
-        margin: 20px 0;
-        display: flex;
-        gap: 5px;
-      }
-
-      button {
-        padding: 10px 15px;
-        margin-right: 10px;
-        margin-top: 5px;
-        background-color: #4caf50;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 14px;
-      }
-
-      button:hover {
-        background-color: #45a049;
-      }
-
-      button.secondary {
-        background-color: #2196f3;
-      }
-
-      button.secondary:disabled {
-        background-color: #cccccc;
-        cursor: not-allowed;
-      }
-
-      button.secondary:hover {
-        background-color: #0b7dda;
-      }
-
-      button.danger {
-        background-color: #f44336;
-      }
-
-      button.danger:not(:disabled):hover {
-        background-color: #d32f2f;
-      }
-
-      button.apply-btn {
-        width: 100%;
-      }
-
-      button:disabled {
-        background-color: #cccccc;
-        cursor: not-allowed;
-      }
-
-      button.add-btn {
-        background-color: #2196f3;
-        margin-bottom: 5px;
-      }
-
-      /* Printer Form Styles */
-      .printer-form {
-        border: 1px solid #eee;
-        padding: 15px;
-        margin-bottom: 15px;
-        border-radius: 5px;
-        background-color: #f9f9f9;
-        position: relative;
-      }
-
-      .printer-form.default {
-        background-color: #e6f7ff;
-        border-color: #1890ff;
-      }
-
-      .ip-container {
-        display: flex;
-        gap: 5px;
-      }
-
-      .ip-segment {
-        flex: 1;
-      }
-
-      .error-message {
-        color: red;
-        font-size: 12px;
-        margin-top: 2px;
-        display: none;
-      }
-
-      button.remove-btn {
-        background-color: #f44336;
-        padding: 5px 10px;
-        margin: 0;
-        margin-top: -3px;
-      }
-
-      button.default-btn {
-        background-color: #2196f3;
-        margin-bottom: 5px;
-      }
-
-      button.default-btn.active {
-        background-color: #0b7dda;
-        border: 2px solid #064579;
-      }
-
-      #json-output {
-        width: 100%;
-        height: 150px;
-        margin-top: 10px;
-        border: 1px solid #ccc;
-        padding: 10px;
-        box-sizing: border-box;
-        border-radius: 4px;
-        background-color: #f9f9f9;
-        font-family: monospace;
-      }
-
-      .spools-text {
-        font-size: 14px;
-        padding: 10px;
-        line-height: 1.5;
-        box-sizing: border-box;
-        resize: vertical;
-        width: 100%;
-        overflow: hidden;
-        min-height: 10em;
-      }
-      .spools-chars-left {
-        margin-top: 0px;
-        text-align: right;
-      }
-      .link-bullet {
-        margin-bottom: 10px;
-      }
-    </style>
+    <link rel="stylesheet" href="styles.css">
   </head>
   <body>
     <h1>SpoolEase Configuration</h1>
@@ -431,15 +195,7 @@
           >
             Apply
           </button>
-          <!-- <button type="button" class="add-btn" onclick="addPrinter()">Add&nbsp;Printer</button> -->
         </div>
-
-        <textarea
-          style="display: none"
-          id="json-output"
-          placeholder="Printer configuration JSON..."
-          readonly
-        ></textarea>
       </div>
 
       <!-- Scale Settings -->
@@ -528,14 +284,14 @@
           ></label
         >
         <textarea
-          class="spools-text"
+          class="csv-text"
           id="spools-text"
-          oninput="handleSpoolsTextAreaInput(event)"
+          oninput="handleCSVTextAreaInput(event, 'spools-text', 'spools-chars-left')"
           placeholder="- Example (weight is also in the description for display):
 eSUN - Plastic (Clear) - 209g,209
 ProtoPasta 500g - Cardboard - 84g,84"
         ></textarea>
-        <p id="spools-chars-left" class="spools-chars-left">abcd</p>
+        <p id="spools-chars-left" class="csv-chars-left">abcd</p>
         <label>Sources for spool weights (sometimes with photos)</label>
         <ul>
           <li class="link-bullet">
@@ -572,24 +328,67 @@ ProtoPasta 500g - Cardboard - 84g,84"
             >
           </li>
         </ul>
+        <button
+          id="spools-apply"
+          type="button"
+          class="apply-btn"
+          onclick="applySpoolsSettings()"
+          disabled
+        >
+          Apply
+        </button>
+      </div>
+    </div>
+
+
+    <!-- Filaments Section -->
+    <div class="section" id="filaments-section">
+      <h2 class="section-title">Filaments</h2>
+
+      <div class="form-row">
+        <div style="display: flex; align-items: center; gap: 10px;>
+            <label for="custom-filaments-text"
+              >Custom Filaments CSV:</label
+            >
+            <button class="add-btn" style="margin-left:auto" type="button" onclick="selectAndProcessCustomFilaments()">Create List (On Desktop)</button>
+            <input id="folderInput" type="file"  style="display:none" webkitdirectory multiple onchange="processFiles(event)" />
+        </div>
+        <textarea
+          class="csv-text"
+          id="custom-filaments-text"
+          oninput="handleCSVTextAreaInput(event, 'custom-filaments-text', 'custom-filaments-chars-left')"
+          placeholder="- Example (normally should be auto generated):
+P714fe8c,ELEGOO PLA Pro
+Pd7bcff9,FLASHFORGE ASA Basic
+Pb79127b,3DHOJOR PLA Basic"
+        ></textarea>
+        <p id="custom-filaments-chars-left" class="csv-chars-left">abcd</p>
+        <label>Press "Create List" button and Select Folder</label>
+        <label>On MacOS</label>
+          <p class="i0">/Users</p>
+          <p class="i1">/{user-name}</p>
+          <p class="i2">/Library</p>
+          <p class="i3">/Application Support</p>
+          <p class="i4">/BambuStudio or OrcaSlicer</p>
+          <p class="i5">/user</p>
+        <label>On Windows</label>
+          <p class="i0">C:\Users</p>
+          <p class="i1">\{user-name}</p>
+          <p class="i2">\AppData</p>
+          <p class="i3">\Roaming</p>
+          <p class="i4">\BambuStudio or OrcaSlicer</p>
+          <p class="i5">\user</p>
       </div>
 
       <button
-        id="spools-apply"
+        id="filaments-apply"
         type="button"
         class="apply-btn"
-        onclick="applySpoolsSettings()"
+        onclick="applyFilamentsSettings()"
         disabled
       >
         Apply
       </button>
-
-      <textarea
-        style="display: none"
-        id="json-output"
-        placeholder="Printer configuration JSON..."
-        readonly
-      ></textarea>
     </div>
 
     <!-- OTA Section -->
@@ -676,10 +475,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
       async function sendData(inurl, data, retries = 5) {
         // data is object, not json string
         const url = `${urlPrefix}${inurl}`;
-        console.log(`in sendData with url: ${url}`);
         let encryptionKey = getEncryptionKey();
-        console.log(`in sendData with url: ${url}`);
-        console.log(encryptionKey);
         const response = await retryOperation(
           () =>
             fetch(url, {
@@ -705,28 +501,22 @@ ProtoPasta 500g - Cardboard - 84g,84"
             applyButton.disabled = true;
           }
         } catch (error) {
-          console.error("Failed to apply settings:", error);
           alert(`Failed to apply settings: ${error.message}`);
         }
       }
 
       function getEncryptionKey() {
-        console.log("in getEncryptionKey");
         const securityKey = document
           .getElementById("security-key")
           .value.trim();
-        console.log(securityKey);
         if (securityKey != window.securityKeyOnDerive) {
-          console.log("different security-key");
           window.encryptionKey = derive_key(securityKey, "example_salt");
-          console.log(`derived key: ${window.encryptionKey}`);
           window.securityKeyOnDerive = securityKey;
         }
         return window.encryptionKey;
       }
       // Function to test key
       async function applyKeyFetchConfigs() {
-        console.log("in applyKeyFetchConfigs");
         const data = { test: "Hello" };
         try {
           let response = await sendData("/api/test-key", data); // Replace with actual server endpoint
@@ -737,7 +527,6 @@ ProtoPasta 500g - Cardboard - 84g,84"
           document.getElementById("printers-apply").disabled = true;
           document.getElementById("scale-apply").disabled = true;
           document.getElementById("spools-apply").disabled = true;
-          console.log(`REspnse status ${response.status}`);
           if (response.status == 400) {
             document.getElementById("security-key-feedback").textContent = "Security Key is incorrect";
             document.getElementById("ota-request").disabled = true;
@@ -752,7 +541,6 @@ ProtoPasta 500g - Cardboard - 84g,84"
             document.getElementById("restart-device").disabled = false;
           }
         } catch (error) {
-          console.error("Failed to apply settings:", error);
           document.getElementById("security-key-feedback").textContent =
             `Failed to check key, try again (${error.message})`;
           return;
@@ -770,7 +558,6 @@ ProtoPasta 500g - Cardboard - 84g,84"
           try {
             return await operation();
           } catch (error) {
-            console.log(error);
             if (i === retries - 1) throw error; // Throw error if it's the last retry
           }
         }
@@ -782,6 +569,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
         await retryOperation(() => fetchDisplayInitialConfig());
         await retryOperation(() => fetchPrinterInitialConfig());
         await retryOperation(() => fetchSpoolsInitialConfig());
+        await retryOperation(() => fetchFilamentsInitialConfig());
         await retryOperation(() => fetchScaleInitialConfig());
         await retryOperation(() => fetchDeviceNameInitialConfig());
       }
@@ -848,8 +636,6 @@ ProtoPasta 500g - Cardboard - 84g,84"
             data.dimming_percent;
           document.getElementById("blackout-timeout").value =
             data.blackout_timeout;
-          // document.getElementById("dimming-percent-display").textContent =
-          //   `${data.dimming_percent}%`;
         }
       }
 
@@ -857,7 +643,6 @@ ProtoPasta 500g - Cardboard - 84g,84"
         const data = await fetchInitialSectionConfig("printer");
 
         if (data) {
-          console.log(JSON.stringify(data));
           loadPrinterSettings(data);
         }
       }
@@ -923,12 +708,6 @@ ProtoPasta 500g - Cardboard - 84g,84"
       function applyPrintersSettings() {
         const data = generatePrinterData();
         if (!data) return;
-        // Display the JSON in the textarea
-        document.getElementById("json-output").value = JSON.stringify(
-          data,
-          null,
-          2,
-        );
         const applyButton = document.getElementById("printers-apply");
         sendConfigData("/api/printer-config", data, applyButton); // Replace with actual server endpoint
       }
@@ -955,12 +734,14 @@ ProtoPasta 500g - Cardboard - 84g,84"
         setupChangeListeners("display-section", "display-section-apply");
         setupChangeListeners("printers-container", "printers-apply");
         setupChangeListeners("spools-section", "spools-apply");
+        setupChangeListeners("filaments-section", "filaments-apply");
         setupChangeListeners("scale-section", "scale-apply");
         setupChangeListeners("device-name-section", "device-name-apply");
         // Setup IP fields
         setupIPFields(document.querySelectorAll(".ip-part"));
 
-        handleSpoolsTextAreaInput();
+        handleCSVTextAreaInput(null, 'spools-text', 'spools-chars-left');
+        handleCSVTextAreaInput(null, 'custom-filaments-text', 'custom-filaments-chars-left');
       });
 
       function getHashParam(key) {
@@ -1122,7 +903,6 @@ ProtoPasta 500g - Cardboard - 84g,84"
           });
         }
         updatePrinterNumbers();
-        console.log("Loaded printer settings:", printersConfig);
       }
 
       // Function to restrict IP fields to numbers only
@@ -1364,22 +1144,22 @@ ProtoPasta 500g - Cardboard - 84g,84"
       }
 
       // Spools Section
-      function handleSpoolsTextAreaInput(event) {
+      function handleCSVTextAreaInput(event, textAreaId, charsLeftId) {
         let maxChars = 2000;
-        const spoolsTextArea = document.getElementById("spools-text");
-        if (spoolsTextArea.value.length > maxChars) {
-          spoolsTextArea.value = spoolsTextArea.value.substring(0, maxChars); // Trim excess characters
+        const csvTextArea = document.getElementById(textAreaId);
+        if (csvTextArea.value.length > maxChars) {
+          csvTextArea.value = csvTextArea.value.substring(0, maxChars); // Trim excess characters
         }
-        if (spoolsTextArea.clientHeight < spoolsTextArea.scrollHeight) {
-          spoolsTextArea.style.height = "auto";
-          spoolsTextArea.style.height = spoolsTextArea.scrollHeight + "px";
+        if (csvTextArea.clientHeight < csvTextArea.scrollHeight) {
+          csvTextArea.style.height = "auto";
+          csvTextArea.style.height = csvTextArea.scrollHeight + "px";
         }
-        let charsUsed = spoolsTextArea.value.length;
-        document.getElementById("spools-chars-left").textContent =
+        let charsUsed = csvTextArea.value.length;
+        document.getElementById(charsLeftId).textContent =
           `${charsUsed} / ${maxChars}`;
       }
 
-      function validateCSV(text) {
+      function validateCSV(text, firstColRegex, secondColRegex) {
         if (text.trim() == "") {
           return true;
         }
@@ -1389,8 +1169,11 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const parts = line.split(",");
           if (parts.length !== 2) return false; // Ensure exactly two columns
 
+          firstColumn = parts[0].trim();
+          if (!firstColRegex.test(firstColumn)) return false; // Ensure 1-4 digit number
+
           const secondColumn = parts[1].trim();
-          if (!/^\d{1,4}$/.test(secondColumn)) return false; // Ensure 1-4 digit number
+          if (!secondColRegex.test(secondColumn)) return false; // Ensure 1-4 digit number
         }
 
         return true;
@@ -1398,7 +1181,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
 
       function applySpoolsSettings() {
         const spools = document.getElementById("spools-text").value;
-        if (!validateCSV(spools)) {
+        if (!validateCSV(spools, /^.*$/, /^\d{1,4}$/)) {
           alert("Invalid spools information");
           return;
         }
@@ -1412,8 +1195,73 @@ ProtoPasta 500g - Cardboard - 84g,84"
 
         if (data) {
           document.getElementById("spools-text").value = data.spools;
-          handleSpoolsTextAreaInput();
+          handleCSVTextAreaInput(null, 'spools-text', 'spools-chars-left');
         }
+      }
+
+      function applyFilamentsSettings() {
+        const custom_filaments = document.getElementById("custom-filaments-text").value;
+        if (!validateCSV(custom_filaments, /^.*$/, /^.*$/)) {
+          alert("Invalid custom filaments information");
+          return;
+        }
+        const applyButton = document.getElementById("filaments-apply");
+        const data = { custom_filaments };
+        sendConfigData("/api/filaments-config", data, applyButton);
+      }
+
+      async function fetchFilamentsInitialConfig() {
+        const data = await fetchInitialSectionConfig("filaments");
+
+        if (data) {
+          document.getElementById("custom-filaments-text").value = data.custom_filaments;
+          handleCSVTextAreaInput(null, 'custom-filaments-text', 'custom-filaments-chars-left');
+        }
+      }
+
+      function selectAndProcessCustomFilaments() {
+          const folderInput = document.getElementById('folderInput');
+          folderInput.value = '';
+          folderInput.click();
+      }
+
+      async function processFiles() {
+          const input = document.getElementById("folderInput");
+          const files = Array.from(input.files);
+          const fileMap = new Map();
+          for (const file of files) fileMap.set(file.webkitRelativePath, file);
+
+          const uniqueFilamentIds = new Set();
+          const results = [];
+
+          for (const [path, file] of fileMap) {
+            if (!path.endsWith(".info")) continue;
+            const text = await file.text();
+            const lines = text.split("\n");
+
+            const baseIdLine = lines.find((l) => l.startsWith("base_id ="));
+            const baseId = baseIdLine?.split("=")[1]?.trim() ?? "";
+            if (baseId) continue;
+
+            const jsonPath = path.replace(/\.info$/, ".json");
+            const jsonFile = fileMap.get(jsonPath);
+            if (!jsonFile) continue;
+
+            try {
+              const json = JSON.parse(await jsonFile.text());
+              const filamentId = (json.filament_id ?? "").toString().trim();
+              if (!filamentId || uniqueFilamentIds.has(filamentId)) continue;
+
+              let name = (json.name ?? "").toString().trim();
+              name = name.split("@")[0].trim();
+
+              results.push(`${filamentId},${name}`);
+              uniqueFilamentIds.add(filamentId);
+            } catch {}
+          }
+
+          document.getElementById("custom-filaments-text").value = results.join("\n");
+          handleCSVTextAreaInput(event, 'custom-filaments-text', 'custom-filaments-chars-left');
       }
 
       function applyScaleSettings() {

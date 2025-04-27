@@ -346,6 +346,7 @@ where
         Err(err) => {
             match err {
                 pn532::Error::TimeoutResponse => return Ok(false),
+                pn532::Error::TimeoutAck => return Ok(false),
                 _ => return Err(format!("Error resopnse emulating tag: {err:?}")),
             }
         }

@@ -1,0 +1,142 @@
+import { Title, MyText,MyButton } from "./framework/widgets.slint";
+import { AppBackend, AppState, ControlState, UiTray } from "app.slint";
+import { Utils } from "utils.slint";
+
+export component LabeledText inherits Rectangle {
+    in-out property <string> label;
+    in-out property <string> text;
+    in-out property <color> label-color: blue;
+    in-out property <color> text-color: black;
+    in-out property <length> label-width;
+    HorizontalLayout {
+        MyText {
+            width: label-width;
+            text: label;
+            color: label-color;
+        }
+
+        MyText {
+            text: text;
+            color: text-color;
+        }
+    }
+}
+
+export component LabeledInfo inherits LabeledText {
+    utils := Utils { }
+
+    // property <int> tray-index: AppState.curr-encode-request.tray-index;
+    // property <UiTray> tray: AppState.trays-state[AppState.curr-encode-request.tray-index == 999 ? 0 : AppState.curr-encode-request.tray-index];
+    // property <color> spool-color: tray-index == 999 ? AppState.spool-staging-info.color : tray.filament.color;
+    label-width: 90px;
+}
+
+export component EncodeEditing inherits Rectangle {
+    // property <int> tray-index: AppState.curr-encode-request.tray-index;
+    // property <UiTray> tray: AppState.trays-state[AppState.curr-encode-request.tray-index == 999 ? 0 : AppState.curr-encode-request.tray-index];
+    // property <color> spool-color: tray-index == 999 ? AppState.spool-staging-info.color : tray.filament.color;
+    // property <string> spool-k: tray-index == 999 ? AppState.spool-staging-info.k : tray.k;
+    // property <string> spool-material: tray-index == 999 ? AppState.spool-staging-info.material : tray.filament.material;
+    width: 480px;
+    height: 320px;
+    background: white;
+    VerticalLayout {
+        alignment: stretch;
+        Title {
+            horizontal-alignment: right;
+            text: "To Edit, Scan NFC With Phone   ▶ ▶ ▶\u{00A0}";
+        }
+
+        VerticalLayout {
+            alignment: stretch;
+
+            Rectangle {
+                border-width: 1px;
+                border-color: black;
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 10px;
+                    padding-bottom: 5px;
+                    property <string> brand: AppState.curr-encode-request.brand == "" ? "<Unspecified Brand> " : "\{AppState.curr-encode-request.brand} ";
+                    property <string> filament-subtype: AppState.curr-encode-request.filament-subtype == "" ? " <Unspecified Color>" : " \{AppState.curr-encode-request.filament-subtype}";
+                    property <string> color-name: AppState.curr-encode-request.color-name == "" ? "" : " \{AppState.curr-encode-request.color-name} ";
+                    MyText {
+                        horizontal-alignment: center;
+                        text: "\{brand}\{AppState.curr-encode-request-display.filament-type}\{filament-subtype}\{color-name}";
+                    }
+
+                    LabeledInfo {
+                        label: "Note:";
+                        text: AppState.curr-encode-request.note;
+                    }
+                }
+            }
+
+            Rectangle {
+                border-width: 1px;
+                border-color: black;
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 10px;
+                    LabeledInfo {
+                        label: "In Slicer:";
+                        text: AppState.curr-encode-request-display.slicer-name;
+                    }
+
+                    HorizontalLayout {
+                        alignment: space-between;
+                        LabeledInfo {
+                            horizontal-stretch: 1;
+                            label: "Color";
+                            text: "\{AppState.curr-encode-request-display.color-code}";
+                        }
+                        LabeledInfo {
+                            label: "Temps: ";
+                            text: "\{AppState.curr-encode-request-display.temp-min}°C - \{AppState.curr-encode-request-display.temp-max}°C" ;
+                        }
+                    }
+
+                    VerticalLayout {
+                        LabeledInfo {
+                            label: "PA(K):";
+                            text: AppState.curr-encode-request-display.pa-line1;
+                        }
+
+                        LabeledInfo {
+                            label: "";
+                            text: AppState.curr-encode-request-display.pa-line2;
+                        }
+                    }
+
+                    LabeledInfo {
+                        property <string> core: AppState.curr-encode-request.weight-core != 0 ? "\{AppState.curr-encode-request.weight-core}g" : "—";
+                        property <string> new: AppState.curr-encode-request.weight-new != 0 ? "\{AppState.curr-encode-request.weight-new}g" : "—";
+                        label: "Weights:";
+                        text: "\{core} (Core) / \{new} (New)";
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            MyButton {
+                horizontal-stretch: 4;
+                height: 56px;
+                text: "Encode";
+                clicked => {
+                    AppState.control-state = ControlState.Encoding;
+                    AppState.encode-start();
+                }
+            }
+
+            MyButton {
+                horizontal-stretch: 1;
+                height: 56px;
+                text: "Cancel";
+                clicked => {
+                    AppState.encode-cancel();
+                }
+            }
+        }
+    }
+}

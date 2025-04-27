@@ -25,10 +25,12 @@ use framework::{
 };
 
 use crate::app_config::{AppConfig, DefaultPrinterConfig, PrinterConfig, PrintersConfig, ScaleConfig, SPOOLS_CATALOG};
+use crate::view_model::ViewModel;
 
 pub struct NestedAppBuilder {
     pub framework: Rc<RefCell<Framework>>,
     pub app_config: Rc<RefCell<AppConfig>>,
+    pub view_model:Rc<RefCell<ViewModel>>,
 }
 
 impl NestedAppWithWebAppStateBuilder for NestedAppBuilder {
@@ -49,6 +51,17 @@ impl AppWithStateBuilder for NestedAppBuilder {
             web_server_captive: self.framework.borrow().settings.web_server_captive,
         }); // Handler in case page is not found for captive portal support
         let router = router.route("/", get(|| Redirect::to("/config"))); // Redirect root for now
+
+        // TODO: >>>>>> Move to framework with setting for the css
+        let router = router.route(
+            "/styles.css",
+            get_service(picoserve::response::File::css(include_str!("../static/styles.css"))),
+        ); 
+
+        let router = router.route(
+            "/encode.html",
+            get_service(picoserve::response::File::html(include_str!("../static/encode.html"))),
+        ); 
 
         let app_config_clone_post = app_config.clone();
         let app_config_clone_get = app_config.clone();
@@ -145,6 +158,62 @@ impl AppWithStateBuilder for NestedAppBuilder {
             }),
         );
 
+        let app_config_clone_post = app_config.clone();
+        let app_config_clone_get = app_config.clone();
+        let router = router.route(
+            "/api/filaments-config",
+            post(
+                move |State(Encryption(key)): State<Encryption>, FilamentsConfigDTO { custom_filaments }| {
+                    let custom_filaments = if let Some(custom_filaments) = custom_filaments {
+                        if !custom_filaments.trim().is_empty() {
+                            Some(custom_filaments.trim().replace("\r\n", "\n").replace("\n", "\r\n"))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    ready(match app_config_clone_post.borrow_mut().set_filaments(custom_filaments) {
+                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                        Err(e) => SetConfigResponseDTO {
+                            error_text: Some(format!("{e:?}")),
+                        }
+                        .encrypt(&key.borrow()),
+                    })
+                },
+            )
+            .get(move |State(Encryption(key)): State<Encryption>| {
+                ready( {
+                        let borrowed_app_config = app_config_clone_get.borrow(); // notice the borrow, can't async here
+                        let custom_filaments = &borrowed_app_config.custom_filaments;
+                        let filaments_config = FilamentsConfigDTO { custom_filaments: custom_filaments.clone() };
+                        filaments_config.encrypt(&key.borrow())
+                    }
+                )
+            }),
+        );
+
+        let view_model_borrow_post = self.view_model.clone();
+        let view_model_borrow_get = self.view_model.clone();
+        let router = router.route(
+            "/api/encode-info",
+            post(
+                move |State(Encryption(key)): State<Encryption>, encode_info: EncodeInfoDTO | {
+                    ready({
+                    view_model_borrow_post.borrow().web_app_set_encode_info(&encode_info);
+                    SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow())
+                    })
+                },
+            )
+            .get(move |State(Encryption(key)): State<Encryption>| {
+                ready( {
+                        let encode_info = view_model_borrow_get.borrow().web_app_get_encode_info();
+                        encode_info.encrypt(&key.borrow())
+                    }
+                )
+            }),
+        );
+
         router
     }
 }
@@ -216,6 +285,12 @@ struct SpoolsConfigDTO {
 encrypted_input!(SpoolsConfigDTO);
 
 #[derive(serde::Deserialize, serde::Serialize)]
+struct FilamentsConfigDTO {
+    custom_filaments: Option<String>,
+}
+encrypted_input!(FilamentsConfigDTO);
+
+#[derive(serde::Deserialize, serde::Serialize)]
 struct ScaleConfigDTO {
     available: bool,
     name: Option<String>,
@@ -243,7 +318,10 @@ impl From<&ScaleConfig> for ScaleConfigDTO {
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
-struct TagConfigDTO {
-    tag_scan_timeout: u64,
+pub struct EncodeInfoDTO {
+    pub brand: String,
+    pub color_name: String,
+    pub filament_subtype: String,
+    pub note: String,
 }
-encrypted_input!(TagConfigDTO);
+encrypted_input!(EncodeInfoDTO);

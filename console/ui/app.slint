@@ -33,6 +33,30 @@ export struct UiSpoolInfo {
   weight-core: int,
 }
 
+export struct EncodeRequest {
+  // autofilled
+  tray-id: int, // from index
+  weight-core: int,
+  weight-new: int, 
+  core-name: string, // used to add to list of previously used spools, not encoded to tag
+  // manually filled
+  brand: string,
+  filament-subtype: string,
+  color-name: string,
+  note: string,
+}
+
+// Assistance from rust for more info or formatter info
+export struct EncodeRequestDisplay {
+  filament_type: string, // could also get in UI, but easier this way if we have the mechanism
+  slicer-name: string,
+  color-code: string,
+  temp-min: int,
+  temp-max: int,
+  pa-line1: string,
+  pa-line2: string,
+}
+
 // Consts
 
 export global AppConsts {
@@ -49,11 +73,11 @@ export enum ControlState {
   ConnectingToPrinter ,
   BootFailed,
   Ready,
-  EncodeSelectSource,
-  EncodeSetSpoolCore,
-  StagingSelected,
-  Encoding,
   Reading,
+  StagingSelected, // To load
+  EncodeSelectSource,
+  EncodeEditing,
+  Encoding,
   PostAction,
 }
 
@@ -81,24 +105,27 @@ export enum SpoolStagingState {
 export global AppBackend {
     callback clear-staging();
     callback set-staging-to-tray(tray-id: int);
-    callback encode-tray-to-tag(tray-id: int, weight-core: int, weight-new: int, core-name: string) -> int; // returns how long it will try to encode, for timer
+    callback encode-tag(encode_request: EncodeRequest) -> int; // returns how long it will try to encode, for timer
     callback read-tag-mode();
     callback emulate-tag-web-config();
     callback reset-printer();
     callback select-printer(printer: string);
     callback calibrate-scale(weight: int);
     callback erase-previously-used-core-list();
-    pure callback get-spools-core-list(filter: string)-> [SelectorOption];
+    pure callback get-spools-core-list(filter: string) -> [SelectorOption];
     callback get-spool-core-weight(id: int) -> int;
     pure callback get-connected-scale-info() -> string;
     pure callback get-available-scales-info() -> [string];
+    callback emulate-tag-encoding-info();
+    callback calc-encode-request-display();
 }
 
 export global AppState {
     in-out property <bool> select-printer: false;
     in-out property <ControlState> control-state: ControlState.Booting;
+    in-out property <bool> encoding-spool-core-visible: false;
     changed control-state => {
-      self.stop-highlight-trays();
+        self.stop-highlight-trays();
     }
 
     in-out property <SpoolStagingState> spool-staging-state: SpoolStagingState.Empty;
@@ -108,6 +135,11 @@ export global AppState {
     in-out property <string> user-message: "Booting ...";
     in-out property <StatusType> user-message-type: StatusType.Normal;
     in-out property <int> encode-timeout: 999;
+    in-out property <EncodeRequest> curr-encode-request;
+    changed curr-encode-request => {
+        AppBackend.calc-encode-request-display();
+    }
+    in-out property <EncodeRequestDisplay> curr-encode-request-display; // updated by rust for formatting needs
 
     in-out property <int> curr-ams-id: 0;
     in-out property <[int]> ams-exists: [0];
@@ -117,10 +149,10 @@ export global AppState {
     in-out property <string> default-printer: "";
     in-out property <string> pending-curr-printer: "";
     changed pending-curr-printer => {
-      if pending-curr-printer != "" {
-        AppBackend.select-printer(pending-curr-printer);
-        pending-curr-printer = "";
-      }
+        if pending-curr-printer != "" {
+            AppBackend.select-printer(pending-curr-printer);
+            pending-curr-printer = "";
+        }
     }
 
     in-out property <SpoolScaleState> spool-scale-state: SpoolScaleState.Unknown;
@@ -137,7 +169,7 @@ export global AppState {
     in-out property <bool> highlight-staging: false;
     in-out property <int> highlight-tray: -1;
     in-out property <bool> highlight-tray-flash: false;
-       out property <int> highlight-tray-counter-length: 20;
+    out property <int> highlight-tray-counter-length: 20;
     in-out property <int> highlight-tray-counter: highlight-tray-counter-length;
 
     public function start-highlight-tray(tray-id: int) {
@@ -208,7 +240,7 @@ export global AppState {
 
     public function encode-tag-found() {
         self.control-state = ControlState.Encoding;
-        self.user-message = "Tag to Encode Found,\nEncoding ...";
+        self.user-message = "Tag Found,\nEncoding ...";
         self.user-message-type = StatusType.Normal;
     }
     // Called from UI in case of UI timeout, can also be called from backend for timeout case
@@ -243,18 +275,60 @@ export global AppState {
         self.user-message-type = StatusType.Success;
         start-highlight-tray((tray-id == 254) ? 254 : tray-id + ams-id * 4);
         if printer != self.curr-printer {
-          self.set-later-curr-printer(printer)
+            self.set-later-curr-printer(printer)
         }
     }
 
-    public function encode-start(tray-id: int, weight-core: int, weight-new: int, core-name: string) {
-          self.encode-timeout = AppBackend.encode-tray-to-tag(tray-id, weight-core, weight-new, core-name);
-          if self.encode-timeout != 0 { // return value of 0 means there was an error, error will be reported separately
-              AppState.start-highlight-tray-forever(tray-id);
+    public function encode-select-tray(tray-index: int) {
+        self.curr-encode-request.tray-id = ( (tray-index == 999) ? 999 : self.trays-state[tray-index].id); 
+        self.control-state = ControlState.EncodeEditing;
+        if self.spool-scale-state == SpoolScaleState.Loaded {
+            self.encoding-spool-core-visible = true;
+        } else {
+            self.encoding-spool-core-visible = false;
+        }
+    }
+    public function encode-set-core-info(weight-core: int, weight-new: int, core-name: string) {
+        self.curr-encode-request.weight-core = weight-core;
+        self.curr-encode-request.weight-new = weight-new;
+        self.curr-encode-request.core-name = core-name;
+    }
+
+    public function clear-curr-encoding-request() {
+        // self.curr-encode-request.tray-index = 0;
+        self.curr-encode-request.weight-core = 0;
+        self.curr-encode-request.weight-new = 0;
+        self.curr-encode-request.core-name = 0;
+        self.curr-encode-request.brand = "";
+        self.curr-encode-request.filament-subtype = "";
+        self.curr-encode-request.color-name = "";
+        self.curr-encode-request.note = "";
+        self.curr-encode-request.tray-id = 0;
+
+        self.curr-encode-request-display.filament_type = "";
+        self.curr-encode-request-display.slicer-name = "";
+        self.curr-encode-request-display.color-code = "";
+        self.curr-encode-request-display.temp-min = 0;
+        self.curr-encode-request-display.temp-max = 0;
+        self.curr-encode-request-display.pa-line1 = "";
+        self.curr-encode-request-display.pa-line2 = "";
+    }
+
+    public function encode-cancel() {
+        clear-curr-encoding-request();
+        self.control-state = ControlState.Ready;
+        AppBackend.read-tag-mode();
+    }
+
+    public function encode-start() {
+        self.encode-timeout = AppBackend.encode-tag(self.curr-encode-request);
+        if self.encode-timeout != 0 { // return value of 0 means there was an error, error will be reported separately
+              AppState.start-highlight-tray-forever(self.curr-encode-request.tray-id);
               self.control-state = ControlState.Encoding;
-              user-message = "Place Spool Tag to Encode";
+              user-message = "Place Spool Tag\nto Encode";
               user-message-type = StatusType.Normal;
-          }
+        }
+        clear-curr-encoding-request();
     }
 
     public function new_single_tray_loading(tray_id: int) {
@@ -267,7 +341,6 @@ export global AppState {
         self.spool-scale-state = SpoolScaleState.Connected;
         self.spool-scale-flash = true;
         self.spool-scale-after-flash-state = SpoolScaleState.Empty;
-
     }
 
     public function spool-scale-disconnected() {
@@ -288,13 +361,18 @@ export global AppState {
         self.spool-scale-weight-stable = stable;
         self.spool-scale-flash = true;
         self.spool-scale-after-flash-state = SpoolScaleState.Loaded;
-        // if started with simple encoding, and then loaded a spool on the scale
-        // interpret this as asking to encode also weight
-        if AppState.control-state == ControlState.Encoding {
-            AppBackend.read-tag-mode();
-            AppState.stop-highlight-tray();
-            AppState.control-state = ControlState.EncodeSetSpoolCore
+        if AppState.control-state == ControlState.EncodeEditing {
+            AppState.encoding-spool-core-visible = true;
+            // if loaded while Encode Editing
         }
+        else if AppState.control-state == ControlState.Encoding {
+            // if started with simple encoding, and then loaded a spool on the scale
+            // interpret this as forgot to encode also weight
+            AppState.control-state = ControlState.EncodeEditing;
+            // AppState.stop-highlight-tray();
+            AppState.encoding-spool-core-visible = true;
+            AppBackend.emulate-tag-encoding-info();
+        } 
     }
 
     public function spool-scale-load-changed(weight: int, stable: bool) {
@@ -308,9 +386,16 @@ export global AppState {
         self.spool-scale-weight-stable = false;
         self.spool-scale-flash = false;
         self.spool-scale-after-flash-state = SpoolScaleState.Empty;
+        self.encoding-spool-core-visible = false;
     }
     public function spool_scale_raw_samples_avg(raw-data: int) {
         self.spool-scale-raw-data = raw-data;
+    }
+
+    public function emulated-tag-scanned() {
+        // if self.control-state == ControlState.EncodeSelectSource || self.control-state == ControlState.EncodeEditing {
+        //     self.encoding-extra-info-visible = true;
+        // }
     }
 
     in-out property <[UiTray]> trays-state: self.empty-trays-state();
@@ -620,5 +705,4 @@ export global AppState {
             },
         ];
     }
-
 }

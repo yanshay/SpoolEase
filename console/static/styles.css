@@ -1,0 +1,231 @@
+/* General Styles */
+body {
+  display: none;
+  font-family: Arial, sans-serif;
+  max-width: 500px;
+  margin: 0 auto;
+  padding: 20px;
+  background-color: #f5f5f5;
+}
+h3 {
+  font-weight: normal;
+}
+
+/* Section Styles */
+.section {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.section-title {
+  margin-top: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eee;
+  color: #333;
+}
+
+/* Form Styles */
+.form-row {
+  margin-bottom: 15px;
+}
+
+.i0 { padding-left: 2ch; margin: 4px;}
+.i1 { padding-left: 4ch; margin: 4px;}
+.i2 { padding-left: 6ch; margin: 4px;}
+.i3 { padding-left: 8ch; margin: 4px;}
+.i4 { padding-left: 10ch; margin: 4px;}
+.i5 { padding-left: 12ch; margin: 4px;}
+.i6 { padding-left: 14ch; margin: 4px;}
+
+label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  font-weight: bold;
+  color: #555;
+}
+label span {
+  font-weight: normal;
+}
+
+.feedback-label {
+  display: block;
+  text-align: center;
+  margin: 10px auto 0;
+}
+
+.status-text {
+  width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  margin: 0;
+  min-height: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+}
+
+.next-to-status-button {
+  height: 2rem;
+  margin: 0;
+  margin-left: 10px;
+  padding: 0 10px;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="number"] {
+  width: 100%;
+  padding: 10px;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+input[type="number"] {
+  width: 150px;
+}
+
+.password-container {
+  position: relative;
+}
+
+.toggle-password {
+  position: absolute;
+  right: 10px;
+  top: 5px;
+  cursor: pointer;
+  color: #666;
+}
+
+/* Button Styles */
+
+.button-container {
+  margin: 20px 0;
+  display: flex;
+  gap: 5px;
+}
+
+button {
+  padding: 10px 15px;
+  margin-right: 10px;
+  margin-top: 5px;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+button:hover {
+  background-color: #45a049;
+}
+
+button.secondary {
+  background-color: #2196f3;
+}
+
+button.secondary:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+button.secondary:hover {
+  background-color: #0b7dda;
+}
+
+button.danger {
+  background-color: #f44336;
+}
+
+button.danger:not(:disabled):hover {
+  background-color: #d32f2f;
+}
+
+button.apply-btn {
+  width: 100%;
+}
+
+button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+button.add-btn {
+  background-color: #2196f3;
+  margin-bottom: 5px;
+}
+
+/* Printer Form Styles */
+.printer-form {
+  border: 1px solid #eee;
+  padding: 15px;
+  margin-bottom: 15px;
+  border-radius: 5px;
+  background-color: #f9f9f9;
+  position: relative;
+}
+
+.printer-form.default {
+  background-color: #e6f7ff;
+  border-color: #1890ff;
+}
+
+.ip-container {
+  display: flex;
+  gap: 5px;
+}
+
+.ip-segment {
+  flex: 1;
+}
+
+.error-message {
+  color: red;
+  font-size: 12px;
+  margin-top: 2px;
+  display: none;
+}
+
+button.remove-btn {
+  background-color: #f44336;
+  padding: 5px 10px;
+  margin: 0;
+  margin-top: -3px;
+}
+
+button.default-btn {
+  background-color: #2196f3;
+  margin-bottom: 5px;
+}
+
+button.default-btn.active {
+  background-color: #0b7dda;
+  border: 2px solid #064579;
+}
+
+.csv-text {
+  font-size: 14px;
+  padding: 10px;
+  line-height: 1.5;
+  box-sizing: border-box;
+  resize: vertical;
+  width: 100%;
+  overflow: hidden;
+  min-height: 10em;
+}
+.csv-chars-left {
+  margin-top: 0px;
+  text-align: right;
+}
+.link-bullet {
+  margin-bottom: 10px;
+}
