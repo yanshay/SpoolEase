@@ -107,7 +107,7 @@ export global AppBackend {
     callback set-staging-to-tray(tray-id: int);
     callback encode-tag(encode_request: EncodeRequest) -> int; // returns how long it will try to encode, for timer
     callback read-tag-mode();
-    callback emulate-tag-web-config();
+    callback web-config-web-app();
     callback reset-printer();
     callback select-printer(printer: string);
     callback calibrate-scale(weight: int);
@@ -116,7 +116,7 @@ export global AppBackend {
     callback get-spool-core-weight(id: int) -> int;
     pure callback get-connected-scale-info() -> string;
     pure callback get-available-scales-info() -> [string];
-    callback emulate-tag-encoding-info();
+    callback encode-web-app();
     callback calc-encode-request-display();
 }
 
@@ -371,7 +371,7 @@ export global AppState {
             AppState.control-state = ControlState.EncodeEditing;
             // AppState.stop-highlight-tray();
             AppState.encoding-spool-core-visible = true;
-            AppBackend.emulate-tag-encoding-info();
+            AppBackend.encode-web-app();
         } 
     }
 

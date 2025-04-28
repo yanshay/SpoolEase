@@ -93,6 +93,7 @@ pub struct AppConfig {
     pub user_cores_changed_by_web_config: bool,
     pub previously_used_cores: Option<String>,
     pub custom_filaments: Option<String>,
+    pub root_redirect: String,
 }
 
 impl AppConfig {
@@ -133,6 +134,7 @@ impl AppConfig {
             user_cores_changed_by_web_config: false,
             previously_used_cores: None,
             custom_filaments: None,
+            root_redirect: "/config".to_string()
         }
     }
 
@@ -347,6 +349,15 @@ impl AppConfig {
         }
         self.custom_filaments = custom_filaments;
         Ok(())
+    }
+
+    pub fn set_redirect_web_to_config(&mut self) {
+        self.root_redirect = "/config".to_string();
+
+    }
+
+    pub fn set_redirect_to_encode(&mut self) {
+        self.root_redirect = "/encode".to_string();
     }
 
 }

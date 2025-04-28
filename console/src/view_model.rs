@@ -205,7 +205,9 @@ impl ViewModel {
 
         let moved_spool_tag = self.spool_tag_model.clone();
         let moved_framework = self.framework.clone();
-        ui_app_backend.on_emulate_tag_web_config(move || {
+        let moved_app_config = self.app_config.clone();
+        ui_app_backend.on_web_config_web_app(move || {
+            moved_app_config.borrow_mut().set_redirect_web_to_config();
             let borrowed_framework = moved_framework.borrow();
             let web_config_ip_url = &borrowed_framework.web_config_ip_url;
             let web_config_key = &borrowed_framework.web_config_key;
@@ -215,7 +217,9 @@ impl ViewModel {
 
         let moved_spool_tag = self.spool_tag_model.clone();
         let moved_framework = self.framework.clone();
-        ui_app_backend.on_emulate_tag_encoding_info(move || {
+        let moved_app_config = self.app_config.clone();
+        ui_app_backend.on_encode_web_app(move || {
+            moved_app_config.borrow_mut().set_redirect_to_encode();
             let borrowed_framework = moved_framework.borrow();
             let web_config_ip_url = &borrowed_framework.web_config_ip_url;
             let web_config_key = &borrowed_framework.web_config_key;
