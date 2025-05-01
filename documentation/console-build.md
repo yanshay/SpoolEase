@@ -34,6 +34,8 @@ The provided 7-wire cable has connectors on both ends. However, since the PN532 
 
 ## Wiring Instructions
 
+Note: The wiring follows the pin number on the display and the signal name on the PN532. Some devices may come with wire colors in a different order (e.g., green and yellow reversed). Always connect by pin number and signal name, not by wire color.
+
 | Wire # | Color  | WT32-SC01-Plus Pin | PN532 Connection |
 |--------|--------|--------------------|------------------|
 | 1      | 🟥 **Red** | +                | VCC              |
