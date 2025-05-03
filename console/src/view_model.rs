@@ -223,7 +223,7 @@ impl ViewModel {
             let borrowed_framework = moved_framework.borrow();
             let web_config_ip_url = &borrowed_framework.web_config_ip_url;
             let web_config_key = &borrowed_framework.web_config_key;
-            let full_web_config_url = format!("{web_config_ip_url}/encode.html#sk={web_config_key}");
+            let full_web_config_url = format!("{web_config_ip_url}/encode#sk={web_config_key}");
             moved_spool_tag.borrow().emulate_tag(&full_web_config_url);
         });
 
