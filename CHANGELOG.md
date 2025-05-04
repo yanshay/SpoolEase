@@ -29,4 +29,6 @@
 - Add optional manually entered Brand, Material Subtype, Color Name and Note to tag information, through mobile phone. Can scan NFC module with mobile to reach the app.
 - Changed adding custom filament information in filament3d.org (tag scan on mobile) to use the csv format of web-config and storing in the mobile itself
 - Add display of filament&tag information when pressing a slot or pressing staging twice
-
+- Console web-application root redirects to relevant application depending on context (web config or encode)
+- Can supply the security-key through url in a secure way (after #sk=sec-key)
+- The previous two features + the mDNS support together allow to have a permanent link and set it as an app on mobile phone to access context sensitive application
