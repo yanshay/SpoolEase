@@ -363,7 +363,7 @@ Pd7bcff9,FLASHFORGE ASA Basic
 Pb79127b,3DHOJOR PLA Basic"
         ></textarea>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-          <button onclick="navigator.clipboard.writeText(document.getElementById('custom-filaments-text').value)">Copy to Clipboard</button>
+          <button onclick="copyCustomFilamentsToClipboard()">Copy to Clipboard</button>
           <span id="custom-filaments-chars-left" class="csv-chars-left">abcd</span>
         </div>
         <label>Press "Create List" button and Select Folder</label>
@@ -1265,6 +1265,18 @@ Pb79127b,3DHOJOR PLA Basic"
 
           document.getElementById("custom-filaments-text").value = results.join("\n");
           handleCSVTextAreaInput(event, 'custom-filaments-text', 'custom-filaments-chars-left');
+      }
+
+      // Because runnig over HTTP, need to use use techniques. New ones don't work over HTTP
+      function copyCustomFilamentsToClipboard() {
+        let textarea = document.getElementById('custom-filaments-text');
+        textarea.focus();
+        textarea.select();
+        try {
+          document.execCommand('copy');
+        } catch (e) {
+          alert('Copy to clipboard failed');
+        }
       }
 
       function applyScaleSettings() {
