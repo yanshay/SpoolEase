@@ -362,12 +362,15 @@ P714fe8c,ELEGOO PLA Pro
 Pd7bcff9,FLASHFORGE ASA Basic
 Pb79127b,3DHOJOR PLA Basic"
         ></textarea>
-        <p id="custom-filaments-chars-left" class="csv-chars-left">abcd</p>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <button onclick="navigator.clipboard.writeText(document.getElementById('custom-filaments-text').value)">Copy to Clipboard</button>
+          <span id="custom-filaments-chars-left" class="csv-chars-left">abcd</span>
+        </div>
         <label>Press "Create List" button and Select Folder</label>
         <label>On MacOS</label>
           <p class="i0">/Users</p>
           <p class="i1">/{user-name}</p>
-          <p class="i2">/Library</p>
+          <p class="i2">/Library &nbsp;&nbsp;&nbsp;⟸ hidden, use CMD+SHIFT+'.' to unhide</p>
           <p class="i3">/Application Support</p>
           <p class="i4">/BambuStudio or OrcaSlicer</p>
           <p class="i5">/user</p>
@@ -1316,7 +1319,7 @@ Pb79127b,3DHOJOR PLA Basic"
           window.location.hostname === "localhost" ||
           window.location.hostname === "127.0.0.1"
         ) {
-          urlPrefix = "http://192.168.10.52";
+          urlPrefix = "http://192.168.10.46";
         }
       });
     </script>
