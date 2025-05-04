@@ -50,6 +50,7 @@ export component Title inherits Rectangle {
     in-out property <string> text;
     height: 40px;
     background: green.brighter(1.0);
+    in-out property <color> text-color: black;
     border-color: black;
     border-width: 1px;
     in property <TextHorizontalAlignment> horizontal-alignment: center;
@@ -59,6 +60,7 @@ export component Title inherits Rectangle {
         horizontal-alignment: horizontal-alignment;
         height: 40px;
         text: text;
+        color: text-color;
         font-size: 20px;
     }
 }

@@ -33,8 +33,9 @@ export struct UiSpoolInfo {
   weight-core: int,
 }
 
-export struct EncodeRequest {
+export struct EncodeRequest { // EncodeRequest is actually used for FilamentInfo - for Encode as well as View
   // autofilled
+  tray-index: int,
   tray-id: int, // from index
   weight-core: int,
   weight-new: int, 
@@ -47,8 +48,8 @@ export struct EncodeRequest {
 }
 
 // Assistance from rust for more info or formatter info
-export struct EncodeRequestDisplay {
-  filament_type: string, // could also get in UI, but easier this way if we have the mechanism
+export struct EncodeRequestDisplay {  // EncodeRequestDisplay is actually used for FilamentInfo - for Encode as well as View
+  filament-type: string, // could also get in UI, but easier this way if we have the mechanism
   slicer-name: string,
   color-code: string,
   temp-min: int,
@@ -78,6 +79,7 @@ export enum ControlState {
   EncodeSelectSource,
   EncodeEditing,
   Encoding,
+  FilamentInformation,
   PostAction,
 }
 
@@ -135,8 +137,11 @@ export global AppState {
     in-out property <string> user-message: "Booting ...";
     in-out property <StatusType> user-message-type: StatusType.Normal;
     in-out property <int> encode-timeout: 999;
-    in-out property <EncodeRequest> curr-encode-request;
+    in-out property <EncodeRequest> curr-encode-request:  { tray_id: -1 }; // -1 is important so when pressing slot 0, it will still appear as change (for the changed that comes next)
     changed curr-encode-request => {
+       // TODO: This is a bit tricky, call backend to update display (and it also updates the request itself so cometimes drive an extra update)
+       // If code is not consistent it could lead to infinite recursion. 
+       // So maybe better to change how it works in the future ...
         AppBackend.calc-encode-request-display();
     }
     in-out property <EncodeRequestDisplay> curr-encode-request-display; // updated by rust for formatting needs
@@ -279,7 +284,18 @@ export global AppState {
         }
     }
 
+    public function show-filament-information(tray-index: int) {
+        self.curr-encode-request.tray-index = tray-index;
+        self.curr-encode-request.tray-id = ( (tray-index == 999) ? 999 : self.trays-state[tray-index].id); 
+        self.control-state = ControlState.FilamentInformation;
+    }
+    public function end-show-filament-information() {
+        clear-curr-encoding-request();
+        self.control-state = ControlState.Ready;
+    }
+
     public function encode-select-tray(tray-index: int) {
+        self.curr-encode-request.tray-index = tray-index;
         self.curr-encode-request.tray-id = ( (tray-index == 999) ? 999 : self.trays-state[tray-index].id); 
         self.control-state = ControlState.EncodeEditing;
         if self.spool-scale-state == SpoolScaleState.Loaded {
@@ -295,7 +311,6 @@ export global AppState {
     }
 
     public function clear-curr-encoding-request() {
-        // self.curr-encode-request.tray-index = 0;
         self.curr-encode-request.weight-core = 0;
         self.curr-encode-request.weight-new = 0;
         self.curr-encode-request.core-name = 0;
@@ -303,9 +318,10 @@ export global AppState {
         self.curr-encode-request.filament-subtype = "";
         self.curr-encode-request.color-name = "";
         self.curr-encode-request.note = "";
-        self.curr-encode-request.tray-id = 0;
+        self.curr-encode-request.tray-index = 0;
+        self.curr-encode-request.tray-id = -1; // Important, see view_model check of -1
 
-        self.curr-encode-request-display.filament_type = "";
+        self.curr-encode-request-display.filament-type = "";
         self.curr-encode-request-display.slicer-name = "";
         self.curr-encode-request-display.color-code = "";
         self.curr-encode-request-display.temp-min = 0;

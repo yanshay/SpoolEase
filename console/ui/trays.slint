@@ -188,6 +188,8 @@ export component Trays {
                         AppBackend.set-staging-to-tray(trays-state[index].id);
                     } else if AppState.control-state == ControlState.EncodeSelectSource && trays-state[index].filament.state == UiFilamentState.Known {
                         AppState.encode-select-tray(index);
+                    } else if (AppState.control-state == ControlState.Ready || AppState.control-state == ControlState.PostAction ) && trays-state[index].filament.state == UiFilamentState.Known {
+                        AppState.show-filament-information(index);
                     }
                 }
             }

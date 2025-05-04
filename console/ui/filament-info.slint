@@ -2,6 +2,11 @@ import { Title, MyText,MyButton } from "./framework/widgets.slint";
 import { AppBackend, AppState, ControlState, UiTray } from "app.slint";
 import { Utils } from "utils.slint";
 
+export enum FilamentInfoMode { 
+  Encode,
+  View
+}
+
 export component LabeledText inherits Rectangle {
     in-out property <string> label;
     in-out property <string> text;
@@ -24,28 +29,63 @@ export component LabeledText inherits Rectangle {
 
 export component LabeledInfo inherits LabeledText {
     utils := Utils { }
-
-    // property <int> tray-index: AppState.curr-encode-request.tray-index;
-    // property <UiTray> tray: AppState.trays-state[AppState.curr-encode-request.tray-index == 999 ? 0 : AppState.curr-encode-request.tray-index];
-    // property <color> spool-color: tray-index == 999 ? AppState.spool-staging-info.color : tray.filament.color;
     label-width: 90px;
 }
 
-export component EncodeEditing inherits Rectangle {
-    // property <int> tray-index: AppState.curr-encode-request.tray-index;
-    // property <UiTray> tray: AppState.trays-state[AppState.curr-encode-request.tray-index == 999 ? 0 : AppState.curr-encode-request.tray-index];
-    // property <color> spool-color: tray-index == 999 ? AppState.spool-staging-info.color : tray.filament.color;
-    // property <string> spool-k: tray-index == 999 ? AppState.spool-staging-info.k : tray.k;
-    // property <string> spool-material: tray-index == 999 ? AppState.spool-staging-info.material : tray.filament.material;
+export component EncodeTitle inherits Title {
+    horizontal-alignment: right;
+    text: "To Edit, Scan NFC With Phone   ▶ ▶ ▶\u{00A0}";
+}
+
+export component ViewTitle inherits Title {
+    horizontal-alignment: center;
+    text: "Filament Information";
+}
+
+export component EncodeButtons inherits HorizontalLayout {
+    MyButton {
+        horizontal-stretch: 4;
+        height: 56px;
+        text: "Encode";
+        clicked => {
+            AppState.control-state = ControlState.Encoding;
+            AppState.encode-start();
+        }
+    }
+
+    MyButton {
+        horizontal-stretch: 1;
+        height: 56px;
+        text: "Cancel";
+        clicked => {
+            AppState.encode-cancel();
+        }
+    }
+}
+
+export component ViewButtons inherits HorizontalLayout {
+    MyButton {
+        horizontal-stretch: 1;
+        height: 56px;
+        text: "Close";
+        clicked => {
+            AppState.end-show-filament-information();
+        }
+    }
+}
+
+export component FilamentInfo inherits Rectangle {
+    in-out property <FilamentInfoMode> mode;
     width: 480px;
     height: 320px;
     background: white;
+    property <color> filament-color: AppState.curr-encode-request.tray-index == 999 ? AppState.spool-staging-info.color : AppState.trays-state[AppState.curr-encode-request.tray-index].filament.color;
+    utils := Utils { }
     VerticalLayout {
         alignment: stretch;
-        Title {
-            horizontal-alignment: right;
-            text: "To Edit, Scan NFC With Phone   ▶ ▶ ▶\u{00A0}";
-        }
+
+        if mode == FilamentInfoMode.Encode: EncodeTitle { background: filament-color; text-color: utils.contrasting_color(filament-color); }
+        if mode == FilamentInfoMode.View: ViewTitle { background: filament-color; text-color: utils.contrasting_color(filament-color); }
 
         VerticalLayout {
             alignment: stretch;
@@ -57,8 +97,8 @@ export component EncodeEditing inherits Rectangle {
                     padding: 10px;
                     spacing: 10px;
                     padding-bottom: 5px;
-                    property <string> brand: AppState.curr-encode-request.brand == "" ? "<Unspecified Brand> " : "\{AppState.curr-encode-request.brand} ";
-                    property <string> filament-subtype: AppState.curr-encode-request.filament-subtype == "" ? " <Unspecified Color>" : " \{AppState.curr-encode-request.filament-subtype}";
+                    property <string> brand: AppState.curr-encode-request.brand == "" ? "[Unset Brand] " : "\{AppState.curr-encode-request.brand} ";
+                    property <string> filament-subtype: AppState.curr-encode-request.filament-subtype == "" ? " [Unset Color]" : " \{AppState.curr-encode-request.filament-subtype}";
                     property <string> color-name: AppState.curr-encode-request.color-name == "" ? "" : " \{AppState.curr-encode-request.color-name} ";
                     MyText {
                         horizontal-alignment: center;
@@ -90,9 +130,10 @@ export component EncodeEditing inherits Rectangle {
                             label: "Color";
                             text: "\{AppState.curr-encode-request-display.color-code}";
                         }
+
                         LabeledInfo {
                             label: "Temps: ";
-                            text: "\{AppState.curr-encode-request-display.temp-min}°C - \{AppState.curr-encode-request-display.temp-max}°C" ;
+                            text: "\{AppState.curr-encode-request-display.temp-min}°C - \{AppState.curr-encode-request-display.temp-max}°C";
                         }
                     }
 
@@ -118,25 +159,7 @@ export component EncodeEditing inherits Rectangle {
             }
         }
 
-        HorizontalLayout {
-            MyButton {
-                horizontal-stretch: 4;
-                height: 56px;
-                text: "Encode";
-                clicked => {
-                    AppState.control-state = ControlState.Encoding;
-                    AppState.encode-start();
-                }
-            }
-
-            MyButton {
-                horizontal-stretch: 1;
-                height: 56px;
-                text: "Cancel";
-                clicked => {
-                    AppState.encode-cancel();
-                }
-            }
-        }
+        if mode == FilamentInfoMode.Encode: EncodeButtons {}
+        if mode == FilamentInfoMode.View: ViewButtons {}
     }
 }

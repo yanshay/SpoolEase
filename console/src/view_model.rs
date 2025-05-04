@@ -683,6 +683,9 @@ impl ViewModel {
                 let staging_borrow = moved_staging.borrow();
                 let bambu_borrow = moved_bambu.borrow();
                 let (filament_info, tag_info) = match tray_id {
+                    -1 => { // Special case to avoid a call after encode_request is cleared
+                        return;
+                    }
                     999 => { // Staging
                         if let Some(tag_info) = &staging_borrow.tag_info {
                             if let Some(filament_info) = &tag_info.filament {
@@ -718,7 +721,7 @@ impl ViewModel {
                         }
                     }
                     _ => {
-                        error!("UI request to update display for tray out of range, software error or pringer issue");
+                        error!("UI request to update display for tray out of range, software error or printer issue");
                         (None, &None)
                     }
                 };
@@ -738,6 +741,12 @@ impl ViewModel {
                             }
                             if encode_request.note.is_empty() && tag_info.note.is_some() {
                                 encode_request.note = tag_info.note.as_ref().unwrap().to_shared_string();
+                            }
+                            if encode_request.weight_core == 0 && tag_info.weight_core.is_some() {
+                                encode_request.weight_core = tag_info.weight_core.unwrap();
+                            }
+                            if encode_request.weight_new == 0 && tag_info.weight_new.is_some() {
+                                encode_request.weight_new = tag_info.weight_new.unwrap();
                             }
                         }
                     }

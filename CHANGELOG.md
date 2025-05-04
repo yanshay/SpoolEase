@@ -26,4 +26,7 @@
 ## Next (not released yet)
 - Easy Web-Config: Web config can be accessed by scanning the NFC module (PN532) with a mobile phone and security-key is filled automatically
 - Web-Config always enabled
-- Add optional manually entered Brand, Material Subtype, Color Name and Note to tag information, through mobile phone
+- Add optional manually entered Brand, Material Subtype, Color Name and Note to tag information, through mobile phone. Can scan NFC module with mobile to reach the app.
+- Changed adding custom filament information in filament3d.org (tag scan on mobile) to use the csv format of web-config and storing in the mobile itself
+- Add display of filament&tag information when pressing a slot or pressing staging twice
+

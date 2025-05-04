@@ -104,12 +104,15 @@ export component SpoolStaging inherits Window {
                     } else {
                         AppState.encode-select-tray(999);
                     }
-                } else {
+                } if AppState.control-state == ControlState.StagingSelected { // second press on staging (next else is the first press)
+                    AppState.show-filament-information(999);
+                }
+                else {
                     AppState.control-state = ControlState.StagingSelected;
                 }
             } else if FrameworkState.ota-info.newer {
                 root.clicked-ota();
-            }
+            } 
         }
     }
 }

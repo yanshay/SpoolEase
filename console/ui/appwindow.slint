@@ -13,7 +13,7 @@ import { SelectPrinter } from "select-printer.slint";
 import { AppSettings } from "app-settings.slint";
 import { NumPad } from "numpad.slint";
 import { SpoolCoreWeight } from "core-weight.slint";
-import { EncodeEditing } from "encode-editing.slint";
+import { FilamentInfo, FilamentInfoMode } from "filament-info.slint";
 
 // reexport to rust
 
@@ -44,7 +44,7 @@ export component AppWindow inherits Window {
         handle-swipe-left: AppState.select-printer == false;
         handle-swipe-right: AppState.select-printer == true;
         swiped => {
-            if FrameworkState.ota-state == OtaState.NotStarted {
+            if FrameworkState.ota-state == OtaState.NotStarted && AppState.control-state != ControlState.EncodeEditing && AppState.control-state != ControlState.FilamentInformation {
                 if self.handle-swipe-down && self.current-position.y > self.pressed-position.y + (self.height / 8) {
                     // swipe down 
                     current-page -= 1;
@@ -140,13 +140,19 @@ export component AppWindow inherits Window {
     }
 
     if AppState.control-state == ControlState.EncodeEditing: encode-editing :=
-    EncodeEditing {
+    FilamentInfo {
+        mode: FilamentInfoMode.Encode;
         height: root.height;
     }
 
     if AppState.control-state == ControlState.EncodeEditing: core-weight :=
     SpoolCoreWeight {
         visible: AppState.encoding-spool-core-visible;
+        height: root.height;
+    }
+    if AppState.control-state == ControlState.FilamentInformation: filament-information :=
+    FilamentInfo {
+        mode: FilamentInfoMode.View;
         height: root.height;
     }
 }
