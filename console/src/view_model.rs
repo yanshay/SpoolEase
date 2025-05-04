@@ -641,8 +641,12 @@ impl ViewModel {
             tag_info_to_encode.note = (!encode_request.note.trim().is_empty()).then(|| encode_request.note.trim().to_string());
 
             let bambu_printer_borrow = moved_bambu_printer.borrow();
-            if let Some(descriptor) =
-                &tag_info_to_encode.to_descriptor(&bambu_printer_borrow.printer_name, &bambu_printer_borrow.printer_uuid_to_encode)
+            let descriptor_res = if tray_id == 999 {
+                &tag_info_to_encode.to_descriptor(None, None)
+            } else {
+                &tag_info_to_encode.to_descriptor(Some(&bambu_printer_borrow.printer_name), Some(&bambu_printer_borrow.printer_uuid_to_encode))
+            };
+            if let Some(descriptor) = descriptor_res
             {
                 spool_tag.write_tag(&descriptor, tray_id);
             }

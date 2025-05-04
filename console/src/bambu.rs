@@ -1581,6 +1581,8 @@ pub async fn bambu_mqtt_task(
 pub struct TagInformation {
     pub filament: Option<FilamentInfo>,
     pub calibrations: HashMap<String, Calibration>,
+    pub calibrations_printer_name: String, // has value only if calibrations has any value 
+    pub calibrations_printer_uuid: String, // has value only if calibrations has any value 
     pub weight_core: Option<i32>,
     pub weight_new: Option<i32>,
     pub brand: Option<String>,
@@ -1590,16 +1592,24 @@ pub struct TagInformation {
 }
 
 impl TagInformation {
-    pub fn to_descriptor(&self, printer_name: &str, printer_uuid: &str) -> Option<String> {
+    pub fn to_descriptor(&self, printer_name: Option<&str>, printer_uuid: Option<&str>) -> Option<String> {
         let mut inner_calibrations_part = String::new();
 
-        let encoded_printer_name = if !printer_name.is_empty() {
-            my_encode_to_url_part(&printer_name)
-        } else {
-            "".to_string()
+        // if printer_name not supplied, it means a reuest to encode using printer information in tag (e.g. encoding from staging)
+        let (encoded_printer_name, encoded_printer_uuid) = match printer_name {
+            Some(printer_name) => {
+                if !printer_name.is_empty() {
+                    (&my_encode_to_url_part(&printer_name), printer_uuid.unwrap_or_default())
+                } else {
+                    (&"".to_string(), "")
+                }
+            }
+            None => { // use tag_name printer_name if available
+                (&self.calibrations_printer_name, self.calibrations_printer_uuid.as_str())
+            }
         };
 
-        let already_encoded_k_prefix = &format!("{}~{}", encoded_printer_name, printer_uuid);
+        let already_encoded_k_prefix = &format!("{}~{}", encoded_printer_name, encoded_printer_uuid);
         let k_prefix = if !already_encoded_k_prefix.is_empty() {
             format!("&{}(", already_encoded_k_prefix)
         } else {
@@ -1754,6 +1764,8 @@ impl TagInformation {
 
         // First just collect data from tag
 
+        let mut calibrations_printer_name = "";
+        let mut calibrations_printer_uuid = "";
         // Second pass on parts that need to be processed after the first
         for param in descriptor.split(&['/', '&', '?']) {
             let mut param = param;
@@ -1763,12 +1775,15 @@ impl TagInformation {
                 if let Some(param_match) = captures.get(2) {
                     param = param_match.as_str();
                 }
+                if let Some(param_match) = captures.get(1) {
+                    let printer_name_and_uuid = param_match.as_str();
+                    (calibrations_printer_name, calibrations_printer_uuid) = printer_name_and_uuid.split_once('~').unwrap_or((printer_name_and_uuid, ""));
+                }
                 // to get the printer name (formatted as name~serial , use match 1 and don't forget to my_decode_from_url_part the data
                 // currently not used, could compare to current printer name and ignore
             }
 
             // this is just calibrations loaded from the filament, without any matching, all with cali_idx = -1
-
             if let Some((param_name, param_value)) = param.split_once("=") {
                 match param_name {
                     // K - Pressure Advance Factor for Nozzle Diameter 0.4, 0.2, 0.6, 0.8
@@ -1796,6 +1811,8 @@ impl TagInformation {
             Ok(Self {
                 filament: Some(filament_info_result),
                 calibrations: calibrations_result,
+                calibrations_printer_name: calibrations_printer_name.to_string(),
+                calibrations_printer_uuid: calibrations_printer_uuid.to_string(),
                 weight_core,
                 weight_new,
                 brand,
