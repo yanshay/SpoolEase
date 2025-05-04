@@ -339,10 +339,14 @@ impl AppConfig {
 
     pub fn set_filaments (&mut self, custom_filaments: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
         if let Some(custom_filaments) = &custom_filaments {
+            let mut skip_store = false;
             if let Some(curr_custom_filaments) = &self.custom_filaments {
-                if curr_custom_filaments != custom_filaments {
-                    self.framework.borrow().store(CUSTOM_FILAMENTS_CONFIG_KEY.to_string(), custom_filaments.clone())?;
+                if curr_custom_filaments == custom_filaments {
+                    skip_store = true; // no change, better skip writing to flash
                 }
+            } 
+            if !skip_store {
+                self.framework.borrow().store(CUSTOM_FILAMENTS_CONFIG_KEY.to_string(), custom_filaments.clone())?;
             }
         } else {
             self.framework.borrow().remove(CUSTOM_FILAMENTS_CONFIG_KEY.to_string())?;
