@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "SpoolEaseScale"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "critical-section",
  "embassy-embedded-hal",
@@ -17,7 +17,7 @@ dependencies = [
  "esp-alloc",
  "esp-backtrace",
  "esp-hal",
- "esp-hal-app-framework 0.2.0",
+ "esp-hal-app-framework",
  "esp-hal-embassy",
  "esp-hal-ota",
  "esp-hal-smartled",
@@ -1936,79 +1936,8 @@ dependencies = [
 
 [[package]]
 name = "esp-hal-app-framework"
-version = "0.2.0"
-dependencies = [
- "aes",
- "aes-gcm",
- "anyhow",
- "base64 0.22.1",
- "cfg-if",
- "critical-section",
- "ctr",
- "deku",
- "display-interface",
- "display-interface-parallel-gpio",
- "edge-captive",
- "edge-dhcp",
- "edge-http",
- "edge-mdns",
- "edge-nal",
- "edge-nal-embassy",
- "embassy-embedded-hal",
- "embassy-executor",
- "embassy-futures",
- "embassy-net",
- "embassy-sync",
- "embassy-time",
- "embedded-hal 1.0.0",
- "embedded-hal-async",
- "embedded-hal-bus",
- "embedded-io",
- "embedded-io-async",
- "embedded-sdmmc",
- "embedded-storage",
- "embedded-storage-async",
- "esp-alloc",
- "esp-backtrace",
- "esp-hal",
- "esp-hal-embassy",
- "esp-hal-ota",
- "esp-mbedtls",
- "esp-partition-table",
- "esp-println",
- "esp-storage",
- "esp-wifi",
- "esp32s3",
- "ft6x36",
- "futures",
- "futures-util",
- "getrandom 0.2.15",
- "hashbrown 0.15.2",
- "heapless",
- "hmac",
- "log",
- "mipidsi",
- "no_std_io",
- "once_cell",
- "pasetors",
- "pbkdf2",
- "picoserve",
- "rand",
- "semver",
- "sequential-storage",
- "serde",
- "serde_json",
- "sha2",
- "slint",
- "smoltcp",
- "static_cell",
- "xtensa-lx-rt",
-]
-
-[[package]]
-name = "esp-hal-app-framework"
-version = "0.2.0"
-source = "git+https://github.com/yanshay/esp-hal-app/#1102a8e0d5538670da0e920fe034ad3d56bd707f"
+version = "0.2.1"
+source = "git+https://github.com/yanshay/esp-hal-app/?tag=v0.2.1#aa63c8c58b60c859abdd2df86cdee732011f3c70"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -5233,7 +5162,7 @@ dependencies = [
  "embassy-time",
  "embedded-hal-bus",
  "esp-hal",
- "esp-hal-app-framework 0.2.0 (git+https://github.com/yanshay/esp-hal-app/)",
+ "esp-hal-app-framework",
  "getrandom 0.2.15",
  "log",
  "no_std_io",

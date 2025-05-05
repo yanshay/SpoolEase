@@ -2053,8 +2053,8 @@ dependencies = [
 
 [[package]]
 name = "esp-hal-app-framework"
-version = "0.2.0"
-source = "git+https://github.com/yanshay/esp-hal-app/#1102a8e0d5538670da0e920fe034ad3d56bd707f"
+version = "0.2.1"
+source = "git+https://github.com/yanshay/esp-hal-app/?tag=v0.2.1#aa63c8c58b60c859abdd2df86cdee732011f3c70"
 dependencies = [
  "aes",
  "aes-gcm",
