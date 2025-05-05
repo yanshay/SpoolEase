@@ -442,7 +442,7 @@ pub async fn nfc_task(
                                 .notify_tag_status(Status::FoundTagNowReading);
                             match crate::nfc::read_ndef_record(
                                 &mut pn532,
-                                Duration::from_millis(500),
+                                Duration::from_millis(2000),
                             )
                             .await
                             {
