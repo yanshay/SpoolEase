@@ -97,9 +97,9 @@ export component FilamentInfo inherits Rectangle {
                     padding: 10px;
                     spacing: 10px;
                     padding-bottom: 5px;
-                    property <string> brand: AppState.curr-encode-request.brand == "" ? "[Unset Brand] " : "\{AppState.curr-encode-request.brand} ";
-                    property <string> filament-subtype: AppState.curr-encode-request.filament-subtype == "" ? " [Unset Color]" : " \{AppState.curr-encode-request.filament-subtype}";
-                    property <string> color-name: AppState.curr-encode-request.color-name == "" ? "" : " \{AppState.curr-encode-request.color-name} ";
+                    property <string> brand: AppState.curr-encode-request.brand == "" ? "[No Brand] " : "\{AppState.curr-encode-request.brand} ";
+                    property <string> filament-subtype: AppState.curr-encode-request.filament-subtype == "" ? " [No Subtype]" : " \{AppState.curr-encode-request.filament-subtype}";
+                    property <string> color-name: AppState.curr-encode-request.color-name == "" ? " [No Color]" : " \{AppState.curr-encode-request.color-name}";
                     MyText {
                         horizontal-alignment: center;
                         text: "\{brand}\{AppState.curr-encode-request-display.filament-type}\{filament-subtype}\{color-name}";
