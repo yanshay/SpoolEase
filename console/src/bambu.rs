@@ -965,8 +965,6 @@ impl BambuPrinter {
                     tag_info.calibrations.insert(curr_nozzle_diameter.clone(), (*calibration).clone());
                 }
             }
-        } else {
-            return Err("Unexpected Software Error (2)".to_string());
         }
 
         Ok(tag_info)
