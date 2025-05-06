@@ -205,13 +205,13 @@ export component EncodeSelectSource inherits ControlPanelBase {
 }
 
 export component StagingSelected inherits ControlPanelBase {
-    message-text: "Press Slot\nto Configure";
-    button1-text: "Clear Staging";
+    message-text: "Press Slot to Configure\nor Staging to View Tag";
+    // button1-text: "Clear Staging";
     button2-text: "Cancel";
     button2-timeout: 10;
-    clicked1() => {
-        AppBackend.clear-staging();
-    }
+    // clicked1() => {
+    //     AppBackend.clear-staging();
+    // }
     clicked2() => {
         AppState.control-state = ControlState.Ready;
     }
