@@ -183,7 +183,6 @@ export component Trays {
                 // visible: AppState.selected-tray-index == -1 || AppState.selected-tray-index == index;
                 tray-state: trays-state[index];
                 clicked() => { // ? TODO: Think if to move into the tray component
-                    AppState.tray_id_to_encode_after_setting_core_weight = trays-state[index].id; // set this even if no spool loaded, in case spool is loaded while encoding
                     if AppState.control-state == ControlState.StagingSelected {
                         AppBackend.set-staging-to-tray(trays-state[index].id);
                     } else if AppState.control-state == ControlState.EncodeSelectSource && trays-state[index].filament.state == UiFilamentState.Known {

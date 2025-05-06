@@ -98,16 +98,10 @@ export component SpoolStaging inherits Window {
         clicked => {
             if AppState.spool-staging-state == SpoolStagingState.Loaded {
                 if AppState.control-state == ControlState.EncodeSelectSource {
-                    if AppState.spool-scale-state == SpoolScaleState.Loaded {
-                        AppState.tray_id_to_encode_after_setting_core_weight = 999;
-                        AppState.control-state = ControlState.EncodeEditing
-                    } else {
-                        AppState.encode-select-tray(999);
-                    }
-                } if AppState.control-state == ControlState.StagingSelected { // second press on staging (next else is the first press)
+                    AppState.encode-select-tray(999);
+                } else if AppState.control-state == ControlState.StagingSelected { // second press on staging (next else is the first press)
                     AppState.show-filament-information(999);
-                }
-                else {
+                } else {
                     AppState.control-state = ControlState.StagingSelected;
                 }
             } else if FrameworkState.ota-info.newer {
