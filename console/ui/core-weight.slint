@@ -97,7 +97,7 @@ export component CoreEstimate inherits Rectangle {
                     background: AppState.spool-scale-state == SpoolScaleState.Disconnected || AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? orangered : AppState.spool-scale-state == SpoolScaleState.Connected ? lightgreen : AppState.spool-scale-state == SpoolScaleState.Loaded && !AppState.spool-scale-weight-stable ? yellow : lightskyblue;
                     Text {
                         font-size: 20px;
-                        text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? "Scale Disconnected" : AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Scale Not Calibrated" : AppState.spool-scale-state == SpoolScaleState.Connected ? "Scale Connected" : AppState.spool-scale-state == SpoolScaleState.Loaded ? "\{AppState.spool-scale-weight} g" : "";
+                        text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? "Scale Disconnected" : AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Scale Not Calibrated" : AppState.spool-scale-state == SpoolScaleState.Connected ? "Scale Connected" : AppState.spool-scale-state == SpoolScaleState.Loaded ? "\{AppState.spool-scale-weight}g" : "";
                     }
                 }
 
@@ -170,7 +170,7 @@ export component SelectIfNewSpool inherits Rectangle {
                             horizontal-alignment: center;
                             vertical-alignment: center;
                             height: 30px;
-                            text: "\{AppState.spool-scale-weight} g";
+                            text: "\{AppState.spool-scale-weight}g";
                             font-size: 20px;
                         }
                     }
@@ -199,7 +199,7 @@ export component SelectIfNewSpool inherits Rectangle {
                             horizontal-alignment: center;
                             vertical-alignment: center;
                             height: 30px;
-                            text: "\{AppState.core-weight-to-encode-after-select-if-new} g";
+                            text: "\{AppState.core-weight-to-encode-after-select-if-new}g";
                             font-size: 20px;
                         }
                     }
@@ -426,7 +426,7 @@ export component SpoolCoreWeight inherits Rectangle {
                                 max-digits: 3;
                                 height: tabs.height;
                                 ok-clicked => {
-                                    AppState.core-name-to-encode-after-select-if-new = "Custom: \{self.number} g";
+                                    AppState.core-name-to-encode-after-select-if-new = "Custom: \{self.number}g";
                                     AppState.core-weight-to-encode-after-select-if-new = self.number;
                                     if AppState.spool-scale-state == SpoolScaleState.Loaded {
                                       root.state = SpoolCoreWeightState.NewSpoolSelect;

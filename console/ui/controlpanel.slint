@@ -66,9 +66,9 @@ export component ControlPanelBase inherits HorizontalLayout {
     VerticalLayout {
         function weight-display() -> string {
             if AppState.spool-staging-state == SpoolStagingState.Loaded && AppState.spool-staging-info.weight-core != 0 {
-                return "\{AppState.spool-scale-weight - AppState.spool-staging-info.weight-core} g / \{AppState.spool-scale-weight} g";
+                return "\{AppState.spool-scale-weight - AppState.spool-staging-info.weight-core}g / \{AppState.spool-scale-weight}g";
             } else {
-                return "\{AppState.spool-scale-weight}";
+                return "\{AppState.spool-scale-weight}g";
             }
         }
         spacing: AppConsts.trays-spacing;
