@@ -27,8 +27,9 @@
 - Easy Web-Config: Access by scanning the NFC module (PN532) with a phone; security key auto-filled
 - Web-Config Always Enabled
 - Extended Tag Info: Add Brand, Material Subtype, Color Name, and Notes via phone. Access by scanning the NFC module or browsing the URL shown in the Encode page title
+- Custom Filaments CSV: Can now be generated directly via Web-Config—no need for SpoolEase-Desktop
 - Filament3D.org Update: Custom filament info now uses Web-Config-compatible CSV format and is stored locally on the phone after scanning
-- Tag Info Display: Filament and tag data shown when pressing a slot or double-pressing staging
+- Tag Info Display: Filament and tag data shown when pressing a slot or double-pressing staging (use the custom filaments list)
 - Context-Aware Redirects: Console root redirects to Web-Config or Encode app based on context
 - Secure Key via URL: Security key can be passed via URL fragment (#sk=...)
 - Persistent App Links: Combining context-aware redirects, secure URL fragments, and mDNS allows creating a permanent, app-like mobile shortcut to the right app view
