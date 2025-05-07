@@ -31,7 +31,7 @@ export component LabeledText inherits Rectangle {
         z: -1;
         x: thelabel.x - 4px;
         y: thelabel.y - 4px;
-        width: thelabel.width + 2px;
+        width: thelabel.width -1px; // for spacing of 5px (4+1) out of the 10px between elements
         height: thelabel.height + 8px;
         clicked => { root.clicked(); }
     }
