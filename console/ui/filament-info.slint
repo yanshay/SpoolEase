@@ -8,22 +8,32 @@ export enum FilamentInfoMode {
 }
 
 export component LabeledText inherits Rectangle {
+    callback clicked;
+    in-out property <bool> label-button: false;
     in-out property <string> label;
     in-out property <string> text;
     in-out property <color> label-color: blue;
     in-out property <color> text-color: black;
     in-out property <length> label-width;
     HorizontalLayout {
-        MyText {
+        thelabel := MyText {
             width: label-width;
             text: label;
-            color: label-color;
+            color: label-button ? black : label-color;
         }
 
         MyText {
             text: text;
             color: text-color;
         }
+    }
+    if label-button: MyButton {
+        z: -1;
+        x: thelabel.x - 4px;
+        y: thelabel.y - 4px;
+        width: thelabel.width + 2px;
+        height: thelabel.height + 8px;
+        clicked => { root.clicked(); }
     }
 }
 
@@ -43,8 +53,11 @@ export component ViewTitle inherits Title {
 }
 
 export component EncodeButtons inherits HorizontalLayout {
+    Window {
+      horizontal-stretch: 1;
+    }
     MyButton {
-        horizontal-stretch: 4;
+        horizontal-stretch: 1;
         height: 56px;
         text: "Encode";
         clicked => {
@@ -150,10 +163,14 @@ export component FilamentInfo inherits Rectangle {
                     }
 
                     LabeledInfo {
+                        label-button: mode == FilamentInfoMode.Encode;
                         property <string> core: AppState.curr-encode-request.weight-core != 0 ? "\{AppState.curr-encode-request.weight-core}g" : "—";
                         property <string> new: AppState.curr-encode-request.weight-new != 0 ? "\{AppState.curr-encode-request.weight-new}g" : "—";
                         label: "Weights:";
                         text: "\{core} (Core) / \{new} (New)";
+                        clicked => {
+                           AppState.encoding-spool-core-visible = true;
+                        }
                     }
                 }
             }

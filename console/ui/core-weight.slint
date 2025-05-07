@@ -141,6 +141,8 @@ export component CoreEstimate inherits Rectangle {
 
 export component SelectIfNewSpool inherits Rectangle {
     callback cancel-clicked;
+    callback yes-clicked;
+    callback no-clicked;
     background: white;
     VerticalLayout {
         alignment: center;
@@ -242,8 +244,7 @@ export component SelectIfNewSpool inherits Rectangle {
                 width: 120px;
                 text: "Yes";
                 clicked => {
-                    AppState.encode-set-core-info(AppState.core-weight-to-encode-after-select-if-new, AppState.spool-scale-weight, AppState.core-name-to-encode-after-select-if-new);
-                    AppState.encoding-spool-core-visible = false;
+                    root.yes-clicked();
                 }
             }
 
@@ -252,8 +253,7 @@ export component SelectIfNewSpool inherits Rectangle {
                 width: 120px;
                 text: "No";
                 clicked => {
-                    AppState.encode-set-core-info(AppState.core-weight-to-encode-after-select-if-new, 0, AppState.core-name-to-encode-after-select-if-new);
-                    AppState.encoding-spool-core-visible = false;
+                    root.no-clicked();
                 }
             }
 
@@ -340,6 +340,16 @@ export component SpoolCoreWeight inherits Rectangle {
         cancel-clicked => {
             root.state = SpoolCoreWeightState.EntryTabs;
         }
+        no-clicked => {
+            AppState.encode-set-core-info(AppState.core-weight-to-encode-after-select-if-new, 0, AppState.core-name-to-encode-after-select-if-new);
+            AppState.encoding-spool-core-visible = false;
+            root.state = SpoolCoreWeightState.EntryTabs; // for next time
+        }
+        yes-clicked => {
+            AppState.encode-set-core-info(AppState.core-weight-to-encode-after-select-if-new, AppState.spool-scale-weight, AppState.core-name-to-encode-after-select-if-new);
+            AppState.encoding-spool-core-visible = false;
+            root.state = SpoolCoreWeightState.EntryTabs; // for next time
+        }
     }
 
     VerticalLayout {
@@ -369,7 +379,7 @@ export component SpoolCoreWeight inherits Rectangle {
                 height: root.height - title.height;
                 tabs := LeftTab {
                     height: root.height - title.height;
-                    tabs: ["List", "Est", "1234"];
+                    tabs: AppState.spool-scale-state == SpoolScaleState.Loaded ? ["List", "Est", "1234"]  : ["List", "1234"];
                     bottom-tab: "Cancel";
                     botom-tab-pressed => {
                         AppState.encoding-spool-core-visible = false;
@@ -388,7 +398,13 @@ export component SpoolCoreWeight inherits Rectangle {
                         selected(text, pos-in-list, id) => {
                             AppState.core-name-to-encode-after-select-if-new = text;
                             AppState.core-weight-to-encode-after-select-if-new = AppBackend.get-spool-core-weight(id);
-                            root.state = SpoolCoreWeightState.NewSpoolSelect;
+                            if AppState.spool-scale-state == SpoolScaleState.Loaded {
+                              root.state = SpoolCoreWeightState.NewSpoolSelect;
+                            } else {
+                              AppState.encode-set-core-info(AppState.core-weight-to-encode-after-select-if-new, 0, AppState.core-name-to-encode-after-select-if-new);
+                              AppState.encoding-spool-core-visible = false;
+                              root.state = SpoolCoreWeightState.EntryTabs; // for next time
+                            }
                         }
                         visible: tabs.selected-index == 0;
                         preferred-width: 1000px;
@@ -412,7 +428,13 @@ export component SpoolCoreWeight inherits Rectangle {
                                 ok-clicked => {
                                     AppState.core-name-to-encode-after-select-if-new = "Custom: \{self.number} g";
                                     AppState.core-weight-to-encode-after-select-if-new = self.number;
-                                    root.state = SpoolCoreWeightState.NewSpoolSelect;
+                                    if AppState.spool-scale-state == SpoolScaleState.Loaded {
+                                      root.state = SpoolCoreWeightState.NewSpoolSelect;
+                                    } else {
+                                      AppState.encode-set-core-info(AppState.core-weight-to-encode-after-select-if-new, 0, AppState.core-name-to-encode-after-select-if-new);
+                                      AppState.encoding-spool-core-visible = false;
+                                      root.state = SpoolCoreWeightState.EntryTabs; // for next time
+                                    }
                                 }
                             }
                         }
