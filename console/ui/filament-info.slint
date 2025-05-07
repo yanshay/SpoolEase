@@ -1,6 +1,7 @@
 import { Title, MyText,MyButton } from "./framework/widgets.slint";
 import { AppBackend, AppState, ControlState, UiTray } from "app.slint";
 import { Utils } from "utils.slint";
+import { FrameworkState } from "framework/framework.slint";
 
 export enum FilamentInfoMode { 
   Encode,
@@ -45,6 +46,7 @@ export component LabeledInfo inherits LabeledText {
 export component EncodeTitle inherits Title {
     horizontal-alignment: right;
     text: "To Edit, Scan NFC With Phone   ▶ ▶ ▶\u{00A0}";
+    text2: "To Edit, \{FrameworkState.web-config-url}";
 }
 
 export component ViewTitle inherits Title {
