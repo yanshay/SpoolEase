@@ -23,12 +23,13 @@
 - Improved Encoding to be more reliable
 - Various bug fixes
 
-## Next (not released yet)
-- Easy Web-Config: Web config can be accessed by scanning the NFC module (PN532) with a mobile phone and security-key is filled automatically
-- Web-Config always enabled
-- Add optional manually entered Brand, Material Subtype, Color Name and Note to tag information, through mobile phone. Can scan NFC module with mobile to reach the app.
-- Changed adding custom filament information in filament3d.org (tag scan on mobile) to use the csv format of web-config and storing in the mobile itself
-- Add display of filament&tag information when pressing a slot or pressing staging twice
-- Console web-application root redirects to relevant application depending on context (web config or encode)
-- Can supply the security-key through url in a secure way (after #sk=sec-key)
-- The previous two features + the mDNS support together allow to have a permanent link and set it as an app on mobile phone to access context sensitive application
+## 0.3.1
+- Easy Web-Config: Access by scanning the NFC module (PN532) with a phone; security key auto-filled
+- Web-Config Always Enabled
+- Extended Tag Info: Add Brand, Material Subtype, Color Name, and Notes via phone. Access by scanning the NFC module or browsing the URL shown in the Encode page title
+- Filament3D.org Update: Custom filament info now uses Web-Config-compatible CSV format and is stored locally on the phone after scanning
+- Tag Info Display: Filament and tag data shown when pressing a slot or double-pressing staging
+- Context-Aware Redirects: Console root redirects to Web-Config or Encode app based on context
+- Secure Key via URL: Security key can be passed via URL fragment (#sk=...)
+- Persistent App Links: Combining context-aware redirects, secure URL fragments, and mDNS allows creating a permanent, app-like mobile shortcut to the right app view
+- Spool Core Weight Update: Core weight can be updated without reweighing the spool
