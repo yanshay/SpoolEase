@@ -1027,7 +1027,13 @@ impl FrameworkObserver for ViewModel {
     fn on_web_config_started(&self, key: &str, mode: WebConfigMode) {
         let mode = match mode {
             WebConfigMode::AP => crate::app::WebConfigState::StartedAP,
-            WebConfigMode::STA => crate::app::WebConfigState::StartedSTA,
+            WebConfigMode::STA => {
+                if self.app_config.borrow().missing_configs(false) {
+                    crate::app::WebConfigState::StartedSTADisplayed
+                } else {
+                    crate::app::WebConfigState::StartedSTA
+                }
+            }
         };
         self.ui_weak
             .unwrap()
