@@ -34,3 +34,6 @@
 - Secure Key via URL: Security key can be passed via URL fragment (#sk=...)
 - Persistent App Links: Combining context-aware redirects, secure URL fragments, and mDNS allows creating a permanent, app-like mobile shortcut to the right app view
 - Spool Core Weight Update: Core weight can be updated without reweighing the spool
+
+## 0.3.2
+- Clarify clean install by explaining the security key in web-config and automatically showing the web-config screen on the console when configurations are incomplete
