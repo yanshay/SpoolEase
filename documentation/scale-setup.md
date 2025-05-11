@@ -104,7 +104,7 @@ Follow these steps to calibrate:
 3. On page 2, press "Calibrate Scale".
 4. Place SpoolEase Scale on a steady surface with nothing on it to establish the zero point.
 5. Press the "Tare" button.
-6. Place the calibration object on the scale and wait until the LED on SpoolEase Scale turns blue (indicating a stable reading). Note that it will initially show yellow, indicating an unstable reading.
+6. Place the calibration object on the scale and wait a few seconds for the weight measurement to stabilize.
 7. Enter the object's exact weight in grams using the keypad on SpoolEase Console and press "Ok". The dialog will close.
 8. Return to the main screen and verify the object's weight appears accurately (within ±1g tolerance).
 
