@@ -645,10 +645,12 @@ impl ViewModel {
             let descriptor_res = if tray_id == 999 {
                 &tag_info_to_encode.to_descriptor(None, None)
             } else {
-                &tag_info_to_encode.to_descriptor(Some(&bambu_printer_borrow.printer_name), Some(&bambu_printer_borrow.printer_uuid_to_encode))
+                &tag_info_to_encode.to_descriptor(
+                    Some(&bambu_printer_borrow.printer_name),
+                    Some(&bambu_printer_borrow.printer_uuid_to_encode),
+                )
             };
-            if let Some(descriptor) = descriptor_res
-            {
+            if let Some(descriptor) = descriptor_res {
                 spool_tag.write_tag(&descriptor, tray_id);
             }
             info!("Sent the write request of tray {}", tray_id);
@@ -684,10 +686,12 @@ impl ViewModel {
                 let staging_borrow = moved_staging.borrow();
                 let bambu_borrow = moved_bambu.borrow();
                 let (filament_info, tag_info) = match tray_id {
-                    -1 => { // Special case to avoid a call after encode_request is cleared
+                    -1 => {
+                        // Special case to avoid a call after encode_request is cleared
                         return;
                     }
-                    999 => { // Staging
+                    999 => {
+                        // Staging
                         if let Some(tag_info) = &staging_borrow.tag_info {
                             if let Some(filament_info) = &tag_info.filament {
                                 (Some(filament_info.clone()), &staging_borrow.tag_info)
@@ -698,7 +702,8 @@ impl ViewModel {
                             (None, &None)
                         }
                     }
-                    254 => { // External Tray
+                    254 => {
+                        // External Tray
                         let tray = &bambu_borrow.virt_tray;
                         if let Some(calibration) = bambu_borrow.get_tray_calibration(&tray) {
                             encode_request_display.pa_line2 = format!("{}, {}", calibration.k_value, calibration.name,).into();
@@ -709,7 +714,8 @@ impl ViewModel {
                             (None, &None)
                         }
                     }
-                    0..15 => { // Standard trays
+                    0..15 => {
+                        // Standard trays
                         // let bambu = moved_bambu.borrow();
                         let tray = &bambu_borrow.ams_trays[tray_id as usize];
                         if let Some(calibration) = bambu_borrow.get_tray_calibration(&tray) {
@@ -1255,7 +1261,13 @@ impl SpoolScaleObserver for ViewModel {
 fn find_brand_in_text(text: &str) -> Option<&'static str> {
     let text = text.to_lowercase();
     for brand in FILAMENT_BRAND_NAMES.lines() {
-        if text.contains(&brand.to_lowercase()) {
+        if brand.contains(',') {
+            if let Some((keyword, brand)) = brand.split_once(',') {
+                if text.contains(&keyword.to_lowercase()) {
+                    return Some(brand);
+                }
+            }
+        } else if text.contains(&brand.to_lowercase()) {
             return Some(brand);
         }
     }
