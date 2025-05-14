@@ -10,11 +10,9 @@ It includes two products:
 
 And most importantly, even though it’s an open-source project, it’s easy to build and surprisingly simple to set up!
 
-## Star History
+## Star History - Please Star This Repo if You Find It Valuable
 
 [![Star History Chart](https://api.star-history.com/svg?repos=yanshay/spoolease&type=Date)](https://www.star-history.com/#yanshay/spoolease&Date)
-
-**I’d greatly appreciate it if you could star the GitHub repo as recognition to the efforts.**
 
 ## Press Below for Video Demonstration of SpoolEase Console
 <div align="center">
