@@ -19,6 +19,7 @@ mod view_model;
 mod web_app;
 mod spool_scale;
 mod ssdp;
+mod color_utils;
 
 use alloc::{format, rc::Rc, string::ToString};
 use embassy_futures::yield_now;

@@ -20,6 +20,7 @@ use framework::{
 };
 
 use crate::app_config::{BASE_FILAMENTS, SPOOLS_CATALOG};
+use crate::color_utils::get_color_name;
 use crate::spool_scale::{self, SpoolScaleObserver};
 use crate::ssdp::{ssdp_task, SSDPPubSubChannel};
 use crate::web_app::EncodeInfoDTO;
@@ -748,6 +749,13 @@ impl ViewModel {
                             if encode_request.weight_new == 0 && tag_info.weight_new.is_some() {
                                 encode_request.weight_new = tag_info.weight_new.unwrap();
                             }
+                        }
+
+                        if encode_request.color_name.is_empty() {
+                            let color = u32::from_str_radix(&filament_info.tray_color[..6], 16).unwrap() + 0xFF000000; // the plus 0xFF at the end is fo add alpha
+                            let color = slint::Color::from_argb_encoded(color);
+                            let color_name = get_color_name(color.red(), color.green(), color.blue());
+                            encode_request.color_name = color_name.0.to_shared_string();
                         }
                     }
 

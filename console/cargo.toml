@@ -135,6 +135,7 @@ getrandom = { version = "0.2.15", features = ["custom"] }
 semver = { version = "1.0.25", default-features = false }
 derivative = { version = "2.2.0", features = ["use_core"] }
 siphasher = { version = "1.0.1", default-features = false }
+num-traits = { version = "0.2.19", default-features = false }
 
 # Security/Crypto crates
 aes-gcm = { version = "0.10" }  # AES-GCM encryption/decryption
