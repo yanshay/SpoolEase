@@ -674,7 +674,7 @@ impl ViewModel {
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_calc_encode_request_display(move || {
+            .on_calc_encode_request_display(move |mode| {
                 let moved_ui = moved_ui.unwrap();
                 let ui_app_state = moved_ui.global::<crate::app::AppState>();
                 let mut encode_request = ui_app_state.get_curr_encode_request();
@@ -760,8 +760,11 @@ impl ViewModel {
                         if encode_request.color_name.is_empty() {
                             let color = u32::from_str_radix(&filament_info.tray_color[..6], 16).unwrap() + 0xFF000000; // the plus 0xFF at the end is fo add alpha
                             let color = slint::Color::from_argb_encoded(color);
-                            let color_name = get_color_name(color.red(), color.green(), color.blue());
-                            encode_request.color_name = color_name.0.to_shared_string();
+                            let color_name_info = get_color_name(color.red(), color.green(), color.blue());
+                            encode_request.color_name = color_name_info.0.to_shared_string();
+                            if mode == crate::app::FilamentInfoMode::View {
+                                encode_request.color_name = format!("({})", encode_request.color_name).to_shared_string();
+                            }
                         }
                     }
 
@@ -809,10 +812,13 @@ impl ViewModel {
                     }
 
                     if first_request_to_display && encode_request.brand.is_empty() {
-                        if let Some(brand_name) = find_brand_in_text(encode_request_display.pa_line2.as_str()) {
+                        if let Some(brand_name) = get_brand_from_text(encode_request_display.pa_line2.as_str()) {
                             encode_request.brand = brand_name.to_shared_string();
-                        } else if let Some(brand_name) = find_brand_in_text(encode_request_display.slicer_name.as_str()) {
+                        } else if let Some(brand_name) = get_brand_from_text(encode_request_display.slicer_name.as_str()) {
                             encode_request.brand = brand_name.to_shared_string();
+                        }
+                        if !encode_request.brand.is_empty() && mode == crate::app::FilamentInfoMode::View {
+                            encode_request.brand = format!("({})", encode_request.brand).to_shared_string();
                         }
                     }
 
@@ -1258,7 +1264,7 @@ impl SpoolScaleObserver for ViewModel {
     }
 }
 
-fn find_brand_in_text(text: &str) -> Option<&'static str> {
+fn get_brand_from_text(text: &str) -> Option<&'static str> {
     let text = text.to_lowercase();
     for brand in FILAMENT_BRAND_NAMES.lines() {
         if brand.contains(',') {

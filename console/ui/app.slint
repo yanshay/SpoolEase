@@ -58,6 +58,11 @@ export struct EncodeRequestDisplay {  // EncodeRequestDisplay is actually used f
   pa-line2: string,
 }
 
+export enum FilamentInfoMode { 
+  Encode,
+  View
+}
+
 // Consts
 
 export global AppConsts {
@@ -119,7 +124,7 @@ export global AppBackend {
     pure callback get-connected-scale-info() -> string;
     pure callback get-available-scales-info() -> [string];
     callback encode-web-app();
-    callback calc-encode-request-display();
+    callback calc-encode-request-display(mode: FilamentInfoMode);
 }
 
 export global AppState {
@@ -142,7 +147,7 @@ export global AppState {
        // TODO: This is a bit tricky, call backend to update display (and it also updates the request itself so cometimes drive an extra update)
        // If code is not consistent it could lead to infinite recursion. 
        // So maybe better to change how it works in the future ...
-        AppBackend.calc-encode-request-display();
+        AppBackend.calc-encode-request-display(AppState.control-state == ControlState.EncodeEditing ? FilamentInfoMode.Encode : FilamentInfoMode.View);
     }
     in-out property <EncodeRequestDisplay> curr-encode-request-display; // updated by rust for formatting needs
 

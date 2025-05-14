@@ -2,11 +2,7 @@ import { Title, MyText,MyButton } from "./framework/widgets.slint";
 import { AppBackend, AppState, ControlState, UiTray } from "app.slint";
 import { Utils } from "utils.slint";
 import { FrameworkState } from "framework/framework.slint";
-
-export enum FilamentInfoMode { 
-  Encode,
-  View
-}
+import { FilamentInfoMode } from "app.slint";
 
 export component LabeledText inherits Rectangle {
     callback clicked;
