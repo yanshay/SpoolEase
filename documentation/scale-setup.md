@@ -23,7 +23,7 @@ The setup process is similar to the one you followed for the SpoolEase Console, 
 
 The easiest way to flash the firmware is through Chrome or Edge (other browsers are not supported).
 
-1. Connect the SpoolEase Scale device to your computer using a USB-C cable.
+1. Connect the SpoolEase Scale device to your computer using a USB-C cable. IMPORTANT: Use the UPPER Usb-C connector on SpoolEase Scale.
 2. Visit [https://www.spoolease.io/scale.html#firmware](https://www.spoolease.io/scale.html#firmware)
 3. Press the "New Install" button for the version you want to flash at the bottom of the page.
 4. Select the correct port for the board and click **Connect**.
