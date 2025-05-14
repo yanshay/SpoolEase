@@ -19,7 +19,7 @@ use framework::{
     terminal::{self, term_mut, TerminalObserver},
 };
 
-use crate::app_config::{BASE_FILAMENTS, SPOOLS_CATALOG};
+use crate::app_config::{BASE_FILAMENTS, FILAMENT_BRAND_NAMES, SPOOLS_CATALOG};
 use crate::color_utils::get_color_name;
 use crate::spool_scale::{self, SpoolScaleObserver};
 use crate::ssdp::{ssdp_task, SSDPPubSubChannel};
@@ -801,6 +801,15 @@ impl ViewModel {
                         )
                         .into();
                     }
+
+                    if first_request_to_display && encode_request.brand.is_empty() {
+                        if let Some(brand_name) = find_brand_in_text(encode_request_display.pa_line2.as_str()) {
+                            encode_request.brand = brand_name.to_shared_string();
+                        } else if let Some(brand_name) = find_brand_in_text(encode_request_display.slicer_name.as_str()) {
+                            encode_request.brand = brand_name.to_shared_string();
+                        }
+                    }
+
                     ui_app_state.set_curr_encode_request_display(encode_request_display);
                     if first_request_to_display {
                         ui_app_state.set_curr_encode_request(encode_request);
@@ -1241,4 +1250,14 @@ impl SpoolScaleObserver for ViewModel {
             term_info!("[S] Warning: Scale failed to initialize the NFC module");
         }
     }
+}
+
+fn find_brand_in_text(text: &str) -> Option<&'static str> {
+    let text = text.to_lowercase();
+    for brand in FILAMENT_BRAND_NAMES.lines() {
+        if text.contains(&brand.to_lowercase()) {
+            return Some(brand);
+        }
+    }
+    None
 }

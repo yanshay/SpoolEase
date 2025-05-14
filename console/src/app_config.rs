@@ -13,6 +13,7 @@ use framework::prelude::*;
 
 pub const SPOOLS_CATALOG: &str = include_str!("../data/Spool-Core-Weights.csv"); 
 pub const BASE_FILAMENTS: &str = include_str!("../data/base-filaments-index.csv"); 
+pub const FILAMENT_BRAND_NAMES: &str = include_str!("../data/filament-brands.csv");
 const PRINTER_CONFIG_KEY: &str = "_printer_"; // for backwards compatibility
 const PRINTERS_CONFIG_KEY: &str = "_printers_";
 const DEFAULT_PRINTER_CONFIG_KEY: &str = "_default_printer_";
