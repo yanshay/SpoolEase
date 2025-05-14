@@ -2,7 +2,11 @@
 
 ## Overview
 
-***Important:** SpoolEase Scale requires the SpoolEase Console to be installed with version 0.3.0 or later, and the Scale must be enabled via SpoolEase Console Web-Config.
+***Important:** 
+
+- SpoolEase Scale requires the SpoolEase Console to be installed with version 0.3.0 or later.
+- Scale must be enabled via SpoolEase Console Web-Config.
+- Don't place SpoolEase Scale and SpoolEase Console too close, it has been seen to cause WiFi interference and break the connection from tiem to time.
 
 The setup for SpoolEase Scale should begin partway through the build process—before the case is closed and the final two screws are installed. The instructions below specify the exact point where it’s best to pause the build and perform the setup.
 
@@ -52,7 +56,8 @@ The easiest way to flash the firmware is through Chrome or Edge (other browsers 
 3. It is recommended to give the device a name so it can be identified as "<devicename>.local" on the network (this will work depending on the client you use) instead of using its IP address, which would be more difficult to find.
 4. Enable or disable the NFC Module option (the one in SpoolEase Scale), depending on whether you installed it (by default it is enabled).
 5. Restart the device from the browser by pressing **Restart Device**.
-6. After rebooting, the front RGB LED will flash red until the device connects to the network, then it will remain steady red until SpoolEase Console connects to it.
+6. In SpoolEase Console Web-Config (not to confuse with Scale Web-Config) enable SpoolEase Scale.
+7. After rebooting, the front RGB LED will flash red until the device connects to the network, then it will remain steady red until SpoolEase Console connects to it.
 
 **Congratulations! Setup is complete.** Please continue to verify that everything is working properly.
 
