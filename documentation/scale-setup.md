@@ -6,7 +6,7 @@
 
 - SpoolEase Scale requires the SpoolEase Console to be installed with version 0.3.0 or later.
 - Scale must be enabled via SpoolEase Console Web-Config.
-- Don't place SpoolEase Scale and SpoolEase Console too close, it has been seen to cause WiFi interference and break the connection from tiem to time.
+- Don't place SpoolEase Scale and SpoolEase Console too close, it has been seen to cause WiFi interference and break the connection from time to time.
 
 The setup for SpoolEase Scale should begin partway through the build process—before the case is closed and the final two screws are installed. The instructions below specify the exact point where it’s best to pause the build and perform the setup.
 
@@ -27,7 +27,7 @@ The setup process is similar to the one you followed for the SpoolEase Console, 
 
 The easiest way to flash the firmware is through Chrome or Edge (other browsers are not supported).
 
-1. Connect the SpoolEase Scale device to your computer using a USB-C cable. IMPORTANT: Use the UPPER Usb-C connector on SpoolEase Scale.
+1. Connect the SpoolEase Scale device to your computer using a USB-C cable. IMPORTANT: Use the UPPER Usb-C connector on SpoolEase Scale. UPPER is when the board is positioned in its place the 3D printed model, with the two connectors on the left and the pins are facing away from you.
 2. Visit [https://www.spoolease.io/scale.html#firmware](https://www.spoolease.io/scale.html#firmware)
 3. Press the "New Install" button for the version you want to flash at the bottom of the page.
 4. Select the correct port for the board and click **Connect**.
