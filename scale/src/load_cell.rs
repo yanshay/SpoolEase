@@ -280,7 +280,7 @@ async fn spi_async_load_cell_task(
     // Skip first readings which are 0 / -1
     let initial_readings = true;
     let mut count_good_samples = 0;
-    while initial_readings {
+    loop {
         let v = hx711_sensor.read_async().await;
         if let Ok(v) = v {
             if !([0, -1].contains(&v)) {
