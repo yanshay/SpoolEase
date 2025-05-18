@@ -1,24 +1,41 @@
 -- https://rust-analyzer.github.io/manual.html#configuration
+local function print_table(t, indent)
+    indent = indent or ""
+    for k, v in pairs(t) do
+        local key = tostring(k)
+        if type(v) == "table" then
+            print(indent .. key .. ":")
+            print_table(v, indent .. "  ")
+        else
+            print(indent .. key .. ": " .. tostring(v))
+        end
+    end
+end
+
 return {
-  "mrcjkb/rustaceanvim",
-  opts = {
-    server = {
-      default_settings = {
-        -- rust-analyzer language server configuration
-        ["rust-analyzer"] = {
-          server = {
-            -- extraEnv = { {["RA_LOG"]="project_model=debug"} }, -- For debugging rust-analyzer, to see log location do :LspInfo in neovim
-          },
-          cargo = {
-            allFeatures = false, -- important
-            extraArgs = {"--release"} -- , "-p", "device"}, -- probably not required, but better since used for building
-            -- allTargets = false,  -- Not required
-            -- target = "xtensa-esp32-none-elf", -- can be avoided if using .cargo/config.toml as described below. CAN'T be a list even if in rust-analyzer doc it says otherwise
-          },
-        },
-      },
-    },
-  },
+	"mrcjkb/rustaceanvim",
+	opts = {
+		server = {
+			default_settings = {
+				-- rust-analyzer language server configuration
+				["rust-analyzer"] = {
+					server = {
+						-- extraEnv = { {["RA_LOG"]="project_model=debug"} }, -- For debugging rust-analyzer, to see log location do :LspInfo in neovim
+					},
+					cargo = {
+						allFeatures = false, -- important
+						extraArgs = { "--release" }, -- , "-p", "device"}, -- probably not required, but better since used for building
+						-- allTargets = false,  -- Not required
+						-- target = "xtensa-esp32-none-elf", -- can be avoided if using .cargo/config.toml as described below. CAN'T be a list even if in rust-analyzer doc it says otherwise
+					},
+				},
+			},
+		},
+	},
+	config = function(_, opts)
+		vim.g.rustaceanvim = vim.tbl_deep_extend("keep", vim.g.rustaceanvim or {}, opts or {})
+    -- print_table(vim.g.rustaceanvim)
+	end,
 }
 
 -- working version

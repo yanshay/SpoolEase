@@ -1,4 +1,3 @@
--- https://rust-analyzer.github.io/manual.html#configuration
 return {
   "mrcjkb/rustaceanvim",
   opts = {
@@ -20,4 +19,7 @@ return {
       },
     },
   },
+  config = function(_, opts)
+    vim.g.rustaceanvim = vim.tbl_deep_extend("keep", vim.g.rustaceanvim or {}, opts or {})
+  end,
 }
