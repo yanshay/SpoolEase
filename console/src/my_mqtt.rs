@@ -484,7 +484,7 @@ pub async fn generic_mqtt_task<
                 };
                 res_as_select3_res
             };
-
+            let mut disconnected = false;
             match res {
                 // First : Receive
                 Either3::First(res) => match res {
@@ -502,7 +502,7 @@ pub async fn generic_mqtt_task<
                     }
                     Err(MyMqttError::TlsError(e)) => {
                         term_error!("[{}] TLS Error on receive {:?}", printer_log_id, e);
-                        continue 'establish_communication;
+                        disconnected = true;
                     }
                     Err(e) => {
                         term_error!("[{}] MQTT Recv: Error {:?}", printer_log_id, e);
@@ -512,9 +512,8 @@ pub async fn generic_mqtt_task<
                 Either3::Second(packet) => match mqttrust::Packet::try_from(&packet) {
                     Ok(p) => {
                         if let Err(e) = my_mqtt.write(p).await {
-                            term_error!("[{}] MQTT write error: {:?}\nReconnecting...", printer_log_id, e);
                             // any point retrying?
-                            continue 'establish_communication;
+                            disconnected = true;
                         }
                     }
                     Err(e) => {
@@ -525,10 +524,15 @@ pub async fn generic_mqtt_task<
                     if let Err(e) = my_mqtt.write_pingreq().await {
                         term_error!("[{}] MQTT Send: ping message error: {:?}", printer_log_id, e);
                         // any point retrying?
-                        continue 'establish_communication;
+                        disconnected = true;
                     }
                 }
             }
+            if disconnected {
+                bambu_printer.borrow_mut().report_printer_connectivity(false);
+                continue 'establish_communication;
+            }
+
         }
     }
 }

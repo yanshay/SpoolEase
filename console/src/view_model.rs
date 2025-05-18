@@ -983,6 +983,8 @@ impl BambuPrinterObserver for ViewModel {
                 .unwrap()
                 .global::<crate::app::AppState>()
                 .invoke_printer_connected(bambu_printer.printer_selector_name.to_shared_string());
+        } else {
+            term_info!("[{}] Printer disconnected", bambu_printer.printer_number);
         }
     }
 }
