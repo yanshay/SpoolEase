@@ -7,6 +7,10 @@ body {
   padding: 20px;
   background-color: #f5f5f5;
 }
+
+h1 {
+  text-align: center;
+}
 h3 {
   font-weight: normal;
 }

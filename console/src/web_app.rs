@@ -72,6 +72,14 @@ impl AppWithStateBuilder for NestedAppBuilder {
         );
 
         let router = router.route(
+            "/favicon-48x48.png",
+            get_service(picoserve::response::File::with_content_type(
+                "image/png",
+                include_bytes!("../static/favicon-48x48.png")
+            )),
+        );
+
+        let router = router.route(
             "/encode",
             get_service(picoserve::response::File::html(include_str!("../static/encode.html"))),
         ); 
