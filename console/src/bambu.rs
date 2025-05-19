@@ -1,8 +1,11 @@
 // TODO:
 // Deal with when to clear tag information, when we know spool taken out
 // Deal with when to copy tag information between trays if only some data change but we know the spool is there
-use crate::{app_config::PrinterConfig, settings::MAX_NUM_PRINTERS, ssdp::{SSDPInfo, SSDPPubSubChannel}};
-use shared::spool_tag::TAG_PLACEHOLDER; 
+use crate::{
+    app_config::PrinterConfig,
+    settings::MAX_NUM_PRINTERS,
+    ssdp::{SSDPInfo, SSDPPubSubChannel},
+};
 use alloc::{
     format,
     rc::Rc,
@@ -28,6 +31,7 @@ use hashbrown::HashMap;
 use mqttrust::QoS;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use shared::spool_tag::TAG_PLACEHOLDER;
 
 use framework::prelude::*;
 
@@ -40,6 +44,7 @@ use crate::{
 const FILAMENT_URL_PREFIX: &str = "https://info.filament3d.org/";
 
 pub struct BambuPrinter {
+    pub bambu_model: Option<Rc<RefCell<Self>>>,
     pub log_filter: log::LevelFilter,
     pub printer_number: usize,       // number of printer in user's configuration,
     pub printer_index: usize, // index of printer in the array of printers, if a config is not good and skipped, then index would be different than number
@@ -47,6 +52,7 @@ pub struct BambuPrinter {
     pub printer_access_code: String, // mandatory, so configured is the same as actual
     pub configured_printer_name: Option<String>,
     pub configured_printer_ip: Option<Ipv4Address>,
+    pub auto_restore_k: bool,
     pub printer_name: String,
     pub printer_selector_name: String, // configured_printer_name or if not set then printer_serial which is always available
     pub printer_ip: Ipv4Address,
@@ -64,6 +70,7 @@ pub struct BambuPrinter {
     tray_read_done_bits: Option<u32>,
     tray_reading_bits: Option<u32>,
     pub ams_exist_bits: Option<u32>,
+    printer_was_disconnected: bool,
 }
 
 pub trait BambuPrinterObserver {
@@ -71,6 +78,7 @@ pub trait BambuPrinterObserver {
     fn on_printer_connect_status(&self, bambu_printer: &mut BambuPrinter, status: bool);
 }
 
+#[allow(clippy::too_many_arguments)]
 impl BambuPrinter {
     pub fn new(
         printer_number: usize,
@@ -79,6 +87,38 @@ impl BambuPrinter {
         printer_access_code: &str,
         printer_name: &Option<String>,
         printer_ip: &Option<Ipv4Address>,
+        auto_restore_k: bool,
+        write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
+        app_config: Rc<RefCell<AppConfig>>,
+        restart_printer: Arc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
+        log_filter: log::LevelFilter,
+    ) -> Rc<RefCell<BambuPrinter>> {
+        let myself = Self::internal_new(
+            printer_number,
+            printer_index,
+            printer_serial,
+            printer_access_code,
+            printer_name,
+            printer_ip,
+            auto_restore_k,
+            write_packets,
+            app_config,
+            restart_printer,
+            log_filter,
+        );
+        let myself_rc = Rc::new(RefCell::new(myself));
+        myself_rc.borrow_mut().bambu_model = Some(myself_rc.clone());
+        myself_rc
+    }
+
+    fn internal_new(
+        printer_number: usize,
+        printer_index: usize,
+        printer_serial: &str,
+        printer_access_code: &str,
+        printer_name: &Option<String>,
+        printer_ip: &Option<Ipv4Address>,
+        auto_restore_k: bool,
         write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
         app_config: Rc<RefCell<AppConfig>>,
         restart_printer: Arc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
@@ -107,12 +147,14 @@ impl BambuPrinter {
         };
 
         Self {
+            bambu_model: None,
             printer_number,
             printer_index,
             printer_serial: String::from(printer_serial),
             printer_access_code: String::from(printer_access_code),
             configured_printer_ip: *printer_ip,
             configured_printer_name: printer_name.clone(),
+            auto_restore_k,
             printer_ip: printer_ip.unwrap_or(Ipv4Address::new(0, 0, 0, 0)),
             printer_name: printer_name.clone().unwrap_or("Unknown".to_string()),
             printer_selector_name,
@@ -148,17 +190,19 @@ impl BambuPrinter {
             ams_exist_bits: None,
             restart_printer,
             log_filter,
+            printer_was_disconnected: false,
         }
     }
 
     pub fn reset_printer(&mut self) {
-        let empty = Self::new(
+        let empty = Self::internal_new(
             self.printer_number,
             self.printer_index,
             &self.printer_serial,
             &self.printer_access_code,
             &self.configured_printer_name,
             &self.configured_printer_ip,
+            self.auto_restore_k,
             self.write_packets.clone(),
             self.app_config.clone(),
             self.restart_printer.clone(),
@@ -166,12 +210,16 @@ impl BambuPrinter {
         );
         *self = Self {
             observers: self.observers.clone(),
+            bambu_model: self.bambu_model.clone(),
             ..empty
         };
         self.restart_printer.signal(1);
     }
 
     pub fn report_printer_connectivity(&mut self, status: bool) {
+        if self.printer_connectivity_ok == Some(true) && !status {
+            self.printer_was_disconnected = true;
+        }
         self.printer_connectivity_ok = Some(status);
         self.notify_printer_connect_status(status);
     }
@@ -605,11 +653,35 @@ impl BambuPrinter {
                     self.nozzle_diameter = Some(nozzle_diameter.clone());
                     nozzle_diameter_change_made = old_nozzle_diameter != self.nozzle_diameter;
                 }
+                // get a snapshot of trays before, to later be able to update cali_idx if removed
+                let full_push_status = print.ams.is_some() && print.vt_tray.is_some();
+                let prev_trays = if full_push_status && self.auto_restore_k && self.printer_was_disconnected {
+                    Some((self.ams_trays.clone(), self.virt_tray.clone()))
+                } else {
+                    None
+                };
                 if let Some(ams) = &print.ams {
                     ams_change_made = self.process_print_message__push_status__ams(ams);
                 }
                 if let Some(v_tray) = &print.vt_tray {
                     vt_tray_change_made = self.process_print_message__push_status__vt_tray(v_tray);
+                }
+
+                if full_push_status && self.auto_restore_k && self.printer_was_disconnected {
+                    self.printer_was_disconnected = false;
+                    if let Some(prev_trays) = prev_trays {
+                        if self.ams_trays != prev_trays.0 || self.virt_tray != prev_trays.1 {
+                            let spawner = self.app_config.borrow().framework.borrow().spawner;
+                            spawner
+                                .spawn(fix_k_on_restart(
+                                    self.bambu_model.as_ref().unwrap().clone(),
+                                    prev_trays.0,
+                                    prev_trays.1,
+                                    self.nozzle_diameter.clone(),
+                                ))
+                                .ok();
+                        }
+                    }
                 }
                 change_made = nozzle_diameter_change_made || ams_change_made || vt_tray_change_made;
             } else if command == "ams_filament_setting" {
@@ -785,7 +857,11 @@ impl BambuPrinter {
                 &self.nozzle_diameter.clone().unwrap_or_default(),
                 tray_id,                 // here we need the original tray_id
                 &filament.tray_info_idx, // tray_info_idx is filament_id in this command
-                if let Some(calibration) = &matching_calibration { Some(calibration.cali_idx) } else { Some(-1)},
+                if let Some(calibration) = &matching_calibration {
+                    Some(calibration.cali_idx)
+                } else {
+                    Some(-1)
+                },
             );
             let payload = serde_json::to_string_pretty(&cmd).unwrap();
             self.publish_payload(payload);
@@ -1276,6 +1352,7 @@ pub fn init(
     } else {
         log::LevelFilter::Warn
     };
+    let auto_restore_k = printer_config.auto_restore_k;
 
     // == Setup MQTT ==================================================================
     let write_packets = Arc::new(embassy_sync::channel::Channel::<
@@ -1294,18 +1371,19 @@ pub fn init(
 
     let restart_printer = Arc::new(embassy_sync::signal::Signal::<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>::new());
 
-    let bambu_printer = Rc::new(RefCell::new(BambuPrinter::new(
+    let bambu_printer = BambuPrinter::new(
         printer_number,
         printer_index,
         &printer_serial,
         &printer_access_code,
         &printer_name,
         &printer_ip,
+        auto_restore_k,
         write_packets.clone(),
         app_config.clone(),
         restart_printer.clone(),
         log_filter,
-    )));
+    );
 
     spawner
         .spawn(restartable_mqtt_task(
@@ -1579,8 +1657,8 @@ pub async fn bambu_mqtt_task(
 pub struct TagInformation {
     pub filament: Option<FilamentInfo>,
     pub calibrations: HashMap<String, Calibration>,
-    pub calibrations_printer_name: String, // has value only if calibrations has any value 
-    pub calibrations_printer_uuid: String, // has value only if calibrations has any value 
+    pub calibrations_printer_name: String, // has value only if calibrations has any value
+    pub calibrations_printer_uuid: String, // has value only if calibrations has any value
     pub weight_core: Option<i32>,
     pub weight_new: Option<i32>,
     pub brand: Option<String>,
@@ -1602,7 +1680,8 @@ impl TagInformation {
                     (&"".to_string(), "")
                 }
             }
-            None => { // use tag_name printer_name if available
+            None => {
+                // use tag_name printer_name if available
                 (&self.calibrations_printer_name, self.calibrations_printer_uuid.as_str())
             }
         };
@@ -1615,9 +1694,21 @@ impl TagInformation {
         };
         let k_postfix = if !k_prefix.is_empty() { ")" } else { "" };
 
-        let brand_part = self.brand.as_ref().map(|s| format!("&B={}", my_encode_to_url_part(s))).unwrap_or_default();
-        let filament_subtype_part = self.filament_subtype.as_ref().map(|s| format!("&MS={}", my_encode_to_url_part(s))).unwrap_or_default();
-        let color_name_part = self.color_name.as_ref().map(|s| format!("&CN={}", my_encode_to_url_part(s))).unwrap_or_default();
+        let brand_part = self
+            .brand
+            .as_ref()
+            .map(|s| format!("&B={}", my_encode_to_url_part(s)))
+            .unwrap_or_default();
+        let filament_subtype_part = self
+            .filament_subtype
+            .as_ref()
+            .map(|s| format!("&MS={}", my_encode_to_url_part(s)))
+            .unwrap_or_default();
+        let color_name_part = self
+            .color_name
+            .as_ref()
+            .map(|s| format!("&CN={}", my_encode_to_url_part(s)))
+            .unwrap_or_default();
         let note_part = self.note.as_ref().map(|s| format!("&N={}", my_encode_to_url_part(s))).unwrap_or_default();
 
         for calibration_kv in self.calibrations.iter() {
@@ -1741,7 +1832,8 @@ impl TagInformation {
                     "B" => {
                         brand = Some(my_decode_from_url_part(param_value));
                     }
-                    "MS" => { // Material Subtype
+                    "MS" => {
+                        // Material Subtype
                         filament_subtype = Some(my_decode_from_url_part(param_value));
                     }
                     "CN" => {
@@ -1775,7 +1867,8 @@ impl TagInformation {
                 }
                 if let Some(param_match) = captures.get(1) {
                     let printer_name_and_uuid = param_match.as_str();
-                    (calibrations_printer_name, calibrations_printer_uuid) = printer_name_and_uuid.split_once('~').unwrap_or((printer_name_and_uuid, ""));
+                    (calibrations_printer_name, calibrations_printer_uuid) =
+                        printer_name_and_uuid.split_once('~').unwrap_or((printer_name_and_uuid, ""));
                 }
                 // to get the printer name (formatted as name~serial , use match 1 and don't forget to my_decode_from_url_part the data
                 // currently not used, could compare to current printer name and ignore
@@ -1883,6 +1976,91 @@ impl TryFrom<SSDPInfo> for BambuSSDPInfo {
     }
 }
 
+#[embassy_executor::task(pool_size = 2)] // up to two printers in parallel
+pub async fn fix_k_on_restart(
+    bambu_printer: Rc<RefCell<BambuPrinter>>,
+    prev_ams_trays: [Tray; 16],
+    prev_virt_tray: Tray,
+    prev_nozzle: Option<String>,
+) {
+    let printer_number = bambu_printer.borrow().printer_number;
+    term_info!("[{}] Checking pressure advance (k) after printer restart", printer_number);
+    if prev_nozzle != bambu_printer.borrow().nozzle_diameter {
+        term_info!("[{}] Nozzle diameter changed, K fix not relevant", printer_number);
+        return;
+    }
+    let mut set_tray_cali_idx: [Option<i32>; 16] = [None; 16];
+    let mut set_virt_cali_idx: Option<i32> = None;
+
+    Timer::after_secs(1).await;
+
+    {
+        // block start, so borrow will be dropped
+        let bambu_borrow = bambu_printer.borrow();
+        for (id, prev_tray) in prev_ams_trays
+            .iter()
+            .enumerate()
+            .chain(core::iter::once(&prev_virt_tray).enumerate().map(|(_, v)| (254, v)))
+        {
+            let curr_tray = if id == 254 {
+                &bambu_borrow.virt_tray
+            } else {
+                &bambu_borrow.ams_trays[id]
+            };
+            let set_tray = if id == 254 { &mut set_virt_cali_idx } else { &mut set_tray_cali_idx[id] };
+            if let Filament::Known(curr_filament_info) = &curr_tray.filament {
+                if let Filament::Known(prev_filament_info) = &prev_tray.filament {
+                    if curr_filament_info == prev_filament_info {
+                        let prev_cali_idx_normalized = prev_tray.cali_idx.or(Some(-1));
+                        let curr_cali_idx_normalized = curr_tray.cali_idx.or(Some(-1));
+
+                        if curr_cali_idx_normalized != prev_cali_idx_normalized {
+                            // set_tray_cali_idx[id] = prev_cali_idx_normalized; // -1 means to set -1, value means set to that cali_idx
+                            *set_tray = prev_cali_idx_normalized; // -1 means to set -1, value means set to that cali_idx
+                        } else {
+                            // set_tray_cali_idx[id] = None; // None means not do anything
+                            *set_tray = None; // None means not do anything
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let write_packets = bambu_printer.borrow().write_packets.clone();
+    let nozzle_diameter = &bambu_printer.borrow().nozzle_diameter.clone().unwrap_or_default();
+    let printer_serial = bambu_printer.borrow().printer_serial.clone();
+    let log_filter = bambu_printer.borrow().log_filter;
+
+    for (id, prev_tray) in prev_ams_trays
+        .iter()
+        .enumerate()
+        .chain(core::iter::once(&prev_virt_tray).map(|v| (254, v)))
+    {
+        {
+            let set_tray = if id == 254 { &set_virt_cali_idx } else { &set_tray_cali_idx[id] };
+            if set_tray.is_some() {
+                if let Filament::Known(filament_info) = &prev_tray.filament {
+                    let (ams_id, tray_id) = BambuPrinter::get_ams_and_tray_id(id);
+                    if ams_id != 254 {
+                        info!("[{}] Updating pressure advance of AMS {} slot {}", printer_number, ams_id, tray_id);
+                    } else {
+                        info!("[{}] Updating pressure advance of external slot", printer_number);
+                    }
+                    let cmd = crate::bambu_api::ExtrusionCaliSelCommand::new(
+                        nozzle_diameter,
+                        id as i32,                    // here we need the original tray_id
+                        &filament_info.tray_info_idx, // tray_info_idx is filament_id in this command
+                        *set_tray,
+                    );
+                    let payload = serde_json::to_string_pretty(&cmd).unwrap();
+                    BambuPrinter::publish_payload_async(&printer_serial, printer_number, log_filter, write_packets.clone(), payload).await;
+                    Timer::after_millis(250).await;
+                }
+            }
+        }
+    }
+}
 
 // PRINTER_USN = "YOUR_PRINTER_SN" # This is the serial number of the printer. https://wiki.bambulab.com/en/general/find-sn
 // PRINTER_DEV_MODEL = "3DPrinter-X1-Carbon" # "3DPrinter-X1-Carbon", "3DPrinter-X1", "C11" (for P1P), "C12" (for P1S), "C13" (for X1E), "N1" (A1 mini), "N2S" (A1)

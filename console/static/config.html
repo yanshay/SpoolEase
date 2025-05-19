@@ -837,6 +837,14 @@ Pb79127b,3DHOJOR PLA Basic"
                     <div class="error-message ip-error">IP requires name to be provided</div>
                 </div>
 
+                <div class = "form-row" >
+                  <div style="display: flex; align-items: center; margin-bottom: 0px;">
+                    <input class="auto-restore-k" type="checkbox" id="auto-restore-k" checked>
+                    <label for="auto-restore-k" style="margin-top: 6px; padding-left: 2px;">Auto Restore K Values On Printer Restart</label>
+                  </div>
+                  <span>Mainly affects X1, which forgets K on restart.</span>
+                </div>
+
                 <div style="display: flex; align-items: center;">
                   <button class="default-btn" type="button" onclick="setAsDefault(${id})">Set as Default</button>
                   <input class="printer-log-filter" type="checkbox" id="printer-log-filter">
@@ -897,6 +905,7 @@ Pb79127b,3DHOJOR PLA Basic"
           }
           newPrinterForm.querySelector(".printer-log-filter").checked =
             logsEnabled;
+          newPrinterForm.querySelector(".auto-restore-k").checked = printer.auto_restore_k;
         });
 
         // Setup IP fields for all printers
@@ -1107,6 +1116,7 @@ Pb79127b,3DHOJOR PLA Basic"
           const logFilterEnabled = form.querySelector(
             ".printer-log-filter",
           ).checked;
+          const autoRestoreK = form.querySelector(".auto-restore-k").checked;
 
           const ipParts = Array.from(form.querySelectorAll(".ip-part"));
           const ipValid = ipParts.every((part) => part.value.trim() !== "");
@@ -1134,6 +1144,8 @@ Pb79127b,3DHOJOR PLA Basic"
           } else {
             printer.log_filter = "WARN";
           }
+
+          printer.auto_restore_k = autoRestoreK;
 
           printers.push(printer);
 

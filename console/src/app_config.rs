@@ -6,6 +6,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+use derivative::Derivative;
 use embassy_net::Ipv4Address;
 use serde::{Deserialize, Deserializer, Serializer};
 
@@ -52,9 +53,13 @@ where
     }
 }
 
+fn default_true() -> bool { true }
+
 // These struct is first and foremost for persistent configuration
 // Changing it should be well dealt with including upgrade
-#[derive(serde::Deserialize, serde::Serialize, Default, PartialEq, Debug, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[derive(Derivative)]
+#[derivative(Default)]
 pub struct PrinterConfig {
     #[serde(serialize_with = "serialize_option_ipv4", deserialize_with = "deserialize_option_ipv4")]
     pub ip: Option<Ipv4Address>,
@@ -62,6 +67,9 @@ pub struct PrinterConfig {
     pub serial: Option<String>,
     pub access_code: Option<String>,
     pub log_filter: Option<log::LevelFilter>,
+    #[derivative(Default(value = "true"))]
+    #[serde(default = "default_true")]
+    pub auto_restore_k: bool,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
@@ -82,7 +90,7 @@ pub struct ScaleConfig {
 }
 
 pub struct AppConfig {
-    framework: Rc<RefCell<Framework>>,
+    pub framework: Rc<RefCell<Framework>>,
     // configured are what configured
     pub configured_printers: PrintersConfig,
     pub configured_default_printer: DefaultPrinterConfig,
@@ -152,9 +160,6 @@ impl AppConfig {
                         self.configured_default_printer = default_printer_config;
                     }
                 }
-                // if let Err(err) = self.set_current_printer_to_default() {
-                //     term_info!("Bad printers configuration, can't select printer: {}", err);
-                // }
             }
         } else {
             // backwards compatibility with a single printer
@@ -163,9 +168,6 @@ impl AppConfig {
                 if let Ok(printer_config) = serde_json::from_str::<PrinterConfig>(&printer_store) {
                     self.configured_default_printer.serial = printer_config.serial.clone();
                     self.configured_printers.printers.push(printer_config);
-                    // if let Err(err) = self.set_current_printer_to_default() {
-                    //     term_info!("Bad printers configuration, can't select printer: {}", err);
-                    // }
                 }
             }
         } 

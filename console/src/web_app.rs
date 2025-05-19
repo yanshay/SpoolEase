@@ -238,6 +238,7 @@ struct PrinterConfigDTO {
     serial: Option<String>,
     access_code: Option<String>,
     log_filter: Option<log::LevelFilter>,
+    auto_restore_k: bool,
 }
 encrypted_input!(PrinterConfigDTO);
 impl From<PrinterConfigDTO> for PrinterConfig {
@@ -248,6 +249,7 @@ impl From<PrinterConfigDTO> for PrinterConfig {
             serial: v.serial,
             access_code: v.access_code,
             log_filter: v.log_filter,
+            auto_restore_k: v.auto_restore_k,
         }
     }
 }
@@ -259,6 +261,7 @@ impl From<&PrinterConfig> for PrinterConfigDTO {
             serial: v.serial.clone(),
             access_code: v.access_code.clone(),
             log_filter: v.log_filter,
+            auto_restore_k: v.auto_restore_k,
         }
     }
 }

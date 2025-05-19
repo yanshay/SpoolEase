@@ -37,3 +37,7 @@
 
 ## 0.3.2
 - Clarify clean install by explaining the security key in web-config and automatically showing the web-config screen on the console when configurations are incomplete
+
+## 0.3.3
+- Automatically identify brand and filament color from slots information when available
+- Restore pressure advance (K) values after printer restart (primarily for X1C)
