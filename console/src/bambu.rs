@@ -10,7 +10,6 @@ use alloc::{
     format,
     rc::Rc,
     string::{String, ToString},
-    sync::Arc,
     vec::Vec,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -62,8 +61,8 @@ pub struct BambuPrinter {
     pub ams_trays: [Tray; 16],
     pub virt_tray: Tray,
     pub calibrations: HashMap<String, HashMap<i32, Calibration>>,
-    write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
-    restart_printer: Arc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
+    write_packets: Rc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
+    restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
     observers: Vec<alloc::rc::Weak<RefCell<dyn BambuPrinterObserver>>>,
     app_config: Rc<RefCell<AppConfig>>,
     tray_exist_bits: Option<u32>,
@@ -88,9 +87,9 @@ impl BambuPrinter {
         printer_name: &Option<String>,
         printer_ip: &Option<Ipv4Address>,
         auto_restore_k: bool,
-        write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
+        write_packets: Rc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
         app_config: Rc<RefCell<AppConfig>>,
-        restart_printer: Arc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
+        restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
         log_filter: log::LevelFilter,
     ) -> Rc<RefCell<BambuPrinter>> {
         let myself = Self::internal_new(
@@ -119,9 +118,9 @@ impl BambuPrinter {
         printer_name: &Option<String>,
         printer_ip: &Option<Ipv4Address>,
         auto_restore_k: bool,
-        write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
+        write_packets: Rc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
         app_config: Rc<RefCell<AppConfig>>,
-        restart_printer: Arc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
+        restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
         log_filter: log::LevelFilter,
     ) -> Self {
         let unknown = Tray {
@@ -740,7 +739,7 @@ impl BambuPrinter {
         printer_serial: &String,
         printer_number: usize,
         log_filter: log::LevelFilter,
-        write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
+        write_packets: Rc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
         payload: String,
     ) {
         if log_filter >= log::Level::Debug {
@@ -771,7 +770,7 @@ impl BambuPrinter {
         printer_serial: &String,
         printer_number: usize,
         log_filter: log::LevelFilter,
-        write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
+        write_packets: Rc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
     ) {
         let cmd = crate::bambu_api::PushAllCommand::new();
         let payload = serde_json::to_string_pretty(&cmd).unwrap();
@@ -788,7 +787,7 @@ impl BambuPrinter {
         printer_serial: &String,
         printer_number: usize,
         log_filter: log::LevelFilter,
-        write_packets: Arc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
+        write_packets: Rc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
         nozzle_diameter: &str,
     ) {
         let cmd = crate::bambu_api::ExtrusionCaliGetCommand::new(nozzle_diameter);
@@ -1326,13 +1325,13 @@ pub fn init(
     let auto_restore_k = printer_config.auto_restore_k;
 
     // == Setup MQTT ==================================================================
-    let write_packets = Arc::new(embassy_sync::channel::Channel::<
+    let write_packets = Rc::new(embassy_sync::channel::Channel::<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         crate::my_mqtt::BufferedMqttPacket,
         3,
     >::new());
 
-    let read_packets = Arc::new(embassy_sync::pubsub::PubSubChannel::<
+    let read_packets = Rc::new(embassy_sync::pubsub::PubSubChannel::<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         crate::my_mqtt::BufferedMqttPacket,
         5,
@@ -1340,7 +1339,7 @@ pub fn init(
         1,
     >::new());
 
-    let restart_printer = Arc::new(embassy_sync::signal::Signal::<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>::new());
+    let restart_printer = Rc::new(embassy_sync::signal::Signal::<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>::new());
 
     let bambu_printer = BambuPrinter::new(
         printer_number,
@@ -1408,7 +1407,7 @@ pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
 
 #[embassy_executor::task(pool_size = MAX_NUM_PRINTERS)]
 pub async fn incoming_messages_task(
-    read_packets: Arc<PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>>,
+    read_packets: Rc<PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>>,
     bambu_printer: Rc<RefCell<BambuPrinter>>,
 ) {
     let mut subscriber = read_packets.subscriber().unwrap();
@@ -1499,10 +1498,10 @@ pub async fn restartable_mqtt_task(
     framework: Rc<RefCell<Framework>>,
     rx_socket_buffer_size: usize,
     tx_socket_buffer_size: usize,
-    read_packets: Arc<PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>>,
-    write_packets: Arc<Channel<NoopRawMutex, BufferedMqttPacket, 3>>,
+    read_packets: Rc<PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>>,
+    write_packets: Rc<Channel<NoopRawMutex, BufferedMqttPacket, 3>>,
     bambu_printer: Rc<RefCell<BambuPrinter>>,
-    restart_printer: Arc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
+    restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
     ssdp_pub_sub: &'static SSDPPubSubChannel,
 ) {
     loop {
@@ -1537,8 +1536,8 @@ pub async fn bambu_mqtt_task(
     bambu_printer: Rc<RefCell<BambuPrinter>>,
     rx_socket_buffer_size: usize,
     tx_socket_buffer_size: usize,
-    read_packets: Arc<PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>>,
-    write_packets: Arc<Channel<NoopRawMutex, BufferedMqttPacket, 3>>,
+    read_packets: Rc<PubSubChannel<NoopRawMutex, BufferedMqttPacket, 5, 2, 1>>,
+    write_packets: Rc<Channel<NoopRawMutex, BufferedMqttPacket, 3>>,
     ssdp_pub_sub: &'static SSDPPubSubChannel,
 ) {
     let stack = framework.borrow().stack;

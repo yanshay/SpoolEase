@@ -2,7 +2,6 @@ use alloc::boxed::Box;
 use alloc::ffi::CString;
 use alloc::rc::Rc;
 use alloc::string::String;
-use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use embassy_time::with_timeout;
@@ -345,8 +344,8 @@ pub async fn generic_mqtt_task<
     subscribe_topics: &[SubscribeTopic<'_>],
     rx_socket_buffer_size: usize,
     tx_socket_buffer_size: usize,
-    write_packets: Arc<Channel<M, BufferedMqttPacket, N>>,
-    read_packets: Arc<PubSubChannel<M, BufferedMqttPacket, CAP, SUBS, PUBS>>,
+    write_packets: Rc<Channel<M, BufferedMqttPacket, N>>,
+    read_packets: Rc<PubSubChannel<M, BufferedMqttPacket, CAP, SUBS, PUBS>>,
     write_timeout: Duration,
     bambu_printer: Rc<RefCell<BambuPrinter>>,
 ) -> ! {
