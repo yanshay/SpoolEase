@@ -209,7 +209,7 @@ where
     // Only need to check boundary pages of standard ntag sizes
 
     //           NTAG213 ,  NTAG215  ,  NTAG216
-    let tests = [(44, 45), (134, 135), (230, 231)]; // (test page, if succeds this is at least the the number of pages)
+    let tests = [(44, 0x12), (134, 0x3e), (230, 0x6d)]; // (test page, if succeds this is at least the the number of pages)
 
     let mut num_of_pages_on_tag = 0;
 
