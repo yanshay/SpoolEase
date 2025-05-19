@@ -27,7 +27,7 @@ pub fn init_app(
 ) -> Rc<RefCell<ViewModel>> {
 
     // == Setup ViewModel =============================================================
-    let view_model = crate::view_model::ViewModel::new(
+    crate::view_model::ViewModel::new(
         // Framework
         stack,
         ui,
@@ -36,7 +36,5 @@ pub fn init_app(
         app_config.clone(),
         spi_device,
         irq,
-    );
-
-    view_model
+    )
 }

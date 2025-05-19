@@ -68,7 +68,7 @@ use settings::{
     WEB_SERVER_CAPTIVE, WEB_SERVER_HTTPS, WEB_SERVER_PORT, WEB_SERVER_TLS_CERTIFICATE, WEB_SERVER_TLS_PRIVATE_KEY,
 };
 use web_app::NestedAppBuilder;
-const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 1 + 1*MAX_NUM_PRINTERS + FRAMEWORK_STA_STACK_RESOURCES ; // web-config listeners + USDP + mqtt*num-of-printers + from framework: potentially https captive +  ota + captive dns + ? initial firmware check if doen't complete 
+const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 1 + MAX_NUM_PRINTERS + FRAMEWORK_STA_STACK_RESOURCES ; // web-config listeners + USDP + mqtt*num-of-printers + from framework: potentially https captive +  ota + captive dns + ? initial firmware check if doen't complete 
 const AP_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + FRAMEWORK_AP_STACK_RESOURCES;
 
 #[macro_export]
@@ -171,7 +171,7 @@ async fn main(spawner: Spawner) {
     );
     let wifi = peripherals.WIFI;
 
-    let (wifi_ap_interface, wifi_sta_interface, controller) = esp_wifi::wifi::new_ap_sta(&init, wifi).unwrap();
+    let (wifi_ap_interface, wifi_sta_interface, controller) = esp_wifi::wifi::new_ap_sta(init, wifi).unwrap();
 
     let sta_config = Config::dhcpv4(Default::default());
 

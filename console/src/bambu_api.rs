@@ -263,6 +263,7 @@ pub struct AmsFilamentSetting {
     pub sequence_id: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 impl AmsFilamentSettingCommand {
     pub fn new(
         ams_id: u32,
@@ -280,7 +281,7 @@ impl AmsFilamentSettingCommand {
                 ams_id,
                 tray_id,
                 tray_info_idx: String::from(tray_info_idx),
-                setting_id: setting_id.map(|v| String::from(v)),
+                setting_id: setting_id.map(String::from),
                 tray_color: String::from(tray_color),
                 nozzle_temp_min,
                 nozzle_temp_max,

@@ -274,7 +274,7 @@ impl ViewModel {
                 self.framework.clone(),
                 printer_number,
                 printer_index,
-                &printer_config,
+                printer_config,
                 self.app_config.clone(),
                 ssdp_pub_sub,
             ) {
@@ -440,22 +440,16 @@ impl ViewModel {
 
         csv.lines().for_each(|line| {
             let mut split = line.splitn(4, ',');
-            loop {
-                if let (Some(desc), Some(weight)) = (split.next(), split.next()) {
-                    if !desc.is_empty() && !weight.is_empty() && (filter.is_empty() || desc.to_uppercase().contains(filter)) {
-                        id += 1;
-                        let mut selector_option = crate::app::SelectorOption::default();
-                        selector_option.id = id as i32;
-                        selector_option.text = desc.trim().into();
-                        cores_list.push(selector_option);
-                        if let Ok(weight) = weight.trim().parse() {
-                            self.spools_cores_weights.insert(id, weight);
-                        } else {
-                            error!("Error in Spool Line: '{line}'");
-                        }
+            while let (Some(desc), Some(weight)) = (split.next(), split.next()) {
+                if !desc.is_empty() && !weight.is_empty() && (filter.is_empty() || desc.to_uppercase().contains(filter)) {
+                    id += 1;
+                    let selector_option = crate::app::SelectorOption { id, text: desc.trim().into() };
+                    cores_list.push(selector_option);
+                    if let Ok(weight) = weight.trim().parse() {
+                        self.spools_cores_weights.insert(id, weight);
+                    } else {
+                        error!("Error in Spool Line: '{line}'");
                     }
-                } else {
-                    break;
                 }
             }
         });
@@ -481,7 +475,7 @@ impl ViewModel {
         let mut borrowed_view_model = moved_view_model.borrow_mut();
         let selected_printer_string = selected_printer.to_string();
         for (i, printer) in borrowed_view_model.bambu_printer_model.printers.iter().enumerate() {
-            if &selected_printer_string == &printer.borrow().printer_selector_name {
+            if selected_printer_string == printer.borrow().printer_selector_name {
                 moved_ui
                     .unwrap()
                     .global::<crate::app::AppState>()
@@ -633,8 +627,8 @@ impl ViewModel {
                 }
             };
             // let spool_scale_weight = moved_spool_scale.borrow().weight;
-            tag_info_to_encode.weight_new = (encode_request.weight_new != 0).then(|| encode_request.weight_new);
-            tag_info_to_encode.weight_core = (encode_request.weight_core != 0).then(|| encode_request.weight_core);
+            tag_info_to_encode.weight_new = (encode_request.weight_new != 0).then_some(encode_request.weight_new);
+            tag_info_to_encode.weight_core = (encode_request.weight_core != 0).then_some(encode_request.weight_core);
             tag_info_to_encode.brand = (!encode_request.brand.trim().is_empty()).then(|| encode_request.brand.trim().to_string());
             tag_info_to_encode.filament_subtype =
                 (!encode_request.filament_subtype.trim().is_empty()).then(|| encode_request.filament_subtype.trim().to_string());
@@ -651,7 +645,7 @@ impl ViewModel {
                 )
             };
             if let Some(descriptor) = descriptor_res {
-                spool_tag.write_tag(&descriptor, tray_id);
+                spool_tag.write_tag(descriptor, tray_id);
             }
             info!("Sent the write request of tray {}", tray_id);
             // TODO: Get proper timeout fron config and pass it in the write_tag to spool_tag
@@ -705,7 +699,7 @@ impl ViewModel {
                     254 => {
                         // External Tray
                         let tray = &bambu_borrow.virt_tray;
-                        if let Some(calibration) = bambu_borrow.get_tray_calibration(&tray) {
+                        if let Some(calibration) = bambu_borrow.get_tray_calibration(tray) {
                             encode_request_display.pa_line2 = format!("{}, {}", calibration.k_value, calibration.name,).into();
                         }
                         if let bambu::Filament::Known(filament_info) = &tray.filament {
@@ -718,7 +712,7 @@ impl ViewModel {
                         // Standard trays
                         // let bambu = moved_bambu.borrow();
                         let tray = &bambu_borrow.ams_trays[tray_id as usize];
-                        if let Some(calibration) = bambu_borrow.get_tray_calibration(&tray) {
+                        if let Some(calibration) = bambu_borrow.get_tray_calibration(tray) {
                             encode_request_display.pa_line2 = format!("{}, {}", calibration.k_value, calibration.name,).into();
                         }
                         if let bambu::Filament::Known(filament_info) = &tray.filament {
@@ -831,10 +825,7 @@ impl ViewModel {
     }
 
     fn tag_info_to_ui_spool_info(&self, tag_info: &TagInformation) -> Option<crate::app::UiSpoolInfo> {
-        if tag_info.filament.is_none() {
-            return None;
-        }
-
+        tag_info.filament.as_ref()?; // returns None if tag_info.filament is None
         let filament_info = tag_info.filament.as_ref().unwrap();
 
         let color = u32::from_str_radix(&filament_info.tray_color[..6], 16).unwrap() + 0xFF000000; // the plus 0xFF at the end is fo add alpha
@@ -910,7 +901,7 @@ impl ViewModel {
             }
             ui_tray.tagged = curr_tray.tag_info.is_some();
             // let k_value_unformatted = curr_tray.k.as_ref().unwrap_or(&"(0.020)".to_string()).clone();
-            let k_value_unformatted = bambu_printer.get_tray_resolved_k_value(&curr_tray);
+            let k_value_unformatted = bambu_printer.get_tray_resolved_k_value(curr_tray);
             // let k_value_for_ui = k_value_for_ui(&k_value_unformatted);
             ui_tray.k = SharedString::from(k_value_unformatted);
             trays_state.set_row_data(tray_row, ui_tray);
@@ -950,7 +941,7 @@ impl BambuPrinterObserver for ViewModel {
             for tray_id in 0..bambu_printer.ams_trays.len() {
                 let prev_tray_reading_bit = ((prev_trays_reading_bits >> tray_id) & 0x01) != 0;
                 let new_tray_reading_bit = ((new_trays_reading_bits >> tray_id) & 0x01) != 0;
-                if prev_tray_reading_bit == false && new_tray_reading_bit == true {
+                if !prev_tray_reading_bit && new_tray_reading_bit {
                     trays_reading_changed.push(tray_id);
                 }
             }

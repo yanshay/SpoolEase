@@ -238,23 +238,13 @@ impl BambuPrinter {
     }
 
     fn get_calibration(&self, nozzle_diameter: &str, cali_idx: i32) -> Option<&Calibration> {
-        let nozzle_calibrations = match self.calibrations.get(nozzle_diameter) {
-            Some(calibrations) => calibrations,
-            None => return None,
-        };
-        let calibration = match nozzle_calibrations.get(&cali_idx) {
-            Some(calibration) => calibration,
-            None => return None,
-        };
+        let nozzle_calibrations = self.calibrations.get(nozzle_diameter)?;
+        let calibration = nozzle_calibrations.get(&cali_idx)?;
         Some(calibration)
     }
 
     fn get_cali_k_value(&self, nozzle_diameter: &str, cali_idx: i32) -> Option<String> {
-        if let Some(calibration) = self.get_calibration(nozzle_diameter, cali_idx) {
-            Some(calibration.k_value.clone())
-        } else {
-            None
-        }
+        self.get_calibration(nozzle_diameter, cali_idx).map(|calibration| calibration.k_value.clone())
         // let nozzle_calibrations = match self.calibrations.get(nozzle_diameter) {
         //     Some(calibrations) => calibrations,
         //     None => return None,
@@ -350,18 +340,17 @@ impl BambuPrinter {
                 let tray_exist = ((tray_exist_bits >> tray_id) & 0x01) != 0;
 
                 if tray_exist {
-                    let tray_reading = self.tray_reading_bits.map_or(false, |x| ((x >> tray_id) & 0x01) != 0);
-                    let tray_read_done = self.tray_read_done_bits.map_or(false, |x| ((x >> tray_id) & 0x01) != 0);
+                    let tray_reading = self.tray_reading_bits.is_some_and(|x| ((x >> tray_id) & 0x01) != 0);
+                    let tray_read_done = self.tray_read_done_bits.is_some_and(|x| ((x >> tray_id) & 0x01) != 0);
 
                     let mut new_tray = if let Some(tray_update) = tray_update {
                         if let Ok(tray_update) = self.tray_from_update(tray_update) {
                             // TODO: in case I a tray w/o any information (but with exist bit) then I just copy old, is it ok?
-                            let tray_based_on_update = tray_update.unwrap_or_else(|| {
+                            tray_update.unwrap_or_else(|| {
                                 let mut new_tray = old_tray.clone();
                                 new_tray.state = TrayState::Empty;
                                 new_tray
-                            });
-                            tray_based_on_update
+                            })
                         } else {
                             // Update is bad so ignoring it
                             return None;
@@ -381,7 +370,7 @@ impl BambuPrinter {
                     if tray_read_done {
                         new_tray.state = TrayState::Ready;
                     }
-                    return Some(new_tray);
+                    Some(new_tray)
                 } else {
                     // In case the tray is empty (so no ready bits), we still want to keep the filamen-info of the tray, but set it as empty
                     // special case handling (different than Bambustudio).
@@ -405,7 +394,7 @@ impl BambuPrinter {
                     // It might be required handling in cases when color change is driven without the MQTT command, maybe on X1C through display. Don't know yet.
                     // Can support it, the easy way, with push_all request in such case which will reupdate everything.
                     self.request_full_update_sync();
-                    return None;
+                    None
 
                     // Or by handling every bit there in a tedios way (code below is only partial)
                     // let mut new_tray = old_tray.clone();
@@ -634,10 +623,8 @@ impl BambuPrinter {
             if self.log_filter >= log::Level::Debug {
                 debug!("[{}] -> Message {}", self.printer_number, sequence_id);
             }
-        } else {
-            if self.log_filter >= log::Level::Warn {
-                warn!("[{}] -> Message with No sequence_id ?", self.printer_number);
-            }
+        } else if self.log_filter >= log::Level::Warn {
+            warn!("[{}] -> Message with No sequence_id ?", self.printer_number);
         }
         // important: Can't issue event from here because this method is called with a mut reference (even if behind RefCell)
         // Therefore, to issue an event need to call update_ams_trays_done afterwards through a non mut reference (so not borrow_mut if refcell)
@@ -686,19 +673,13 @@ impl BambuPrinter {
                 change_made = nozzle_diameter_change_made || ams_change_made || vt_tray_change_made;
             } else if command == "ams_filament_setting" {
                 change_made = self.process_print_message__ams_filament_setting(print)
-            } else if command == "extrusion_cali_set" {
+            } else if command == "extrusion_cali_set" || command == "extrusion_cali_del" {
                 // trigger request command for cali_get (request, not response)
                 if let Some(nozzle_diameter) = &print.nozzle_diameter {
                     self.fetch_filament_calibrations(nozzle_diameter);
                 }
                 change_made = true;
-            } else if command == "extrusion_cali_del" {
-                // trigger request command for cali_get (request, not response)
-                if let Some(nozzle_diameter) = &print.nozzle_diameter {
-                    self.fetch_filament_calibrations(nozzle_diameter);
-                }
-                change_made = true;
-            } else if command == "extrusion_cali_sel" {
+            }  else if command == "extrusion_cali_sel" {
                 // update the tray with the new k factor
                 change_made = self.process_print_message__extrusion_cali_sel(print)
             } else if command == "extrusion_cali_get" {
@@ -833,11 +814,7 @@ impl BambuPrinter {
 
         let matching_calibration = self.get_tag_matching_calibration_for_current_nozzle(tag_info);
 
-        let setting_id = if let Some(calibration) = &matching_calibration {
-            Some(calibration.setting_id.as_str())
-        } else {
-            None
-        };
+        let setting_id = matching_calibration.as_ref().map(|calibration| calibration.setting_id.as_str());
 
         if let Some(filament) = &tag_info.filament {
             let cmd = crate::bambu_api::AmsFilamentSettingCommand::new(
@@ -938,11 +915,7 @@ impl BambuPrinter {
             return None;
         };
 
-        let printer_calibrations = if let Some(printer_calibrations) = self.calibrations.get(printer_nozzle) {
-            printer_calibrations
-        } else {
-            return None;
-        };
+        let printer_calibrations = self.calibrations.get(printer_nozzle)?;
 
         // If there is filament calibration for that nozzle size (assumption there can be only one, which makes sense)
         if let Some(filament_calibration) = tag_info.calibrations.get(printer_nozzle) {
@@ -1014,12 +987,10 @@ impl BambuPrinter {
     pub fn get_tag_info_to_encode(&self, tray_id: usize) -> Result<TagInformation, String> {
         let tray = if tray_id == 254 {
             &self.virt_tray
+        } else if (0..self.ams_trays.len()).contains(&tray_id) {
+            &self.ams_trays[tray_id]
         } else {
-            if (0..self.ams_trays.len()).contains(&tray_id) {
-                &self.ams_trays[tray_id]
-            } else {
-                return Err("Unexpected Software Error (1)".to_string());
-            }
+            return Err("Unexpected Software Error (1)".to_string());
         };
         // This is NOT good without full multi-printer tag support, so when tag is only a single printer
         //  because we could mix info from different printers
@@ -1346,7 +1317,7 @@ pub fn init(
     };
 
     let printer_name = printer_config.name.clone();
-    let printer_ip = printer_config.ip.clone();
+    let printer_ip = printer_config.ip;
     let log_filter = if let Some(log_filter) = &printer_config.log_filter {
         *log_filter
     } else {
@@ -1485,15 +1456,13 @@ pub async fn incoming_messages_task(
                                         (*bambu_printer.borrow_mut()).update_ams_trays_done(previous_reading_bits, updated_reading_bits);
                                     }
                                 }
-                            } else {
-                                if log_level >= log::Level::Debug {
-                                    debug!(
-                                        "[{}] Unprocessed message {:?} : {:?}",
-                                        printer_log_id,
-                                        parse_res,
-                                        core::str::from_utf8(payload)
-                                    );
-                                }
+                            } else if log_level >= log::Level::Debug {
+                                debug!(
+                                    "[{}] Unprocessed message {:?} : {:?}",
+                                    printer_log_id,
+                                    parse_res,
+                                    core::str::from_utf8(payload)
+                                );
                             }
                         }
                         mqttrust::Packet::Suback(mqttrust::encoding::v4::Suback { pid: _, return_codes: _ }) => {
@@ -1524,8 +1493,8 @@ pub async fn incoming_messages_task(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 #[embassy_executor::task(pool_size = MAX_NUM_PRINTERS)]
-// #[embassy_executor::task]
 pub async fn restartable_mqtt_task(
     framework: Rc<RefCell<Framework>>,
     rx_socket_buffer_size: usize,
@@ -1675,7 +1644,7 @@ impl TagInformation {
         let (encoded_printer_name, encoded_printer_uuid) = match printer_name {
             Some(printer_name) => {
                 if !printer_name.is_empty() {
-                    (&my_encode_to_url_part(&printer_name), printer_uuid.unwrap_or_default())
+                    (&my_encode_to_url_part(printer_name), printer_uuid.unwrap_or_default())
                 } else {
                     (&"".to_string(), "")
                 }
@@ -1728,8 +1697,7 @@ impl TagInformation {
         } else {
             format!("{k_prefix}{inner_calibrations_part}{k_postfix}")
         };
-        if let Some(filament) = &self.filament {
-            Some(format!(
+        self.filament.as_ref().map(|filament| format!(
                 "{FILAMENT_URL_PREFIX}V1?ID={TAG_PLACEHOLDER}{}{}&M={}&C={}&NN={}&NX={}{}&FI={}{brand_part}{filament_subtype_part}{color_name_part}{note_part}",
                 self.weight_core.map(|v| format!("&WC={}", v)).unwrap_or_default(),
                 self.weight_new.map(|v| format!("&WN={}", v)).unwrap_or_default(),
@@ -1740,9 +1708,6 @@ impl TagInformation {
                 calibrations_part,
                 filament.tray_info_idx,
             ))
-        } else {
-            None
-        }
     }
 
     // TODO: remove all the printer parts, should only parse, the rest of the matching thould go elsewhere
@@ -1857,9 +1822,9 @@ impl TagInformation {
         let mut calibrations_printer_name = "";
         let mut calibrations_printer_uuid = "";
         // Second pass on parts that need to be processed after the first
+        let re = Regex::new(r"^(.*)\((K.*)\)$").unwrap();
         for param in descriptor.split(&['/', '&', '?']) {
             let mut param = param;
-            let re = Regex::new(r"^(.*)\((K.*)\)$").unwrap();
             if let Some(captures) = re.captures(param) {
                 // to get k data use match 2
                 if let Some(param_match) = captures.get(2) {
@@ -1951,7 +1916,7 @@ impl TryFrom<SSDPInfo> for BambuSSDPInfo {
         if v.nt.contains("urn:bambulab-com:device:3dprinter") {
             Ok(Self {
                 serial: Some(v.usn),
-                name: v.custom.get("DevName.bambu.com:").map(|s| s.clone()),
+                name: v.custom.get("DevName.bambu.com:").cloned(),
                 ip: embassy_net::Ipv4Address::from_str(&v.location).ok(),
                 _model: v.custom.get("DevModel.bambu.com").map(|s| match s.as_str() {
                     "3DPrinter-X1" => PrinterModel::X1,
@@ -2000,7 +1965,7 @@ pub async fn fix_k_on_restart(
         for (id, prev_tray) in prev_ams_trays
             .iter()
             .enumerate()
-            .chain(core::iter::once(&prev_virt_tray).enumerate().map(|(_, v)| (254, v)))
+            .chain(core::iter::once(&prev_virt_tray).map(|v| (254, v)))
         {
             let curr_tray = if id == 254 {
                 &bambu_borrow.virt_tray

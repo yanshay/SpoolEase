@@ -256,7 +256,7 @@ impl From<PrinterConfigDTO> for PrinterConfig {
 impl From<&PrinterConfig> for PrinterConfigDTO {
     fn from(v: &PrinterConfig) -> Self {
         Self {
-            ip: v.ip.and_then(|ip| Some(ip.to_string())),
+            ip: v.ip.map(|ip| ip.to_string()),
             name: v.name.clone(),
             serial: v.serial.clone(),
             access_code: v.access_code.clone(),
@@ -329,7 +329,7 @@ impl From<&ScaleConfig> for ScaleConfigDTO {
     fn from(v: &ScaleConfig) -> Self {
         Self {
             available: v.available,
-            ip: v.ip.and_then(|ip| Some(ip.to_string())),
+            ip: v.ip.map(|ip| ip.to_string()),
             name: v.name.clone(),
         }
     }

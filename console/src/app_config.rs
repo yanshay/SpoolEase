@@ -12,8 +12,8 @@ use serde::{Deserialize, Deserializer, Serializer};
 
 use framework::prelude::*;
 
-pub const SPOOLS_CATALOG: &str = include_str!("../data/Spool-Core-Weights.csv"); 
-pub const BASE_FILAMENTS: &str = include_str!("../data/base-filaments-index.csv"); 
+pub const SPOOLS_CATALOG: &str = include_str!("../data/Spool-Core-Weights.csv");
+pub const BASE_FILAMENTS: &str = include_str!("../data/base-filaments-index.csv");
 pub const FILAMENT_BRAND_NAMES: &str = include_str!("../data/filament-brands.csv");
 const PRINTER_CONFIG_KEY: &str = "_printer_"; // for backwards compatibility
 const PRINTERS_CONFIG_KEY: &str = "_printers_";
@@ -21,7 +21,7 @@ const DEFAULT_PRINTER_CONFIG_KEY: &str = "_default_printer_";
 const SCALE_CONFIG_KEY: &str = "_scale_"; // for backwards compatibility
 
 const PREVIOUSLY_USED_CORES_CONFIG_KEY: &str = "prev_cores";
-const USER_CORES_CONFIG_KEY: &str = "user_cores"; 
+const USER_CORES_CONFIG_KEY: &str = "user_cores";
 const CUSTOM_FILAMENTS_CONFIG_KEY: &str = "custom_filaments";
 
 fn serialize_option_ipv4<S>(ip: &Option<Ipv4Address>, serializer: S) -> Result<S::Ok, S::Error>
@@ -53,12 +53,13 @@ where
     }
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 // These struct is first and foremost for persistent configuration
 // Changing it should be well dealt with including upgrade
-#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
-#[derive(Derivative)]
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone, Derivative)]
 #[derivative(Default)]
 pub struct PrinterConfig {
     #[serde(serialize_with = "serialize_option_ipv4", deserialize_with = "deserialize_option_ipv4")]
@@ -121,8 +122,7 @@ impl AppConfig {
         if log {
             if missing {
                 term_error!("Missing printer(s) information");
-            } else
-            if partial_missing {
+            } else if partial_missing {
                 term_error!("At least one printer is missing serial/access_code configuration");
             }
         }
@@ -143,7 +143,7 @@ impl AppConfig {
             user_cores_changed_by_web_config: false,
             previously_used_cores: None,
             custom_filaments: None,
-            root_redirect: "/config".to_string()
+            root_redirect: "/config".to_string(),
         }
     }
 
@@ -170,7 +170,7 @@ impl AppConfig {
                     self.configured_printers.printers.push(printer_config);
                 }
             }
-        } 
+        }
         let config = self.framework.borrow_mut().fetch(String::from(DEFAULT_PRINTER_CONFIG_KEY));
         if let Ok(Some(default_printer_store)) = config {
             if let Ok(printers_config) = serde_json::from_str::<DefaultPrinterConfig>(&default_printer_store) {
@@ -274,13 +274,13 @@ impl AppConfig {
     }
 
     pub fn initialization_ok(&self, log: bool) -> Option<bool> {
-        if self.pn532_ok.is_none() {
-            return None;
-        }
-        Some(self.framework.borrow().initialization_ok()
-            && matches!(self.config_processed_ok, Some(true))
-            && matches!(self.pn532_ok, Some(true))
-            && !self.missing_configs(log))
+        self.pn532_ok?;
+        Some(
+            self.framework.borrow().initialization_ok()
+                && matches!(self.config_processed_ok, Some(true))
+                && matches!(self.pn532_ok, Some(true))
+                && !self.missing_configs(log),
+        )
     }
 
     #[allow(dead_code)]
@@ -304,11 +304,8 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn set_scale_config(
-        &mut self,
-        scale_config: ScaleConfig,
-    ) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
-        if scale_config.available == false && scale_config.name.is_none() && scale_config.ip.is_none() {
+    pub fn set_scale_config(&mut self, scale_config: ScaleConfig) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        if !scale_config.available && scale_config.name.is_none() && scale_config.ip.is_none() {
             self.framework.borrow().remove(SCALE_CONFIG_KEY.to_string())?;
             self.configured_scale = None;
         } else {
@@ -319,9 +316,15 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn set_previously_used_cores (&mut self, previously_used_cores: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+    pub fn set_previously_used_cores(
+        &mut self,
+        previously_used_cores: Option<String>,
+    ) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
         if previously_used_cores.is_some() {
-            self.framework.borrow().store(PREVIOUSLY_USED_CORES_CONFIG_KEY.to_string(), previously_used_cores.as_ref().unwrap().clone())?;
+            self.framework.borrow().store(
+                PREVIOUSLY_USED_CORES_CONFIG_KEY.to_string(),
+                previously_used_cores.as_ref().unwrap().clone(),
+            )?;
         } else {
             self.framework.borrow().remove(PREVIOUSLY_USED_CORES_CONFIG_KEY.to_string())?;
         }
@@ -329,9 +332,11 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn set_user_cores (&mut self, user_cores: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+    pub fn set_user_cores(&mut self, user_cores: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
         if user_cores.is_some() {
-            self.framework.borrow().store(USER_CORES_CONFIG_KEY.to_string(), user_cores.as_ref().unwrap().clone())?;
+            self.framework
+                .borrow()
+                .store(USER_CORES_CONFIG_KEY.to_string(), user_cores.as_ref().unwrap().clone())?;
         } else {
             self.framework.borrow().remove(USER_CORES_CONFIG_KEY.to_string())?;
         }
@@ -340,16 +345,18 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn set_filaments (&mut self, custom_filaments: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+    pub fn set_filaments(&mut self, custom_filaments: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
         if let Some(custom_filaments) = &custom_filaments {
             let mut skip_store = false;
             if let Some(curr_custom_filaments) = &self.custom_filaments {
                 if curr_custom_filaments == custom_filaments {
                     skip_store = true; // no change, better skip writing to flash
                 }
-            } 
+            }
             if !skip_store {
-                self.framework.borrow().store(CUSTOM_FILAMENTS_CONFIG_KEY.to_string(), custom_filaments.clone())?;
+                self.framework
+                    .borrow()
+                    .store(CUSTOM_FILAMENTS_CONFIG_KEY.to_string(), custom_filaments.clone())?;
             }
         } else {
             self.framework.borrow().remove(CUSTOM_FILAMENTS_CONFIG_KEY.to_string())?;
@@ -360,12 +367,9 @@ impl AppConfig {
 
     pub fn set_redirect_web_to_config(&mut self) {
         self.root_redirect = "/config".to_string();
-
     }
 
     pub fn set_redirect_to_encode(&mut self) {
         self.root_redirect = "/encode".to_string();
     }
-
 }
-

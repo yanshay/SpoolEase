@@ -205,7 +205,7 @@ pub fn init(
         .ok();
 
     if let Some(spool_scale_config) = &app_config.clone().borrow().configured_scale {
-        if spool_scale_config.available == true {
+        if spool_scale_config.available {
             spawner
                 .spawn(spool_scale_task(framework, app_config, stack, spool_scale_rc.clone(), ssdp_pub_sub))
                 .ok();

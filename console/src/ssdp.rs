@@ -45,7 +45,7 @@ pub async fn ssdp_task(
     );
     let (mut buf1, mut buf2) = (alloc::vec![0; 512], alloc::vec![0; 512]);
 
-    let _ = stack.join_multicast_group(embassy_net::Ipv4Address::new(239, 255, 255, 250)).unwrap();
+    stack.join_multicast_group(embassy_net::Ipv4Address::new(239, 255, 255, 250)).unwrap();
     let recv_source_endpoint1 = embassy_net::IpEndpoint {
         addr: embassy_net::Ipv4Address::UNSPECIFIED.into(),
         port: 1990,

@@ -150,17 +150,17 @@ where
                         let flush_res = with_timeout(self.write_timeout, self.tls.flush()).await;
                         match flush_res {
                             Ok(v) => {
-                                return Ok(v?);
+                                Ok(v?)
                             }
                             Err(_) => {
-                                return Err(MyMqttError::WriteTimeoutError)
+                                Err(MyMqttError::WriteTimeoutError)
                             }
                         }
                     }
-                    Err(e) => return Err(e.into())
+                    Err(e) => Err(e.into())
                 }
             }
-            Err(_) => return Err(MyMqttError::WriteTimeoutError),
+            Err(_) => Err(MyMqttError::WriteTimeoutError),
         }
     }
 
@@ -246,7 +246,7 @@ pub struct Publish {
     pub payload: Box<[u8]>,
 }
 
-impl<'a> From<mqttrust::Publish<'a>> for Publish {
+impl From<mqttrust::Publish<'_>> for Publish {
     fn from(v: mqttrust::Publish) -> Self {
         Self {
             dup: v.dup,
@@ -277,7 +277,7 @@ pub struct BufferedMqttPacket {
     raw: Vec<u8>,
 }
 
-impl<'a> TryFrom<mqttrust::Packet<'a>> for BufferedMqttPacket {
+impl TryFrom<mqttrust::Packet<'_>> for BufferedMqttPacket {
     type Error = mqttrust::encoding::v4::Error;
 
     fn try_from(v: mqttrust::Packet) -> Result<Self, Self::Error> {
@@ -307,7 +307,7 @@ pub enum PacketOnChannel {
     Publish(Publish),
 }
 
-impl<'a> From<mqttrust::Packet<'a>> for PacketOnChannel {
+impl From<mqttrust::Packet<'_>> for PacketOnChannel {
     fn from(v: mqttrust::Packet) -> Self {
         match v {
             mqttrust::Packet::Publish(publish) => PacketOnChannel::Publish(Publish::from(publish)),
@@ -338,7 +338,7 @@ pub async fn generic_mqtt_task<
 >(
     framework: Rc<RefCell<Framework>>,
     remote_endpoint: E,
-    printer_serial: &String,
+    printer_serial: &str,
     username: Option<&str>,
     password: Option<Vec<u8>>,
     keep_alive_secs: u16,
@@ -403,12 +403,12 @@ pub async fn generic_mqtt_task<
 
         term_info!("[{}] Connected to Printer {}", printer_log_id, printer_name);
 
-        let servername = CString::new(printer_serial.clone()).unwrap();
+        let servername = CString::new(printer_serial).unwrap();
 
         let mut session = match esp_mbedtls::asynch::Session::new(
             socket,
             esp_mbedtls::Mode::Client {
-                servername: &servername.as_c_str(),
+                servername: servername.as_c_str(),
             },
             esp_mbedtls::TlsVersion::Tls1_2,
             esp_mbedtls::Certificates {
@@ -477,12 +477,10 @@ pub async fn generic_mqtt_task<
             let res = if keep_alive_secs != 0 {
                 embassy_futures::select::select3(my_mqtt.read(), write_packets.receive(), Timer::after_secs(keep_alive_secs.into())).await
             } else {
-                let res = embassy_futures::select::select(my_mqtt.read(), write_packets.receive()).await;
-                let res_as_select3_res = match res {
+                match embassy_futures::select::select(my_mqtt.read(), write_packets.receive()).await {
                     Either::First(v) => Either3::First(v),
                     Either::Second(v) => Either3::Second(v),
-                };
-                res_as_select3_res
+                }
             };
             let mut disconnected = false;
             match res {
@@ -511,7 +509,7 @@ pub async fn generic_mqtt_task<
                 // Second: Write Request
                 Either3::Second(packet) => match mqttrust::Packet::try_from(&packet) {
                     Ok(p) => {
-                        if let Err(e) = my_mqtt.write(p).await {
+                        if my_mqtt.write(p).await.is_err() {
                             // any point retrying?
                             disconnected = true;
                         }
