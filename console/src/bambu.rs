@@ -1947,6 +1947,7 @@ pub async fn fix_k_on_restart(
     prev_virt_tray: Tray,
     prev_nozzle: Option<String>,
 ) {
+    Timer::after_secs(1).await;
     let printer_number = bambu_printer.borrow().printer_number;
     term_info!("[{}] Checking pressure advance (k) after printer restart", printer_number);
     if prev_nozzle != bambu_printer.borrow().nozzle_diameter {
@@ -1955,8 +1956,6 @@ pub async fn fix_k_on_restart(
     }
     let mut set_tray_cali_idx: [Option<i32>; 16] = [None; 16];
     let mut set_virt_cali_idx: Option<i32> = None;
-
-    Timer::after_secs(1).await;
 
     {
         // block start, so borrow will be dropped
@@ -1975,10 +1974,12 @@ pub async fn fix_k_on_restart(
             if let Filament::Known(curr_filament_info) = &curr_tray.filament {
                 if let Filament::Known(prev_filament_info) = &prev_tray.filament {
                     if curr_filament_info == prev_filament_info {
+                        // Turn both Some(-1) and None to Some(-1)
                         let prev_cali_idx_normalized = prev_tray.cali_idx.or(Some(-1));
                         let curr_cali_idx_normalized = curr_tray.cali_idx.or(Some(-1));
 
-                        if curr_cali_idx_normalized != prev_cali_idx_normalized {
+                        // if curr idx isn't set and previously it was set, return it to previous state
+                        if curr_cali_idx_normalized == Some(-1) && prev_cali_idx_normalized != Some(-1) {
                             // set_tray_cali_idx[id] = prev_cali_idx_normalized; // -1 means to set -1, value means set to that cali_idx
                             *set_tray = prev_cali_idx_normalized; // -1 means to set -1, value means set to that cali_idx
                         } else {
