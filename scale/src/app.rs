@@ -120,17 +120,13 @@ pub async fn app_task(
         match scale_state {
             ScaleState::Uncalibrated => {
                 let uncalibrated = load_cell_reader.immediate_read_uncalibrated();
-                app.borrow()
-                    .send_to_console(ScaleToConsole::RawSamplesAvg(uncalibrated))
-                    .await;
+                App::send_to_console(&app, ScaleToConsole::RawSamplesAvg(uncalibrated)).await;
                 Timer::after_millis(1000).await;
             }
             ScaleState::Unknown => {
                 let unstable_read = load_cell_reader.immediate_read();
                 if unstable_read > MIN_LOADED_WEIGHT {
-                    app.borrow()
-                        .send_to_console(ScaleToConsole::NewLoad(unstable_read))
-                        .await;
+                    App::send_to_console(&app, ScaleToConsole::NewLoad(unstable_read)).await;
                     // this is an unstable read, so updating only that
                     app.borrow_mut().scale_state = ScaleState::Loaded(0, unstable_read);
                 }
@@ -139,9 +135,7 @@ pub async fn app_task(
             ScaleState::Empty => {
                 let unstable_read = load_cell_reader.read_changed(0).await;
                 if unstable_read > MIN_LOADED_WEIGHT {
-                    app.borrow()
-                        .send_to_console(ScaleToConsole::NewLoad(unstable_read))
-                        .await;
+                    App::send_to_console(&app, ScaleToConsole::NewLoad(unstable_read)).await;
                     // this is an unstable read, so updating only that
                     app.borrow_mut().scale_state = ScaleState::Loaded(0, unstable_read);
                 }
@@ -155,16 +149,16 @@ pub async fn app_task(
                         if new_stable_read < 0 {
                             LoadCell::tare(&load_cell).await;
                         } else if abs(new_stable_read) < MIN_LOADED_WEIGHT {
-                            app.borrow()
-                                .send_to_console(ScaleToConsole::LoadRemoved)
-                                .await;
+                            App::send_to_console(&app, ScaleToConsole::LoadRemoved).await;
                             app.borrow_mut().scale_state = ScaleState::Empty;
                         } else if new_stable_read != last_stable_read
                             || new_stable_read != last_unstable_read
                         {
-                            app.borrow()
-                                .send_to_console(ScaleToConsole::LoadChangedStable(new_stable_read))
-                                .await;
+                            App::send_to_console(
+                                &app,
+                                ScaleToConsole::LoadChangedStable(new_stable_read),
+                            )
+                            .await;
                             app.borrow_mut().scale_state =
                                 ScaleState::Loaded(new_stable_read, new_stable_read)
                         }
@@ -175,11 +169,11 @@ pub async fn app_task(
                             load_cell_reader.try_read_changed(last_unstable_read)
                         {
                             if abs(new_unstable_read) >= MIN_LOADED_WEIGHT {
-                                app.borrow()
-                                    .send_to_console(ScaleToConsole::LoadChangedUnstable(
-                                        new_unstable_read,
-                                    ))
-                                    .await;
+                                App::send_to_console(
+                                    &app,
+                                    ScaleToConsole::LoadChangedUnstable(new_unstable_read),
+                                )
+                                .await;
                                 app.borrow_mut().scale_state =
                                     ScaleState::Loaded(last_stable_read, new_unstable_read);
                             }
@@ -279,18 +273,18 @@ impl App {
         myself_rc
     }
 
-    pub async fn send_to_console(&self, scale_to_console_msg: ScaleToConsole) {
-        if self.connected {
+    pub async fn send_to_console(myself: &Rc<RefCell<App>>, scale_to_console_msg: ScaleToConsole) {
+        if myself.borrow().connected {
             if !matches!(scale_to_console_msg, ScaleToConsole::Term(_)) {
                 info!("Sending {:?}", scale_to_console_msg);
             }
-            self.scale_to_console_channel
-                .send(scale_to_console_msg)
-                .await;
+            let scale_to_console_channel = myself.borrow().scale_to_console_channel.sender();
+            scale_to_console_channel.send(scale_to_console_msg).await;
         } else if !matches!(scale_to_console_msg, ScaleToConsole::Term(_)) {
             info!("Not! sending {:?}", scale_to_console_msg);
         }
     }
+
     pub fn try_send_to_console(&self, scale_to_console_msg: ScaleToConsole) {
         if self.connected {
             if !matches!(scale_to_console_msg, ScaleToConsole::Term(_)) {
