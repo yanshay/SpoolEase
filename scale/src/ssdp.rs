@@ -52,7 +52,7 @@ USN: {}
 Cache-Control: max-age=1800
 
 "#,
-        local_addr.address().to_string(),
+        local_addr.address(),
         env!("CARGO_PKG_VERSION"),
         device_name,
     );

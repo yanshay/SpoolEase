@@ -181,7 +181,7 @@ async fn main(spawner: Spawner) {
     let wifi = peripherals.WIFI;
 
     let (wifi_ap_interface, wifi_sta_interface, controller) =
-        esp_wifi::wifi::new_ap_sta(&init, wifi).unwrap();
+        esp_wifi::wifi::new_ap_sta(init, wifi).unwrap();
 
     let sta_config = Config::dhcpv4(Default::default());
 
@@ -352,10 +352,10 @@ async fn main(spawner: Spawner) {
     let config_toml = "";
     let _ = framework
         .borrow_mut()
-        .load_config_flash_then_toml(&config_toml);
+        .load_config_flash_then_toml(config_toml);
     let _ = app_config
         .borrow_mut()
-        .load_config_flash_then_toml(&config_toml);
+        .load_config_flash_then_toml(config_toml);
 
     // == Setup Serial for Improv Wifi ================================================
 

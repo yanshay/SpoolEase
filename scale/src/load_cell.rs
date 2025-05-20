@@ -84,9 +84,9 @@ impl LoadCell {
 
         self.spawner
             .spawn(spi_async_load_cell_task(
-                spi.into(),
-                dt.into(),
-                sck.into(),
+                spi,
+                dt,
+                sck,
                 load_cell_rc.clone(),
                 self.duration_between_reads,
             ))
@@ -140,8 +140,9 @@ impl LoadCell {
         let samples_sum_after_tare = samples_sum - self.samples.len() as i64 * self.current_tare; // here need to use the current_tare
         let calibrated_sum = samples_sum_after_tare * self.calibration_weight
             / (self.calibration_sample - self.calibration_tare); // here need to use the calibration_tare (because the calibration factor isn't supposed to change even if tare does)
-        return (calibrated_sum / self.samples.len() as i64) as i32;
+        (calibrated_sum / self.samples.len() as i64) as i32
     }
+
     pub fn add_sample(&mut self, sample: i32) {
         if !self.samples.is_empty() && self.calibration_tare != 0 {
             let clear_samples_change_threshold =
@@ -200,7 +201,7 @@ pub struct LoadCellReader {
     load_cell: Rc<RefCell<LoadCell>>,
 }
 
-impl<'a> LoadCellReader {
+impl LoadCellReader {
     pub async fn read_stable(&self) -> i32 {
         let stable_read_waiter = self.load_cell.borrow().stable_read_waiter();
         stable_read_waiter.acquire_all(1).await.unwrap();
@@ -278,14 +279,12 @@ async fn spi_async_load_cell_task(
     term_info!("Load-Cell reader initialized successfully");
 
     // Skip first readings which are 0 / -1
-    let initial_readings = true;
     let mut count_good_samples = 0;
     loop {
         let v = hx711_sensor.read_async().await;
         if let Ok(v) = v {
             if !([0, -1].contains(&v)) {
                 count_good_samples += 1;
-            } else {
             }
             if count_good_samples >= 5 {
                 break;

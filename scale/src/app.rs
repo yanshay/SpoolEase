@@ -1,7 +1,9 @@
 use core::cell::RefCell;
 
 use alloc::{
-    format, rc::{Rc, Weak}, string::ToString
+    format,
+    rc::{Rc, Weak},
+    string::ToString,
 };
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, pubsub::PubSubBehavior};
 use embassy_time::{with_timeout, Duration, Timer};
@@ -16,9 +18,15 @@ use framework::{
     web_server::WebServerCommand,
 };
 use num_traits::abs;
-use shared::{scale::{ConsoleToScale, ScaleToConsole}, spool_tag::{self, SpoolTag, SpoolTagObserver}};
+use shared::{
+    scale::{ConsoleToScale, ScaleToConsole},
+    spool_tag::{self, SpoolTag, SpoolTagObserver},
+};
 
-use crate::{app_config::AppConfig, console_proxy, load_cell::LoadCell, rgb_led::rgb_led_task, scale_button::scale_button_task};
+use crate::{
+    app_config::AppConfig, console_proxy, load_cell::LoadCell, rgb_led::rgb_led_task,
+    scale_button::scale_button_task,
+};
 
 const MIN_LOADED_WEIGHT: i32 = 5;
 
@@ -30,7 +38,11 @@ pub async fn app_task(
     loadcell_dt: AnyPin,
     loadcell_sck: AnyPin,
     loadcell_spi: AnySpi,
-    spi_device: ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
+    spi_device: ExclusiveDevice<
+        esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>,
+        esp_hal::gpio::Output<'static>,
+        embassy_time::Delay,
+    >,
     irq: esp_hal::gpio::Input<'static>,
     led_pin: AnyPin,
     rmt: RMT,
@@ -41,7 +53,7 @@ pub async fn app_task(
     let spool_tag_model = if app_config.borrow().nfc_module_available() {
         info!("NFC Module available");
         Some(spool_tag::init(spi_device, irq, spawner))
-    } else { 
+    } else {
         info!("NFC Module not available");
         None
     };
@@ -68,8 +80,16 @@ pub async fn app_task(
         framework.clone(),
     );
 
-    spawner.spawn(rgb_led_task(app.clone(), framework.clone(), led_pin, rmt)).ok();
-    spawner.spawn(scale_button_task(app.clone(), framework.clone(), button_pin)).ok();
+    spawner
+        .spawn(rgb_led_task(app.clone(), framework.clone(), led_pin, rmt))
+        .ok();
+    spawner
+        .spawn(scale_button_task(
+            app.clone(),
+            framework.clone(),
+            button_pin,
+        ))
+        .ok();
 
     console_proxy::init(
         framework.clone(),
@@ -134,13 +154,14 @@ pub async fn app_task(
                     Ok(new_stable_read) => {
                         if new_stable_read < 0 {
                             LoadCell::tare(&load_cell).await;
-                        } else
-                        if abs(new_stable_read) < MIN_LOADED_WEIGHT {
+                        } else if abs(new_stable_read) < MIN_LOADED_WEIGHT {
                             app.borrow()
                                 .send_to_console(ScaleToConsole::LoadRemoved)
                                 .await;
                             app.borrow_mut().scale_state = ScaleState::Empty;
-                        } else if new_stable_read != last_stable_read || new_stable_read != last_unstable_read {
+                        } else if new_stable_read != last_stable_read
+                            || new_stable_read != last_unstable_read
+                        {
                             app.borrow()
                                 .send_to_console(ScaleToConsole::LoadChangedStable(new_stable_read))
                                 .await;
@@ -231,16 +252,18 @@ impl App {
         };
         let myself_rc = Rc::new(RefCell::new(myself));
 
-
         // Subscribe to rust spool_tag events
-        let trait_for_spool_tag_rc: Rc<RefCell<dyn spool_tag::SpoolTagObserver>> = myself_rc.clone();
-        let trait_for_spool_tag_weak: Weak<RefCell<dyn spool_tag::SpoolTagObserver>> = Rc::downgrade(&trait_for_spool_tag_rc);
+        let trait_for_spool_tag_rc: Rc<RefCell<dyn spool_tag::SpoolTagObserver>> =
+            myself_rc.clone();
+        let trait_for_spool_tag_weak: Weak<RefCell<dyn spool_tag::SpoolTagObserver>> =
+            Rc::downgrade(&trait_for_spool_tag_rc);
         if let Some(spool_tag) = spool_tag {
             spool_tag.borrow_mut().subscribe(trait_for_spool_tag_weak);
         }
 
         let trait_for_framework_rc: Rc<RefCell<dyn FrameworkObserver>> = myself_rc.clone();
-        let trait_for_framework_weak: Weak<RefCell<dyn FrameworkObserver>> = Rc::downgrade(&trait_for_framework_rc);
+        let trait_for_framework_weak: Weak<RefCell<dyn FrameworkObserver>> =
+            Rc::downgrade(&trait_for_framework_rc);
         framework.borrow_mut().subscribe(trait_for_framework_weak);
 
         let terminal_proxy = Rc::new(RefCell::new(TerminalProxy {
@@ -264,10 +287,8 @@ impl App {
             self.scale_to_console_channel
                 .send(scale_to_console_msg)
                 .await;
-        } else {
-            if !matches!(scale_to_console_msg, ScaleToConsole::Term(_)) {
-                info!("Not! sending {:?}", scale_to_console_msg);
-            }
+        } else if !matches!(scale_to_console_msg, ScaleToConsole::Term(_)) {
+            info!("Not! sending {:?}", scale_to_console_msg);
         }
     }
     pub fn try_send_to_console(&self, scale_to_console_msg: ScaleToConsole) {
@@ -278,12 +299,12 @@ impl App {
             self.scale_to_console_channel
                 .try_send(scale_to_console_msg)
                 .unwrap_or_else(|err| error!("Failed *trying* to send message to console {err:?}"));
-        } else {
-            if !matches!(scale_to_console_msg, ScaleToConsole::Term(_)) {
-                info!("Not! sending (on connect) {:?}", scale_to_console_msg);
-            }
+        } else if !matches!(scale_to_console_msg, ScaleToConsole::Term(_)) {
+            info!("Not! sending (on connect) {:?}", scale_to_console_msg);
         }
     }
+
+    #[allow(clippy::single_match)]
     pub fn handle_console_to_scale(&mut self, console_to_scale_msg: ConsoleToScale) {
         match console_to_scale_msg {
             ConsoleToScale::Calibrate(weight) => {
@@ -375,9 +396,7 @@ impl TerminalObserver for TerminalProxy {
         // this is for optimizing comm and able to add "[S]" on console before message.
         // term sends first \n and then the text as two separate strings,
         // here this is undone and on the console the \n is added
-        if text == "\n" {
-            return;
-        } else {
+        if text != "\n" {
             self.app
                 .borrow()
                 .try_send_to_console(ScaleToConsole::Term(text.to_string()));
@@ -387,17 +406,18 @@ impl TerminalObserver for TerminalProxy {
 
 impl SpoolTagObserver for App {
     fn on_tag_status(&mut self, status: &spool_tag::Status) {
-        match status { spool_tag::Status::FoundTagNowReading =>  {
+        match status {
+            spool_tag::Status::FoundTagNowReading => {
                 self.try_send_to_console(ScaleToConsole::TagStatus(status.clone()));
                 info!("Tag found");
-        }
+            }
             spool_tag::Status::FoundTagNowWriting => todo!(),
             spool_tag::Status::WriteSuccess(_, _) => todo!(),
-            spool_tag::Status::ReadSuccess(tag) =>  {
+            spool_tag::Status::ReadSuccess(tag) => {
                 self.try_send_to_console(ScaleToConsole::TagStatus(status.clone()));
                 info!("Tag Read: {tag}");
             }
-            spool_tag::Status::Failure(failure) =>  {
+            spool_tag::Status::Failure(failure) => {
                 self.try_send_to_console(ScaleToConsole::TagStatus(status.clone()));
                 info!("Tag failure: {failure:?}");
             }
@@ -422,17 +442,13 @@ impl SpoolTagObserver for App {
 }
 
 impl FrameworkObserver for App {
-    fn on_webapp_url_update(&self, _ip_url: &str, _name_url: Option<&str>, _ssid: &str) {
-    }
+    fn on_webapp_url_update(&self, _ip_url: &str, _name_url: Option<&str>, _ssid: &str) {}
 
-    fn on_initialization_completed(&self, _status: bool) {
-    }
+    fn on_initialization_completed(&self, _status: bool) {}
 
-    fn on_ota_version_available(&self, _version: &str, _newer: bool) {
-    }
+    fn on_ota_version_available(&self, _version: &str, _newer: bool) {}
 
-    fn on_ota_start(&self) {
-    }
+    fn on_ota_start(&self) {}
 
     fn on_ota_status(&self, text: &str) {
         info!("OTA Status: {text}");

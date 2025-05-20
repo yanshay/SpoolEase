@@ -9,13 +9,8 @@ use alloc::rc::Rc;
 use embassy_futures::select::select3;
 use embassy_time::{Duration, Instant, Timer};
 use framework::{
-    debug, error,
-    framework::WebServerCommands,
-    info, mk_static,
-    prelude::Framework,
-    utils::random_u32,
-    warn,
-    web_server::WebServerConfig,
+    debug, error, framework::WebServerCommands, info, mk_static, prelude::Framework,
+    utils::random_u32, warn, web_server::WebServerConfig,
 };
 use picoserve::{
     io::Error,
@@ -125,6 +120,7 @@ impl AppWithStateBuilder for ConsoleProxyAppBuilder {
     fn build_app(self) -> picoserve::Router<Self::PathRouter, Self::State> {
         let router = picoserve::Router::new();
 
+        #[allow(clippy::let_and_return)]
         let router = router.route(
             "/ws",
             get(move |upgrade: ws::WebSocketUpgrade| {
@@ -202,12 +198,15 @@ impl ws::WebSocketCallback for ConsoleCommHandler {
                     match read_res {
                         Ok(msg) => match msg {
                             Message::Text(txt) => {
-                                let console_to_scale_res = serde_json::from_str::<ConsoleToScale>(txt);
+                                let console_to_scale_res =
+                                    serde_json::from_str::<ConsoleToScale>(txt);
                                 match console_to_scale_res {
-                                    Ok(console_to_scale) =>  {
-                                        self.app.borrow_mut().handle_console_to_scale(console_to_scale);
+                                    Ok(console_to_scale) => {
+                                        self.app
+                                            .borrow_mut()
+                                            .handle_console_to_scale(console_to_scale);
                                     }
-                                    Err(err) =>  {
+                                    Err(err) => {
                                         error!("Error deserializing message from SpoolEase Console {err:?}");
                                     }
                                 }
@@ -241,6 +240,7 @@ impl ws::WebSocketCallback for ConsoleCommHandler {
                         Err(err) => {
                             match err {
                                 ws::ReadMessageError::Io(io_err) => {
+                                    #[allow(clippy::match_single_binding)]
                                     match io_err.kind() {
                                         // picoserve::io::ErrorKind::Other => todo!(),
                                         // picoserve::io::ErrorKind::NotFound => todo!(),
@@ -283,6 +283,7 @@ impl ws::WebSocketCallback for ConsoleCommHandler {
                     match send_res {
                         Ok(_) => info!("Sent Ping to SpoolEase"),
                         Err(io_err) => {
+                            #[allow(clippy::match_single_binding)]
                             match io_err.kind() {
                                 // picoserve::io::ErrorKind::Other => todo!(),
                                 // picoserve::io::ErrorKind::NotFound => todo!(),
