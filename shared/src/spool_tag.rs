@@ -94,6 +94,7 @@ struct EmulateUrlTagRequest {
     url: String,
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone)]
 enum TagOperation {
     WriteTag(WriteTagRequest),

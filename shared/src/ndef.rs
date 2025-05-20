@@ -28,6 +28,7 @@ enum TypeNameFormat {
     Reserved,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Debug, PartialEq, DekuRead, DekuWrite)]
 #[deku(id_type = "u8", bits = 3)]
 enum WellKnownFormatType {
@@ -101,7 +102,7 @@ pub struct Record {
 
 impl Record {
     pub fn new_text_record_en(text: &str) -> Self {
-        let mut payload = Vec::<u8>::with_capacity(3 + text.as_bytes().len());
+        let mut payload = Vec::<u8>::with_capacity(3 + text.len());
         payload.extend_from_slice(&[0x02, b'e', b'n']);
         payload.extend_from_slice(text.as_bytes());
         Record {
@@ -128,21 +129,21 @@ impl Record {
     }
 
     pub fn new_url_record(url: &str) -> Self {
-        let mut payload = Vec::<u8>::with_capacity(1 + url.as_bytes().len());
+        let mut payload = Vec::<u8>::with_capacity(1 + url.len());
         // payload.extend_from_slice(&[0x02, b'e', b'n']);
         let mut sub_url = &url[0..url.len() - 1];
-        if url.starts_with("http://www.") {
+        if let Some(postfix) = url.strip_suffix("http://www.") {
             payload.extend_from_slice(&[0x01]);
-            sub_url = &url[11..];
-        } else if url.starts_with("https://www.") {
+            sub_url = postfix;
+        } else if let Some(postfix) = url.strip_suffix("https://www.") {
             payload.extend_from_slice(&[0x02]);
-            sub_url = &url[12..];
-        } else if url.starts_with("http://") {
+            sub_url = postfix;
+        } else if let Some(postfix) = url.strip_suffix("http://") {
             payload.extend_from_slice(&[0x03]);
-            sub_url = &url[7..];
-        } else if url.starts_with("https://") {
+            sub_url = postfix;
+        } else if let Some(postfix) = url.strip_suffix("https://") {
             payload.extend_from_slice(&[0x04]);
-            sub_url = &url[8..];
+            sub_url = postfix;
         } else {
             payload.extend_from_slice(&[0x00]);
         }
@@ -163,7 +164,7 @@ impl Record {
         }
     }
     pub fn url_payload(&self) -> String {
-        if self.payload_data.len() > 0 {
+        if !self.payload_data.is_empty() {
             let prefix = match self.payload_data[0] {
                 0x01 => "http://www.",
                 0x02 => "https://www.",

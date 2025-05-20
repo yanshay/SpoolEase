@@ -31,6 +31,8 @@ impl<E: core::fmt::Debug> From<pn532::Error<E>> for Error<E> {
         Error::Pn532Error(v)
     }
 }
+
+#[derive(Default)]
 pub struct Esp32TimerAsync {
     deadline: Option<embassy_time::Instant>,
 }
@@ -85,28 +87,25 @@ where
             buf[page_byte_offset + 2],
             buf[page_byte_offset + 3],
         ];
-        'retries: loop {
-            if Instant::now() > end_time {
-                return Err(Error::Pn532ExtError(last_err));
-            }
-            let res = pn532
-                .process(
-                    &pn532::Request::ntag_write(
-                        page + u8::try_from(page_offset).unwrap(),
-                        &data_to_write,
-                    ),
-                    1,
-                    end_time - Instant::now(),
-                )
-                .await?;
-            if res[0] != 0x00 {
-                // first byte signals if read was ok
-                last_err = res[0];
-                trace!("Error {} during NFC write of page {page_offset}", last_err);
-                // continue 'retries; retries on write might be causing tag bricking? or was it a faulty PN532?
-                return Err(Error::Pn532ExtError(last_err));
-            }
-            break 'retries;
+        if Instant::now() > end_time {
+            return Err(Error::Pn532ExtError(last_err));
+        }
+        let res = pn532
+            .process(
+                &pn532::Request::ntag_write(
+                    page + u8::try_from(page_offset).unwrap(),
+                    &data_to_write,
+                ),
+                1,
+                end_time - Instant::now(),
+            )
+            .await?;
+        if res[0] != 0x00 {
+            // first byte signals if read was ok
+            last_err = res[0];
+            trace!("Error {} during NFC write of page {page_offset}", last_err);
+            // continue 'retries; retries on write might be causing tag bricking? or was it a faulty PN532?
+            return Err(Error::Pn532ExtError(last_err));
         }
     }
     Ok(())
@@ -137,7 +136,7 @@ where
             page + chunk_offset * 4,
             &mut buf[chunk_byte_offset..chunk_byte_offset + copy_bytes],
             end_time,
-            &[]
+            &[],
         )
         .await?;
     }
@@ -149,7 +148,7 @@ pub async fn read_with_retries<I>(
     page: u8,
     buf: &mut [u8],
     end_time: Instant,
-    error_on_errnums: &[u8]
+    error_on_errnums: &[u8],
 ) -> Result<(), Error<I::Error>>
 where
     I: pn532::Interface,
@@ -180,7 +179,7 @@ where
             );
             continue;
         }
-        buf.copy_from_slice(&read_data[1..buf.len()+1]); // skip the 0 (that represents error or ok) at the beginning
+        buf.copy_from_slice(&read_data[1..buf.len() + 1]); // skip the 0 (that represents error or ok) at the beginning
         return Ok(());
     }
 }
@@ -194,17 +193,18 @@ pub async fn ensure_tag_formatted<I>(
 where
     I: pn532::Interface,
 {
-    let mut buf = [0u8;16];
+    let mut buf = [0u8; 16];
 
     let end_time = Instant::now() + timeout;
     // page 3 should always be readable, if error, should return it as an error
     read_with_retries(pn532, 3, &mut buf, end_time, &[]).await?;
 
-    if buf[0] == 0xE1 { // Magic 0xE1 should be here if formtted (page is [0xE1, 0x10, num_of_pages, 0x00])
-        return Ok(())
-    } 
+    if buf[0] == 0xE1 {
+        // Magic 0xE1 should be here if formtted (page is [0xE1, 0x10, num_of_pages, 0x00])
+        return Ok(());
+    }
 
-    // If magic is not here, then we have some unitialized tag. 
+    // If magic is not here, then we have some unitialized tag.
     // The only reliable way to know its size is to try and read pages until it returns timeout on pages that doesn't exist
     // Only need to check boundary pages of standard ntag sizes
 
@@ -214,7 +214,7 @@ where
     let mut num_of_pages_on_tag = 0;
 
     for test in tests {
-        debug!("Testing tag for size - checking page {}",test.0);
+        debug!("Testing tag for size - checking page {}", test.0);
         let read_res = read_with_retries(pn532, test.0, &mut buf, end_time, &[19]).await;
 
         match read_res {
@@ -223,13 +223,20 @@ where
                 num_of_pages_on_tag = test.1; // success, so at least NTAG215
             }
             Err(err) => {
-            if let  Error::Pn532ExtError(err_num) = err {
+                if let Error::Pn532ExtError(err_num) = err {
                     debug!("Error when reading page in ensure_formatted :{err_num}");
-                    if err_num != 19 { // this is the error I saw on page not available
+                    if err_num != 19 {
+                        // this is the error I saw on page not available
                         return Err(Error::Pn532ExtError(err_num));
                     }
                     debug!("Inlisting again to clear error and allow future reading");
-                    let res = pn532.process(&pn532::Request::INLIST_ONE_ISO_A_TARGET, 17, end_time - Instant::now()).await;
+                    let res = pn532
+                        .process(
+                            &pn532::Request::INLIST_ONE_ISO_A_TARGET,
+                            17,
+                            end_time - Instant::now(),
+                        )
+                        .await;
                     debug!("Inner inlist, required after read failure when testing tag, result {res:?}");
 
                     break;
@@ -243,7 +250,7 @@ where
     let page3_format = [0xe1, 0x10, num_of_pages_on_tag, 0x00];
     // Even if fail, won't fail the encode
     match process_ntag_write_long(pn532, &page3_format, 3, end_time - Instant::now()).await {
-        Ok(_) =>  {
+        Ok(_) => {
             info!("Formatted tag successfuly");
         }
         Err(err) => {
@@ -253,7 +260,6 @@ where
 
     Ok(())
 }
-
 
 // const C_APDU_CLA: usize = 0;
 const C_APDU_INS: usize = 1; // instruction
@@ -272,48 +278,55 @@ const C_APDU_P1_SELECT_BY_NAME: u8 = 0x04;
 // Response APDU
 const R_APDU_SW1_COMMAND_COMPLETE: u8 = 0x90;
 const R_APDU_SW2_COMMAND_COMPLETE: u8 = 0x00;
-const COMMAND_COMPLETE: [u8;2] = [R_APDU_SW1_COMMAND_COMPLETE, R_APDU_SW2_COMMAND_COMPLETE];
+const COMMAND_COMPLETE: [u8; 2] = [R_APDU_SW1_COMMAND_COMPLETE, R_APDU_SW2_COMMAND_COMPLETE];
 
 const R_APDU_SW1_NDEF_TAG_NOT_FOUND: u8 = 0x6a;
 const R_APDU_SW2_NDEF_TAG_NOT_FOUND: u8 = 0x82;
-const TAG_NOT_FOUND: [u8;2] = [R_APDU_SW1_NDEF_TAG_NOT_FOUND, R_APDU_SW2_NDEF_TAG_NOT_FOUND];
+const TAG_NOT_FOUND: [u8; 2] = [R_APDU_SW1_NDEF_TAG_NOT_FOUND, R_APDU_SW2_NDEF_TAG_NOT_FOUND];
 
 const R_APDU_SW1_FUNCTION_NOT_SUPPORTED: u8 = 0x6A;
 const R_APDU_SW2_FUNCTION_NOT_SUPPORTED: u8 = 0x81;
-const FUNCTION_NOT_SUPPORTED: [u8;2] = [R_APDU_SW1_FUNCTION_NOT_SUPPORTED, R_APDU_SW2_FUNCTION_NOT_SUPPORTED];
+const FUNCTION_NOT_SUPPORTED: [u8; 2] = [
+    R_APDU_SW1_FUNCTION_NOT_SUPPORTED,
+    R_APDU_SW2_FUNCTION_NOT_SUPPORTED,
+];
 
 // const R_APDU_SW1_MEMORY_FAILURE: u8 = 0x65;
 // const R_APDU_SW2_MEMORY_FAILURE: u8 = 0x81;
 
 const R_APDU_SW1_END_OF_FILE_BEFORE_REACHED_LE_BYTES: u8 = 0x62;
 const R_APDU_SW2_END_OF_FILE_BEFORE_REACHED_LE_BYTES: u8 = 0x82;
-const END_OF_FILE_BEFORE_REACHED_LE_BYTES: [u8;2] = [R_APDU_SW1_END_OF_FILE_BEFORE_REACHED_LE_BYTES, R_APDU_SW2_END_OF_FILE_BEFORE_REACHED_LE_BYTES];
+const END_OF_FILE_BEFORE_REACHED_LE_BYTES: [u8; 2] = [
+    R_APDU_SW1_END_OF_FILE_BEFORE_REACHED_LE_BYTES,
+    R_APDU_SW2_END_OF_FILE_BEFORE_REACHED_LE_BYTES,
+];
 
 const NDEF_TAG_APPLICATION_NAME_V2: [u8; 9] = [0, 0x7, 0xD2, 0x76, 0x00, 0x00, 0x85, 0x01, 0x01];
-const CAPABILITY_CONTAINER: [u8;15] = [
+const CAPABILITY_CONTAINER: [u8; 15] = [
     0_u8,                                          // cc len msb
     0x0F,                                          // cc len lsb
     0x20,                                          // version 2.0
-    ((NDEF_MAX_READ_LENGTH & 0xFF00) >> 8) as u8,  // Mle msb (Maximum data size that can be read using a single ReadBinary command.)
-    (NDEF_MAX_READ_LENGTH & 0xFF) as u8,           // Mle lsb 
+    ((NDEF_MAX_READ_LENGTH & 0xFF00) >> 8) as u8, // Mle msb (Maximum data size that can be read using a single ReadBinary command.)
+    (NDEF_MAX_READ_LENGTH & 0xFF) as u8,          // Mle lsb
     ((NDEF_MAX_WRITE_LENGTH & 0xFF00) >> 8) as u8, // Mlc msb (Maximum data size that can be written using a single UpdateBinary command)
     (NDEF_MAX_WRITE_LENGTH & 0xFF) as u8,          // Mlc lsb
     // NDEF TLV
-    0x04,                                          // T - Tag ?
-    0x06,                                          // L - Length of the value field
-    0xE1,                                          // NDEF File Identifier byte 1
-    0x04,                                          // NDEF File Identifier byte 2
-    ((NDEF_MAX_LENGTH & 0xFF00) >> 8) as u8,       // Maximum NDEF file size Msb
-    (NDEF_MAX_LENGTH & 0xFF) as u8,                // maximum NDEF file size Lsb
-    0x00,                                          // read access 0x0 = granted
-    0x00,                                          // write access 0x0 = granted | 0xFF = deny
+    0x04,                                    // T - Tag ?
+    0x06,                                    // L - Length of the value field
+    0xE1,                                    // NDEF File Identifier byte 1
+    0x04,                                    // NDEF File Identifier byte 2
+    ((NDEF_MAX_LENGTH & 0xFF00) >> 8) as u8, // Maximum NDEF file size Msb
+    (NDEF_MAX_LENGTH & 0xFF) as u8,          // maximum NDEF file size Lsb
+    0x00,                                    // read access 0x0 = granted
+    0x00,                                    // write access 0x0 = granted | 0xFF = deny
 ];
 
+#[allow(clippy::upper_case_acronyms)]
 #[repr(u8)]
 #[derive(Clone, Copy, Debug)]
 enum TagFile {
     NONE = 0,
-    CC =   1, // Capability Container
+    CC = 1, // Capability Container
     NDEF = 2,
 }
 
@@ -343,24 +356,22 @@ where
         Ok(_v) => {
             // info!("TG_INIT_AS_TARGET response: {:x?}", v);
         }
-        Err(err) => {
-            match err {
-                pn532::Error::TimeoutResponse => return Ok(false),
-                pn532::Error::TimeoutAck => return Ok(false),
-                _ => return Err(format!("Error resopnse emulating tag: {err:?}")),
-            }
-        }
+        Err(err) => match err {
+            pn532::Error::TimeoutResponse => return Ok(false),
+            pn532::Error::TimeoutAck => return Ok(false),
+            _ => return Err(format!("Error resopnse emulating tag: {err:?}")),
+        },
     }
 
     let ndef_structure = crate::ndef::NDEFStructureType4::new(ndef_record);
 
     let ndef_bytes = match ndef_structure.to_bytes() {
         Ok(v) => v,
-        Err(err) => return Err(format!("Failed to serialize NDEF record: {err:?}"))
+        Err(err) => return Err(format!("Failed to serialize NDEF record: {err:?}")),
     };
 
     let mut current_file = TagFile::NONE;
-    let mut send_buf = [0u8; NDEF_MAX_READ_LENGTH+2];
+    let mut send_buf = [0u8; NDEF_MAX_READ_LENGTH + 2];
     let mut send_data;
     let mut sent_entire_ndef = false;
 
@@ -374,7 +385,10 @@ where
                     if sent_entire_ndef {
                         return Ok(true);
                     } else {
-                        return Err("Received empty tgGetData response before sending entire NDEF".to_string());
+                        return Err(
+                            "Received empty tgGetData response before sending entire NDEF"
+                                .to_string(),
+                        );
                     }
                 }
 
@@ -388,7 +402,10 @@ where
                 }
                 let recv_buf = &v[1..];
                 if recv_buf.len() < 5 {
-                    return Err(format!("Not enough data in tgGetData response, only {} bytes", v.len()));
+                    return Err(format!(
+                        "Not enough data in tgGetData response, only {} bytes",
+                        v.len()
+                    ));
                 }
                 let p1 = recv_buf[C_APDU_P1];
                 let p2 = recv_buf[C_APDU_P2];
@@ -396,72 +413,88 @@ where
                 let p1p2_length = ((p1 as usize) << 8) + p2 as usize;
 
                 match recv_buf[C_APDU_INS] {
-                    ISO7816_SELECT_FILE => {
-                        match p1 {
-                            C_APDU_P1_SELECT_BY_ID => {
-                                if p2 != 0x0c {
-                                    send_data = get_data_to_set(&mut send_buf, &[], &COMMAND_COMPLETE);
-                                } else if lc == 2
-                                    && recv_buf[C_APDU_DATA] == 0xE1
-                                    && (recv_buf[C_APDU_DATA + 1] == 0x03
-                                        || recv_buf[C_APDU_DATA + 1] == 0x04)
-                                {
-                                    send_data = get_data_to_set(&mut send_buf, &[], &COMMAND_COMPLETE);
-                                    if recv_buf[C_APDU_DATA + 1] == 0x03 {
-                                        current_file = TagFile::CC;
-                                    } else if recv_buf[C_APDU_DATA + 1] == 0x04 {
-                                        current_file = TagFile::NDEF;
-                                    }
-                                } else {
-                                    send_data = get_data_to_set(&mut send_buf, &[], &TAG_NOT_FOUND);
+                    ISO7816_SELECT_FILE => match p1 {
+                        C_APDU_P1_SELECT_BY_ID => {
+                            if p2 != 0x0c {
+                                send_data = get_data_to_set(&mut send_buf, &[], &COMMAND_COMPLETE);
+                            } else if lc == 2
+                                && recv_buf[C_APDU_DATA] == 0xE1
+                                && (recv_buf[C_APDU_DATA + 1] == 0x03
+                                    || recv_buf[C_APDU_DATA + 1] == 0x04)
+                            {
+                                send_data = get_data_to_set(&mut send_buf, &[], &COMMAND_COMPLETE);
+                                if recv_buf[C_APDU_DATA + 1] == 0x03 {
+                                    current_file = TagFile::CC;
+                                } else if recv_buf[C_APDU_DATA + 1] == 0x04 {
+                                    current_file = TagFile::NDEF;
                                 }
-                            }
-                            C_APDU_P1_SELECT_BY_NAME => {
-                                if recv_buf[C_APDU_P2..].starts_with(&NDEF_TAG_APPLICATION_NAME_V2) {
-                                    send_data = get_data_to_set(&mut send_buf, &[], &COMMAND_COMPLETE);
-                                } else {
-                                    error!("function not supported {:x?}", &recv_buf[C_APDU_P2..]);
-                                    send_data = get_data_to_set(&mut send_buf, &[], &FUNCTION_NOT_SUPPORTED);
-                                }
-                            }
-                            _ => {
-                                warn!("SELECT-FILE -> Unhandled p1 {p1:x}");
-                                return Err(format!("Unsupported SELECT-FILE command in tag emulator {p1:x}"));
-                            }
-                        }
-                    }
-                    ISO7816_READ_BINARY => {
-                        match &current_file {
-                            TagFile::NONE => {
+                            } else {
                                 send_data = get_data_to_set(&mut send_buf, &[], &TAG_NOT_FOUND);
                             }
-                            TagFile::CC => {
-                                if p1p2_length > NDEF_MAX_LENGTH {
-                                    send_data = get_data_to_set(&mut send_buf, &[], &END_OF_FILE_BEFORE_REACHED_LE_BYTES);
-                                } else if p1p2_length + lc as usize > CAPABILITY_CONTAINER.len() {
-                                    send_data = get_data_to_set(&mut send_buf, &[], &END_OF_FILE_BEFORE_REACHED_LE_BYTES);
-                                } else {
-                                    send_data = get_data_to_set(&mut send_buf, &CAPABILITY_CONTAINER[p1p2_length..p1p2_length + lc as usize], &COMMAND_COMPLETE);
-                                }
+                        }
+                        C_APDU_P1_SELECT_BY_NAME => {
+                            if recv_buf[C_APDU_P2..].starts_with(&NDEF_TAG_APPLICATION_NAME_V2) {
+                                send_data = get_data_to_set(&mut send_buf, &[], &COMMAND_COMPLETE);
+                            } else {
+                                error!("function not supported {:x?}", &recv_buf[C_APDU_P2..]);
+                                send_data =
+                                    get_data_to_set(&mut send_buf, &[], &FUNCTION_NOT_SUPPORTED);
                             }
-                            TagFile::NDEF => {
-                                if p1p2_length > NDEF_MAX_LENGTH {
-                                    send_data = get_data_to_set(&mut send_buf, &[], &END_OF_FILE_BEFORE_REACHED_LE_BYTES);
-                                } else if p1p2_length + lc as usize > ndef_bytes.len() {
-                                    send_data = get_data_to_set(&mut send_buf, &[], &END_OF_FILE_BEFORE_REACHED_LE_BYTES);
-                                }
-                                else {
-                                    send_data = get_data_to_set(&mut send_buf, &ndef_bytes[p1p2_length..p1p2_length + lc as usize], &COMMAND_COMPLETE);
-                                    if p1p2_length + lc as usize == ndef_bytes.len() {
-                                        sent_entire_ndef = true;
-                                    }
+                        }
+                        _ => {
+                            warn!("SELECT-FILE -> Unhandled p1 {p1:x}");
+                            return Err(format!(
+                                "Unsupported SELECT-FILE command in tag emulator {p1:x}"
+                            ));
+                        }
+                    },
+                    ISO7816_READ_BINARY => match &current_file {
+                        TagFile::NONE => {
+                            send_data = get_data_to_set(&mut send_buf, &[], &TAG_NOT_FOUND);
+                        }
+                        TagFile::CC => {
+                            if p1p2_length > NDEF_MAX_LENGTH || p1p2_length + lc as usize > CAPABILITY_CONTAINER.len() {
+                                send_data = get_data_to_set(
+                                    &mut send_buf,
+                                    &[],
+                                    &END_OF_FILE_BEFORE_REACHED_LE_BYTES,
+                                );
+                            }  else {
+                                send_data = get_data_to_set(
+                                    &mut send_buf,
+                                    &CAPABILITY_CONTAINER[p1p2_length..p1p2_length + lc as usize],
+                                    &COMMAND_COMPLETE,
+                                );
+                            }
+                        }
+                        TagFile::NDEF => {
+                            if p1p2_length > NDEF_MAX_LENGTH || p1p2_length + lc as usize > ndef_bytes.len() {
+                                send_data = get_data_to_set(
+                                    &mut send_buf,
+                                    &[],
+                                    &END_OF_FILE_BEFORE_REACHED_LE_BYTES,
+                                );
+                            }  else {
+                                send_data = get_data_to_set(
+                                    &mut send_buf,
+                                    &ndef_bytes[p1p2_length..p1p2_length + lc as usize],
+                                    &COMMAND_COMPLETE,
+                                );
+                                if p1p2_length + lc as usize == ndef_bytes.len() {
+                                    sent_entire_ndef = true;
                                 }
                             }
                         }
-                    }
+                    },
                     _ => {
-                        warn!("Unhandled command in tag emulator {:x}", recv_buf[C_APDU_INS]);
-                        return Err(format!("Unsupported NFC command in tag emulator {:x}", recv_buf[C_APDU_INS]));
+                        warn!(
+                            "Unhandled command in tag emulator {:x}",
+                            recv_buf[C_APDU_INS]
+                        );
+                        return Err(format!(
+                            "Unsupported NFC command in tag emulator {:x}",
+                            recv_buf[C_APDU_INS]
+                        ));
                     }
                 }
             }
@@ -497,10 +530,13 @@ where
     }
 }
 
-fn get_data_to_set<'a, 'b, 'c>(send_buf: &'a mut [u8], payload: &'b [u8], command: &'c [u8;2]) -> &'a [u8] {
+fn get_data_to_set<'a>(
+    send_buf: &'a mut [u8],
+    payload: &'_ [u8],
+    command: &'_ [u8; 2],
+) -> &'a [u8] {
     send_buf[..payload.len()].copy_from_slice(payload);
-    send_buf[payload.len()..payload.len()+command.len()].copy_from_slice(command);
+    send_buf[payload.len()..payload.len() + command.len()].copy_from_slice(command);
 
-    &send_buf[..payload.len()+command.len()]
+    &send_buf[..payload.len() + command.len()]
 }
-
