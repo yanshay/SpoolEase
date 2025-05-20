@@ -642,7 +642,8 @@ impl BambuPrinter {
                 // get a snapshot of trays before, to later be able to update cali_idx if removed
                 let full_push_status = print.ams.is_some() && print.vt_tray.is_some();
                 let prev_trays = if full_push_status && self.auto_restore_k && self.printer_was_disconnected {
-                    Some((self.ams_trays.clone(), self.virt_tray.clone()))
+                    // TODO: To save memory (a few kb's, might be needed in the future) copy from ams_trays only the data requried and not entire tray
+                    Some((self.ams_trays.to_vec(), self.virt_tray.clone()))
                 } else {
                     None
                 };
@@ -656,7 +657,7 @@ impl BambuPrinter {
                 if full_push_status && self.auto_restore_k && self.printer_was_disconnected {
                     self.printer_was_disconnected = false;
                     if let Some(prev_trays) = prev_trays {
-                        if self.ams_trays != prev_trays.0 || self.virt_tray != prev_trays.1 {
+                        if self.ams_trays[..] != prev_trays.0 || self.virt_tray != prev_trays.1 {
                             let spawner = self.app_config.borrow().framework.borrow().spawner;
                             spawner
                                 .spawn(fix_k_on_restart(
@@ -1943,7 +1944,7 @@ impl TryFrom<SSDPInfo> for BambuSSDPInfo {
 #[embassy_executor::task(pool_size = 2)] // up to two printers in parallel
 pub async fn fix_k_on_restart(
     bambu_printer: Rc<RefCell<BambuPrinter>>,
-    prev_ams_trays: [Tray; 16],
+    prev_ams_trays: Vec<Tray>,
     prev_virt_tray: Tray,
     prev_nozzle: Option<String>,
 ) {
