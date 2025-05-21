@@ -698,7 +698,7 @@ impl ViewModel {
                     }
                     254 => {
                         // External Tray
-                        let tray = &bambu_borrow.virt_tray;
+                        let tray = &bambu_borrow.virt_tray();
                         if let Some(calibration) = bambu_borrow.get_tray_calibration(tray) {
                             encode_request_display.pa_line2 = format!("{}, {}", calibration.k_value, calibration.name,).into();
                         }
@@ -711,7 +711,7 @@ impl ViewModel {
                     0..15 => {
                         // Standard trays
                         // let bambu = moved_bambu.borrow();
-                        let tray = &bambu_borrow.ams_trays[tray_id as usize];
+                        let tray = &bambu_borrow.ams_trays()[tray_id as usize];
                         if let Some(calibration) = bambu_borrow.get_tray_calibration(tray) {
                             encode_request_display.pa_line2 = format!("{}, {}", calibration.k_value, calibration.name,).into();
                         }
@@ -885,9 +885,9 @@ impl ViewModel {
         for tray_row in 0..trays_state.row_count() {
             let tray_id = trays_state.row_data(tray_row).unwrap().id;
             let curr_tray = if tray_id == 254 {
-                &bambu_printer.virt_tray
+                bambu_printer.virt_tray()
             } else {
-                &bambu_printer.ams_trays[usize::try_from(tray_id).unwrap()]
+                &bambu_printer.ams_trays()[tray_id as usize]
             };
             let mut ui_tray = trays_state.row_data(tray_row).unwrap().clone();
             ui_tray.spool_state = crate::app::UiTrayState::from(&curr_tray.state);
@@ -938,7 +938,7 @@ impl BambuPrinterObserver for ViewModel {
         if let Some(new_trays_reading_bits) = new_trays_reading_bits {
             let prev_trays_reading_bits = prev_trays_reading_bits.unwrap_or(0);
             let mut trays_reading_changed = Vec::new();
-            for tray_id in 0..bambu_printer.ams_trays.len() {
+            for tray_id in 0..bambu_printer.ams_trays().len() {
                 let prev_tray_reading_bit = ((prev_trays_reading_bits >> tray_id) & 0x01) != 0;
                 let new_tray_reading_bit = ((new_trays_reading_bits >> tray_id) & 0x01) != 0;
                 if !prev_tray_reading_bit && new_tray_reading_bit {

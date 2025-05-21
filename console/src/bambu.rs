@@ -7,6 +7,7 @@ use crate::{
     ssdp::{SSDPInfo, SSDPPubSubChannel},
 };
 use alloc::{
+    borrow::Cow,
     format,
     rc::Rc,
     string::{String, ToString},
@@ -30,6 +31,7 @@ use hashbrown::HashMap;
 use mqttrust::QoS;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use shared::spool_tag::TAG_PLACEHOLDER;
 
 use framework::prelude::*;
@@ -58,8 +60,10 @@ pub struct BambuPrinter {
     pub printer_uuid_to_encode: String,
     pub printer_connectivity_ok: Option<bool>,
     pub nozzle_diameter: Option<String>,
-    pub ams_trays: [Tray; 16],
-    pub virt_tray: Tray,
+    inner_ams_trays: [Tray; 16],
+    inner_virt_tray: Tray,
+    ams_trays_dirty: [bool; 16],
+    virty_tray_dirty: bool,
     pub calibrations: HashMap<String, HashMap<i32, Calibration>>,
     write_packets: Rc<embassy_sync::channel::Channel<embassy_sync::blocking_mutex::raw::NoopRawMutex, crate::my_mqtt::BufferedMqttPacket, 3>>,
     restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
@@ -75,6 +79,50 @@ pub struct BambuPrinter {
 pub trait BambuPrinterObserver {
     fn on_trays_update(&mut self, bambu_printer: &mut BambuPrinter, prev_tray_reading_bits: Option<u32>, new_tray_reading_bits: Option<u32>);
     fn on_printer_connect_status(&self, bambu_printer: &mut BambuPrinter, status: bool);
+}
+
+// Special access to trays fields for dirty tracking
+impl BambuPrinter {
+    pub fn ams_trays(&self) -> &[Tray; 16] {
+        &self.inner_ams_trays
+    }
+    pub fn set_ams_tray(&mut self, index: usize, tray: Tray) {
+        self.inner_ams_trays[index] = tray;
+        self.ams_trays_dirty[index] = true;
+    }
+    pub fn update_ams_tray<F>(&mut self, index: usize, f: F)
+    where
+        F: FnOnce(&mut Tray),
+    {
+        f(&mut self.inner_ams_trays[index]);
+        self.ams_trays_dirty[index] = true;
+    }
+    pub fn virt_tray(&self) -> &Tray {
+        &self.inner_virt_tray
+    }
+    pub fn set_virt_tray(&mut self, tray: Tray) {
+        self.inner_virt_tray = tray;
+        self.virty_tray_dirty = true;
+    }
+    pub fn update_virt_tray<F>(&mut self, f: F)
+    where
+        F: FnOnce(&mut Tray),
+    {
+        f(&mut self.inner_virt_tray);
+        self.virty_tray_dirty = true;
+    }
+    pub fn update_any_tray<F>(&mut self, index: usize, f: F)
+    where
+        F: FnOnce(&mut Tray),
+    {
+        if index == 254 {
+            f(&mut self.inner_virt_tray);
+            self.virty_tray_dirty = true;
+        } else {
+            f(&mut self.inner_ams_trays[index]);
+            self.ams_trays_dirty[index] = true;
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -160,7 +208,7 @@ impl BambuPrinter {
             printer_uuid_to_encode,
             printer_connectivity_ok: None,
             nozzle_diameter: None,
-            ams_trays: [
+            inner_ams_trays: [
                 unknown.clone(),
                 unknown.clone(),
                 unknown.clone(),
@@ -177,8 +225,10 @@ impl BambuPrinter {
                 unknown.clone(),
                 unknown.clone(),
                 unknown.clone(),
-            ], //, unknown, unknown, unknown],
-            virt_tray: unknown,
+            ],
+            inner_virt_tray: unknown,
+            ams_trays_dirty: [false; 16],
+            virty_tray_dirty: false,
             calibrations: HashMap::new(),
             write_packets,
             observers: Vec::new(),
@@ -243,7 +293,8 @@ impl BambuPrinter {
     }
 
     fn get_cali_k_value(&self, nozzle_diameter: &str, cali_idx: i32) -> Option<String> {
-        self.get_calibration(nozzle_diameter, cali_idx).map(|calibration| calibration.k_value.clone())
+        self.get_calibration(nozzle_diameter, cali_idx)
+            .map(|calibration| calibration.k_value.clone())
         // let nozzle_calibrations = match self.calibrations.get(nozzle_diameter) {
         //     Some(calibrations) => calibrations,
         //     None => return None,
@@ -488,7 +539,7 @@ impl BambuPrinter {
             }
         }
 
-        for tray_id in 0..self.ams_trays.len() {
+        for tray_id in 0..self.ams_trays().len() {
             let (ams_id, ams_tray_id) = BambuPrinter::get_ams_and_tray_id(tray_id);
             let ams_id_str = format!("{ams_id}");
             let source_tray = if let Some(amss) = &ams.ams {
@@ -501,11 +552,11 @@ impl BambuPrinter {
             } else {
                 None
             };
-            let old_tray = &self.ams_trays[tray_id];
+            let old_tray = &self.ams_trays()[tray_id];
             let new_tray = self.get_updated_tray(old_tray, source_tray, Some(tray_id));
             if let Some(new_tray) = new_tray {
                 change_made = true;
-                self.ams_trays[tray_id] = new_tray;
+                self.set_ams_tray(tray_id, new_tray);
             }
         }
         change_made
@@ -513,10 +564,10 @@ impl BambuPrinter {
 
     #[allow(non_snake_case)]
     pub fn process_print_message__push_status__vt_tray(&mut self, v_tray: &PrintTray) -> bool {
-        let old_tray = self.virt_tray.clone();
+        let old_tray = self.virt_tray().clone();
         let new_tray = self.get_updated_tray(&old_tray, Some(v_tray), None);
         if let Some(new_tray) = new_tray {
-            self.virt_tray = new_tray;
+            self.set_virt_tray(new_tray);
             return true;
         }
         false
@@ -546,20 +597,28 @@ impl BambuPrinter {
                 // External tray handling
                 // Handle external tray
                 if new_filament == Filament::Unknown {
-                    self.virt_tray.state = TrayState::Empty;
-                    self.virt_tray.tag_info = None;
+                    self.update_virt_tray(|virt_tray| {
+                        virt_tray.state = TrayState::Empty;
+                        virt_tray.tag_info = None;
+                    });
                 } else {
-                    self.virt_tray.state = TrayState::Ready;
+                    self.update_virt_tray(|virt_tray| {
+                        virt_tray.state = TrayState::Ready;
+                    });
                 }
-                self.virt_tray.filament = new_filament;
+                self.update_virt_tray(|virt_tray| {
+                    virt_tray.filament = new_filament;
+                });
             } else {
                 // AMS Tray handling
                 // Handle AMS tray
                 if let Some(ams_id) = print.ams_id {
                     // no change to tray state in case of AMS
                     let ams_id = usize::try_from(ams_id).unwrap();
-                    self.ams_trays[ams_id * 4 + usize::try_from(tray_id).unwrap()].filament = new_filament;
-                    self.ams_trays[ams_id * 4 + usize::try_from(tray_id).unwrap()].k_from_tray = None;
+                    self.update_ams_tray(ams_id * 4 + usize::try_from(tray_id).unwrap(), |ams_tray| {
+                        ams_tray.filament = new_filament;
+                        ams_tray.k_from_tray = None;
+                    });
                     // Is this correct to do?
                 }
             }
@@ -574,12 +633,9 @@ impl BambuPrinter {
         if let (Some(tray_id), Some(cali_idx)) = (&print.tray_id, &print.cali_idx) {
             if *tray_id >= 0 {
                 let tray_id: usize = (*tray_id).try_into().unwrap();
-                let tray = if tray_id == 254 {
-                    &mut self.virt_tray
-                } else {
-                    &mut self.ams_trays[tray_id]
-                };
-                tray.cali_idx = if *cali_idx == -1 { None } else { Some(*cali_idx) };
+                self.update_any_tray(tray_id, |tray| {
+                    tray.cali_idx = if *cali_idx == -1 { None } else { Some(*cali_idx) };
+                });
 
                 change_made = true;
             }
@@ -643,7 +699,7 @@ impl BambuPrinter {
                 let full_push_status = print.ams.is_some() && print.vt_tray.is_some();
                 let prev_trays = if full_push_status && self.auto_restore_k && self.printer_was_disconnected {
                     // TODO: To save memory (a few kb's, might be needed in the future) copy from ams_trays only the data requried and not entire tray
-                    Some((self.ams_trays.to_vec(), self.virt_tray.clone()))
+                    Some((self.ams_trays().to_vec(), self.virt_tray().clone()))
                 } else {
                     None
                 };
@@ -657,7 +713,7 @@ impl BambuPrinter {
                 if full_push_status && self.auto_restore_k && self.printer_was_disconnected {
                     self.printer_was_disconnected = false;
                     if let Some(prev_trays) = prev_trays {
-                        if self.ams_trays[..] != prev_trays.0 || self.virt_tray != prev_trays.1 {
+                        if self.ams_trays()[..] != prev_trays.0 || *self.virt_tray() != prev_trays.1 {
                             let spawner = self.app_config.borrow().framework.borrow().spawner;
                             spawner
                                 .spawn(fix_k_on_restart(
@@ -671,6 +727,16 @@ impl BambuPrinter {
                     }
                 }
                 change_made = nozzle_diameter_change_made || ams_change_made || vt_tray_change_made;
+
+                // if full_push_status && change_made {
+                //     let printer_state = PrinterPersistentState {
+                //         ams_trays: Cow::Borrowed(self.ams_trays()),
+                //         virt_tray: Cow::Borrowed(self.virt_tray()),
+                //     };
+                //     let out = serde_json::to_string(&printer_state).unwrap();
+                //     info!("{out}");
+                //     info!(">>> out.len() = {}", out.len());
+                // }
             } else if command == "ams_filament_setting" {
                 change_made = self.process_print_message__ams_filament_setting(print)
             } else if command == "extrusion_cali_set" || command == "extrusion_cali_del" {
@@ -679,7 +745,7 @@ impl BambuPrinter {
                     self.fetch_filament_calibrations(nozzle_diameter);
                 }
                 change_made = true;
-            }  else if command == "extrusion_cali_sel" {
+            } else if command == "extrusion_cali_sel" {
                 // update the tray with the new k factor
                 change_made = self.process_print_message__extrusion_cali_sel(print)
             } else if command == "extrusion_cali_get" {
@@ -842,11 +908,9 @@ impl BambuPrinter {
             );
             let payload = serde_json::to_string_pretty(&cmd).unwrap();
             self.publish_payload(payload);
-            if tray_id == 254 {
-                self.virt_tray.tag_info = Some(tag_info.clone())
-            } else {
-                self.ams_trays[tray_id as usize].tag_info = Some(tag_info.clone());
-            }
+            self.update_any_tray(tray_id as usize, |tray| {
+                tray.tag_info = Some(tag_info.clone());
+            });
         }
     }
 
@@ -986,9 +1050,9 @@ impl BambuPrinter {
 
     pub fn get_tag_info_to_encode(&self, tray_id: usize) -> Result<TagInformation, String> {
         let tray = if tray_id == 254 {
-            &self.virt_tray
-        } else if (0..self.ams_trays.len()).contains(&tray_id) {
-            &self.ams_trays[tray_id]
+            self.virt_tray()
+        } else if (0..self.ams_trays().len()).contains(&tray_id) {
+            &self.ams_trays()[tray_id]
         } else {
             return Err("Unexpected Software Error (1)".to_string());
         };
@@ -1020,7 +1084,7 @@ impl BambuPrinter {
 
 #[derive(Derivative)]
 #[derivative(PartialEq)]
-#[derive(Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct Tray {
     pub state: TrayState,
     pub filament: Filament,
@@ -1047,7 +1111,7 @@ impl Tray {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Default)]
 pub enum TrayState {
     #[default]
     Unknown,
@@ -1066,14 +1130,14 @@ pub enum Error {
     MissingFields,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub enum Filament {
     #[default]
     Unknown,
     Known(FilamentInfo),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct FilamentInfo {
     pub tray_info_idx: String, // e.g. "GFL99"
     pub tray_type: String,     // e.g. "PLA"
@@ -1241,7 +1305,7 @@ impl From<&bambu_api::PrintTray> for FilamentInfo {
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct Calibration {
     pub filament_id: String,
     pub k_value: String,
@@ -1249,6 +1313,12 @@ pub struct Calibration {
     setting_id: String,
     pub name: String,
     cali_idx: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct PrinterPersistentState<'a> {
+    pub ams_trays: Cow<'a, [Tray; 16]>,
+    pub virt_tray: Cow<'a, Tray>,
 }
 
 fn formatted_k_value(k: &str) -> String {
@@ -1622,7 +1692,7 @@ pub async fn bambu_mqtt_task(
     .await
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct TagInformation {
     pub filament: Option<FilamentInfo>,
     pub calibrations: HashMap<String, Calibration>,
@@ -1967,9 +2037,9 @@ pub async fn fix_k_on_restart(
             .chain(core::iter::once(&prev_virt_tray).map(|v| (254, v)))
         {
             let curr_tray = if id == 254 {
-                &bambu_borrow.virt_tray
+                bambu_borrow.virt_tray()
             } else {
-                &bambu_borrow.ams_trays[id]
+                &bambu_borrow.ams_trays()[id]
             };
             let set_tray = if id == 254 { &mut set_virt_cali_idx } else { &mut set_tray_cali_idx[id] };
             if let Filament::Known(curr_filament_info) = &curr_tray.filament {
