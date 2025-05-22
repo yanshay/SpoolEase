@@ -37,7 +37,10 @@ enum WellKnownFormatType {
     #[deku(id = 0x55)] // U = URI
     URI,
 }
-fn payload_length_reader<R: no_std_io::io::Read>(reader: &mut deku::reader::Reader<R>, short_record: bool) -> Result<u32, DekuError> {
+fn payload_length_reader<R: no_std_io::io::Read>(
+    reader: &mut deku::reader::Reader<R>,
+    short_record: bool,
+) -> Result<u32, DekuError> {
     Ok(if short_record {
         u8::from_reader_with_ctx(reader, deku::ctx::Endian::Big)?.into()
     } else {
@@ -212,7 +215,7 @@ impl NDEFStructure {
 
 #[derive(Debug, PartialEq, DekuRead, DekuWrite)]
 pub struct NDEFStructureType4 {
-    #[deku(endian="big", update = "self.record.to_bytes().unwrap().len()")]
+    #[deku(endian = "big", update = "self.record.to_bytes().unwrap().len()")]
     message_len: u16,
     pub record: Record,
 }

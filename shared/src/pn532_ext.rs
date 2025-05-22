@@ -453,13 +453,15 @@ where
                             send_data = get_data_to_set(&mut send_buf, &[], &TAG_NOT_FOUND);
                         }
                         TagFile::CC => {
-                            if p1p2_length > NDEF_MAX_LENGTH || p1p2_length + lc as usize > CAPABILITY_CONTAINER.len() {
+                            if p1p2_length > NDEF_MAX_LENGTH
+                                || p1p2_length + lc as usize > CAPABILITY_CONTAINER.len()
+                            {
                                 send_data = get_data_to_set(
                                     &mut send_buf,
                                     &[],
                                     &END_OF_FILE_BEFORE_REACHED_LE_BYTES,
                                 );
-                            }  else {
+                            } else {
                                 send_data = get_data_to_set(
                                     &mut send_buf,
                                     &CAPABILITY_CONTAINER[p1p2_length..p1p2_length + lc as usize],
@@ -468,13 +470,15 @@ where
                             }
                         }
                         TagFile::NDEF => {
-                            if p1p2_length > NDEF_MAX_LENGTH || p1p2_length + lc as usize > ndef_bytes.len() {
+                            if p1p2_length > NDEF_MAX_LENGTH
+                                || p1p2_length + lc as usize > ndef_bytes.len()
+                            {
                                 send_data = get_data_to_set(
                                     &mut send_buf,
                                     &[],
                                     &END_OF_FILE_BEFORE_REACHED_LE_BYTES,
                                 );
-                            }  else {
+                            } else {
                                 send_data = get_data_to_set(
                                     &mut send_buf,
                                     &ndef_bytes[p1p2_length..p1p2_length + lc as usize],
