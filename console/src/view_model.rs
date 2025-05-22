@@ -1,4 +1,5 @@
 use core::cell::RefCell;
+use core::cmp::max;
 use core::ops::{Deref, DerefMut};
 
 use alloc::string::String;
@@ -9,6 +10,7 @@ use alloc::{
     vec::Vec,
 };
 use embassy_net::Stack;
+use embassy_time::Timer;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use hashbrown::HashMap;
 use slint::{ComponentHandle, Model, SharedString, ToSharedString};
@@ -321,6 +323,7 @@ impl ViewModel {
                 // First stored UI for this printer for when we switch back to it
                 Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), &selected_printer);
             });
+            self.framework.borrow().spawner.spawn(printers_scheduled_store_state_task(self.framework.clone(), self.view_model.clone().unwrap())).ok();
         }
 
         // Initialize SpoolScale and weight related stuff
@@ -1274,4 +1277,37 @@ fn get_brand_from_text(text: &str) -> Option<&'static str> {
         }
     }
     None
+}
+
+#[embassy_executor::task] // up to two printers in parallel
+pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework>>, view_model: Rc<RefCell<ViewModel>>) {
+    {
+        let file_store = framework.borrow().file_store();
+        let file_store = file_store.lock().await;
+        if !file_store.card_installed { 
+            term_info!("SDCard not installed, won't restore state on restart");
+            return;
+        }
+    }
+
+    let num_of_printers = view_model.borrow().bambu_printer_model.printers.len();
+    term_info!("Restoring printer(s) state");
+    for printer_index in 0..num_of_printers {
+        let printer = view_model.borrow().bambu_printer_model.printers[printer_index].clone();
+        BambuPrinter::load_printer_state(&framework, &printer).await;
+    }
+
+    let mut printer_index = 0;
+    let delay_time = max(1000u64, (3000 / num_of_printers) as u64); // want every printer to save every 3 seconds, and not all together
+    loop {
+        if printer_index < num_of_printers {
+            let printer = view_model.borrow().bambu_printer_model.printers[printer_index].clone();
+            BambuPrinter::store_printer_state(&framework, &printer).await;
+        }
+        Timer::after_millis(delay_time).await;
+        printer_index += 1;
+        if printer_index >= num_of_printers {
+            printer_index = 0;
+        }
+    }
 }

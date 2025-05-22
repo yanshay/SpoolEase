@@ -123,6 +123,73 @@ impl BambuPrinter {
             self.ams_trays_dirty[index] = true;
         }
     }
+
+    pub fn init_printer_persistent_state(&mut self, state: PrinterPersistentState) {
+       self.inner_ams_trays = state.ams_trays.into_owned();
+       self.inner_virt_tray = state.virt_tray.into_owned();
+    }
+
+    pub async fn load_printer_state(framework: &Rc<RefCell<Framework>>, printer: &Rc<RefCell<BambuPrinter>>) {
+        let path = Self::printer_state_file_path(&printer.borrow().printer_serial);
+        let printer_number = printer.borrow().printer_number;
+        let file_store = framework.borrow().file_store();
+        let mut file_store = file_store.lock().await;
+        match file_store.read_file_str(&path).await {
+            Ok(state_str) => {
+                match serde_json::from_str::<PrinterPersistentState>(&state_str) {
+                    Ok(printer_state) => {
+                        printer.borrow_mut().init_printer_persistent_state(printer_state);
+                        term_info!("[{}] Restored printer state from SDCard", printer_number);
+                    }
+                    Err(err) => {
+                        term_error!("[{}] Failed to parse printer state in file {} : {}", printer_number, path, err);
+                    }
+                }
+            }
+            Err(err) => {
+                error!("[{printer_number}] Error reading state file {path} : {err}");
+            }
+        }
+    }
+
+    pub async fn store_printer_state(framework: &Rc<RefCell<Framework>>, printer: &Rc<RefCell<BambuPrinter>>) {
+        let mut printer_state_str = None;
+        let mut printer_serial = None;
+        {
+            let printer_borrow = printer.borrow();
+            if printer_borrow.ams_trays_dirty.iter().any(|&v| v) || printer_borrow.virty_tray_dirty {
+                printer_serial = Some(printer_borrow.printer_serial.clone());
+                let printer_state = PrinterPersistentState {
+                    ams_trays: Cow::Borrowed(printer_borrow.ams_trays()),
+                    virt_tray: Cow::Borrowed(printer_borrow.virt_tray()),
+                };
+                printer_state_str = Some(serde_json::to_string(&printer_state).unwrap());
+            }
+        }
+        if let (Some(printer_state_str), Some(printer_serial)) = (printer_state_str, printer_serial) {
+            let file_store = framework.borrow().file_store();
+            let path = Self::printer_state_file_path(&printer_serial);
+            info!("[{}] Storing printer state to {}", printer.borrow().printer_number, path);
+            let mut file_store = file_store.lock().await;
+            match file_store.create_write_file_str(&path, &printer_state_str).await {
+                Ok(_) => {
+                    let mut printer_borrow = printer.borrow_mut();
+                    printer_borrow.virty_tray_dirty = false;
+                    printer_borrow.ams_trays_dirty.fill(false);
+                }
+                Err(err) => {
+                    let printer_borrow = printer.borrow();
+                    error!("[{}] Failed to store printer restart state : {err}", printer_borrow.printer_index);
+                }
+            }
+        }
+    }
+    pub fn printer_state_file_path(printer_serial: &str) -> String {
+        let len = printer_serial.len();
+        let file_ext = &printer_serial[len - 3..];
+        let file_name = &printer_serial[len - 11..len - 3];
+        format!("/state/{file_name}.{file_ext}/startup.jsn")
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
