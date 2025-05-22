@@ -37,10 +37,7 @@ extern crate alloc;
 use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_executor::Spawner;
 use embassy_net::{Config, Ipv4Cidr, StackResources, StaticConfigV4};
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Timer};
-
-use embedded_hal_bus::spi::ExclusiveDevice;
 
 use esp_backtrace as _;
 use esp_hal::{
@@ -59,7 +56,6 @@ use esp_hal::{
 use framework::prelude::*;
 use framework::{
     framework::FrameworkSettings,
-    sdcard_store::SDCardStore,
     wt32_sc01_plus::{WT32SC01Plus, WT32SC01PlusDisplayPeripherals, WT32SC01PlusRunner, WT32SC01PlusSDCardPeripherals},
     RNG,
 };
@@ -305,14 +301,6 @@ async fn main(spawner: Spawner) {
     debug!("Setting up SDCard");
 
     Framework::set_sdcard_device(framework.clone(), sdcard_device).await;
-    // framework.borrow_mut().set_sdcard_device(sdcard_device).await;
-    // framework.bo
-    // let file_store = framework.borrow().file_store.clone();
-
-    // let file_store = SDCardStore::<_, 20, 5>::new(sdcard_device).await;
-    // let file_store = Rc::new(Mutex::<CriticalSectionRawMutex, SDCardStore<_, 20, 5>>::new(file_store));
-
-    // == Load Configuration from SDCard, required here for WiFi ssid & password ======
 
     let file_store = framework.borrow().file_store();
     let config_toml = {
