@@ -34,7 +34,7 @@ dependencies = [
  "embedded-hal-bus",
  "embedded-io",
  "embedded-io-async",
- "embedded-sdmmc",
+ "embedded-sdmmc 0.8.1",
  "embedded-storage",
  "embedded-storage-async",
  "esp-alloc",
@@ -513,6 +513,21 @@ dependencies = [
  "shlex",
  "syn 2.0.101",
 ]
+
+[[package]]
+name = "bisync"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5020822f6d6f23196ccaf55e228db36f9de1cf788052b37992e17cbc96ec41a7"
+dependencies = [
+ "bisync_macros",
+]
+
+[[package]]
+name = "bisync_macros"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d21f40d350a700f6aa107e45fb26448cf489d34794b2ba4522181dc9f1173af6"
 
 [[package]]
 name = "bit_field"
@@ -1790,6 +1805,22 @@ dependencies = [
 
 [[package]]
 name = "embedded-sdmmc"
+version = "0.8.0"
+source = "git+https://github.com/Be-ing/embedded-sdmmc-rs?rev=835b2e4f9d3482b6287f674d7ecf6ae5d0618c18#835b2e4f9d3482b6287f674d7ecf6ae5d0618c18"
+dependencies = [
+ "bisync",
+ "byteorder",
+ "embassy-futures",
+ "embedded-hal 1.0.0",
+ "embedded-hal-async",
+ "embedded-io",
+ "embedded-io-async",
+ "heapless 0.8.0",
+ "log",
+]
+
+[[package]]
+name = "embedded-sdmmc"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb637331040ec9b35f6a8151904d1aca914cc349d14c91b9a3e92ba789b22f3f"
@@ -2055,7 +2086,6 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework"
 version = "0.2.1"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=v0.2.1#aa63c8c58b60c859abdd2df86cdee732011f3c70"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2084,7 +2114,7 @@ dependencies = [
  "embedded-hal-bus",
  "embedded-io",
  "embedded-io-async",
- "embedded-sdmmc",
+ "embedded-sdmmc 0.8.0",
  "embedded-storage",
  "embedded-storage-async",
  "esp-alloc",
@@ -2120,6 +2150,7 @@ dependencies = [
  "sha2",
  "slint",
  "smoltcp",
+ "snafu",
  "static_cell",
  "xtensa-lx-rt",
 ]
@@ -5705,6 +5736,25 @@ dependencies = [
  "cfg-if",
  "heapless 0.8.0",
  "managed",
+]
+
+[[package]]
+name = "snafu"
+version = "0.8.5"
+source = "git+https://github.com/shepmaster/snafu?rev=aedc9db8c04a437b4c547efd4d73e9337fa43a4a#aedc9db8c04a437b4c547efd4d73e9337fa43a4a"
+dependencies = [
+ "snafu-derive",
+]
+
+[[package]]
+name = "snafu-derive"
+version = "0.8.5"
+source = "git+https://github.com/shepmaster/snafu?rev=aedc9db8c04a437b4c547efd4d73e9337fa43a4a#aedc9db8c04a437b4c547efd4d73e9337fa43a4a"
+dependencies = [
+ "heck 0.4.1",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
 ]
 
 [[package]]

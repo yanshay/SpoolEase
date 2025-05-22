@@ -12,25 +12,25 @@ mod app;
 mod app_config;
 mod bambu;
 mod bambu_api;
+mod color_utils;
 mod filament_staging;
 mod my_mqtt;
 mod settings;
-mod view_model;
-mod web_app;
 mod spool_scale;
 mod ssdp;
-mod color_utils;
+mod view_model;
+mod web_app;
 
 use alloc::{format, rc::Rc, string::ToString};
-use embassy_futures::yield_now;
 use core::{cell::RefCell, net::Ipv4Addr};
+use embassy_futures::yield_now;
 use esp_alloc as _;
 use esp_backtrace as _;
 use esp_hal_ota::Ota;
 use esp_mbedtls::Tls;
 use esp_storage::FlashStorage;
 use esp_wifi::{init, EspWifiController};
-use framework::{framework::FrameworkSettings, RNG};
+use framework::{framework::FrameworkSettings, sdcard_store::SDCardStore, RNG};
 use slint::ComponentHandle;
 
 extern crate alloc;
@@ -38,6 +38,7 @@ extern crate alloc;
 use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_executor::Spawner;
 use embassy_net::{Config, Ipv4Cidr, StackResources, StaticConfigV4};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex};
 use embassy_time::{Duration, Timer};
 
 use embedded_hal_bus::spi::ExclusiveDevice;
@@ -54,7 +55,6 @@ use esp_hal::{
     spi::{self, master::Spi},
     time::RateExtU32,
     timer::timg::TimerGroup,
-    Blocking,
 };
 
 use framework::prelude::*;
@@ -68,7 +68,7 @@ use settings::{
     WEB_SERVER_CAPTIVE, WEB_SERVER_HTTPS, WEB_SERVER_PORT, WEB_SERVER_TLS_CERTIFICATE, WEB_SERVER_TLS_PRIVATE_KEY,
 };
 use web_app::NestedAppBuilder;
-const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 1 + MAX_NUM_PRINTERS + FRAMEWORK_STA_STACK_RESOURCES ; // web-config listeners + USDP + mqtt*num-of-printers + from framework: potentially https captive +  ota + captive dns + ? initial firmware check if doen't complete 
+const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 1 + MAX_NUM_PRINTERS + FRAMEWORK_STA_STACK_RESOURCES; // web-config listeners + USDP + mqtt*num-of-printers + from framework: potentially https captive +  ota + captive dns + ? initial firmware check if doen't complete
 const AP_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + FRAMEWORK_AP_STACK_RESOURCES;
 
 #[macro_export]
@@ -125,7 +125,6 @@ async fn main(spawner: Spawner) {
 
     // == Setup timers & delay ========================================================
 
-    let delay = esp_hal::delay::Delay::new();
     let _rtc: Rtc<'static> = Rtc::new(peripherals.LPWR); // don't move from here, will cause all kinds of timer/embassy
     let timg0 = TimerGroup::new(peripherals.TIMG0);
 
@@ -175,7 +174,7 @@ async fn main(spawner: Spawner) {
 
     let sta_config = Config::dhcpv4(Default::default());
 
-    let mut seed_bytes = [0u8;8];
+    let mut seed_bytes = [0u8; 8];
     getrandom::getrandom(&mut seed_bytes).unwrap();
     let seed = u64::from_le_bytes(seed_bytes);
 
@@ -205,7 +204,7 @@ async fn main(spawner: Spawner) {
         ota_domain: OTA_DOMAIN,
         ota_path: OTA_PATH,
         ota_toml_filename: OTA_TOML_FILENAME,
-        ota_certs: OTA_TLS_CERTIFICATE, 
+        ota_certs: OTA_TLS_CERTIFICATE,
 
         ap_addr: AP_ADDR,
 
@@ -304,37 +303,32 @@ async fn main(spawner: Spawner) {
     .unwrap()
     .with_sck(sd_sclk)
     .with_miso(sd_miso)
-    .with_mosi(sd_mosi);
+    .with_mosi(sd_mosi)
+    .into_async();
 
     let sdcard_spi_device = ExclusiveDevice::new_no_delay(spi_bus, sd_cs).unwrap();
 
-    let sdcard = mk_static!(
-        framework::sdcard::SDCard<
-            embedded_hal_bus::spi::ExclusiveDevice<
-                esp_hal::spi::master::Spi<'_, Blocking>,
-                esp_hal::gpio::Output<'_>,
-                embedded_hal_bus::spi::NoDelay,
-            >,
-            esp_hal::delay::Delay,
-        >,
-        framework::sdcard::SDCard::new(sdcard_spi_device, delay)
-    );
+    let file_store = SDCardStore::<_, 20, 5>::new(sdcard_spi_device).await;
+    let file_store = Rc::new(Mutex::<CriticalSectionRawMutex, SDCardStore<_, 20, 5>>::new(file_store));
 
     // == Load Configuration from SDCard, required here for WiFi ssid & password ======
 
-    let config_filename = format!("/{}.cfg", env!("CARGO_PKG_NAME").to_lowercase());
-    term_info!("Loading optional config file '{}' from SDCard", config_filename);
+    let config_toml =  {
+        let mut file_store = file_store.lock().await;
+        let config_filename = "/config/console.cfg";
+        term_info!("Loading optional config file '{}' from SDCard", config_filename);
 
-    let read_file_str = sdcard.read_file_str(&config_filename);
-    let config_toml = match read_file_str {
-        Ok(config_toml) => {
-            term_info!("Read config file '{}' from SDCard", config_filename);
-            config_toml
-        }
-        Err(e) => {
-            term_info!("Failed to load optional config file '{}' : {}", config_filename, e);
-            "".to_string()
-            // SDCard is not mandatory, so can continue
+        let read_file_str = file_store.read_file_str(config_filename).await;
+        match read_file_str {
+            Ok(config_toml) => {
+                term_info!("Read config file '{}' from SDCard", config_filename);
+                config_toml
+            }
+            Err(e) => {
+                term_info!("Failed to load optional config file '{}' : {}", config_filename, e);
+                "".to_string()
+                // SDCard is not mandatory, so can continue
+            }
         }
     };
 
@@ -357,9 +351,9 @@ async fn main(spawner: Spawner) {
     spawner.spawn(framework::wifi::sta_net_task(sta_runner)).ok();
     spawner.spawn(framework::wifi::ap_net_task(ap_runner)).ok(); // TODO: Maybe move this to run only when needed (in wifi.rs)
 
-    // ==================================================================================================================================================
-    // == Applicative Initialization ====================================================================================================================
-    // ==================================================================================================================================================
+    // ===============================================================================================================================================
+    // == Applicative Initialization =================================================================================================================
+    // ===============================================================================================================================================
 
     // == Setup PN532 =================================================================
 
@@ -399,13 +393,13 @@ async fn main(spawner: Spawner) {
     // This initializes all the applicative stuff, and is provided with all the required hw access
 
     let view_model = crate::app::init_app(
-            sta_stack,
-            ui.as_weak(),
-            framework.clone(),
-            app_config.clone(),
-            pn532_spi_device,
-            pn532_irq,
-        );
+        sta_stack,
+        ui.as_weak(),
+        framework.clone(),
+        app_config.clone(),
+        pn532_spi_device,
+        pn532_irq,
+    );
 
     // == Setup Web Application and Run Web Server ====================================
 
@@ -439,18 +433,12 @@ async fn main(spawner: Spawner) {
 
     let web_server_runner = mk_static!(
         framework::web_server::WebAppRunner<NestedAppBuilder>,
-        framework::web_server::WebAppRunner::new(
-            framework.clone(),
-            web_app_router,
-            web_app_state,
-            config
-        )
+        framework::web_server::WebAppRunner::new(framework.clone(), web_app_router, web_app_state, config)
     );
 
     for id in 0..WEB_SERVER_NUM_LISTENERS {
         spawner.spawn(web_server_task(web_server_runner, id)).unwrap();
     }
-
 
     // yields for term initialization to complete until term is fixed to not require this
     yield_now().await;
@@ -471,9 +459,7 @@ async fn main(spawner: Spawner) {
         .notify_initialization_completed(app_config.borrow().initialization_ok(true).unwrap());
 
     Framework::wait_for_wifi(&framework).await; // this is mostly to start the web app after all tasks initialized and won't miss this start message
-    framework
-        .borrow_mut()
-        .start_web_app(sta_stack, framework::framework::WebConfigMode::STA);
+    framework.borrow_mut().start_web_app(sta_stack, framework::framework::WebConfigMode::STA);
 
     loop {
         Timer::after(Duration::from_secs(60)).await;
