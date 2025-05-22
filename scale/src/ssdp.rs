@@ -8,7 +8,12 @@ use framework::{error, prelude::Framework};
 pub async fn ssdp_broadcast(framework: Rc<RefCell<Framework>>) {
     let stack = framework.borrow().stack;
 
-    let device_name = framework.borrow().device_name.as_ref().unwrap_or(&"".to_string()).clone();
+    let device_name = framework
+        .borrow()
+        .device_name
+        .as_ref()
+        .unwrap_or(&"".to_string())
+        .clone();
 
     let local_addr;
     loop {
@@ -59,7 +64,9 @@ Cache-Control: max-age=1800
 
     let buf = buf.replace("\n", "\r\n");
     loop {
-        let res = socket1.send_to(buf.as_bytes(), ssdp_multicast_endpoint).await;
+        let res = socket1
+            .send_to(buf.as_bytes(), ssdp_multicast_endpoint)
+            .await;
         if res.is_err() {
             error!("Error sending SSDP {:?}", res.err().unwrap());
         }

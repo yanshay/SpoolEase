@@ -20,9 +20,7 @@ pub struct NfcModuleConfig {
 
 impl Default for NfcModuleConfig {
     fn default() -> Self {
-        Self {
-            available: true,
-        }
+        Self { available: true }
     }
 }
 
@@ -70,7 +68,10 @@ impl AppConfig {
     }
 
     pub fn nfc_module_available(&self) -> bool {
-        self.configured_nfc_module.as_ref().unwrap_or(&NfcModuleConfig::default()).available
+        self.configured_nfc_module
+            .as_ref()
+            .unwrap_or(&NfcModuleConfig::default())
+            .available
     }
 
     pub fn set_scale_calibration_config(

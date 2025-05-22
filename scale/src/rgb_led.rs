@@ -27,11 +27,21 @@ pub async fn rgb_led_task(
     let mut led = SmartLedsAdapter::new(rmt.channel0, led_pin, rmt_buffer);
 
     #[allow(non_snake_case)]
-    let MY_PINK =  brightness([PURPLE].into_iter(), 40).next().unwrap();
+    let MY_PINK = brightness([PURPLE].into_iter(), 40).next().unwrap();
     #[allow(non_snake_case)]
     let MY_BLUE = brightness([BLUE].into_iter(), 40).next().unwrap();
     #[allow(non_snake_case)]
-    let MY_YELLOW = brightness([RGB{r:0x60, g:0x30, b: 0}].into_iter(), 40).next().unwrap();
+    let MY_YELLOW = brightness(
+        [RGB {
+            r: 0x60,
+            g: 0x30,
+            b: 0,
+        }]
+        .into_iter(),
+        40,
+    )
+    .next()
+    .unwrap();
 
     // decide on state based view
     let mut curr_color = BLACK;
@@ -41,8 +51,7 @@ pub async fn rgb_led_task(
             led_state = LedState::Flash(RED, BLACK);
         } else if app.borrow().pn532_state == Pn532State::InitAsTarget {
             led_state = LedState::Steady(MY_PINK);
-        }
-        else if !app.borrow().connected {
+        } else if !app.borrow().connected {
             led_state = LedState::Steady(RED);
         } else if matches!(
             framework.borrow().ota_state,

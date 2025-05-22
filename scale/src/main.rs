@@ -12,14 +12,13 @@ mod app;
 mod app_config;
 mod console_proxy;
 mod load_cell;
+mod rgb_led;
+mod scale_button;
 mod settings;
 mod ssdp;
 mod web_app;
-mod rgb_led;
-mod scale_button;
 
 use alloc::{format, rc::Rc, string::ToString};
-use settings::OTA_CERTS;
 use core::{cell::RefCell, net::Ipv4Addr};
 use esp_alloc as _;
 use esp_backtrace as _;
@@ -38,6 +37,7 @@ use esp_storage::FlashStorage;
 use esp_wifi::{init, EspWifiController};
 use framework::framework::FrameworkSettings;
 use framework::RNG;
+use settings::OTA_CERTS;
 
 extern crate alloc;
 
@@ -260,23 +260,28 @@ async fn main(spawner: Spawner) {
 
     let mut counter;
     let quick_boot_counter_fetch_res = framework.borrow().fetch("_c_".to_string());
-    if let Ok(quick_boot_counter) =  quick_boot_counter_fetch_res {
+    if let Ok(quick_boot_counter) = quick_boot_counter_fetch_res {
         counter = if let Some(quick_boot_counter) = quick_boot_counter {
             quick_boot_counter.as_str().parse::<u32>().unwrap_or(0)
         } else {
             0
         };
         counter += 1;
-        let _ = framework.borrow().store("_c_".to_string(), format!("{counter}"));
-        spawner.spawn(reset_quick_boot_sequence(framework.clone())).ok();
+        let _ = framework
+            .borrow()
+            .store("_c_".to_string(), format!("{counter}"));
+        spawner
+            .spawn(reset_quick_boot_sequence(framework.clone()))
+            .ok();
         debug!("Quick boot Counter: {counter}");
-        if counter >= 5 { // 5 resets
+        if counter >= 5 {
+            // 5 resets
             info!( "-------------------------------------------------------------------------------------");
             info!( "Identified fast boot sequence, erasing stored WiFi credentials and fixed security key");
             info!( "-------------------------------------------------------------------------------------");
             framework.borrow_mut().erase_stored_wifi_credentials();
             framework.borrow_mut().erase_stored_fixed_key();
-        } 
+        }
     }
 
     // == Configure the App UI ========================================================
@@ -481,7 +486,6 @@ async fn web_server_task(
 ) {
     runner.run(id).await;
 }
-
 
 #[embassy_executor::task]
 async fn reset_quick_boot_sequence(framework: Rc<RefCell<Framework>>) {

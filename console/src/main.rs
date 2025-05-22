@@ -30,7 +30,6 @@ use esp_hal_ota::Ota;
 use esp_mbedtls::Tls;
 use esp_storage::FlashStorage;
 use esp_wifi::{init, EspWifiController};
-use framework::{framework::FrameworkSettings, sdcard_store::SDCardStore, RNG};
 use slint::ComponentHandle;
 
 extern crate alloc;
@@ -58,11 +57,16 @@ use esp_hal::{
 };
 
 use framework::prelude::*;
-use framework::wt32_sc01_plus::{WT32SC01Plus, WT32SC01PlusPeripherals, WT32SC01PlusRunner};
+use framework::{
+    framework::FrameworkSettings,
+    sdcard_store::SDCardStore,
+    wt32_sc01_plus::{WT32SC01Plus, WT32SC01PlusDisplayPeripherals, WT32SC01PlusRunner, WT32SC01PlusSDCardPeripherals},
+    RNG,
+};
 
 use app_config::AppConfig;
-use settings::{AP_ADDR, MAX_NUM_PRINTERS, OTA_TLS_CERTIFICATE};
 use settings::WEB_SERVER_NUM_LISTENERS;
+use settings::{AP_ADDR, MAX_NUM_PRINTERS, OTA_TLS_CERTIFICATE};
 use settings::{
     OTA_DOMAIN, OTA_PATH, OTA_TOML_FILENAME, WEB_APP_DOMAIN, WEB_APP_KEY_DERIVATION_ITERATIONS, WEB_APP_SALT, WEB_APP_SECURITY_KEY_LENGTH,
     WEB_SERVER_CAPTIVE, WEB_SERVER_HTTPS, WEB_SERVER_PORT, WEB_SERVER_TLS_CERTIFICATE, WEB_SERVER_TLS_PRIVATE_KEY,
@@ -231,7 +235,7 @@ async fn main(spawner: Spawner) {
 
     // == Setup Display Interface =====================================================
 
-    let display_peripherals = WT32SC01PlusPeripherals {
+    let display_peripherals = WT32SC01PlusDisplayPeripherals {
         GPIO47: peripherals.GPIO47,
         GPIO0: peripherals.GPIO0,
         GPIO45: peripherals.GPIO45,
@@ -253,10 +257,19 @@ async fn main(spawner: Spawner) {
         I2Cx: peripherals.I2C0,
     };
 
+    let sdcard_peripherals = WT32SC01PlusSDCardPeripherals {
+        // SDCard
+        GPIO38: peripherals.GPIO38,
+        GPIO39: peripherals.GPIO39,
+        GPIO40: peripherals.GPIO40,
+        GPIO41: peripherals.GPIO41,
+        SPIx: peripherals.SPI3,
+    };
+
     let display_orientation = mipidsi::options::Orientation::new()
         .rotate(mipidsi::options::Rotation::Deg270)
         .flip_horizontal();
-    let (display, runner) = WT32SC01Plus::new(display_peripherals, display_orientation, framework.clone());
+    let (display, runner, sdcard_device) = WT32SC01Plus::new(display_peripherals, sdcard_peripherals, display_orientation, framework.clone());
 
     spawner.spawn(display_runner(runner)).ok();
     let _ = display.wait_init_done().await; // important to wait for init stage to complete before moving on
@@ -291,29 +304,18 @@ async fn main(spawner: Spawner) {
 
     debug!("Setting up SDCard");
 
-    let sd_cs = Output::new(peripherals.GPIO41, Level::High);
-    let sd_sclk = peripherals.GPIO39;
-    let sd_miso = peripherals.GPIO38;
-    let sd_mosi = peripherals.GPIO40;
+    Framework::set_sdcard_device(framework.clone(), sdcard_device).await;
+    // framework.borrow_mut().set_sdcard_device(sdcard_device).await;
+    // framework.bo
+    // let file_store = framework.borrow().file_store.clone();
 
-    let spi_bus = Spi::new(
-        peripherals.SPI3,
-        spi::master::Config::default().with_frequency(2.MHz()).with_mode(spi::Mode::_0),
-    )
-    .unwrap()
-    .with_sck(sd_sclk)
-    .with_miso(sd_miso)
-    .with_mosi(sd_mosi)
-    .into_async();
-
-    let sdcard_spi_device = ExclusiveDevice::new_no_delay(spi_bus, sd_cs).unwrap();
-
-    let file_store = SDCardStore::<_, 20, 5>::new(sdcard_spi_device).await;
-    let file_store = Rc::new(Mutex::<CriticalSectionRawMutex, SDCardStore<_, 20, 5>>::new(file_store));
+    // let file_store = SDCardStore::<_, 20, 5>::new(sdcard_device).await;
+    // let file_store = Rc::new(Mutex::<CriticalSectionRawMutex, SDCardStore<_, 20, 5>>::new(file_store));
 
     // == Load Configuration from SDCard, required here for WiFi ssid & password ======
 
-    let config_toml =  {
+    let file_store = framework.borrow().file_store();
+    let config_toml = {
         let mut file_store = file_store.lock().await;
         let config_filename = "/config/console.cfg";
         term_info!("Loading optional config file '{}' from SDCard", config_filename);

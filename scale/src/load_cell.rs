@@ -68,7 +68,7 @@ impl LoadCell {
             spi: Some(spi),
             dt: Some(dt),
             sck: Some(sck),
-            spawner
+            spawner,
         };
         let myself = Rc::new(RefCell::new(myself));
         myself.borrow_mut().load_cell_weak = Rc::downgrade(&myself);
@@ -145,8 +145,9 @@ impl LoadCell {
 
     pub fn add_sample(&mut self, sample: i32) {
         if !self.samples.is_empty() && self.calibration_tare != 0 {
-            let clear_samples_change_threshold =
-                abs(self.change_threshold_g as i64 * (self.calibration_sample - self.calibration_tare) / self.calibration_weight); // 5g // here need to use calibration tare
+            let clear_samples_change_threshold = abs(self.change_threshold_g as i64
+                * (self.calibration_sample - self.calibration_tare)
+                / self.calibration_weight); // 5g // here need to use calibration tare
             if abs(self.samples_sum() - sample as i64 * self.samples.len() as i64)
                 / self.samples.len() as i64
                 > clear_samples_change_threshold
