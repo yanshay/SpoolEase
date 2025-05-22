@@ -25,7 +25,8 @@ impl Print {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Filament { // this is really calibrations, not filaments
+pub struct Filament {
+    // this is really calibrations, not filaments
     pub filament_id: String,
     pub name: String,
     pub k_value: String,

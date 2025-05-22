@@ -49,7 +49,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
         let router = picoserve::Router::from_service(CustomNotFound {
             web_server_captive: self.framework.borrow().settings.web_server_captive,
         }); // Handler in case page is not found for captive portal support
-        // let router = router.route("/", get(|| Redirect::to("/config"))); // Redirect root for now
+            // let router = router.route("/", get(|| Redirect::to("/config"))); // Redirect root for now
 
         // Redirect root to the current active application - either config, or encode or whatever
         // For that, in order to preserve the hash (for sk=...), using a html/js redirect technique
@@ -59,7 +59,8 @@ impl AppWithStateBuilder for NestedAppBuilder {
             get(move || {
                 ready({
                     let redirect_url = &app_config_clone_get.borrow().root_redirect;
-                    let redirect_html = format!(r#"<!doctype html><script>location.href=location.hash?"{redirect_url}"+location.hash:"{redirect_url}"</script>"#);
+                    let redirect_html =
+                        format!(r#"<!doctype html><script>location.href=location.hash?"{redirect_url}"+location.hash:"{redirect_url}"</script>"#);
                     HtmlStringResponse::new(redirect_html)
                 })
             }),
@@ -75,14 +76,14 @@ impl AppWithStateBuilder for NestedAppBuilder {
             "/favicon-48x48.png",
             get_service(picoserve::response::File::with_content_type(
                 "image/png",
-                include_bytes!("../static/favicon-48x48.png")
+                include_bytes!("../static/favicon-48x48.png"),
             )),
         );
 
         let router = router.route(
             "/encode",
             get_service(picoserve::response::File::html(include_str!("../static/encode.html"))),
-        ); 
+        );
 
         let app_config_clone_post = app_config.clone();
         let app_config_clone_get = app_config.clone();

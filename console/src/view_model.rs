@@ -443,7 +443,10 @@ impl ViewModel {
             while let (Some(desc), Some(weight)) = (split.next(), split.next()) {
                 if !desc.is_empty() && !weight.is_empty() && (filter.is_empty() || desc.to_uppercase().contains(filter)) {
                     id += 1;
-                    let selector_option = crate::app::SelectorOption { id, text: desc.trim().into() };
+                    let selector_option = crate::app::SelectorOption {
+                        id,
+                        text: desc.trim().into(),
+                    };
                     cores_list.push(selector_option);
                     if let Ok(weight) = weight.trim().parse() {
                         self.spools_cores_weights.insert(id, weight);

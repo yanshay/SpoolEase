@@ -43,7 +43,6 @@ fn main() {
     // // println!("cargo:rerun-if-changed={}", output_file.display());
     // println!("cargo:rerun-if-changed={}", device_wasm_project_path.display());
 
-
     // Slint needs to come last, seems like it syncs in some way with the build and waits to the end
     slint_build::compile_with_config(
         "ui/appwindow.slint",
@@ -51,4 +50,3 @@ fn main() {
     )
     .unwrap();
 }
-

@@ -25,7 +25,6 @@ pub fn init_app(
     spi_device: ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
     irq: esp_hal::gpio::Input<'static>,
 ) -> Rc<RefCell<ViewModel>> {
-
     // == Setup ViewModel =============================================================
     crate::view_model::ViewModel::new(
         // Framework

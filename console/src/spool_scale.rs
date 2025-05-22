@@ -184,7 +184,7 @@ impl SpoolScale {
 }
 
 pub fn init(
-    framework:Rc<RefCell<Framework>>,
+    framework: Rc<RefCell<Framework>>,
     app_config: Rc<RefCell<AppConfig>>,
     stack: Stack<'static>,
     spawner: Spawner,
@@ -200,9 +200,7 @@ pub fn init(
         available_scales: HashSet::new(),
     }));
 
-    spawner
-        .spawn(monitor_scales_task(spool_scale_rc.clone(), ssdp_pub_sub))
-        .ok();
+    spawner.spawn(monitor_scales_task(spool_scale_rc.clone(), ssdp_pub_sub)).ok();
 
     if let Some(spool_scale_config) = &app_config.clone().borrow().configured_scale {
         if spool_scale_config.available {
@@ -216,10 +214,7 @@ pub fn init(
 }
 
 #[embassy_executor::task]
-pub async fn monitor_scales_task(
-    spool_scale_rc: Rc<RefCell<SpoolScale>>,
-    ssdp_pub_sub: &'static SSDPPubSubChannel,
-) {
+pub async fn monitor_scales_task(spool_scale_rc: Rc<RefCell<SpoolScale>>, ssdp_pub_sub: &'static SSDPPubSubChannel) {
     let mut ssdp_subscribe = ssdp_pub_sub.subscriber().unwrap();
     loop {
         let ssdp_info = ssdp_subscribe.next_message().await;

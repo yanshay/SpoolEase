@@ -1,10 +1,10 @@
 // The code here is based on the color_namer code in trials folder
 
-// It uses css colors mapped to simple names fit to 3d printing context 
+// It uses css colors mapped to simple names fit to 3d printing context
 // of user picking a color and deduction of color name from his selection
 // So colors of gold/silver/etc. which can't rely on user selection to deduce
-// accurate color name, because he could choose yellow and accidentally land on 
-// some rgb value which matches gold. 
+// accurate color name, because he could choose yellow and accidentally land on
+// some rgb value which matches gold.
 
 use num_traits::Float;
 #[allow(clippy::upper_case_acronyms)]
@@ -38,21 +38,9 @@ impl RGB {
         let y = y / 1.0;
         let z = z / 1.08883;
 
-        let x = if x > 0.008856 {
-            x.powf(1.0/3.0)
-        } else {
-            (7.787 * x) + (16.0 / 116.0)
-        };
-        let y = if y > 0.008856 {
-            y.powf(1.0 / 3.0)
-        } else {
-            (7.787 * y) + (16.0 / 116.0)
-        };
-        let z = if z > 0.008856 {
-            z.powf(1.0 / 3.0)
-        } else {
-            (7.787 * z) + (16.0 / 116.0)
-        };
+        let x = if x > 0.008856 { x.powf(1.0 / 3.0) } else { (7.787 * x) + (16.0 / 116.0) };
+        let y = if y > 0.008856 { y.powf(1.0 / 3.0) } else { (7.787 * y) + (16.0 / 116.0) };
+        let z = if z > 0.008856 { z.powf(1.0 / 3.0) } else { (7.787 * z) + (16.0 / 116.0) };
 
         let l = (116.0 * y) - 16.0;
         let a = 500.0 * (x - y);

@@ -4,7 +4,6 @@ use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
-use embassy_time::with_timeout;
 use core::cell::RefCell;
 use core::cmp::min;
 use embassy_futures::select::Either;
@@ -15,6 +14,7 @@ use embassy_net::IpEndpoint;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::pubsub::PubSubChannel;
+use embassy_time::with_timeout;
 use embassy_time::Duration;
 use embassy_time::Timer;
 use embedded_io_async::Write;
@@ -143,22 +143,16 @@ where
         let len = encode_slice(&packet, &mut buf)?;
         let write_timeout_res = with_timeout(self.write_timeout, self.tls.write_all(&buf[..len])).await;
         match write_timeout_res {
-            Ok(write_res) => {
-                match write_res {
-                    Ok(_) => {
-                        let flush_res = with_timeout(self.write_timeout, self.tls.flush()).await;
-                        match flush_res {
-                            Ok(v) => {
-                                Ok(v?)
-                            }
-                            Err(_) => {
-                                Err(MyMqttError::WriteTimeoutError)
-                            }
-                        }
+            Ok(write_res) => match write_res {
+                Ok(_) => {
+                    let flush_res = with_timeout(self.write_timeout, self.tls.flush()).await;
+                    match flush_res {
+                        Ok(v) => Ok(v?),
+                        Err(_) => Err(MyMqttError::WriteTimeoutError),
                     }
-                    Err(e) => Err(e.into())
                 }
-            }
+                Err(e) => Err(e.into()),
+            },
             Err(_) => Err(MyMqttError::WriteTimeoutError),
         }
     }
@@ -183,20 +177,20 @@ where
                 // read_header returns Some only if we have a full packet
                 // but will return error if invalid header
                 match read_header_res {
-                    Ok(Some((_header, remaining_len))) =>  {
+                    Ok(Some((_header, remaining_len))) => {
                         let decode_val_res = mqttrust::encoding::v4::decode_slice(&self.buf[..self.data_bytes_in_buf]);
                         match decode_val_res {
                             Ok(decode_val) => {
                                 self.message_bytes_in_buf = offset + remaining_len;
                                 return Ok(decode_val);
                             }
-                            Err(decode_err) =>  {
+                            Err(decode_err) => {
                                 error!("MQTT body parse issues, throwing read data, {} bytes", self.data_bytes_in_buf);
                                 self.message_bytes_in_buf = 0;
                                 self.data_bytes_in_buf = 0;
                                 return Err(decode_err.into());
                             }
-                        } 
+                        }
                     }
                     Ok(None) => (),
                     Err(e) => {
@@ -212,7 +206,11 @@ where
             if self.data_bytes_in_buf >= self.buf.len() {
                 if self.buf.len() < MAX_MQTT_BUFFER_SIZE {
                     let add_capacity = min(MQTT_BUFFER_SIZE_GROW_STEPS, MAX_MQTT_BUFFER_SIZE - self.buf.len());
-                    debug!("Adding {add_capacity} to MQTT Buffer, from {} to {}", self.buf.len(), self.buf.len()+add_capacity);
+                    debug!(
+                        "Adding {add_capacity} to MQTT Buffer, from {} to {}",
+                        self.buf.len(),
+                        self.buf.len() + add_capacity
+                    );
                     self.buf.resize(self.buf.len() + add_capacity, 0);
                 } else {
                     let data_thrown = self.data_bytes_in_buf;
@@ -354,8 +352,8 @@ pub async fn generic_mqtt_task<
     let printer_log_id = bambu_printer.borrow().printer_number;
     let printer_name = bambu_printer.borrow().printer_name.clone();
 
-    let mut socket_rx_buffer = vec![0u8;rx_socket_buffer_size];
-    let mut socket_tx_buffer = vec![0u8;tx_socket_buffer_size];
+    let mut socket_rx_buffer = vec![0u8; rx_socket_buffer_size];
+    let mut socket_tx_buffer = vec![0u8; tx_socket_buffer_size];
 
     let socket_rx_buffer = socket_rx_buffer.as_mut_slice();
     let socket_tx_buffer = socket_tx_buffer.as_mut_slice();
@@ -380,7 +378,15 @@ pub async fn generic_mqtt_task<
         let embassy_net::IpAddress::Ipv4(addr) = endpoint.addr else { todo!() }; // Ipv6 should not happen
         let octets = addr.octets();
 
-        term_info!("[{}] Connecting to Printer at {}.{}.{}.{}:{}", printer_log_id, octets[0], octets[1], octets[2], octets[3], port);
+        term_info!(
+            "[{}] Connecting to Printer at {}.{}.{}.{}:{}",
+            printer_log_id,
+            octets[0],
+            octets[1],
+            octets[2],
+            octets[3],
+            port
+        );
         let mut socket_error_count = 0;
         match socket.connect(remote_endpoint).await {
             Ok(()) => (),
@@ -461,7 +467,7 @@ pub async fn generic_mqtt_task<
             },
             Ok(None) => {
                 term_error!("[{}] MQTT Recv:  None Packet", printer_log_id);
-            },
+            }
             Err(e) => {
                 term_error!("[{}] Unexpected error during mqtt subscribe {:?}", printer_log_id, e);
                 Timer::after(Duration::from_millis(500)).await;
@@ -529,7 +535,6 @@ pub async fn generic_mqtt_task<
                 bambu_printer.borrow_mut().report_printer_connectivity(false);
                 continue 'establish_communication;
             }
-
         }
     }
 }

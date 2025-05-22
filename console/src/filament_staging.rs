@@ -6,9 +6,7 @@ pub struct FilamentStaging {
 
 impl FilamentStaging {
     pub fn new() -> Self {
-        Self {
-            tag_info: None,
-        }
+        Self { tag_info: None }
     }
 
     pub fn clear(&mut self) {
