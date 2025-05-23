@@ -121,7 +121,7 @@ async fn main(spawner: Spawner) {
     heap_dram2_allocator!(64 * 1024);
 
     // Last, reserve from 'standard' area, if need additional memory for esp-wifi/esp-mbedtls, need to increase this
-    esp_alloc::heap_allocator!(100 * 1024);
+    esp_alloc::heap_allocator!(148 * 1024);
 
     // == Setup timers & delay ========================================================
 
