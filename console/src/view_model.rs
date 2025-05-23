@@ -231,6 +231,14 @@ impl ViewModel {
         });
 
         // Spool Scale
+        let scale_available = if let Some(scale_config) = &self.app_config.borrow().configured_scale {
+            scale_config.available
+        } else {
+            false
+        };
+        if !scale_available {
+            ui_app_state.set_spool_scale_state(crate::app::SpoolScaleState::NotAvailable);
+        }
         let moved_spool_scale_model = self.spool_scale_model.clone();
         ui_app_backend.on_calibrate_scale(move |weight| {
             moved_spool_scale_model.borrow_mut().calibrate(weight);

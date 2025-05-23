@@ -20,7 +20,9 @@ export component ScalesInformation inherits Rectangle {
             alignment: start;
             title := Title {
                 width: root.width;
-                text: "Connected Scale";
+                text: AppState.spool-scale-state == SpoolScaleState.NotAvailable ? "Scale Not Available" : 
+                     (AppState.spool-scale-state == SpoolScaleState.Unknown || AppState.spool-scale-state == SpoolScaleState.Disconnected) ?"Trying to Connect to Scale" :  
+                     "Connected to Scale";
             }
 
             MyText {
@@ -68,7 +70,7 @@ export component AppSettings inherits Settings {
 
         SettingsButton {
             text: "Calibrate Scale";
-            enabled: !(AppState.spool-scale-state == SpoolScaleState.Unknown || AppState.spool-scale-state == SpoolScaleState.Disconnected);
+            enabled: !(AppState.spool-scale-state == SpoolScaleState.NotAvailable || AppState.spool-scale-state == SpoolScaleState.Unknown || AppState.spool-scale-state == SpoolScaleState.Disconnected);
             clicked => {
                 root.state = AppSettingsState.ScaleCalibration;
             }
