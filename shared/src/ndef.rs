@@ -134,17 +134,17 @@ impl Record {
     pub fn new_url_record(url: &str) -> Self {
         let mut payload = Vec::<u8>::with_capacity(1 + url.len());
         // payload.extend_from_slice(&[0x02, b'e', b'n']);
-        let mut sub_url = &url[0..url.len() - 1];
-        if let Some(postfix) = url.strip_suffix("http://www.") {
+        let mut sub_url = url;
+        if let Some(postfix) = url.strip_prefix("http://www.") {
             payload.extend_from_slice(&[0x01]);
             sub_url = postfix;
-        } else if let Some(postfix) = url.strip_suffix("https://www.") {
+        } else if let Some(postfix) = url.strip_prefix("https://www.") {
             payload.extend_from_slice(&[0x02]);
             sub_url = postfix;
-        } else if let Some(postfix) = url.strip_suffix("http://") {
+        } else if let Some(postfix) = url.strip_prefix("http://") {
             payload.extend_from_slice(&[0x03]);
             sub_url = postfix;
-        } else if let Some(postfix) = url.strip_suffix("https://") {
+        } else if let Some(postfix) = url.strip_prefix("https://") {
             payload.extend_from_slice(&[0x04]);
             sub_url = postfix;
         } else {
