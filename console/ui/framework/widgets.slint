@@ -343,6 +343,7 @@ export component Selector inherits Rectangle {
 export component LeftTab inherits Rectangle {
     callback botom-tab-pressed;
     in-out property <int> selected-index: 0;
+    out property <string> selected-text: tabs[selected-index];
     in property <[string]> tabs;
     in property <string> bottom-tab;
 

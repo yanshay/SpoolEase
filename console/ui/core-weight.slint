@@ -358,11 +358,11 @@ export component SpoolCoreWeight inherits Rectangle {
         alignment: stretch;
         Rectangle {
             title := Title {
-                text: "Core Weight - " + (tabs.selected-index == 0 ? "Select from List" : tabs.selected-index == 1 ? "Estimate for New Spool" : tabs.selected-index == 2 ? "Manually Entered" : "");
+                text: "Core Weight - " + (tabs.selected-text == "List" ? "Select from List" : tabs.selected-text == "Est" ? "Estimate for New Spool" : tabs.selected-text == "1234" ? "Manually Entered" : "");
                 z: 1;
             }
 
-            if tabs.selected-index == 0: MyButton {
+            if tabs.selected-text == "List": MyButton {
                 x: root.width - self.width -1px;
                 height: title.height;
                 width: 57px;
@@ -379,7 +379,7 @@ export component SpoolCoreWeight inherits Rectangle {
                 height: root.height - title.height;
                 tabs := LeftTab {
                     height: root.height - title.height;
-                    tabs: AppState.spool-scale-state == SpoolScaleState.Loaded ? ["List", "Est", "1234"]  : ["List", "1234"];
+                    tabs: AppState.spool-scale-state == SpoolScaleState.Loaded ? ["List", "1234", "Est"]  : ["List", "1234"];
                     bottom-tab: "Cancel";
                     botom-tab-pressed => {
                         AppState.encoding-spool-core-visible = false;
@@ -406,18 +406,18 @@ export component SpoolCoreWeight inherits Rectangle {
                               root.state = SpoolCoreWeightState.EntryTabs; // for next time
                             }
                         }
-                        visible: tabs.selected-index == 0;
+                        visible: tabs.selected-text == "List";
                         preferred-width: 1000px;
                         option-alignment: left;
                         options-list: AppBackend.get-spools-core-list(filter);
                     }
 
                     estimate := CoreEstimate {
-                        visible: tabs.selected-index == 1;
+                        visible: tabs.selected-text == "Est";
                     }
 
                     type-weight := Rectangle {
-                        visible: tabs.selected-index == 2;
+                        visible: tabs.selected-text == "1234";
                         background: black;
                         HorizontalLayout {
                             width: root.width - tabs.width;
