@@ -2,9 +2,7 @@
 // Deal with when to clear tag information, when we know spool taken out
 // Deal with when to copy tag information between trays if only some data change but we know the spool is there
 use crate::{
-    app_config::PrinterConfig,
-    settings::MAX_NUM_PRINTERS,
-    ssdp::{SSDPInfo, SSDPPubSubChannel},
+    app_config::PrinterConfig, settings::MAX_NUM_PRINTERS, ssdp::{SSDPInfo, SSDPPubSubChannel}
 };
 use alloc::{
     borrow::Cow,
@@ -74,6 +72,7 @@ pub struct BambuPrinter {
     tray_reading_bits: Option<u32>,
     pub ams_exist_bits: Option<u32>,
     printer_was_disconnected: bool,
+    pending_k_restore_sequence: bool,
 }
 
 pub trait BambuPrinterObserver {
@@ -87,40 +86,48 @@ impl BambuPrinter {
         &self.inner_ams_trays
     }
     pub fn set_ams_tray(&mut self, index: usize, tray: Tray) {
-        self.inner_ams_trays[index] = tray;
-        self.ams_trays_dirty[index] = true;
+        if self.inner_ams_trays[index] != tray {
+            self.inner_ams_trays[index] = tray;
+            self.ams_trays_dirty[index] = true;
+        }
     }
     pub fn update_ams_tray<F>(&mut self, index: usize, f: F)
     where
         F: FnOnce(&mut Tray),
     {
+        let prev_tray = self.inner_ams_trays[index].clone();
         f(&mut self.inner_ams_trays[index]);
-        self.ams_trays_dirty[index] = true;
+        if prev_tray != self.inner_ams_trays[index] {
+            self.ams_trays_dirty[index] = true;
+        }
     }
     pub fn virt_tray(&self) -> &Tray {
         &self.inner_virt_tray
     }
     pub fn set_virt_tray(&mut self, tray: Tray) {
-        self.inner_virt_tray = tray;
-        self.virty_tray_dirty = true;
+        if tray != self.inner_virt_tray {
+            self.inner_virt_tray = tray;
+            self.virty_tray_dirty = true;
+        }
     }
     pub fn update_virt_tray<F>(&mut self, f: F)
     where
         F: FnOnce(&mut Tray),
     {
+        let prev_tray = self.inner_virt_tray.clone();
         f(&mut self.inner_virt_tray);
-        self.virty_tray_dirty = true;
+        if prev_tray != self.inner_virt_tray {
+            self.virty_tray_dirty = true;
+        }
     }
     pub fn update_any_tray<F>(&mut self, index: usize, f: F)
     where
         F: FnOnce(&mut Tray),
     {
         if index == 254 {
-            f(&mut self.inner_virt_tray);
-            self.virty_tray_dirty = true;
+            self.update_virt_tray(f);
         } else {
-            f(&mut self.inner_ams_trays[index]);
-            self.ams_trays_dirty[index] = true;
+            self.update_ams_tray(index, f);
         }
     }
 
@@ -157,6 +164,10 @@ impl BambuPrinter {
         let mut printer_serial = None;
         {
             let printer_borrow = printer.borrow();
+            if printer_borrow.auto_restore_k && printer_borrow.pending_k_restore_sequence {
+                // don't change store until restoring k is done
+                return;
+            }
             if printer_borrow.ams_trays_dirty.iter().any(|&v| v) || printer_borrow.virty_tray_dirty {
                 printer_serial = Some(printer_borrow.printer_serial.clone());
                 let printer_state = PrinterPersistentState {
@@ -170,15 +181,20 @@ impl BambuPrinter {
             let file_store = framework.borrow().file_store();
             let path = Self::printer_state_file_path(&printer_serial);
             info!("[{}] Storing printer state to {}", printer.borrow().printer_number, path);
+            // need to clean dirty before we store since it awaits,
+            // but store might fail, and in that case we need to bring back dirty (add the dirty we had)
+            // so let's save it to bring back in case of error
+            let ams_trays_dirty = printer.borrow().ams_trays_dirty;
+            let virt_tray_dirty = printer.borrow().virty_tray_dirty;
+            printer.borrow_mut().virty_tray_dirty = false;
+            printer.borrow_mut().ams_trays_dirty.fill(false);
             let mut file_store = file_store.lock().await;
             match file_store.create_write_file_str(&path, &printer_state_str).await {
-                Ok(_) => {
-                    let mut printer_borrow = printer.borrow_mut();
-                    printer_borrow.virty_tray_dirty = false;
-                    printer_borrow.ams_trays_dirty.fill(false);
-                }
+                Ok(_) => { }
                 Err(err) => {
-                    let printer_borrow = printer.borrow();
+                    let mut printer_borrow = printer.borrow_mut();
+                    printer_borrow.virty_tray_dirty |= virt_tray_dirty;
+                    for (x, y) in printer_borrow.ams_trays_dirty.iter_mut().zip(&ams_trays_dirty) { *x |= *y };
                     error!("[{}] Failed to store printer restart state : {err}", printer_borrow.printer_index);
                 }
             }
@@ -306,7 +322,8 @@ impl BambuPrinter {
             ams_exist_bits: None,
             restart_printer,
             log_filter,
-            printer_was_disconnected: false,
+            printer_was_disconnected: true,
+            pending_k_restore_sequence: true,
         }
     }
 
@@ -335,6 +352,7 @@ impl BambuPrinter {
     pub fn report_printer_connectivity(&mut self, status: bool) {
         if self.printer_connectivity_ok == Some(true) && !status {
             self.printer_was_disconnected = true;
+            self.pending_k_restore_sequence = true;
         }
         self.printer_connectivity_ok = Some(status);
         self.notify_printer_connect_status(status);
@@ -412,20 +430,22 @@ impl BambuPrinter {
 
             // Sometimes the tray arrives with tray_type, tray_info_idx, color filled with 00000000 (also last two are 00),  which may be an error, not sure
             // if strange issues seem to appear, check that out and maybe deal with that case
+            // TODO: ends with 0 is actually valid. If setting only filament type and not color it is FFFFFF00
+            // Need to deal with that, probably also in the GUI, maybe it's for transparent
             if tray_type_update.ends_with("00") {
-                error!("??????????????????????? tray_type with 00 suffix");
-                debug!("{:?}", tray_update);
+                warn!("[{}] ???? tray_type with 00 suffix", self.printer_number);
+                debug!("[{}] {:?}", self.printer_number, tray_update);
                 return Err("tray_type junk".to_string());
             }
             if tray_color_update.ends_with("00") {
-                error!("??????????????????????? tray_color with 00 suffix");
-                debug!("{:?}", tray_update);
+                warn!("[{}] ???? tray_type with 00 suffix", self.printer_number);
+                debug!("[{}] {:?}", self.printer_number, tray_update);
                 return Err("tray_color junk".to_string());
             }
             if tray_info_idx_update.starts_with("00") {
                 // might end with 00, so checking if starts with 00
-                error!("??????????????????????? tray_info_idx with 00 suffix");
-                debug!("{:?}", tray_update);
+                warn!("[{}] ???? tray_type with 00 suffix", self.printer_number);
+                debug!("[{}] {:?}", self.printer_number, tray_update);
                 return Err("tray_info_idx junk".to_string());
             }
 
@@ -779,6 +799,7 @@ impl BambuPrinter {
 
                 if full_push_status && self.auto_restore_k && self.printer_was_disconnected {
                     self.printer_was_disconnected = false;
+                    let mut triggered_k_restore_sequence = false;
                     if let Some(prev_trays) = prev_trays {
                         if self.ams_trays()[..] != prev_trays.0 || *self.virt_tray() != prev_trays.1 {
                             let spawner = self.app_config.borrow().framework.borrow().spawner;
@@ -790,7 +811,13 @@ impl BambuPrinter {
                                     self.nozzle_diameter.clone(),
                                 ))
                                 .ok();
+                            triggered_k_restore_sequence = true;
                         }
+                    } 
+                    if !triggered_k_restore_sequence {
+                        // no need to restore since trays received are same as should
+                        term_info!("[{}] Pressure advance (k) ok at printer startup", self.printer_number);
+                        self.pending_k_restore_sequence = false;
                     }
                 }
                 change_made = nozzle_diameter_change_made || ams_change_made || vt_tray_change_made;
@@ -2087,9 +2114,10 @@ pub async fn fix_k_on_restart(
 ) {
     Timer::after_secs(1).await;
     let printer_number = bambu_printer.borrow().printer_number;
-    term_info!("[{}] Checking pressure advance (k) after printer restart", printer_number);
+    term_info!("[{}] Checking pressure advance (k) at printer startup", printer_number);
     if prev_nozzle != bambu_printer.borrow().nozzle_diameter {
-        term_info!("[{}] Nozzle diameter changed, K fix not relevant", printer_number);
+        term_info!("[{}] Nozzle diameter changed, K restore not relevant", printer_number);
+        bambu_printer.borrow_mut().pending_k_restore_sequence = false;
         return;
     }
     let mut set_tray_cali_idx: [Option<i32>; 16] = [None; 16];
@@ -2163,6 +2191,10 @@ pub async fn fix_k_on_restart(
             }
         }
     }
+
+    Timer::after_millis(500).await; // wait until last K change is absorbed by the printer
+    bambu_printer.borrow_mut().pending_k_restore_sequence = false;
+    term_info!("[{}] Completed K restore where required", printer_number);
 }
 
 // PRINTER_USN = "YOUR_PRINTER_SN" # This is the serial number of the printer. https://wiki.bambulab.com/en/general/find-sn
