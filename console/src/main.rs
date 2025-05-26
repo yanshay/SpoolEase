@@ -303,8 +303,10 @@ async fn main(spawner: Spawner) {
     Framework::set_sdcard_device(framework.clone(), sdcard_device).await;
 
     let file_store = framework.borrow().file_store();
+    let sdcard_available;
     let config_toml = {
         let mut file_store = file_store.lock().await;
+        sdcard_available = file_store.card_installed;
         let config_filename = "/config/console.cfg";
         term_info!("Loading optional config file '{}' from SDCard", config_filename);
 
@@ -436,6 +438,11 @@ async fn main(spawner: Spawner) {
     yield_now().await;
     yield_now().await;
     term_info!("Booting from partition {}", boot_partition);
+    if sdcard_available {
+        term_info!("SD Card installed");
+    } else {
+        term_info!("SD Card not installed, some features unavailable");
+    }
 
     loop {
         if app_config.borrow().initialization_ok(false).is_some() {
