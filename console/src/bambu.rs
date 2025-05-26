@@ -437,16 +437,17 @@ impl BambuPrinter {
                 debug!("[{}] {:?}", self.printer_number, tray_update);
                 return Err("tray_type junk".to_string());
             }
-            if tray_color_update.ends_with("00") {
-                warn!("[{}] ???? tray_type with 00 suffix", self.printer_number);
-                debug!("[{}] {:?}", self.printer_number, tray_update);
-                return Err("tray_color junk".to_string());
-            }
-            if tray_info_idx_update.starts_with("00") {
+            if tray_info_idx_update.starts_with("00") { // tray_info_idx CAN end with 00, but not start with 00 afaik
                 // might end with 00, so checking if starts with 00
-                warn!("[{}] ???? tray_type with 00 suffix", self.printer_number);
+                warn!("[{}] ???? tray_info_idx with 00 suffix", self.printer_number);
                 debug!("[{}] {:?}", self.printer_number, tray_update);
                 return Err("tray_info_idx junk".to_string());
+            }
+
+            if !tray_color_update.ends_with("FF") {
+                warn!("[{}] ???? tray_color with Not FF suffix, either color not set in Bambustudio or transparent", self.printer_number);
+                debug!("[{}] {:?}", self.printer_number, tray_update);
+                // return Err("tray_color junk".to_string());
             }
 
             new_tray.filament = if tray_type_update.is_empty() {
@@ -1543,6 +1544,7 @@ pub fn init(
 // and will panic due to borrow_mut (response) while already borrowed here (RefCell will panic at runtine).
 // This was tested to verify this indeed happens.
 // Therefore, the code takes the data required from the bambu_printer and pass it to the functions that aren't methods because of that.
+// TODO: more elegant to just pass Rc<RefCell<BambuPrinter>> to the async function and have it take the needed items
 #[embassy_executor::task(pool_size = 5)]
 // #[embassy_executor::task]
 pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
@@ -1552,9 +1554,11 @@ pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
     let log_filter = bambu_printer.borrow().log_filter;
 
     // fetch first setting for all nozzles, need that in advance before getting filaments
-    let nozzle_diameters = ["0.8", "0.6", "0.2", "0.4"];
+    let nozzle_diameters = ["0.2", "0.6", "0.8", "0.4"];
     for nozzle_diameter in nozzle_diameters {
+        debug!("[{printer_number}] Request calibration information for nozzle {nozzle_diameter}");
         BambuPrinter::fetch_filament_calibrations_async(&printer_serial, printer_number, log_filter, write_packets.clone(), nozzle_diameter).await;
+        Timer::after_millis(200).await;
     }
 
     // Now request full update, and wait until data is processed and have the nozzle diameter at hand for next request
