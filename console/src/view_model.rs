@@ -814,7 +814,7 @@ impl ViewModel {
                         encode_request_display.pa_line1 = format!(
                             "{}, {}",
                             moved_bambu.borrow().printer_name,
-                            moved_bambu.borrow().nozzle_diameter.as_ref().unwrap_or(&"Unknown".to_string())
+                            moved_bambu.borrow().nozzle_diameter().as_ref().unwrap_or(&"Unknown".to_string())
                         )
                         .into();
                     }
@@ -848,7 +848,7 @@ impl ViewModel {
         let mut final_k = bambu_printer_borrow.get_tag_k_for_current_nozzle(tag_info);
         if let Some(calibration) = tag_info
             .calibrations
-            .get(bambu_printer_borrow.nozzle_diameter.as_ref().unwrap_or(&"NA".to_string()))
+            .get(bambu_printer_borrow.nozzle_diameter().as_ref().unwrap_or(&"NA".to_string()))
         {
             let source_k = &calibration.k_value;
             if source_k != &final_k {

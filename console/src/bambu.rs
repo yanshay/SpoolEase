@@ -57,7 +57,8 @@ pub struct BambuPrinter {
     pub printer_ip: Ipv4Address,
     pub printer_uuid_to_encode: String,
     pub printer_connectivity_ok: Option<bool>,
-    pub nozzle_diameter: Option<String>,
+    inner_nozzle_diameter: Option<String>,
+    nozzle_diameter_dirty: bool,
     inner_ams_trays: [Tray; 16],
     inner_virt_tray: Tray,
     ams_trays_dirty: [bool; 16],
@@ -130,11 +131,21 @@ impl BambuPrinter {
             self.update_ams_tray(index, f);
         }
     }
+    pub fn nozzle_diameter(&self) -> &Option<String> {
+        &self.inner_nozzle_diameter 
+    }
+    pub fn set_nozzle_diameter(&mut self, new_nozzle_diameter: Option<String>) {
+        if new_nozzle_diameter != self.inner_nozzle_diameter {
+            info!("[{}] Nozzle diameter changed from {:?} to {:?}", self.printer_number, self.inner_nozzle_diameter, new_nozzle_diameter);
+            self.inner_nozzle_diameter = new_nozzle_diameter;
+            self.nozzle_diameter_dirty = true;
+        }
+    }
 
     pub fn init_printer_persistent_state(&mut self, state: PrinterPersistentState) {
        self.inner_ams_trays = state.ams_trays.into_owned();
        self.inner_virt_tray = state.virt_tray.into_owned();
-       self.nozzle_diameter = state.nozzle_diameter;
+       self.inner_nozzle_diameter = state.nozzle_diameter;
     }
 
     pub async fn load_printer_state(framework: &Rc<RefCell<Framework>>, printer: &Rc<RefCell<BambuPrinter>>) {
@@ -169,12 +180,15 @@ impl BambuPrinter {
                 // don't change store until restoring k is done
                 return;
             }
-            if printer_borrow.ams_trays_dirty.iter().any(|&v| v) || printer_borrow.virty_tray_dirty {
+            let ams_trays_dirty = printer_borrow.ams_trays_dirty.iter().any(|&v| v);
+
+            if ams_trays_dirty || printer_borrow.virty_tray_dirty || printer_borrow.nozzle_diameter_dirty {
+                debug!("[{}] Dirty status: AMS slots({}), Ext slot({}), Nozzle diameter({})", printer_borrow.printer_number, ams_trays_dirty, printer_borrow.virty_tray_dirty, printer_borrow.nozzle_diameter_dirty);
                 printer_serial = Some(printer_borrow.printer_serial.clone());
                 let printer_state = PrinterPersistentState {
                     ams_trays: Cow::Borrowed(printer_borrow.ams_trays()),
                     virt_tray: Cow::Borrowed(printer_borrow.virt_tray()),
-                    nozzle_diameter: printer_borrow.nozzle_diameter.clone(),
+                    nozzle_diameter: printer_borrow.inner_nozzle_diameter.clone(),
                 };
                 printer_state_str = Some(serde_json::to_string(&printer_state).unwrap());
             }
@@ -188,8 +202,10 @@ impl BambuPrinter {
             // so let's save it to bring back in case of error
             let ams_trays_dirty = printer.borrow().ams_trays_dirty;
             let virt_tray_dirty = printer.borrow().virty_tray_dirty;
+            let nozzle_diameter_dirty = printer.borrow().nozzle_diameter_dirty;
             printer.borrow_mut().virty_tray_dirty = false;
             printer.borrow_mut().ams_trays_dirty.fill(false);
+            printer.borrow_mut().nozzle_diameter_dirty = false;
             let mut file_store = file_store.lock().await;
             match file_store.create_write_file_str(&path, &printer_state_str).await {
                 Ok(_) => { }
@@ -197,6 +213,7 @@ impl BambuPrinter {
                     let mut printer_borrow = printer.borrow_mut();
                     printer_borrow.virty_tray_dirty |= virt_tray_dirty;
                     for (x, y) in printer_borrow.ams_trays_dirty.iter_mut().zip(&ams_trays_dirty) { *x |= *y };
+                    printer_borrow.nozzle_diameter_dirty |= nozzle_diameter_dirty;
                     error!("[{}] Failed to store printer restart state : {err}", printer_borrow.printer_index);
                 }
             }
@@ -292,7 +309,8 @@ impl BambuPrinter {
             printer_selector_name,
             printer_uuid_to_encode,
             printer_connectivity_ok: None,
-            nozzle_diameter: None,
+            inner_nozzle_diameter: None,
+            nozzle_diameter_dirty: false,
             inner_ams_trays: [
                 unknown.clone(),
                 unknown.clone(),
@@ -400,7 +418,7 @@ impl BambuPrinter {
             k_result = format!("({k_from_tray:.3})");
         }
         if let Some(cali_idx) = tray.cali_idx {
-            if let Some(nozzle_diameter) = &self.nozzle_diameter {
+            if let Some(nozzle_diameter) = &self.nozzle_diameter() {
                 if let Some(k_value) = self.get_cali_k_value(nozzle_diameter, cali_idx) {
                     let k_float = f32::from_str(&k_value).unwrap_or_default();
                     k_result = format!("{:.3}", k_float);
@@ -412,7 +430,7 @@ impl BambuPrinter {
 
     pub fn get_tray_calibration(&self, tray: &Tray) -> Option<&Calibration> {
         if let Some(cali_idx) = tray.cali_idx {
-            if let Some(nozzle_diameter) = &self.nozzle_diameter {
+            if let Some(nozzle_diameter) = &self.nozzle_diameter() {
                 return self.get_calibration(nozzle_diameter, cali_idx);
             }
         }
@@ -781,7 +799,7 @@ impl BambuPrinter {
                 let full_push_status = print.ams.is_some() && print.vt_tray.is_some();
                 let prev_state = if full_push_status && self.auto_restore_k && self.printer_was_disconnected {
                     // TODO: To save memory (a few kb's, might be needed in the future) copy from ams_trays only the data requried and not entire tray
-                    Some((self.ams_trays().to_vec(), self.virt_tray().clone(), self.nozzle_diameter.clone()))
+                    Some((self.ams_trays().to_vec(), self.virt_tray().clone(), self.nozzle_diameter().clone()))
                 } else {
                     None
                 };
@@ -789,9 +807,9 @@ impl BambuPrinter {
                 let mut ams_change_made = false;
                 let mut vt_tray_change_made = false;
                 if let Some(nozzle_diameter) = &print.nozzle_diameter {
-                    let old_nozzle_diameter = self.nozzle_diameter.clone();
-                    self.nozzle_diameter = Some(nozzle_diameter.clone());
-                    nozzle_diameter_change_made = old_nozzle_diameter != self.nozzle_diameter;
+                    let old_nozzle_diameter = self.nozzle_diameter().clone();
+                    self.set_nozzle_diameter(Some(nozzle_diameter.clone()));
+                    nozzle_diameter_change_made = old_nozzle_diameter != *self.nozzle_diameter();
                 }
                 if let Some(ams) = &print.ams {
                     ams_change_made = self.process_print_message__push_status__ams(ams);
@@ -985,7 +1003,7 @@ impl BambuPrinter {
             self.publish_payload(payload);
 
             let cmd = crate::bambu_api::ExtrusionCaliSelCommand::new(
-                &self.nozzle_diameter.clone().unwrap_or_default(),
+                &self.nozzle_diameter().clone().unwrap_or_default(),
                 tray_id,                 // here we need the original tray_id
                 &filament.tray_info_idx, // tray_info_idx is filament_id in this command
                 if let Some(calibration) = &matching_calibration {
@@ -1061,7 +1079,7 @@ impl BambuPrinter {
             return None;
         };
 
-        let printer_nozzle = if let Some(nozzle_diameter) = &self.nozzle_diameter {
+        let printer_nozzle = if let Some(nozzle_diameter) = &self.nozzle_diameter() {
             nozzle_diameter
         } else {
             return None;
@@ -1158,7 +1176,7 @@ impl BambuPrinter {
             return Err("Unknown Filament in Slot".to_string());
         }
         // Now take the calibration of current nozzle from the tray as well
-        if let (Some(curr_nozzle_diameter), Some(tray_cali_idx)) = (&self.nozzle_diameter, tray.cali_idx) {
+        if let (Some(curr_nozzle_diameter), Some(tray_cali_idx)) = (&self.nozzle_diameter(), tray.cali_idx) {
             if let Some(nozzle_calibrations) = self.calibrations.get(curr_nozzle_diameter) {
                 if let Some(calibration) = &nozzle_calibrations.get(&tray_cali_idx) {
                     tag_info.calibrations.insert(curr_nozzle_diameter.clone(), (*calibration).clone());
@@ -1557,14 +1575,14 @@ pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
 
     // Now request full update, and wait until data is processed and have the nozzle diameter at hand for next request
     BambuPrinter::request_full_update_async(&printer_serial, printer_number, log_filter, write_packets.clone()).await;
-    while bambu_printer.borrow().nozzle_diameter.is_none() {
+    while bambu_printer.borrow().nozzle_diameter().is_none() {
         Timer::after_millis(100).await;
     }
 
     // Get again the filaments for current nozzle size,
     // that's because in slicer they don't check if data received from printer it's current nozzle or not
     // it's a bug there, can even be reproduced in the slicer by switching in the manage results to another nozzle diameter
-    let curr_nozzle_diameter = bambu_printer.borrow().nozzle_diameter.as_ref().unwrap().clone();
+    let curr_nozzle_diameter = bambu_printer.borrow().nozzle_diameter().as_ref().unwrap().clone();
     BambuPrinter::fetch_filament_calibrations_async(&printer_serial, printer_number, log_filter, write_packets, &curr_nozzle_diameter).await;
 }
 
@@ -2113,8 +2131,8 @@ pub async fn fix_k_on_restart(
     Timer::after_secs(1).await;
     let printer_number = bambu_printer.borrow().printer_number;
     term_info!("[{}] Checking pressure advance (k) at printer startup", printer_number);
-    if prev_nozzle != bambu_printer.borrow().nozzle_diameter {
-        term_info!("[{}] Nozzle diameter changed, K restore not relevant", printer_number);
+    if prev_nozzle != *bambu_printer.borrow().nozzle_diameter() {
+        term_info!("[{}] Nozzle diameter changed ({:?}->{:?}), K restore not relevant", printer_number, prev_nozzle, *bambu_printer.borrow().nozzle_diameter());
         bambu_printer.borrow_mut().pending_k_restore_sequence = false;
         return;
     }
@@ -2157,7 +2175,7 @@ pub async fn fix_k_on_restart(
     }
 
     let write_packets = bambu_printer.borrow().write_packets.clone();
-    let nozzle_diameter = &bambu_printer.borrow().nozzle_diameter.clone().unwrap_or_default();
+    let nozzle_diameter = &bambu_printer.borrow().nozzle_diameter().clone().unwrap_or_default();
     let printer_serial = bambu_printer.borrow().printer_serial.clone();
     let log_filter = bambu_printer.borrow().log_filter;
 
