@@ -134,6 +134,7 @@ impl BambuPrinter {
     pub fn init_printer_persistent_state(&mut self, state: PrinterPersistentState) {
        self.inner_ams_trays = state.ams_trays.into_owned();
        self.inner_virt_tray = state.virt_tray.into_owned();
+       self.nozzle_diameter = state.nozzle_diameter;
     }
 
     pub async fn load_printer_state(framework: &Rc<RefCell<Framework>>, printer: &Rc<RefCell<BambuPrinter>>) {
@@ -173,6 +174,7 @@ impl BambuPrinter {
                 let printer_state = PrinterPersistentState {
                     ams_trays: Cow::Borrowed(printer_borrow.ams_trays()),
                     virt_tray: Cow::Borrowed(printer_borrow.virt_tray()),
+                    nozzle_diameter: printer_borrow.nozzle_diameter.clone(),
                 };
                 printer_state_str = Some(serde_json::to_string(&printer_state).unwrap());
             }
@@ -775,6 +777,14 @@ impl BambuPrinter {
         let mut change_made = false;
         if let Some(command) = &print.command {
             if command == "push_status" {
+                // get a snapshot of trays before, to later be able to update cali_idx if removed
+                let full_push_status = print.ams.is_some() && print.vt_tray.is_some();
+                let prev_state = if full_push_status && self.auto_restore_k && self.printer_was_disconnected {
+                    // TODO: To save memory (a few kb's, might be needed in the future) copy from ams_trays only the data requried and not entire tray
+                    Some((self.ams_trays().to_vec(), self.virt_tray().clone(), self.nozzle_diameter.clone()))
+                } else {
+                    None
+                };
                 let mut nozzle_diameter_change_made = false;
                 let mut ams_change_made = false;
                 let mut vt_tray_change_made = false;
@@ -783,14 +793,6 @@ impl BambuPrinter {
                     self.nozzle_diameter = Some(nozzle_diameter.clone());
                     nozzle_diameter_change_made = old_nozzle_diameter != self.nozzle_diameter;
                 }
-                // get a snapshot of trays before, to later be able to update cali_idx if removed
-                let full_push_status = print.ams.is_some() && print.vt_tray.is_some();
-                let prev_trays = if full_push_status && self.auto_restore_k && self.printer_was_disconnected {
-                    // TODO: To save memory (a few kb's, might be needed in the future) copy from ams_trays only the data requried and not entire tray
-                    Some((self.ams_trays().to_vec(), self.virt_tray().clone()))
-                } else {
-                    None
-                };
                 if let Some(ams) = &print.ams {
                     ams_change_made = self.process_print_message__push_status__ams(ams);
                 }
@@ -801,15 +803,15 @@ impl BambuPrinter {
                 if full_push_status && self.auto_restore_k && self.printer_was_disconnected {
                     self.printer_was_disconnected = false;
                     let mut triggered_k_restore_sequence = false;
-                    if let Some(prev_trays) = prev_trays {
-                        if self.ams_trays()[..] != prev_trays.0 || *self.virt_tray() != prev_trays.1 {
+                    if let Some(prev_state) = prev_state {
+                        if self.ams_trays()[..] != prev_state.0 || *self.virt_tray() != prev_state.1 {
                             let spawner = self.app_config.borrow().framework.borrow().spawner;
                             spawner
                                 .spawn(fix_k_on_restart(
                                     self.bambu_model.as_ref().unwrap().clone(),
-                                    prev_trays.0,
-                                    prev_trays.1,
-                                    self.nozzle_diameter.clone(),
+                                    prev_state.0, // ams_trays
+                                    prev_state.1, // virt_tray
+                                    prev_state.2, // nozzle_diameter
                                 ))
                                 .ok();
                             triggered_k_restore_sequence = true;
@@ -823,15 +825,6 @@ impl BambuPrinter {
                 }
                 change_made = nozzle_diameter_change_made || ams_change_made || vt_tray_change_made;
 
-                // if full_push_status && change_made {
-                //     let printer_state = PrinterPersistentState {
-                //         ams_trays: Cow::Borrowed(self.ams_trays()),
-                //         virt_tray: Cow::Borrowed(self.virt_tray()),
-                //     };
-                //     let out = serde_json::to_string(&printer_state).unwrap();
-                //     info!("{out}");
-                //     info!(">>> out.len() = {}", out.len());
-                // }
             } else if command == "ams_filament_setting" {
                 change_made = self.process_print_message__ams_filament_setting(print)
             } else if command == "extrusion_cali_set" || command == "extrusion_cali_del" {
@@ -1414,6 +1407,7 @@ pub struct Calibration {
 pub struct PrinterPersistentState<'a> {
     pub ams_trays: Cow<'a, [Tray; 16]>,
     pub virt_tray: Cow<'a, Tray>,
+    pub nozzle_diameter: Option<String>,
 }
 
 fn formatted_k_value(k: &str) -> String {
