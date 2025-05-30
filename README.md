@@ -94,7 +94,7 @@ If you're interested in commercial licensing, redistribution rights, or other ac
 - **4x M2x10 screws** to securely hold the display in place (not mandatory)
 - NFC Tags (Ntag215) – Available in different types and qualities, including paper and PET stickers, typically round with a 25mm diameter. It’s recommended to test a few before purchasing in bulk. If using a dryer, ensure the adhesive is durable enough or choose a mounting method that prevents the stickers from falling off.
 - **Soldering tools**
-- (Optional) 3D Model of spool with place for NFC sticker tags - TBD
+- microSD Card – (Optional for now, but **highly recommended**) – FAT-formatted (classic 8.3 filenames; can be formatted directly on Bambulab printers)
 
 For components sourcing from Amazon EU/US, check out [this discussion](https://github.com/yanshay/SpoolEase/discussions/1).
 

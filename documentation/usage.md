@@ -26,6 +26,12 @@ To encode an NFC tag, follow these steps:
 2. **Encode the Tag**  
    - Press the **'Encode'** button on the SpoolEase device. All available slots will flash.
    - Select the slot you set up in step 1.
+   - An encoding screen will appear.  
+     Most fields are auto-filled; others can be modified using the web app linked at the top of the screen.  
+     The easiest method: scan the tag with your phone using your usual tag reader—this opens the web app for editing. Once you’re done, confirm the info in the app and it will appear in the console.  
+     On the encoding screen, you can also tap the “Weights” button to enter the spool core weight. If you’re using SpoolEase Scale, placing the spool on it will automatically launch this screen and allow you to optionally encode also the total weight.  
+     Multiple methods are available for entering weight data; see the SpoolEase Scale section below for more details—some apply even without the scale.  
+     When everything looks good, press the Encode button.
    - A message will appear prompting you to place the spool tag to encode.
    - Place the NFC tag next to the right side of SpoolEase.
    - Once the encoding is successful, a confirmation message will appear. If it fails, repeat the process.

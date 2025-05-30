@@ -15,6 +15,7 @@ Build is done.
 - Soldering tools
 - 3D Model of SpoolEase case - [https://makerworld.com/en/models/1138678](https://makerworld.com/en/models/1138678)
 - Four M2x10 screws to securely hold the display in place (not mandatory)
+- microSD Card – (Optional for now, but **highly recommended**) – FAT-formatted (classic 8.3 filenames; can be formatted directly on Bambulab printers)
 
 ## Connector Placement
 
@@ -67,6 +68,7 @@ Add the wiring diagram image here:
 - Print the 3D model from [this link](https://makerworld.com/en/models/1138678).  
   - While printing, feel free to boost the model :smile:  
   - Optionally, glue the small pieces forming the antenna icon on the side, indicating where to place the tag. Ensure correct orientation before gluing, so check for fit first.
+- Optionally insert the microSD card into the slot in the WT32-SC01-Plus just below the USB connector. You should feel it click into place. To remove it, press it again and it will pop out. 
 - Place the WT32-SC01-Plus and PN532 in the positions shown in the image below.  
   - Make sure the antenna faces outward from the case.  
   - There is a hidden slot on the opposite side of the visible slot where the other end of the PN532 module fits.  
