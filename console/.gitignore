@@ -48,3 +48,7 @@ src/certs
 !src/certs/raw.githubuercontent.com.pem
 !src/certs/raw.githubuercontent.com.info
 .envrc
+
+deploy-debug.sh
+deploy-build.sh
+_untracked/**

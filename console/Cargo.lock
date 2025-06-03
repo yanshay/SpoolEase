@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "SpoolEase"
-version = "0.3.4"
+version = "0.3.3"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2086,7 +2086,6 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework"
 version = "0.3.0"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=v0.3.0#3684b1cdf1e2f0e0f8afa2ad1771f01353ea7c93"
 dependencies = [
  "aes",
  "aes-gcm",
