@@ -1,7 +1,7 @@
 [package]
 name = "SpoolEase"
 homepage = "SpoolEase.io"
-version = "0.3.2"
+version = "0.3.4"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 rust-version = "1.84"
@@ -40,8 +40,9 @@ slint-build = "1.9.1"
 
 [dependencies]
 #TODO: Important - lock to specific tag when released
-# framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "v0.2.1", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
-framework = { package = "esp-hal-app-framework", path = "../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
+framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "v0.3.0", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
+# framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
+# framework = { package = "esp-hal-app-framework", path = "../../esp-hal-app-0.3.0/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
 esp32s3 = { version = "0.30.0" }
 
 # Esp-Hal Crates

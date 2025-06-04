@@ -38,7 +38,10 @@
 ## 0.3.2
 - Clarify clean install by explaining the security key in web-config and automatically showing the web-config screen on the console when configurations are incomplete
 
-## 0.3.3
+## 0.3.4
+- Restore slot data on SpoolEase Console restart (useful for tag info and pressure advance (K) values on X1C) - **requires SD Card installed**
 - Automatically detect brand and filament color from slot data when available
 - Restore pressure advance (K) values after printer restart (primarily for X1C)
-- Restore slot data on SpoolEase Console restart (useful for tag info and pressure advance (K) values on X1C)
+- Refine filament/tag info title display to reduce clutter and distinguish between auto-detected data and data encoded on the tag
+- Fixed issue with configuring a large number of custom filaments or spool entries
+- Improved tag formatting accuracy when the tag is not pre-formatted
