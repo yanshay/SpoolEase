@@ -26,10 +26,10 @@ edge-mdns = { git = "https://github.com/yanshay/edge-net", branch = "yanshay_upd
 [dependencies]
 serde = { version = "1.0.213", default-features = false, features = [ "derive", "alloc", ] }
 serde_json = { version = "1.0.132", default-features = false, features = [ "alloc", ] }
-serde_with = { version = "3.16.0", default-features = false, features = ["alloc", "macros", "base64", "hashbrown_0_15", "hex"]}
+serde_with = { version = "3.16.0", default-features = false, features = ["alloc", "macros", "base64", "hashbrown_0_16", "hex"]}
 
 
-framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag="0.6.0", default-features = false, features = ["esp32s3"] }
+framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag="0.6.1", default-features = false, features = ["esp32s3"] }
 # framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", default-features = false, features = ["esp32s3"] }
 pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_esp-hal-1.0.0-upgrade", default-features = false }
 # pn532 = { path = "../../../../../../OpenSourceProj/forked/pn532/", default-features = false }
@@ -42,10 +42,10 @@ log = { version = "0.4.22", features = ["serde"] }
 static_cell = { version = "2.1", features = ["nightly"] }
 base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 embassy-futures = { version = "0.1.2" }
-embedded-hal-bus = { version = "0.2.0", features = ["async"] }
+embedded-hal-bus = { version = "0.3.0", features = ["async"] }
 embassy-executor = { version = "0.9.0", features = ["nightly"] }
 getrandom = { version = "0.2.15", features = ["custom"] }
-hashbrown = { version = "0.15.0", features = ["serde"] }
+hashbrown = { version = "0.16.1", features = ["serde"] }
 snafu = { git = "https://github.com/shepmaster/snafu", rev = "aedc9db8c04a437b4c547efd4d73e9337fa43a4a", default-features = false, features = ["rust_1_81", "alloc"]} # , "backtraces-impl-backtrace-crate"]} 
 esp-mbedtls = { git = "https://github.com/yanshay/esp-mbedtls.git", features = [ "async" ], branch="yanshay_esp-hal-1.0.0-with-session-reuse" }
 #esp-mbedtls = { path = "../../../../../../OpenSourceProj/forked/esp-mbedtls/esp-mbedtls/", features = [ "async" ] }

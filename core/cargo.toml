@@ -39,8 +39,8 @@ walkdir = "2.5.0"
 
 [dependencies]
 #TODO: Important - lock to specific tag when released
-framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.0", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
-framework_macros = { package = "esp-hal-app-framework-macros", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.0" }
+framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.1", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
+framework_macros = { package = "esp-hal-app-framework-macros", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.1" }
 # framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
 # framework_macros = { package = "esp-hal-app-framework-macros", path = "../../../esp-hal-app/esp-hal-app-framework-macros/" }
 esp32s3 = { version = "0.34.0" }
@@ -66,7 +66,7 @@ esp-hal-ota = { version = "0.4.5" }
 # Embedded crates
 embedded-hal = { version = "1.0.0" }
 embedded-hal-async = { version = "1.0.0" }
-embedded-hal-bus = { version = "0.2.0", features = ["async"] }
+embedded-hal-bus = { version = "0.3.0", features = ["async"] }
 embedded-storage = { version = "0.3.1" }
 embedded-storage-async = { version = "0.4.1" }
 embedded-io = "0.6.1"
@@ -86,21 +86,11 @@ futures-util = { version = "0.3.31", default-features = false }
 sequential-storage = { git = "https://github.com/tweedegolf/sequential-storage", features = [ "alloc", ], rev = "b6f7da77b7f3d66bc1ac36992a6a7b399b5ba030" }
 
 # Display & Touch crates
-display-interface = { version = "0.5.0" }
-display-interface-parallel-gpio = { version = "0.7.0" }
-mipidsi = { version = "0.8.0" }
+mipidsi = { version = "0.8.0" } # # can't upgrade due to mismatch with display-interface-parallel-gpio 0.7.0
 slint = { version = "=1.11.0", default-features = false, features = [ "libm", "unsafe-single-threaded", "compat-1-2", "renderer-software" ] }
-ft6x36 = { version = "0.6.1" }
 
 # Networking crates
 smoltcp = { version = "0.12.0", default-features = false, features = [ "proto-ipv4", "socket-tcp", "socket-icmp", "socket-udp", "medium-ethernet", "proto-dhcpv4", "socket-raw", "socket-dhcpv4"] }
-
-# edge-nal-embassy = "0.5.0"
-# edge-dhcp = "0.5.0"
-# edge-nal = "0.5.0"
-# edge-captive = "0.5.0"
-# edge-http = "0.5.1"
-# edge-ws = "0.4.0"
 
 # edge-nal-embassy = { path = "../../../../../OpenSourceProj/forked/edge-net/edge-nal-embassy/" }
 # edge-http = { path = "../../../../../OpenSourceProj/forked/edge-net/edge-http/" }
@@ -130,11 +120,11 @@ static_cell = { version = "2.1", features = ["nightly"] }
 once_cell = { version = "1.20.2", default-features = false, features = ["alloc"] }
 anyhow = { version = "1.0.91", default-features = false }
 snafu = { git = "https://github.com/shepmaster/snafu", rev = "aedc9db8c04a437b4c547efd4d73e9337fa43a4a", default-features = false, features = ["rust_1_81", "alloc"]} # , "backtraces-impl-backtrace-crate"]} 
-hashbrown = { version = "0.15.0", features = ["serde"] }
+hashbrown = { version = "0.16.1", features = ["serde"] }
 serde = { version = "1.0.213", default-features = false, features = [ "derive", "alloc", ] }
 serde_json = { version = "1.0.132", default-features = false, features = [ "alloc", ] }
 serde-csv-core = "0.3.2"
-serde_with = { version = "3.16.0", default-features = false, features = ["alloc", "macros", "base64", "hashbrown_0_15", "hex"]}
+serde_with = { version = "3.16.0", default-features = false, features = ["alloc", "macros", "base64", "hashbrown_0_16", "hex"]}
 pasetors = { version = "0.7.0", default-features = false, features = ["v4"] }
 base64 = { version = "0.22.1", default-features = false, features = ["alloc"] }
 getrandom = { version = "0.2.15", features = ["custom"] }
@@ -167,8 +157,8 @@ regex = { version = "1.11.1", default-features = false }
 shared = { path = "../shared/" }
 # ndef-rs = { path = "../../../../../../OpenSourceProj/forked/ndef-rs/ndef", default-features = false}
 ndef-rs = { git = "https://github.com/yanshay/ndef-rs" , branch = "yanshay_no_std", default-features = false}
-minicbor = { version = "0.26.5", default-features =false, features = ["alloc", "derive", "half"]}
-minicbor-derive = {version = "0.16.2" }
+minicbor = { version = "2.1.3", default-features =false, features = ["alloc", "derive", "half"]}
+minicbor-derive = {version = "0.18.3" }
 
 [features]
 default = ["esp32s3"]
