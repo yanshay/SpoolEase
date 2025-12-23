@@ -1902,22 +1902,23 @@ impl BambuPrinter {
         // (ams_id, ams_tray_id, slot_id, original_tray_id)
 
         let ams_id;
-        let ams_tray_id;
+        let mut ams_tray_id_for_set_filament;
         let slot_id;
         let original_tray_id;
 
-        (ams_id, ams_tray_id) = Self::get_ams_and_slot_id(tray_id as usize);
+        (ams_id, ams_tray_id_for_set_filament) = Self::get_ams_and_slot_id(tray_id as usize);
 
         if tray_id < 16 {
             // AMS
-            slot_id = ams_tray_id as i32;
+            slot_id = ams_tray_id_for_set_filament as i32;
             original_tray_id = tray_id;
         } else if tray_id < 16 + 8 {
             // AMS-HT
             slot_id = 0;
-            original_tray_id = (ams_id * 4 + ams_tray_id) as i32; // seems like this is what Bambustudio is placing there (so 512 for first HT, others are assumed)
+            original_tray_id = (ams_id * 4 + ams_tray_id_for_set_filament) as i32; // seems like this is what Bambustudio is placing there (so 512 for first HT, others are assumed)
         } else {
             // external
+            ams_tray_id_for_set_filament = 254;
             slot_id = 0;
             if self.num_extruders() == 1 {
                 original_tray_id = 254;
@@ -1925,7 +1926,7 @@ impl BambuPrinter {
                 original_tray_id = tray_id;
             }
         }
-        (ams_id as i32, ams_tray_id as i32, slot_id, original_tray_id)
+        (ams_id as i32, ams_tray_id_for_set_filament as i32, slot_id, original_tray_id)
     }
 
     pub fn reset_tray(&mut self, tray_id: i32) {
@@ -1989,7 +1990,7 @@ impl BambuPrinter {
     }
 
     pub fn set_tray_filament(&mut self, tray_id: i32, full_spool_rec: &FullSpoolRecord, temp_min: u32, temp_max: u32) {
-        let (ams_id, ams_tray_id, slot_id, original_tray_id) = self.get_quad_for_set_filament_from_tray_id(tray_id);
+        let (ams_id_for_set_filament, ams_tray_id, slot_id, original_tray_id) = self.get_quad_for_set_filament_from_tray_id(tray_id);
 
         // setting_id can't be extracted from just tray information, it's available only if there is a cali_idx on the tray.
         // on the other hand it is required to set tray information.
@@ -2012,7 +2013,7 @@ impl BambuPrinter {
 
         if filament_ok_to_send {
             let cmd = crate::bambu_api::AmsFilamentSettingCommand::new(
-                ams_id,
+                ams_id_for_set_filament,
                 ams_tray_id, // here we need the tray_id within the specific ams (newer versions)
                 slot_id,     // slot number within ams
                 &filament.tray_info_idx,
@@ -2030,7 +2031,7 @@ impl BambuPrinter {
             let extruder_id = self.get_extruder_id_for_tray(tray_id).unwrap_or_default();
             let cmd = crate::bambu_api::ExtrusionCaliSelCommand::new(
                 &self.nozzle_diameter(extruder_id).clone().unwrap_or_default(),
-                ams_id,
+                ams_id_for_set_filament,
                 original_tray_id, // here we need the original tray_id
                 slot_id,
                 &filament.tray_info_idx, // tray_info_idx is filament_id in this command
