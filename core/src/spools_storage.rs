@@ -16,7 +16,7 @@ pub struct RackConfig {
     pub shelf_numbering_order: ShelfNumOrder,
     pub position_numbering_order: PosNumOrder,
     pub bins_numbering_order: BinNumOrder,
-    pub exceptions: Vec<RackException>,
+    pub shelf_overrides: HashMap<i32, ShelfOverride>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -28,7 +28,7 @@ pub enum ShelfNumOrder {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum PosNumOrder {
     LeftToRight,
-    RightToLeft
+    RightToLeft,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -40,12 +40,8 @@ pub enum BinNumOrder {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum RackException {
-    ShelfLayout {
-        shelf_id: i32,
-        num_positions: Option<i32>,
-        num_bins_per_position: Option<i32>,
-        num_spools_per_bin: Option<i32>
-    }
+pub struct ShelfOverride {
+    num_positions: Option<i32>,
+    num_bins_per_position: Option<i32>,
+    num_spools_per_bin: Option<i32>,
 }
-
