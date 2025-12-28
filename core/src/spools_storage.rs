@@ -4,11 +4,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StorageConfig {
-    rack_config: HashMap<String, RackConfig>,
+    rack_config: HashMap<i32, RackConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RackConfig {
+    pub name: String,
     pub num_shelves: Option<i32>,
     pub num_positions_per_shelf: Option<i32>,
     pub num_bins_per_position: Option<i32>,
