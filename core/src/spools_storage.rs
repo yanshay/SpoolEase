@@ -43,9 +43,9 @@ pub enum BinNumOrder {
 pub enum RackException {
     ShelfLayout {
         shelf_id: i32,
-        positions: Option<i32>,
-        bins_per_position: Option<i32>,
-        spools_per_bin: Option<i32>
+        num_positions: Option<i32>,
+        num_bins_per_position: Option<i32>,
+        num_spools_per_bin: Option<i32>
     }
 }
 
