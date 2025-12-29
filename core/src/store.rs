@@ -23,9 +23,7 @@ use framework::{
 };
 
 use crate::{
-    bambu::{KInfo, TagInformationV1},
-    csvdb::{CsvDb, CsvDbError},
-    view_model::ViewModel,
+    bambu::{KInfo, TagInformationV1}, csvdb::{CsvDb, CsvDbError}, spools_storage::StorageConfig, view_model::ViewModel
 };
 
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
@@ -129,6 +127,7 @@ pub struct Store {
     tag_id_index: RefCell<HashMap<String, String>>,
     pub initialized: RefCell<bool>,
     store_rc: RefCell<Option<Rc<Store>>>,
+    pub storage_config: RefCell<StorageConfig>,
 }
 
 impl Store {
@@ -143,6 +142,7 @@ impl Store {
             tag_id_index: RefCell::new(HashMap::new()),
             initialized: RefCell::new(false),
             store_rc: RefCell::new(None),
+            storage_config: RefCell::new(StorageConfig::default()),
         });
         *store.store_rc.borrow_mut() = Some(store.clone());
         store
@@ -303,6 +303,8 @@ impl Store {
                         ext_has_k: k_info.is_some(),
                         data_origin: current_record.data_origin.clone(),
                         tag_type: current_record.tag_type.clone(),
+                        assigned_location: spool_record.assigned_location.clone(),
+                        actual_location: spool_record.actual_location.clone(),
                     }
                 } else {
                     return Err(StoreError::NotFound { id: spool_record.id.clone() });
@@ -678,64 +680,22 @@ impl Store {
         Ok(())
     }
 
-    // pub async fn try_restore_from_backup(&self) {
-    //     info!("Running restore_from_backup");
-    //     let file_store = self.framework.borrow().file_store();
-    //     let mut file_store = file_store.lock().await;
-    //
-    //     let volume = {
-    //         match file_store.take_volume().await {
-    //             Ok(raw_volume) => raw_volume.to_volume(file_store.volume_mgr()),
-    //             Err(err) => {
-    //                 error!("Error opening volume: {err:?}");
-    //                 return;
-    //             }
-    //         }
-    //     };
-    //
-    //     // let volume = file_store.take_volume().await.context(StoreSnafu)?.to_volume(file_store.volume_mgr());
-    //     match volume.open_root_dir() {
-    //         Err(err) => {
-    //             error!(">>>> Can't open root dir : {err:?}");
-    //             // exit, don't return so cleanup takes place
-    //         }
-    //         Ok(dir) => {
-    //             match dir.open_file_in_dir("store.bak", sdcard_store::Mode::ReadOnly).await {
-    //                 Err(_err) => {
-    //                     // exit, don't return so cleanup takes place
-    //                 }
-    //                 Ok(file) => {
-    //                     let mut restorer = Restorer::new();
-    //                     loop {
-    //                         match file.read(restorer.get_write_buf()).await {
-    //                             Err(err) => {
-    //                                 debug!(">>>> Error reading from restore.bak: {err:?}");
-    //                                 break;
-    //                             }
-    //                             Ok(n) => {
-    //                                 if n == 0 {
-    //                                     break;
-    //                                 }
-    //                                 if let Err(err) = restorer.process_data(n, &file_store) {
-    //                                     error!("Error processing store.bak: {err}");
-    //                                     break;
-    //                                 }
-    //                             }
-    //                         }
-    //                     }
-    //                     if let Err(err) = file.close().await {
-    //                         error!("Error closing restore.bak : {err:?}");
-    //                     }
-    //                 }
-    //             }
-    //             if let Err(err) = dir.close() {
-    //                 error!("Error closing root directory : {err:?}");
-    //             }
-    //         }
-    //     }
-    //     let volume = volume.to_raw_volume();
-    //     file_store.return_volume(volume);
-    // }
+    pub async fn set_storage_config(&self, new_storage_config: StorageConfig) -> Result<String, String> {
+        let file_store = self.framework.borrow().file_store();
+        let mut file_store = file_store.lock().await;
+        let storage_config_str = serde_json::to_string(&new_storage_config).unwrap();
+        match file_store.create_write_file_str("/store/storcfg.jsn", &storage_config_str).await {
+            Ok(_) => {
+                *self.storage_config.borrow_mut() = new_storage_config;
+                info!("Stored Spools Storage Configuration to /store/storcfg.jsn");
+                Ok(storage_config_str)
+            }
+            Err(err) => {
+                error!("Error storing Spools Storage Configuration to /store/storcfg.jsn");
+                Err(format!("Error storing Spools Storage Configuration {err}"))
+            }
+        }
+    }
 }
 
 // #[embassy_executor::task]
@@ -753,6 +713,28 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
         }
         debug!("Started store_task");
         let file_store = framework.borrow().file_store();
+
+        {
+            let mut file_store = file_store.lock().await;
+            if let Ok(storage_config_str) = file_store.read_file_str("/store/storcfg.jsn").await {
+                match serde_json::from_str::<StorageConfig>(&storage_config_str) {
+                    Ok(storage_config) => *store.storage_config.borrow_mut() = storage_config,
+                    Err(err) =>  { 
+                        term_error!("Error loading Spools Storage Configuration (Storage Racks): {}", err); 
+                        view_model.borrow().message_box(
+                            "Store Notice",
+                            "Error Loading Storage Configuration",
+                            &err.to_string(),
+                            crate::app::StatusType::Error,
+                            0,
+                        );
+                    },
+                }
+            } else {
+                info!("No Spools Storage Configuration (Storage Racks) file");
+            }
+        }
+
         match CsvDb::<SpoolRecord, _, FILE_STORE_MAX_DIRS, FILE_STORE_MAX_FILES>::new(file_store.clone(), "/store/spools", 1024, 200, STORE_VER).await
         {
             Ok(mut db) => match db.start(true, true).await {
@@ -923,103 +905,3 @@ pub struct FileMeta {
 pub struct BackupMeta {
     pub spoolease_console_ver: String,
 }
-
-// enum RestorerState {
-//     Header,
-//     FileInfo,
-//     File { file_path: String, total: usize, _stored: usize },
-// }
-//
-// struct Restorer {
-//     buffer: Vec<u8>,
-//     buf_len: usize,
-//     pub state: RestorerState,
-// }
-// impl Restorer {
-//     pub fn new() -> Self {
-//         Restorer {
-//             buffer: alloc::vec![0u8; 2048],
-//             buf_len: 0,
-//             state: RestorerState::Header,
-//         }
-//     }
-//     pub fn get_write_buf(&mut self) -> &mut [u8] {
-//         if self.buf_len + 2048 > self.buffer.len() {
-//             self.buffer.resize(self.buf_len + 2048, 0);
-//         }
-//         &mut self.buffer[self.buf_len..]
-//     }
-//     pub fn process_data(
-//         &mut self,
-//         n_added: usize,
-//         store: &sdcard_store::SDCardStore<TheSpi, 20, 5>,
-//         // root_dir: embedded_sdmmc::asynchronous::Directory<'_, SDCardStoreType>,
-//     ) -> Result<(), String> {
-//         self.buf_len += n_added;
-//         loop {
-//             let need_more_data = match &self.state {
-// RestorerState::Header => {
-//                     if let Some(pos) = self.buffer[..self.buf_len].iter().position(|&b| b == b'\n') {
-//                         match serde_json::from_slice::<BackupMeta>(&self.buffer[..pos]) {
-//                             Ok(_backup_meta) => {
-//                                 self.buffer.copy_within(pos + 1.., 0);
-//                                 self.buf_len -= pos + 1;
-//                                 self.state = RestorerState::FileInfo;
-//                                 false
-//                             }
-//                             Err(err) => {
-//                                 return Err(format!("Failed to deserialize backup meta: {err}"));
-//                             }
-//                         }
-//                     } else {
-//                         true
-//                     }
-//                 }
-//                 RestorerState::FileInfo => {
-//                     if let Some(pos) = self.buffer[..self.buf_len].iter().position(|&b| b == b'\n') {
-//                         match serde_json::from_slice::<FileMeta>(&self.buffer[..pos]) {
-//                             Ok(file_meta) => {
-//                                 self.state = RestorerState::File {
-//                                     file_path: file_meta.path,
-//                                     total: file_meta.length,
-//                                     _stored: 0,
-//                                 };
-//                                 self.buffer.copy_within(pos + 1.., 0);
-//                                 self.buf_len -= pos + 1;
-//                                 false
-//                             }
-//                             Err(err) => {
-//                                 error!("Error in: {:?}", &self.buffer[..pos]);
-//                                 error!("Error in: {}", core::str::from_utf8(&self.buffer[..pos]).unwrap_or("Not UTF8"));
-//                                 return Err(format!("Failed to deserialize file info: {err}"));
-//                             }
-//                         }
-//                     } else {
-//                         true
-//                     }
-//                 }
-//                 RestorerState::File {
-//                     file_path,
-//                     total,
-//                     _stored: _,
-//                 } => {
-//                     if self.buf_len < total + 1 {
-//                         // want also the \n added at end of file
-//                         true
-//                     } else {
-//                         debug!(">>>> writing: {file_path}, length: {total}");
-//                         debug!("{}", core::str::from_utf8(&self.buffer[..*total]).unwrap_or("Errror converting to UTF8"));
-//                         self.buffer.copy_within(total + 1.., 0);
-//                         self.buf_len -= total + 1;
-//                         self.state = RestorerState::FileInfo;
-//                         false
-//                     }
-//                 }
-//             };
-//             if need_more_data {
-//                 break;
-//             }
-//         }
-//         Ok(())
-//     }
-// }

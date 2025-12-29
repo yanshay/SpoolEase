@@ -34,6 +34,7 @@ use shared::gcode_analysis_task::Fetch3mf;
 use crate::app_config::{AppConfig, DefaultPrinterConfig, PrinterConfig, PrintersConfig, ScaleConfig, FILAMENT_BRAND_NAMES, SPOOLS_CATALOG};
 use crate::bambu::KInfo;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
+use crate::spools_storage::StorageConfig;
 use crate::store::{BackupMeta, FileMeta, Store};
 use crate::view_model::ViewModel;
 
@@ -325,6 +326,8 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         ext_has_k: add_spool.k_info.is_some(),
                         data_origin: String::new(),
                         tag_type: String::new(),
+                        assigned_location: add_spool.assigned_location,
+                        actual_location: add_spool.actual_location,
                     };
                     if new_spool.id.is_empty() {
                         match store
@@ -512,6 +515,31 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         let resp = ChunkedResponse::new(ScreenshotChunks { screenshot }).into_response();
                         resp.with_header("", String::new()).with_status_code(StatusCode::UNAUTHORIZED)
                     }
+                },
+            ),
+        );
+
+        let router = router.route(
+            "/api/storage-config",
+            post(
+                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, storage_config: StorageConfig| {
+                    let store = state.store;
+                    match store.set_storage_config(storage_config).await {
+                        Ok(storage_config_str) => {
+                            encrypt(&key.borrow(), &storage_config_str)
+                        },
+                        Err(err) => {
+                            error!("Failed to store Storage Configuration : {err}");
+                            err.to_string()
+                        }
+                    }
+                },
+            ).
+            get(
+                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>| {
+                    let store = state.store;
+                    let storage_config_str = serde_json::to_string(&*store.storage_config.borrow()).unwrap();
+                    encrypt(&key.borrow(), &storage_config_str)
                 },
             ),
         );
@@ -802,6 +830,8 @@ pub struct AddSpoolDTO {
     pub slicer_filament: String,
     pub full_unused: String,
     pub k_info: Option<KInfo>,
+    pub assigned_location: String,
+    pub actual_location: String,
 }
 encrypted_input!(AddSpoolDTO);
 
@@ -871,6 +901,8 @@ pub struct GenericResonse {
     text: String,
 }
 encrypted_input!(GenericResonse);
+
+encrypted_input!(StorageConfig);
 
 /////////////////////////////////////////////
 

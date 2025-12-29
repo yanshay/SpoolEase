@@ -1,8 +1,8 @@
-use alloc::{string::String, vec::Vec};
+use alloc::string::String;
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct StorageConfig {
     rack_config: HashMap<i32, RackConfig>,
 }

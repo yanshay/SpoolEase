@@ -57,6 +57,11 @@ pub struct SpoolRecord {
     pub data_origin: String,
     #[serde(default)]
     pub tag_type: String,
+    #[serde(default)]
+    pub assigned_location: String,
+    #[serde(default)]
+    pub actual_location: String,
+
     // !!! Don't Forget to set default for any field!
     // pub update_time
     // pub update_tag_fields_time
