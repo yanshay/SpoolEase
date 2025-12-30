@@ -2,6 +2,8 @@ use alloc::string::String;
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 
+use crate::csvdb::CsvDbId;
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct StorageConfig {
     rack_config: HashMap<i32, RackConfig>,
@@ -45,4 +47,18 @@ pub struct ShelfOverride {
     num_positions: Option<i32>,
     num_bins_per_position: Option<i32>,
     num_spools_per_bin: Option<i32>,
+}
+
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
+pub struct StorageLocationRecord {
+    pub id: String,
+    pub tag_id: String,
+    pub location: String,
+}
+
+impl CsvDbId for StorageLocationRecord {
+    fn id(&self) -> &String {
+        &self.id
+    }
 }

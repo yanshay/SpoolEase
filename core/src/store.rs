@@ -23,12 +23,16 @@ use framework::{
 };
 
 use crate::{
-    bambu::{KInfo, TagInformationV1}, csvdb::{CsvDb, CsvDbError}, spools_storage::StorageConfig, view_model::ViewModel
+    bambu::{KInfo, TagInformationV1},
+    csvdb::{CsvDb, CsvDbError},
+    spools_storage::{StorageConfig, StorageLocationRecord},
+    view_model::ViewModel,
 };
 
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 
-const STORE_VER: &str = "1.1.0";
+const SPOOLS_STORE_VER: &str = "1.1.0";
+const LOCATIONS_STORE_VER: &str = "1.0.0";
 
 #[derive(Snafu, Debug)]
 pub enum StoreError {
@@ -124,10 +128,14 @@ pub struct Store {
     // Think if need to make the entire store under mutex (if there are several related dbs could case issues)
     pub spools_db: OnceCell<CsvDb<SpoolRecord, TheSpi, 20, 5>>,
     last_spool_id: RefCell<i32>,
-    tag_id_index: RefCell<HashMap<String, String>>,
+    spool_tag_id_index: RefCell<HashMap<String, String>>,
     pub initialized: RefCell<bool>,
     store_rc: RefCell<Option<Rc<Store>>>,
     pub storage_config: RefCell<StorageConfig>,
+
+    pub locations_db: OnceCell<CsvDb<StorageLocationRecord, TheSpi, 20, 5>>,
+    last_location_id: RefCell<i32>,
+    location_tag_id_index: RefCell<HashMap<String, String>>,
 }
 
 impl Store {
@@ -139,10 +147,13 @@ impl Store {
             // requests_channel,
             spools_db: OnceCell::new(),
             last_spool_id: RefCell::new(0),
-            tag_id_index: RefCell::new(HashMap::new()),
+            spool_tag_id_index: RefCell::new(HashMap::new()),
             initialized: RefCell::new(false),
             store_rc: RefCell::new(None),
             storage_config: RefCell::new(StorageConfig::default()),
+            locations_db: OnceCell::new(),
+            last_location_id: RefCell::new(0),
+            location_tag_id_index: RefCell::new(HashMap::new()),
         });
         *store.store_rc.borrow_mut() = Some(store.clone());
         store
@@ -166,379 +177,6 @@ impl Store {
     }
     pub fn is_initialized(&self) -> bool {
         *self.initialized.borrow()
-    }
-
-    pub fn query_spools(&self) -> Option<String> {
-        if let Some(spools_db) = self.spools_db.get() {
-            let spool_records = spools_db.records.borrow();
-            let total_length = spool_records.values().map(|v| v.length).sum::<usize>();
-            let results: Result<String, CsvDbError> = spool_records.values().try_fold(String::with_capacity(total_length), |mut acc, v| {
-                let csv = v.to_csv_string();
-                if let Err(e) = &csv {
-                    error!("Error serializing to csv: {v:?} : {e}");
-                }
-                acc.push_str(&csv?);
-                Ok(acc)
-            });
-            // TODO: make it an error up as well, to handle in the caller
-            results.ok()
-        } else {
-            None
-        }
-    }
-
-    pub async fn delete_spool(&self, id: &str) -> Result<(), StoreError> {
-        let deleted_record = if let Some(spools_db) = &self.spools_db.get() {
-            let delete_res = spools_db.delete(id).await;
-            if let Ok(Some(record)) = &delete_res {
-                self.remove_tag_from_tag_id_index(&record.tag_id);
-            }
-            delete_res.context(CsvDbSnafu)?
-        } else {
-            None
-        };
-
-        if let Some(deleted_record) = deleted_record {
-            if !deleted_record.tag_id.is_empty() {
-                if let Ok(spool_rec_ext_file_path) = spool_rec_ext_file_path(&deleted_record.id) {
-                    let file_store = self.framework.borrow().file_store();
-                    let mut file_store = file_store.lock().await;
-                    let _ = file_store.delete_file(&spool_rec_ext_file_path).await;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    pub fn remove_tag_from_tag_id_index(&self, tag_id: &str) -> Option<String> {
-        let res = self.tag_id_index.borrow_mut().remove(tag_id);
-        if res.is_some() { // if was key previously (and now isn't) need to send an update on remove
-            for weak_observer in self.observers.borrow().iter() {
-                let observer = weak_observer.upgrade().unwrap();
-                observer.borrow().on_tag_removed();
-            }
-        }
-        res
-    }
-
-    pub fn insert_tag_to_tag_id_index(&self, tag_id: String, spool_id: String) -> Option<String> {
-        let res = self.tag_id_index.borrow_mut().insert(tag_id, spool_id);
-        if res.is_none() { // if was no key (and now there is) need to send an update on add
-            for weak_observer in self.observers.borrow().iter() {
-                let observer = weak_observer.upgrade().unwrap();
-                observer.borrow().on_tag_added();
-            }
-        }
-        res
-    }
-
-    pub async fn add_spool(&self, mut spool_rec: SpoolRecord, spool_rec_ext: SpoolRecordExt) -> Result<String, StoreError> {
-        let new_spool_id = (*self.last_spool_id.borrow()) + 1;
-        if let Some(spools_db) = &self.spools_db.get() {
-            spool_rec.id = new_spool_id.to_string();
-            spool_rec.added_time = store_safe_time_now();
-            spool_rec.ext_has_k = spool_rec_ext.k_info.is_some();
-            let tag_id = spool_rec.tag_id.clone();
-            let id = spool_rec.id.clone();
-            match spools_db.insert(spool_rec).await.context(CsvDbSnafu)? {
-                true => {
-                    *self.last_spool_id.borrow_mut() = new_spool_id;
-                    // deal with tag_id
-                    let tag_id_update_res = if !tag_id.is_empty() {
-                        // check if tag_id was with some other record, if so remove that mapping and 'strikeout' that spool_record
-                        let update_res = if let Some(mut existing_spool_rec_with_tag_id) = self.get_spool_by_hex_tag(&tag_id) {
-                            existing_spool_rec_with_tag_id.tag_id = format!("-{}", existing_spool_rec_with_tag_id.tag_id);
-                            self.update_spool(existing_spool_rec_with_tag_id, None).await.map(|_| ())
-                        } else {
-                            Ok(())
-                        };
-                        self.insert_tag_to_tag_id_index(tag_id, id);
-                        update_res
-                    } else {
-                        Ok(())
-                    };
-                    self.store_spool_rec_ext(&new_spool_id.to_string(), &spool_rec_ext).await?;
-                    tag_id_update_res?; // want to perform all operations and report error if anything happened in the middle
-                    Ok(new_spool_id.to_string())
-                }
-                false => {
-                    error!("Internal error, add spool added an already existing spool");
-                    Err(StoreError::InternalError)
-                }
-            }
-        } else {
-            error!("Internal error, can't access store");
-            Err(StoreError::NoCsvDb)
-        }
-    }
-
-    pub async fn edit_spool_from_web(&self, spool_record: SpoolRecord, k_info: Option<KInfo>) -> Result<(), StoreError> {
-        if let Some(spools_db) = &self.spools_db.get() {
-            let current_tag_id;
-            let updated_record = {
-                let spools_db_borrow = spools_db.records.borrow(); // Important: Note this borrow, dropped when context ends, but if changing need to make sure it is dropped
-                if let Some(current_record) = spools_db_borrow.get(&spool_record.id) {
-                    // Taking this approach with extra clones, so if future fields are added, this won't be missed
-                    let current_record = &current_record.data;
-                    current_tag_id = current_record.tag_id.clone();
-                    SpoolRecord {
-                        id: spool_record.id.clone(),
-                        tag_id: spool_record.tag_id.clone(),
-                        material_type: spool_record.material_type,
-                        material_subtype: spool_record.material_subtype,
-                        color_name: spool_record.color_name,
-                        color_code: spool_record.color_code,
-                        note: spool_record.note,
-                        brand: spool_record.brand,
-                        weight_advertised: spool_record.weight_advertised,
-                        weight_core: spool_record.weight_core,
-                        weight_new: current_record.weight_new,         // can't change from web
-                        weight_current: current_record.weight_current, // can't change from web
-                        slicer_filament: spool_record.slicer_filament,
-                        added_time: current_record.added_time.or(store_safe_time_now()), // in case somehow no added date (ntp) then add it now
-                        encode_time: current_record.encode_time,
-                        added_full: spool_record.added_full,
-                        consumed_since_add: current_record.consumed_since_add,
-                        consumed_since_weight: current_record.consumed_since_weight,
-                        ext_has_k: k_info.is_some(),
-                        data_origin: current_record.data_origin.clone(),
-                        tag_type: current_record.tag_type.clone(),
-                        assigned_location: spool_record.assigned_location.clone(),
-                        actual_location: spool_record.actual_location.clone(),
-                    }
-                } else {
-                    return Err(StoreError::NotFound { id: spool_record.id.clone() });
-                }
-            };
-
-            spools_db.insert(updated_record).await.context(CsvDbSnafu)?;
-
-            if !current_tag_id.is_empty() && spool_record.tag_id.is_empty() {
-                self.remove_tag_from_tag_id_index(&current_tag_id);
-            }
-
-            let mut spool_rec_ext = match self.get_spool_ext_by_id(&spool_record.id).await {
-                Ok(spool_rec_ext) => spool_rec_ext,
-                Err(err) => {
-                    error!("Error loading extended info when editing file, using empty as baseline for edit: {err:?}");
-                    SpoolRecordExt::default()
-                }
-            };
-            spool_rec_ext.k_info = k_info;
-            if spool_rec_ext.tag.is_some() && spool_record.tag_id.is_empty() {
-                spool_rec_ext.tag = None;
-            }
-            self.store_spool_rec_ext(&spool_record.id, &spool_rec_ext).await?;
-            Ok(())
-        } else {
-            Err(StoreError::NoCsvDb)
-        }
-    }
-    pub fn get_spool_by_hex_tag(&self, tag_id_hex: &str) -> Option<SpoolRecord> {
-        if let Some(spools_db) = self.spools_db.get() {
-            if let Some(spool_id) = self.tag_id_index.borrow().get(tag_id_hex) {
-                if let Some(current_rec) = spools_db.records.borrow().get(spool_id) {
-                    return Some(current_rec.data.clone());
-                }
-            }
-        }
-        None
-    }
-    pub fn get_spool_by_tag_id(&self, tag_id: &[u8]) -> Option<SpoolRecord> {
-        self.get_spool_by_hex_tag(&tag_id_hex(tag_id))
-    }
-
-    #[allow(dead_code)]
-    pub fn exists_hex_tag_id(&self, tag_id_hex: &str) -> bool {
-        self.tag_id_index.borrow().contains_key(tag_id_hex)
-    }
-    #[allow(dead_code)]
-    pub fn exists_tag_id(&self, tag_id: &[u8]) -> bool {
-        self.exists_hex_tag_id(&hex::encode_upper(tag_id))
-    }
-
-    pub fn tags_in_store(&self) -> String {
-        let mut tags_in_store = String::with_capacity(self.tag_id_index.borrow().len() * (7 + 1) + 1);
-        tags_in_store.push(','); // start with ","
-        for tag in self.tag_id_index.borrow().keys() {
-            tags_in_store.push_str(tag);
-            tags_in_store.push(',');
-        }
-        tags_in_store
-    }
-
-    pub fn get_spool_by_id(&self, id: &str) -> Option<SpoolRecord> {
-        if let Some(spools_db) = self.spools_db.get() {
-            if let Some(current_rec) = spools_db.records.borrow().get(id) {
-                return Some(current_rec.data.clone());
-            }
-        }
-        None
-    }
-
-    // TODO: once working, use it in other places reading ext
-    pub async fn get_spool_ext_by_id(&self, id: &str) -> Result<SpoolRecordExt, StoreError> {
-        if self.get_spool_by_id(id).is_none() {
-            return Err(StoreError::NotFound { id: id.to_string() });
-        }
-        let spool_rec_ext_file_path = spool_rec_ext_file_path(id).map_err(|_| StoreError::NotFound { id: id.to_string() })?;
-        let file_store = self.framework.borrow().file_store();
-        let mut file_store = file_store.lock().await;
-        let ext_str = file_store
-            .read_file_str(&spool_rec_ext_file_path)
-            .await
-            .map_err(|err| StoreError::ExtFileReadFailure {
-                error: format!("{err} reading '{spool_rec_ext_file_path}'"),
-            })?;
-        let mut de = Deserializer::from_str(&ext_str);
-        let spool_rec_ext = SpoolRecordExt::deserialize(&mut de).context(ExtFormatSnafu)?;
-        // let spool_rec_ext = serde_json::from_str::<SpoolRecordExt>(&ext_str).context(ExtFormatSnafu)?;
-        Ok(spool_rec_ext)
-    }
-
-    #[allow(clippy::type_complexity)]
-    pub async fn update_spool(
-        &self,
-        mut spool_record: SpoolRecord,
-        update_ext_fn: Option<Box<dyn FnOnce(&mut SpoolRecordExt)>>,
-    ) -> Result<Option<SpoolRecordExt>, StoreError> {
-        let mut ret_spool_rec_ext = None;
-        if let Some(spools_db) = self.spools_db.get() {
-            if !spool_record.id.is_empty() {
-                if spools_db.records.borrow().contains_key(&spool_record.id) {
-                    if let Some(update_ext_fn) = update_ext_fn {
-                        let mut spool_rec_ext = self.get_spool_ext_by_id(&spool_record.id).await.ok().unwrap_or_default(); // on read error don't raise error
-                        update_ext_fn(&mut spool_rec_ext);
-                        spool_record.ext_has_k = spool_rec_ext.k_info.is_some();
-                        self.store_spool_rec_ext(&spool_record.id, &spool_rec_ext).await?;
-                        ret_spool_rec_ext = Some(spool_rec_ext);
-                    }
-                    let tag_id = spool_record.tag_id.clone();
-                    let id = spool_record.id.clone();
-                    // TODO: ? theoretically need transaction mechanism here (so lock db and then do the index operation as well)
-                    spools_db.insert(spool_record).await.context(CsvDbSnafu)?;
-                    if !tag_id.is_empty() && !tag_id.starts_with("-") { // not sure needed, may be 3.5 related
-                        // first search if this tag_id is in use already and strike it out before adding this tag to index
-                        if let Some(mut existing_spool_rec_with_tag_id) = self.get_spool_by_hex_tag(&tag_id) {
-                            if existing_spool_rec_with_tag_id.id != id {
-                                existing_spool_rec_with_tag_id.tag_id = format!("-{}", existing_spool_rec_with_tag_id.tag_id);
-                                spools_db.insert(existing_spool_rec_with_tag_id).await.context(CsvDbSnafu)?;
-                            }
-                        }
-                        self.insert_tag_to_tag_id_index(tag_id, id);
-                    } else {
-                        // for some reason tag_id was removed
-                        let tag_id = self
-                            .tag_id_index
-                            .borrow()
-                            .iter()
-                            .find(|(_, index_id)| *index_id == &id)
-                            .map(|(index_tag, _)| index_tag.clone());
-                        if let Some(tag_id) = tag_id {
-                            self.remove_tag_from_tag_id_index(&tag_id);
-                        }
-                    }
-                    Ok(ret_spool_rec_ext)
-                } else {
-                    error!("Internal error, can't access store");
-                    Err(StoreError::NoCsvDb)
-                }
-            } else {
-                Err(StoreError::IdNotFound)
-            }
-        } else {
-            Err(StoreError::MissingId)
-        }
-    }
-
-    pub async fn store_spool_rec_ext(&self, id: &str, spool_rec_ext: &SpoolRecordExt) -> Result<String, StoreError> {
-        let spool_rec_ext_file_path = spool_rec_ext_file_path(id)?;
-        let file_store = self.framework.borrow().file_store();
-        let mut file_store = file_store.lock().await;
-        let s = serde_json::to_string(&spool_rec_ext).map_err(|_err| StoreError::InternalError)?;
-        file_store.create_write_file_str(&spool_rec_ext_file_path, &s).await.context(StoreSnafu)?;
-        Ok(spool_rec_ext_file_path)
-    }
-
-    #[allow(unused_variables)]
-    pub async fn upgrade_versions(
-        &self,
-        db_version: semver::Version,
-        current_version: semver::Version,
-        view_model: Rc<RefCell<ViewModel>>,
-    ) -> Result<bool, StoreError> {
-        let mut spool_issues = String::new();
-        if let Some(spools_db) = self.spools_db.get() {
-            let mut spool_ids: Vec<_> = {
-                let records = spools_db.records.borrow();
-                records.keys().cloned().collect()
-            };
-            spool_ids.sort_by_key(|s| s.parse::<u32>().ok());
-            let num_of_spools = spool_ids.len();
-            for (index, spool_id) in spool_ids.iter().enumerate() {
-                info!("Upgrading store spool # {spool_id}, {index} / {num_of_spools}");
-                view_model.borrow().message_box(
-                    "Store Notice",
-                    &format!("Upgrading Spool # {spool_id}"),
-                    &format!("{index}/{num_of_spools}"),
-                    crate::app::StatusType::Normal,
-                    0,
-                );
-                let mut spool_rec_ext = SpoolRecordExt::default();
-                match self.get_spool_ext_by_id(spool_id.as_str()).await {
-                    Ok(loaded_spool_rec_ext) => {
-                        spool_rec_ext = loaded_spool_rec_ext;
-                        if let Some(tag_desciptor) = &spool_rec_ext.tag {
-                            match TagInformationV1::from_v1_descriptor(tag_desciptor) {
-                                Ok(tag_info) => {
-                                    if !tag_info.calibrations.is_empty() {
-                                        let k_info = view_model.borrow().get_k_info_from_old_tag(&tag_info);
-                                        if let Some(k_info) = k_info {
-                                            info!("Upgrading spool {}, adding k_info {:?} to extended info", spool_id, k_info);
-                                            spool_rec_ext.k_info = Some(k_info);
-                                        }
-                                    }
-                                }
-                                Err(err) => {
-                                    error!("Error parsing tag descriptor for spool {}, ignoring : {err:?}", spool_id);
-                                    spool_issues.push_str(&format!("Error parsing tag descriptor for spool {spool_id}, ignoring : {err:?}\n"));
-                                    // Store anyway, since there were issues with old files that needs to be fixed
-                                }
-                            }
-                        } else {
-                            warn!("No tag descriptor found for spool {}, ignoring", spool_id);
-                            spool_issues.push_str(&format!("No tag descriptor found for spool {spool_id}, ignoring\n"));
-                        }
-                    }
-                    Err(err) => {
-                        // TODO: remove this from log/issues - this is completely normal for all untagged spools
-                        if !(spools_db.records.borrow().get(spool_id.as_str()).unwrap().data.tag_id.is_empty()) {
-                            error!("Error reading extra data for tagged spool {}, ignoring : {err:?}", spool_id);
-                            spool_issues.push_str(&format!("Error reading extra data for tagged spool {}, ignoring : {err:?}\n", spool_id));
-                        }
-                    }
-                }
-                // Store anyway, since there were issues with old files that needs to be fixed (writing small file on larger file leave extra in file)
-                // and potentially past versions with missing files
-                if let Err(err) = self.store_spool_rec_ext(spool_id, &spool_rec_ext).await {
-                    // TODO: undo upgrade and restore old version of file system?
-                    error!("Error storing ext data for spool {}, ignoring : {err:?}", spool_id);
-                    spool_issues.push_str(&format!("Error storing ext data for spool {}, ignoring : {err:?}\n", spool_id));
-                } else {
-                    spools_db.records.borrow_mut().get_mut(spool_id.as_str()).unwrap().data.ext_has_k = spool_rec_ext.k_info.is_some();
-                }
-            }
-            spools_db.save_all_records_only_before_use().await.context(CsvDbSnafu)?;
-            spools_db.update_version(STORE_VER).await.context(CsvDbSnafu)?;
-        }
-        if !spool_issues.is_empty() {
-            let file_store = self.framework.borrow().file_store();
-            let mut file_store = file_store.lock().await;
-            if let Err(err) = file_store.create_write_file_str("/STORE/upgrade.log", &spool_issues).await {
-                error!("Error writing upgrade issues log");
-            }
-        }
-        Ok(spool_issues.is_empty())
     }
 
     pub async fn try_restore_from_backup(&self, view_model: Rc<RefCell<ViewModel>>) -> Result<(), String> {
@@ -680,6 +318,469 @@ impl Store {
         Ok(())
     }
 
+//// Spools Database Methods 
+
+    pub fn query_spools(&self) -> Option<String> {
+        if let Some(spools_db) = self.spools_db.get() {
+            let spool_records = spools_db.records.borrow();
+            let total_length = spool_records.values().map(|v| v.length).sum::<usize>();
+            let results: Result<String, CsvDbError> = spool_records.values().try_fold(String::with_capacity(total_length), |mut acc, v| {
+                let csv = v.to_csv_string();
+                if let Err(e) = &csv {
+                    error!("Error serializing to csv: {v:?} : {e}");
+                }
+                acc.push_str(&csv?);
+                Ok(acc)
+            });
+            // TODO: make it an error up as well, to handle in the caller
+            results.ok()
+        } else {
+            None
+        }
+    }
+
+    pub async fn delete_spool(&self, id: &str) -> Result<(), StoreError> {
+        let deleted_record = if let Some(spools_db) = &self.spools_db.get() {
+            let delete_res = spools_db.delete(id).await;
+            if let Ok(Some(record)) = &delete_res {
+                self.remove_spool_tag_from_tag_id_index(&record.tag_id);
+            }
+            delete_res.context(CsvDbSnafu)?
+        } else {
+            None
+        };
+
+        if let Some(deleted_record) = deleted_record {
+            if !deleted_record.tag_id.is_empty() {
+                if let Ok(spool_rec_ext_file_path) = spool_rec_ext_file_path(&deleted_record.id) {
+                    let file_store = self.framework.borrow().file_store();
+                    let mut file_store = file_store.lock().await;
+                    let _ = file_store.delete_file(&spool_rec_ext_file_path).await;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn remove_spool_tag_from_tag_id_index(&self, tag_id: &str) -> Option<String> {
+        let res = self.spool_tag_id_index.borrow_mut().remove(tag_id);
+        if res.is_some() {
+            // if was key previously (and now isn't) need to send an update on remove
+            for weak_observer in self.observers.borrow().iter() {
+                let observer = weak_observer.upgrade().unwrap();
+                observer.borrow().on_tag_removed();
+            }
+        }
+        res
+    }
+
+    pub fn insert_spool_tag_to_tag_id_index(&self, tag_id: String, spool_id: String) -> Option<String> {
+        let res = self.spool_tag_id_index.borrow_mut().insert(tag_id, spool_id);
+        if res.is_none() {
+            // if was no key (and now there is) need to send an update on add
+            for weak_observer in self.observers.borrow().iter() {
+                let observer = weak_observer.upgrade().unwrap();
+                observer.borrow().on_tag_added();
+            }
+        }
+        res
+    }
+
+    pub async fn add_spool(&self, mut spool_rec: SpoolRecord, spool_rec_ext: SpoolRecordExt) -> Result<String, StoreError> {
+        let new_spool_id = (*self.last_spool_id.borrow()) + 1;
+        if let Some(spools_db) = &self.spools_db.get() {
+            spool_rec.id = new_spool_id.to_string();
+            spool_rec.added_time = store_safe_time_now();
+            spool_rec.ext_has_k = spool_rec_ext.k_info.is_some();
+            let tag_id = spool_rec.tag_id.clone();
+            let id = spool_rec.id.clone();
+            match spools_db.insert(spool_rec).await.context(CsvDbSnafu)? {
+                true => {
+                    *self.last_spool_id.borrow_mut() = new_spool_id;
+                    // deal with tag_id
+                    let tag_id_update_res = if !tag_id.is_empty() {
+                        // check if tag_id was with some other record, if so remove that mapping and 'strikeout' that spool_record
+                        let update_res = if let Some(mut existing_spool_rec_with_tag_id) = self.get_spool_by_hex_tag(&tag_id) {
+                            existing_spool_rec_with_tag_id.tag_id = format!("-{}", existing_spool_rec_with_tag_id.tag_id);
+                            self.update_spool(existing_spool_rec_with_tag_id, None).await.map(|_| ())
+                        } else {
+                            Ok(())
+                        };
+                        self.insert_spool_tag_to_tag_id_index(tag_id, id);
+                        update_res
+                    } else {
+                        Ok(())
+                    };
+                    self.store_spool_rec_ext(&new_spool_id.to_string(), &spool_rec_ext).await?;
+                    tag_id_update_res?; // want to perform all operations and report error if anything happened in the middle
+                    Ok(new_spool_id.to_string())
+                }
+                false => {
+                    error!("Internal error, add spool added an already existing spool");
+                    Err(StoreError::InternalError)
+                }
+            }
+        } else {
+            error!("Internal error, can't spools database");
+            Err(StoreError::NoCsvDb)
+        }
+    }
+
+    pub async fn edit_spool_from_web(&self, spool_record: SpoolRecord, k_info: Option<KInfo>) -> Result<(), StoreError> {
+        if let Some(spools_db) = &self.spools_db.get() {
+            let current_tag_id;
+            let updated_record = {
+                let spools_db_borrow = spools_db.records.borrow(); // Important: Note this borrow, dropped when context ends, but if changing need to make sure it is dropped
+                if let Some(current_record) = spools_db_borrow.get(&spool_record.id) {
+                    // Taking this approach with extra clones, so if future fields are added, this won't be missed
+                    let current_record = &current_record.data;
+                    current_tag_id = current_record.tag_id.clone();
+                    SpoolRecord {
+                        id: spool_record.id.clone(),
+                        tag_id: spool_record.tag_id.clone(),
+                        material_type: spool_record.material_type,
+                        material_subtype: spool_record.material_subtype,
+                        color_name: spool_record.color_name,
+                        color_code: spool_record.color_code,
+                        note: spool_record.note,
+                        brand: spool_record.brand,
+                        weight_advertised: spool_record.weight_advertised,
+                        weight_core: spool_record.weight_core,
+                        weight_new: current_record.weight_new,         // can't change from web
+                        weight_current: current_record.weight_current, // can't change from web
+                        slicer_filament: spool_record.slicer_filament,
+                        added_time: current_record.added_time.or(store_safe_time_now()), // in case somehow no added date (ntp) then add it now
+                        encode_time: current_record.encode_time,
+                        added_full: spool_record.added_full,
+                        consumed_since_add: current_record.consumed_since_add,
+                        consumed_since_weight: current_record.consumed_since_weight,
+                        ext_has_k: k_info.is_some(),
+                        data_origin: current_record.data_origin.clone(),
+                        tag_type: current_record.tag_type.clone(),
+                        assigned_location: spool_record.assigned_location.clone(),
+                        actual_location: spool_record.actual_location.clone(),
+                    }
+                } else {
+                    return Err(StoreError::NotFound { id: spool_record.id.clone() });
+                }
+            };
+
+            spools_db.insert(updated_record).await.context(CsvDbSnafu)?;
+
+            if !current_tag_id.is_empty() && spool_record.tag_id.is_empty() {
+                self.remove_spool_tag_from_tag_id_index(&current_tag_id);
+            }
+
+            let mut spool_rec_ext = match self.get_spool_ext_by_id(&spool_record.id).await {
+                Ok(spool_rec_ext) => spool_rec_ext,
+                Err(err) => {
+                    error!("Error loading extended info when editing file, using empty as baseline for edit: {err:?}");
+                    SpoolRecordExt::default()
+                }
+            };
+            spool_rec_ext.k_info = k_info;
+            if spool_rec_ext.tag.is_some() && spool_record.tag_id.is_empty() {
+                spool_rec_ext.tag = None;
+            }
+            self.store_spool_rec_ext(&spool_record.id, &spool_rec_ext).await?;
+            Ok(())
+        } else {
+            Err(StoreError::NoCsvDb)
+        }
+    }
+    pub fn get_spool_by_hex_tag(&self, tag_id_hex: &str) -> Option<SpoolRecord> {
+        if let Some(spools_db) = self.spools_db.get() {
+            if let Some(spool_id) = self.spool_tag_id_index.borrow().get(tag_id_hex) {
+                if let Some(current_rec) = spools_db.records.borrow().get(spool_id) {
+                    return Some(current_rec.data.clone());
+                }
+            }
+        }
+        None
+    }
+    pub fn get_spool_by_tag_id(&self, tag_id: &[u8]) -> Option<SpoolRecord> {
+        self.get_spool_by_hex_tag(&tag_id_hex(tag_id))
+    }
+
+    #[allow(dead_code)]
+    pub fn exists_hex_tag_id(&self, tag_id_hex: &str) -> bool {
+        self.spool_tag_id_index.borrow().contains_key(tag_id_hex)
+    }
+    #[allow(dead_code)]
+    pub fn exists_tag_id(&self, tag_id: &[u8]) -> bool {
+        self.exists_hex_tag_id(&hex::encode_upper(tag_id))
+    }
+
+    pub fn tags_in_store(&self) -> String {
+        let mut tags_in_store = String::with_capacity(self.spool_tag_id_index.borrow().len() * (7 + 1) + 1);
+        tags_in_store.push(','); // start with ","
+        for tag in self.spool_tag_id_index.borrow().keys() {
+            tags_in_store.push_str(tag);
+            tags_in_store.push(',');
+        }
+        tags_in_store
+    }
+
+    pub fn get_spool_by_id(&self, id: &str) -> Option<SpoolRecord> {
+        if let Some(spools_db) = self.spools_db.get() {
+            if let Some(current_rec) = spools_db.records.borrow().get(id) {
+                return Some(current_rec.data.clone());
+            }
+        }
+        None
+    }
+
+    // TODO: once working, use it in other places reading ext
+    pub async fn get_spool_ext_by_id(&self, id: &str) -> Result<SpoolRecordExt, StoreError> {
+        if self.get_spool_by_id(id).is_none() {
+            return Err(StoreError::NotFound { id: id.to_string() });
+        }
+        let spool_rec_ext_file_path = spool_rec_ext_file_path(id).map_err(|_| StoreError::NotFound { id: id.to_string() })?;
+        let file_store = self.framework.borrow().file_store();
+        let mut file_store = file_store.lock().await;
+        let ext_str = file_store
+            .read_file_str(&spool_rec_ext_file_path)
+            .await
+            .map_err(|err| StoreError::ExtFileReadFailure {
+                error: format!("{err} reading '{spool_rec_ext_file_path}'"),
+            })?;
+        let mut de = Deserializer::from_str(&ext_str);
+        let spool_rec_ext = SpoolRecordExt::deserialize(&mut de).context(ExtFormatSnafu)?;
+        // let spool_rec_ext = serde_json::from_str::<SpoolRecordExt>(&ext_str).context(ExtFormatSnafu)?;
+        Ok(spool_rec_ext)
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub async fn update_spool(
+        &self,
+        mut spool_record: SpoolRecord,
+        update_ext_fn: Option<Box<dyn FnOnce(&mut SpoolRecordExt)>>,
+    ) -> Result<Option<SpoolRecordExt>, StoreError> {
+        let mut ret_spool_rec_ext = None;
+        if let Some(spools_db) = self.spools_db.get() {
+            if !spool_record.id.is_empty() {
+                if spools_db.records.borrow().contains_key(&spool_record.id) {
+                    if let Some(update_ext_fn) = update_ext_fn {
+                        let mut spool_rec_ext = self.get_spool_ext_by_id(&spool_record.id).await.ok().unwrap_or_default(); // on read error don't raise error
+                        update_ext_fn(&mut spool_rec_ext);
+                        spool_record.ext_has_k = spool_rec_ext.k_info.is_some();
+                        self.store_spool_rec_ext(&spool_record.id, &spool_rec_ext).await?;
+                        ret_spool_rec_ext = Some(spool_rec_ext);
+                    }
+                    let tag_id = spool_record.tag_id.clone();
+                    let id = spool_record.id.clone();
+                    // TODO: ? theoretically need transaction mechanism here (so lock db and then do the index operation as well)
+                    spools_db.insert(spool_record).await.context(CsvDbSnafu)?;
+                    if !tag_id.is_empty() && !tag_id.starts_with("-") {
+                        // not sure needed, may be 3.5 related
+                        // first search if this tag_id is in use already and strike it out before adding this tag to index
+                        if let Some(mut existing_spool_rec_with_tag_id) = self.get_spool_by_hex_tag(&tag_id) {
+                            if existing_spool_rec_with_tag_id.id != id {
+                                existing_spool_rec_with_tag_id.tag_id = format!("-{}", existing_spool_rec_with_tag_id.tag_id);
+                                spools_db.insert(existing_spool_rec_with_tag_id).await.context(CsvDbSnafu)?;
+                            }
+                        }
+                        self.insert_spool_tag_to_tag_id_index(tag_id, id);
+                    } else {
+                        // for some reason tag_id was removed
+                        let tag_id = self
+                            .spool_tag_id_index
+                            .borrow()
+                            .iter()
+                            .find(|(_, index_id)| *index_id == &id)
+                            .map(|(index_tag, _)| index_tag.clone());
+                        if let Some(tag_id) = tag_id {
+                            self.remove_spool_tag_from_tag_id_index(&tag_id);
+                        }
+                    }
+                    Ok(ret_spool_rec_ext)
+                } else {
+                    error!("Internal error, can't access store");
+                    Err(StoreError::NoCsvDb)
+                }
+            } else {
+                Err(StoreError::IdNotFound)
+            }
+        } else {
+            Err(StoreError::MissingId)
+        }
+    }
+
+    pub async fn store_spool_rec_ext(&self, id: &str, spool_rec_ext: &SpoolRecordExt) -> Result<String, StoreError> {
+        let spool_rec_ext_file_path = spool_rec_ext_file_path(id)?;
+        let file_store = self.framework.borrow().file_store();
+        let mut file_store = file_store.lock().await;
+        let s = serde_json::to_string(&spool_rec_ext).map_err(|_err| StoreError::InternalError)?;
+        file_store.create_write_file_str(&spool_rec_ext_file_path, &s).await.context(StoreSnafu)?;
+        Ok(spool_rec_ext_file_path)
+    }
+
+    #[allow(unused_variables)]
+    pub async fn upgrade_versions(
+        &self,
+        db_version: semver::Version,
+        current_version: semver::Version,
+        view_model: Rc<RefCell<ViewModel>>,
+    ) -> Result<bool, StoreError> {
+        let mut spool_issues = String::new();
+        if let Some(spools_db) = self.spools_db.get() {
+            let mut spool_ids: Vec<_> = {
+                let records = spools_db.records.borrow();
+                records.keys().cloned().collect()
+            };
+            spool_ids.sort_by_key(|s| s.parse::<u32>().ok());
+            let num_of_spools = spool_ids.len();
+            for (index, spool_id) in spool_ids.iter().enumerate() {
+                info!("Upgrading store spool # {spool_id}, {index} / {num_of_spools}");
+                view_model.borrow().message_box(
+                    "Store Notice",
+                    &format!("Upgrading Spool # {spool_id}"),
+                    &format!("{index}/{num_of_spools}"),
+                    crate::app::StatusType::Normal,
+                    0,
+                );
+                let mut spool_rec_ext = SpoolRecordExt::default();
+                match self.get_spool_ext_by_id(spool_id.as_str()).await {
+                    Ok(loaded_spool_rec_ext) => {
+                        spool_rec_ext = loaded_spool_rec_ext;
+                        if let Some(tag_desciptor) = &spool_rec_ext.tag {
+                            match TagInformationV1::from_v1_descriptor(tag_desciptor) {
+                                Ok(tag_info) => {
+                                    if !tag_info.calibrations.is_empty() {
+                                        let k_info = view_model.borrow().get_k_info_from_old_tag(&tag_info);
+                                        if let Some(k_info) = k_info {
+                                            info!("Upgrading spool {}, adding k_info {:?} to extended info", spool_id, k_info);
+                                            spool_rec_ext.k_info = Some(k_info);
+                                        }
+                                    }
+                                }
+                                Err(err) => {
+                                    error!("Error parsing tag descriptor for spool {}, ignoring : {err:?}", spool_id);
+                                    spool_issues.push_str(&format!("Error parsing tag descriptor for spool {spool_id}, ignoring : {err:?}\n"));
+                                    // Store anyway, since there were issues with old files that needs to be fixed
+                                }
+                            }
+                        } else {
+                            warn!("No tag descriptor found for spool {}, ignoring", spool_id);
+                            spool_issues.push_str(&format!("No tag descriptor found for spool {spool_id}, ignoring\n"));
+                        }
+                    }
+                    Err(err) => {
+                        // TODO: remove this from log/issues - this is completely normal for all untagged spools
+                        if !(spools_db.records.borrow().get(spool_id.as_str()).unwrap().data.tag_id.is_empty()) {
+                            error!("Error reading extra data for tagged spool {}, ignoring : {err:?}", spool_id);
+                            spool_issues.push_str(&format!("Error reading extra data for tagged spool {}, ignoring : {err:?}\n", spool_id));
+                        }
+                    }
+                }
+                // Store anyway, since there were issues with old files that needs to be fixed (writing small file on larger file leave extra in file)
+                // and potentially past versions with missing files
+                if let Err(err) = self.store_spool_rec_ext(spool_id, &spool_rec_ext).await {
+                    // TODO: undo upgrade and restore old version of file system?
+                    error!("Error storing ext data for spool {}, ignoring : {err:?}", spool_id);
+                    spool_issues.push_str(&format!("Error storing ext data for spool {}, ignoring : {err:?}\n", spool_id));
+                } else {
+                    spools_db.records.borrow_mut().get_mut(spool_id.as_str()).unwrap().data.ext_has_k = spool_rec_ext.k_info.is_some();
+                }
+            }
+            spools_db.save_all_records_only_before_use().await.context(CsvDbSnafu)?;
+            spools_db.update_version(SPOOLS_STORE_VER).await.context(CsvDbSnafu)?;
+        }
+        if !spool_issues.is_empty() {
+            let file_store = self.framework.borrow().file_store();
+            let mut file_store = file_store.lock().await;
+            if let Err(err) = file_store.create_write_file_str("/STORE/upgrade.log", &spool_issues).await {
+                error!("Error writing upgrade issues log");
+            }
+        }
+        Ok(spool_issues.is_empty())
+    }
+
+    // Locations Records
+
+    pub fn insert_location_tag_to_tag_id_index(&self, tag_id: String, location_id: String) -> Option<String> {
+        let res = self.location_tag_id_index.borrow_mut().insert(tag_id, location_id);
+        if res.is_none() {
+            // if was no key (and now there is) need to send an update on add
+            for weak_observer in self.observers.borrow().iter() {
+                let observer = weak_observer.upgrade().unwrap();
+                observer.borrow().on_tag_added();
+            }
+        }
+        res
+    }
+
+    pub fn get_location_by_hex_tag(&self, tag_id_hex: &str) -> Option<StorageLocationRecord> {
+        if let Some(locations_db) = self.locations_db.get() {
+            if let Some(location_id) = self.location_tag_id_index.borrow().get(tag_id_hex) {
+                if let Some(current_rec) = locations_db.records.borrow().get(location_id) {
+                    return Some(current_rec.data.clone());
+                }
+            }
+        }
+        None
+    }
+
+    pub fn remove_location_tag_from_tag_id_index(&self, tag_id: &str) -> Option<String> {
+        let res = self.location_tag_id_index.borrow_mut().remove(tag_id);
+        // if res.is_some() {
+            // if was key previously (and now isn't) need to send an update on remove
+            // for weak_observer in self.observers.borrow().iter() {
+            //     let observer = weak_observer.upgrade().unwrap();
+            //     observer.borrow().on_location_tag_removed();
+            // }
+        // }
+        res
+    }
+
+    pub async fn delete_location(&self, id: &str) -> Result<(), StoreError> {
+        if let Some(locations_db) = &self.locations_db.get() {
+            let delete_res = locations_db.delete(id).await;
+            if let Ok(Some(record)) = &delete_res {
+                self.remove_location_tag_from_tag_id_index(&record.tag_id);
+            }
+            delete_res.context(CsvDbSnafu)?
+        } else {
+            None
+        };
+
+        Ok(())
+    }
+
+    pub async fn add_location(&self, mut location_rec: StorageLocationRecord) -> Result<String, StoreError> {
+        assert!(!location_rec.tag_id.is_empty());
+        assert!(!location_rec.location.is_empty());
+        let new_location_id = (*self.last_location_id.borrow()) + 1;
+        if let Some(locations_db) = &self.locations_db.get() {
+            location_rec.id = new_location_id.to_string();
+            let tag_id = location_rec.tag_id.clone();
+            let id = location_rec.id.clone();
+            match locations_db.insert(location_rec).await.context(CsvDbSnafu)? {
+                true => {
+                    *self.last_location_id.borrow_mut() = new_location_id;
+                    let delete_prev_res = if let Some(existing_location_rec_with_tag_id) = self.get_location_by_hex_tag(&tag_id) {
+                        self.delete_location(&existing_location_rec_with_tag_id.id).await.map(|_| ())
+                    } else {
+                        Ok(())
+                    };
+                    self.insert_location_tag_to_tag_id_index(tag_id, id.clone());
+                    delete_prev_res?;
+                    Ok(id)
+                }
+                false => {
+                    error!("Internal error, add location added an already existing location");
+                    Err(StoreError::InternalError)
+                }
+            }
+        } else {
+            error!("Internal error, can't access locations database");
+            Err(StoreError::NoCsvDb)
+        }
+
+    }
+
+    // Locations Storage
+
     pub async fn set_storage_config(&self, new_storage_config: StorageConfig) -> Result<String, String> {
         let file_store = self.framework.borrow().file_store();
         let mut file_store = file_store.lock().await;
@@ -700,7 +801,8 @@ impl Store {
 
 // #[embassy_executor::task]
 pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, view_model: Rc<RefCell<ViewModel>>) {
-    let db_available;
+    let spools_db_available;
+    let locations_db_available;
     {
         match store.try_restore_from_backup(view_model.clone()).await {
             Ok(_) => (),
@@ -719,8 +821,8 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
             if let Ok(storage_config_str) = file_store.read_file_str("/store/storcfg.jsn").await {
                 match serde_json::from_str::<StorageConfig>(&storage_config_str) {
                     Ok(storage_config) => *store.storage_config.borrow_mut() = storage_config,
-                    Err(err) =>  { 
-                        term_error!("Error loading Spools Storage Configuration (Storage Racks): {}", err); 
+                    Err(err) => {
+                        term_error!("Error loading Spools Storage Configuration (Storage Racks): {}", err);
                         view_model.borrow().message_box(
                             "Store Notice",
                             "Error Loading Storage Configuration",
@@ -728,14 +830,75 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                             crate::app::StatusType::Error,
                             0,
                         );
-                    },
+                    }
                 }
             } else {
                 info!("No Spools Storage Configuration (Storage Racks) file");
             }
         }
 
-        match CsvDb::<SpoolRecord, _, FILE_STORE_MAX_DIRS, FILE_STORE_MAX_FILES>::new(file_store.clone(), "/store/spools", 1024, 200, STORE_VER).await
+        match CsvDb::<StorageLocationRecord, _, FILE_STORE_MAX_DIRS, FILE_STORE_MAX_FILES>::new(
+            file_store.clone(),
+            "/store/locations",
+            1024,
+            200,
+            LOCATIONS_STORE_VER,
+        )
+        .await
+        {
+            Ok(mut db) => match db.start(true, true).await {
+                Ok(_) => {
+                    let db_version = {
+                        let db_inner = db.inner.borrow();
+                        db_inner.db_meta.version.clone()
+                    };
+                    match semver::Version::parse(db_version.as_str()) {
+                        Ok(db_version) => {
+                            let current_version = semver::Version::parse(SPOOLS_STORE_VER).unwrap();
+                            if current_version < db_version {
+                                term_info!(
+                                    "Critical Error: Locations DB version is {}, this firmware supports up to {}",
+                                    db_version,
+                                    current_version
+                                );
+                                locations_db_available = false;
+                            } else {
+                                // currently upgrade is only for ext, so done after loading the db
+                                store
+                                    .locations_db
+                                    .set(db)
+                                    .map_err(|_e| "Fatal Internal Error: Can't assign locations_db to once_cell?")
+                                    .unwrap();
+                                term_info!("Opened locations database");
+
+                                locations_db_available = true;
+                            }
+                        }
+                        Err(err) => {
+                            term_error!("Unparsable locations database version {} {:?}", db_version, err);
+                            locations_db_available = false;
+                        }
+                    }
+                }
+                Err(e) => {
+                    term_error!("Failed to start locations database (and load data): {:?}", e);
+                    locations_db_available = false;
+                }
+            },
+            Err(e) => {
+                term_error!("Failed to open locations database : {}", e);
+                locations_db_available = false;
+            }
+        }
+
+        match CsvDb::<SpoolRecord, _, FILE_STORE_MAX_DIRS, FILE_STORE_MAX_FILES>::new(
+            file_store.clone(),
+            "/store/spools",
+            1024,
+            200,
+            SPOOLS_STORE_VER,
+        )
+        .await
         {
             Ok(mut db) => match db.start(true, true).await {
                 Ok(_) => {
@@ -748,14 +911,14 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                     }
                     match semver::Version::parse(db_version.as_str()) {
                         Ok(db_version) => {
-                            let current_version = semver::Version::parse(STORE_VER).unwrap();
+                            let current_version = semver::Version::parse(SPOOLS_STORE_VER).unwrap();
                             if current_version < db_version {
                                 term_info!(
-                                    "Critical Error: Store version is {}, this firmware supports up to {}",
+                                    "Critical Error: Spools database version is {}, this firmware supports up to {}",
                                     db_version,
                                     current_version
                                 );
-                                db_available = false;
+                                spools_db_available = false;
                             } else {
                                 // currently upgrade is only for ext, so done after loading the db
                                 store
@@ -774,7 +937,7 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                                         crate::app::StatusType::Normal,
                                         0,
                                     );
-                                    term_info!("Upgrading Store From {} to {}", db_version, current_version);
+                                    term_info!("Upgrading Spools database from {} to {}", db_version, current_version);
                                     info!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
                                     match store.upgrade_versions(db_version, current_version, view_model.clone()).await {
                                         Ok(status) => {
@@ -782,13 +945,13 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                                             let (upgrade_notice1, upgrade_notice2, upgrade_status) = {
                                                 if status {
                                                     (
-                                                        "Store Upgrade Completed Successfuly",
+                                                        "Spools DB Upgrade Completed Successfuly",
                                                         "No Issues Reported",
                                                         crate::app::StatusType::Success,
                                                     )
                                                 } else {
                                                     (
-                                                        "Store Upgrade Completed With Issues",
+                                                        "Spools DB Upgrade Completed With Issues",
                                                         "See /STORE/upgrade.log for details",
                                                         crate::app::StatusType::Normal,
                                                     )
@@ -800,67 +963,89 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                                             term_info!(upgrade_notice1);
                                             term_info!(upgrade_notice2);
                                             info!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-                                            db_available = true;
+                                            spools_db_available = true;
                                         }
                                         Err(err) => {
                                             info!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
                                             term_error!("Error upgrading store : {:?}", err);
                                             view_model.borrow().message_box(
                                                 "Store Notice",
-                                                "Error Upgrading Store",
+                                                "Error Upgrading Spools DB",
                                                 &err.to_string(),
                                                 crate::app::StatusType::Error,
                                                 0,
                                             );
                                             info!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-                                            db_available = false;
+                                            spools_db_available = false;
                                         }
                                     }
                                 } else {
-                                    db_available = true;
+                                    spools_db_available = true;
                                 }
                             }
                         }
                         Err(err) => {
-                            term_error!("Unparsable store DB version {} {:?}", db_version, err);
-                            db_available = false;
+                            term_error!("Unparsable spools database version {} {:?}", db_version, err);
+                            spools_db_available = false;
                         }
                     }
                 }
                 Err(e) => {
                     term_error!("Failed to start spools database (and load data): {:?}", e);
-                    db_available = false;
+                    spools_db_available = false;
                 }
             },
             Err(e) => {
                 term_error!("Failed to open spools database : {}", e);
-                db_available = false;
+                spools_db_available = false;
             }
         }
     }
 
-    // find largest_id in list, would be better if we persisted that
+    // create tag indexes and find largest_id's in lists, would be better if we persisted that
 
-    let mut largest_id = 0;
-    if db_available {
+    let mut largest_location_id = 0;
+    if locations_db_available {
+        if let Some(locations_db) = store.spools_db.get() {
+            let records = locations_db.records.borrow();
+            for record in records.iter() {
+                if let Ok(id) = record.1.data.id.parse::<i32>() {
+                    if !record.1.data.tag_id.is_empty() {
+                        store
+                            .location_tag_id_index
+                            .borrow_mut()
+                            .insert(record.1.data.tag_id.clone(), record.1.data.id.clone());
+                    }
+                    if id > largest_location_id {
+                        largest_location_id = id;
+                    }
+                }
+            }
+        }
+    }
+    *store.last_location_id.borrow_mut() = largest_location_id;
+
+    let mut largest_spool_id = 0;
+    if spools_db_available {
         if let Some(spools_db) = store.spools_db.get() {
             let records = spools_db.records.borrow();
             for record in records.iter() {
                 if let Ok(id) = record.1.data.id.parse::<i32>() {
                     if !record.1.data.tag_id.is_empty() && record.1.data.tag_id.as_bytes()[0] != b'-' {
                         store
-                            .tag_id_index
+                            .spool_tag_id_index
                             .borrow_mut()
                             .insert(record.1.data.tag_id.clone(), record.1.data.id.clone());
                     }
-                    if id > largest_id {
-                        largest_id = id;
+                    if id > largest_spool_id {
+                        largest_spool_id = id;
                     }
                 }
             }
         }
     }
-    *store.last_spool_id.borrow_mut() = largest_id;
+    *store.last_spool_id.borrow_mut() = largest_spool_id;
+
     *store.initialized.borrow_mut() = true;
 
     // let receiver = store.requests_channel.receiver();
