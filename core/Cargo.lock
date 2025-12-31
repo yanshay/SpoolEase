@@ -2193,7 +2193,6 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework"
 version = "0.6.1"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.6.1#43daad9d1795b21a7f4ea3ef610b328cabbfeda1"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2267,7 +2266,6 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework-macros"
 version = "0.1.0"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.6.1#43daad9d1795b21a7f4ea3ef610b328cabbfeda1"
 dependencies = [
  "flate2",
  "proc-macro2",
@@ -6056,6 +6054,7 @@ dependencies = [
  "esp-mbedtls",
  "getrandom 0.2.16",
  "hashbrown 0.16.1",
+ "hex",
  "hmac",
  "log",
  "miniz_oxide",

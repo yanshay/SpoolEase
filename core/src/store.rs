@@ -25,7 +25,7 @@ use framework::{
 use crate::{
     bambu::{KInfo, TagInformationV1},
     csvdb::{CsvDb, CsvDbError},
-    spools_storage::{StorageConfig, StorageLocationRecord},
+    spools_storage::{StorageConfig, TagLocationRecord},
     view_model::ViewModel,
 };
 
@@ -133,7 +133,7 @@ pub struct Store {
     store_rc: RefCell<Option<Rc<Store>>>,
     pub storage_config: RefCell<StorageConfig>,
 
-    pub locations_db: OnceCell<CsvDb<StorageLocationRecord, TheSpi, 20, 5>>,
+    pub locations_db: OnceCell<CsvDb<TagLocationRecord, TheSpi, 20, 5>>,
     last_location_id: RefCell<i32>,
     location_tag_id_index: RefCell<HashMap<String, String>>,
 }
@@ -710,12 +710,10 @@ impl Store {
         res
     }
 
-    pub fn get_location_by_hex_tag(&self, tag_id_hex: &str) -> Option<StorageLocationRecord> {
+    pub fn get_location_by_hex_tag(&self, tag_id_hex: &str) -> Option<TagLocationRecord> {
         if let Some(locations_db) = self.locations_db.get() {
-            if let Some(location_id) = self.location_tag_id_index.borrow().get(tag_id_hex) {
-                if let Some(current_rec) = locations_db.records.borrow().get(location_id) {
-                    return Some(current_rec.data.clone());
-                }
+            if let Some(current_rec) = locations_db.records.borrow().get(tag_id_hex) {
+                return Some(current_rec.data.clone());
             }
         }
         None
@@ -733,50 +731,28 @@ impl Store {
         res
     }
 
-    pub async fn delete_location(&self, id: &str) -> Result<(), StoreError> {
+    pub async fn delete_location(&self, tag_id_hex: &str) -> Result<Option<TagLocationRecord>, StoreError> {
         if let Some(locations_db) = &self.locations_db.get() {
-            let delete_res = locations_db.delete(id).await;
-            if let Ok(Some(record)) = &delete_res {
-                self.remove_location_tag_from_tag_id_index(&record.tag_id);
-            }
-            delete_res.context(CsvDbSnafu)?
-        } else {
-            None
-        };
-
-        Ok(())
-    }
-
-    pub async fn add_location(&self, mut location_rec: StorageLocationRecord) -> Result<String, StoreError> {
-        assert!(!location_rec.tag_id.is_empty());
-        assert!(!location_rec.location.is_empty());
-        let new_location_id = (*self.last_location_id.borrow()) + 1;
-        if let Some(locations_db) = &self.locations_db.get() {
-            location_rec.id = new_location_id.to_string();
-            let tag_id = location_rec.tag_id.clone();
-            let id = location_rec.id.clone();
-            match locations_db.insert(location_rec).await.context(CsvDbSnafu)? {
-                true => {
-                    *self.last_location_id.borrow_mut() = new_location_id;
-                    let delete_prev_res = if let Some(existing_location_rec_with_tag_id) = self.get_location_by_hex_tag(&tag_id) {
-                        self.delete_location(&existing_location_rec_with_tag_id.id).await.map(|_| ())
-                    } else {
-                        Ok(())
-                    };
-                    self.insert_location_tag_to_tag_id_index(tag_id, id.clone());
-                    delete_prev_res?;
-                    Ok(id)
-                }
-                false => {
-                    error!("Internal error, add location added an already existing location");
-                    Err(StoreError::InternalError)
-                }
-            }
+            Ok(locations_db.delete(tag_id_hex).await.context(CsvDbSnafu)?)
         } else {
             error!("Internal error, can't access locations database");
             Err(StoreError::NoCsvDb)
         }
+    }
 
+    pub async fn insert_tag_location(&self, tag_id_hex: &str, location: &str) -> Result<bool, StoreError> {
+        assert!(!tag_id_hex.is_empty());
+        assert!(!location.is_empty());
+        if let Some(locations_db) = &self.locations_db.get() {
+            let location_rec = TagLocationRecord {
+                tag_id_hex: tag_id_hex.to_string(),
+                location: location.to_string(),
+            };
+            Ok(locations_db.insert(location_rec).await.context(CsvDbSnafu)?)
+        } else {
+            error!("Internal error, can't access locations database");
+            Err(StoreError::NoCsvDb)
+        }
     }
 
     // Locations Storage
@@ -837,9 +813,9 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
             }
         }
 
-        match CsvDb::<StorageLocationRecord, _, FILE_STORE_MAX_DIRS, FILE_STORE_MAX_FILES>::new(
+        match CsvDb::<TagLocationRecord, _, FILE_STORE_MAX_DIRS, FILE_STORE_MAX_FILES>::new(
             file_store.clone(),
-            "/store/locations",
+            "/store/locatags",
             1024,
             200,
             LOCATIONS_STORE_VER,

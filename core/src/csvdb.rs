@@ -284,7 +284,7 @@ where
             records_borrow.insert(csv_record_info.data.id().clone(), csv_record_info);
         }
 
-        Ok(true)
+        Ok(!already_exist)
     }
 
     #[allow(dead_code)]

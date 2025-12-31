@@ -56,7 +56,7 @@ use crate::{
     bambu::{self, BambuPrinter, BambuPrinterObserver, TagInformationV1, TrayState},
     filament_staging::FilamentStaging,
 };
-use shared::spool_tag::{self, SpoolTagObserver, Status};
+use shared::spool_tag::{self, SpoolTagObserver, Status, TAG_PLACEHOLDER};
 
 #[allow(dead_code)]
 const EXTRA_DEBUG: bool = false;
@@ -107,9 +107,14 @@ pub struct ViewModel {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-struct EncodeCookie {
-    id: String,
+struct SpoolEncodeCookie {
+    spool_rec_id: String,
     encode_time: Option<i32>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct LocationEncodeCookie {
+    location: String, // required for now just to identify the write was for a location tag
 }
 
 impl ViewModel {
@@ -363,8 +368,8 @@ impl ViewModel {
                         Some(descriptor) => {
                             let spool_tag_borrow = view_model_borrow.spool_tag_model.borrow();
                             let spool_scale_borrow = view_model_borrow.spool_scale_model.borrow();
-                            let encode_cookie = EncodeCookie {
-                                id: spool_rec.id,
+                            let encode_cookie = SpoolEncodeCookie {
+                                spool_rec_id: spool_rec.id,
                                 encode_time: spool_rec.encode_time,
                             };
                             let encode_cookie_str = serde_json::to_string(&encode_cookie).unwrap();
@@ -655,6 +660,13 @@ impl ViewModel {
             .unwrap()
             .global::<crate::app::AppBackend>()
             .on_ota_update_firmware(move |product, train| moved_view_model.borrow().ui_ota_update_firmware(&product, &train));
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_encode_location_tag(move || moved_view_model.borrow().ui_encode_location_tag());
+
     }
 
     fn perform_select_printer(
@@ -877,6 +889,17 @@ impl ViewModel {
             .on_set_staging_to_tray(move |tray_id: i32| {
                 Self::set_staging_to_tray(&moved_view_model, &moved_filament_staging, &moved_bambu_printer, &moved_ui, tray_id);
             });
+    }
+
+    fn ui_encode_location_tag(&self) {
+        const LOCATION_URL_PREFIX_V1: &str = "https://info.filament3d.org/TESTFWD/";
+        let spool_tag_borrow = self.spool_tag_model.borrow();
+        let descriptor = format!("{LOCATION_URL_PREFIX_V1}?TG={TAG_PLACEHOLDER}");
+        let encode_cookie = LocationEncodeCookie {
+            location: String::new()
+        };
+        let encode_cookie_str = serde_json::to_string(&encode_cookie).unwrap();
+        spool_tag_borrow.write_tag(&descriptor, None, encode_cookie_str);
     }
 
     fn ui_ota_update_firmware(&self, product: &str, train: &str) {
@@ -2436,11 +2459,13 @@ impl SpoolTagObserver for ViewModel {
                 // This call is triggered by a call from either spool_tag or spool_scale, so they are already borrowed.
                 // They internally handle the switch from write to read for themselves, but not for the other.
                 // So here we use the try_borrow to check who needs extra notification to stop writing
-                if let Ok(encode_cookie) = serde_json::from_str::<EncodeCookie>(cookie) {
-                    if let Some(mut spool_rec) = self.store.get_spool_by_id(&encode_cookie.id) {
+                if let Ok(encode_cookie) = serde_json::from_str::<SpoolEncodeCookie>(cookie) {
+                    if let Some(mut spool_rec) = self.store.get_spool_by_id(&encode_cookie.spool_rec_id) {
                         spool_rec.encode_time = encode_cookie.encode_time;
                         let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec });
                     }
+                } else if let Ok(encode_cookie) = serde_json::from_str::<LocationEncodeCookie>(cookie) { 
+                    debug!(">>>> TODO: Store the tag into DB, descriptor: {_encoded_descriptor}");
                 }
                 if let Ok(spool_tag_borrow) = self.spool_tag_model.try_borrow() {
                     spool_tag_borrow.read_tag();

@@ -25,6 +25,7 @@ use framework::{
     framework_web_app::{
         decrypt, CustomNotFound, Encryptable, EncryptedRejection, Encryption, NestedAppWithWebAppStateBuilder, SetConfigResponseDTO, WebAppState,
     },
+    not_encrypted_input,
     prelude::*,
 };
 use framework_macros::include_bytes_gz;
@@ -34,7 +35,7 @@ use shared::gcode_analysis_task::Fetch3mf;
 use crate::app_config::{AppConfig, DefaultPrinterConfig, PrinterConfig, PrintersConfig, ScaleConfig, FILAMENT_BRAND_NAMES, SPOOLS_CATALOG};
 use crate::bambu::KInfo;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
-use crate::spools_storage::StorageConfig;
+use crate::spools_storage::{StorageConfig, TagLocationRecord};
 use crate::store::{BackupMeta, FileMeta, Store};
 use crate::view_model::ViewModel;
 
@@ -89,7 +90,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
             }),
         );
 
-//        TODO: >>>>>> Move to framework with setting for the css
+        //        TODO: >>>>>> Move to framework with setting for the css
         let router = router.route(
             "/styles.css",
             get_service(picoserve::response::File::with_content_type_and_headers(
@@ -436,8 +437,12 @@ impl AppWithStateBuilder for NestedAppBuilder {
                             &add_pa.pressure_advance_entry.k_value,
                             &add_pa.pressure_advance_entry.name,
                         ) {
-                            Ok(_) => GenericResonse { text: "Sent Pressure Advance Add Request to Printer".to_string()}.encrypt(&key.borrow()),
-                            Err(err) => GenericResonse { text: err }.encrypt(&key.borrow())
+                            Ok(_) => GenericResponse {
+                                error: None,
+                                text: "Sent Pressure Advance Add Request to Printer".to_string(),
+                            }
+                            .encrypt(&key.borrow()),
+                            Err(err) => GenericResponse { error: None, text: err }.encrypt(&key.borrow()),
                         }
                     })
                 },
@@ -469,6 +474,15 @@ impl AppWithStateBuilder for NestedAppBuilder {
             get_service(picoserve::response::File::with_content_type_and_headers(
                 "text/html",
                 include_bytes_gz!("static/inventory/index.html"),
+                &[("Content-Encoding", "gzip")],
+            )),
+        );
+
+        let router = router.route(
+            "/TESTFWD/",
+            get_service(picoserve::response::File::with_content_type_and_headers(
+                "text/html",
+                include_bytes_gz!("static/filament3dorg/index.html"),
                 &[("Content-Encoding", "gzip")],
             )),
         );
@@ -525,21 +539,51 @@ impl AppWithStateBuilder for NestedAppBuilder {
                 async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, storage_config: StorageConfig| {
                     let store = state.store;
                     match store.set_storage_config(storage_config).await {
-                        Ok(storage_config_str) => {
-                            encrypt(&key.borrow(), &storage_config_str)
-                        },
+                        Ok(storage_config_str) => encrypt(&key.borrow(), &storage_config_str),
                         Err(err) => {
                             error!("Failed to store Storage Configuration : {err}");
                             err.to_string()
                         }
                     }
                 },
-            ).
-            get(
+            )
+            .get(
                 async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>| {
                     let store = state.store;
                     let storage_config_str = serde_json::to_string(&*store.storage_config.borrow()).unwrap();
                     encrypt(&key.borrow(), &storage_config_str)
+                },
+            ),
+        );
+
+        let router = router.route(
+            "/api/tag-scanned",
+            post(
+                async move |State(Encryption(_key)): State<Encryption>, State(state): State<ConsoleAppState>, tag_scanned: TagScannedDTO| {
+                    let store = state.store;
+                    if let Some(location_rec) = store.get_location_by_hex_tag(&tag_scanned.tag_id_hex) {
+                        serde_json::to_string(&TagScannedResponse {
+                            tag_info: TagInfo::Location { location_rec },
+                        })
+                        .unwrap()
+                    } else {
+                        serde_json::to_string(&TagScannedResponse { tag_info: TagInfo::Unknown }).unwrap()
+                    }
+                },
+            ),
+        );
+
+        #[allow(clippy::let_and_return)]
+        let router = router.route(
+            "/api/set-tag-location",
+            post(
+                async move |State(Encryption(_key)): State<Encryption>, State(state): State<ConsoleAppState>, set_tag_location: SetTagLocationDTO| {
+                    let store = state.store;
+                    match store.insert_tag_location(&set_tag_location.tag_id_hex, &set_tag_location.location).await {
+                        Ok(true) => serde_json::to_string(&GenericResponse { error: None, text: "Location assigned to tag".to_string()}).unwrap(),
+                        Ok(false) => serde_json::to_string(&GenericResponse { error: None, text: "Tag's location updated".to_string()}).unwrap(),
+                        Err(err) => serde_json::to_string(&GenericResponse{ error: Some(format!("Error setting tag location: {err:?}")), text: String::new()}).unwrap(),
+                    }
                 },
             ),
         );
@@ -897,12 +941,39 @@ pub struct AddPressureAdvanceDTO {
 encrypted_input!(AddPressureAdvanceDTO);
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct GenericResonse {
+pub struct GenericResponse {
     text: String,
+    error: Option<String>,
 }
-encrypted_input!(GenericResonse);
+encrypted_input!(GenericResponse);
 
 encrypted_input!(StorageConfig);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TagScannedDTO {
+    tag_id_hex: String,
+}
+
+not_encrypted_input!(TagScannedDTO);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum TagInfo {
+    Unknown,
+    Spool { spool_rec: SpoolRecord },
+    Location { location_rec: TagLocationRecord },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TagScannedResponse {
+    tag_info: TagInfo,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetTagLocationDTO {
+    tag_id_hex: String,
+    location: String,
+}
+not_encrypted_input!(SetTagLocationDTO);
 
 /////////////////////////////////////////////
 

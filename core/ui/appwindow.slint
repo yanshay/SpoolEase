@@ -19,6 +19,7 @@ import { StagingOperations } from "staging-operations.slint";
 import { TrayOperations } from "tray-operations.slint";
 import { MessageBox } from "message-box.slint";
 import { AppOtaSelect } from "ota.slint";
+import { Storage } from "storage.slint";
 
 // reexport to rust
 
@@ -62,8 +63,8 @@ export component AppWindow inherits Window {
         height: parent.height;
         handle-swipe-up: current-page < 2 && (!AppState.select-printer);
         handle-swipe-down: current-page > 0 && (!AppState.select-printer);
-        handle-swipe-left: AppState.select-printer == false;
-        handle-swipe-right: AppState.select-printer == true;
+        handle-swipe-left: AppState.select-printer == false && top.x == -480px;
+        handle-swipe-right: AppState.select-printer == true && top.x == -480px;
         swiped => {
             if FrameworkState.ota-state != OtaState.Started {
                 if self.handle-swipe-down && self.current-position.y > self.pressed-position.y + (self.height / 8) {
@@ -79,9 +80,14 @@ export component AppWindow inherits Window {
                 } else if self.handle-swipe-right && self.current-position.x > self.pressed-position.x + (self.width / 5) {
                     AppState.select-printer = false;
                     current-page_x = 0;
+                } else if current-page_x == 0 && top.x == -480px &&  self.current-position.x > self.pressed-position.x + (self.width / 5) {
+                    top.x = 0px;
+                } else if current-page_x == 0 && top.x == 0px && self.current-position.x < self.pressed-position.x - (self.width / 5) {
+                    top.x = -480px;
                 }
             }
         }
+
         left-pages := VerticalLayout {
             x: - current-page_x * 480px;
             y: - current-page * 320px;
@@ -108,8 +114,15 @@ export component AppWindow inherits Window {
                 width: parent.width;
                 alignment: stretch;
                 top := HorizontalLayout {
+                    x: -480px;
+                    animate x {
+                        duration: 1000ms;
+                        easing: ease-in-out;
+                    }
                     spacing: AppConsts.trays-spacing;
-
+                    Storage {
+                      width: 480px;
+                    }
                     // Separating the external tray from the ams trays so can scroll the ams trays in case of several ams's
                     if AppState.ams-exists.length > 0: 
                       ams := Trays {

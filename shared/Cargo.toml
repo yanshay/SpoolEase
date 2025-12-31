@@ -29,8 +29,8 @@ serde_json = { version = "1.0.132", default-features = false, features = [ "allo
 serde_with = { version = "3.16.0", default-features = false, features = ["alloc", "macros", "base64", "hashbrown_0_16", "hex"]}
 
 
-framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag="0.6.1", default-features = false, features = ["esp32s3"] }
-# framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", default-features = false, features = ["esp32s3"] }
+# framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag="0.6.1", default-features = false, features = ["esp32s3"] }
+framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", default-features = false, features = ["esp32s3"] }
 pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_esp-hal-1.0.0-upgrade", default-features = false }
 # pn532 = { path = "../../../../../../OpenSourceProj/forked/pn532/", default-features = false }
 embassy-time = { version = "0.5.0", features = ["generic-queue-8"] }
@@ -58,6 +58,7 @@ edge-nal = { version = "0.5.0" }
 edge-http = { version = "0.6.1" }
 embedded-io-async = { version = "0.6.1" }
 serde-csv-core = "0.3.2"
+hex = {version = "0.4.3", default-features = false, features = ["alloc"]}
 
 # ndef-rs = { path = "../../../../../../OpenSourceProj/forked/ndef-rs/ndef", default-features = false}
 ndef-rs = { git = "https://github.com/yanshay/ndef-rs" , branch = "yanshay_no_std", default-features = false}

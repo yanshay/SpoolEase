@@ -151,6 +151,7 @@ export global AppBackend {
     callback configure-slot-with-spool-id(tray-id: int, spool-id: string);
     callback ota-check-firmwares();
     callback ota-update-firmware(product: string, train: string);
+    callback encode-location-tag();
 }
 
 export enum NewScannedTagType {
@@ -431,7 +432,7 @@ export global AppState {
 
     public function empty-spool-staging() {
         self.spool-staging-state = SpoolStagingState.Empty;
-        self.spool-staging-info = {};
+        self.spool-staging-info = { };
         // self.spool-staging-info.spool-record.weight-core = 0;
     }
 
@@ -555,6 +556,14 @@ export global AppState {
             user-message = "Place Spool Tag\nto Encode";
             user-message-type = StatusType.Normal;
         }
+    }
+
+    public function location-encode_start() {
+        AppBackend.encode-location-tag();
+        self.encode-timeout = 15;
+        self.control-state = ControlState.Encoding;
+        user-message = "Place Location Tag\nto Encode";
+        user-message-type = StatusType.Normal;
     }
 
     public function erasing-timeout() {

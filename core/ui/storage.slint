@@ -1,0 +1,22 @@
+import { MyButton } from "./framework/widgets.slint";
+import { AppBackend, AppState } from "app.slint";
+import { Title } from "framework/widgets.slint";
+import { Utils } from "utils.slint";
+
+export component Storage inherits VerticalLayout {
+    callback selected;
+    VerticalLayout {
+        alignment: start;
+        Title {
+            text: "Storage";
+        }
+
+        MyButton {
+            height: 56px;
+            text: "Encode Location Tag";
+            clicked => {
+              AppState.location-encode_start();
+            }
+        }
+    }
+}

@@ -502,10 +502,11 @@ async fn nfc_task(
                                 ));
                                 continue;
                             }
-                            let tag_uid =
-                                URL_SAFE_NO_PAD.encode(last_seen_tag.as_ref().unwrap().uid());
+                            // let tag_uid =
+                            //     URL_SAFE_NO_PAD.encode(last_seen_tag.as_ref().unwrap().uid());
+                            let hex_tag = hex::encode_upper(uid.uid());
                             let final_tag_text =
-                                write_tag_reuest.text.replace(TAG_PLACEHOLDER, &tag_uid);
+                                write_tag_reuest.text.replace(TAG_PLACEHOLDER, &hex_tag);
                             match nfc::write_ndef_url_record(
                                 &mut pn532,
                                 &final_tag_text,

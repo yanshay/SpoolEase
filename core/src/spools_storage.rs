@@ -51,14 +51,13 @@ pub struct ShelfOverride {
 
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
-pub struct StorageLocationRecord {
-    pub id: String,
-    pub tag_id: String,
+pub struct TagLocationRecord {
+    pub tag_id_hex: String,
     pub location: String,
 }
 
-impl CsvDbId for StorageLocationRecord {
+impl CsvDbId for TagLocationRecord {
     fn id(&self) -> &String {
-        &self.id
+        &self.tag_id_hex
     }
 }

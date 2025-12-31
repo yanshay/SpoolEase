@@ -1581,14 +1581,13 @@ dependencies = [
 
 [[package]]
 name = "embedded-hal-bus"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d3980bf28e8577db59fe2bdb3df868a419469d2cecb363644eea2b6f7797669"
+checksum = "513e0b3a8fb7d3013a8ae17a834283f170deaf7d0eeab0a7c1a36ad4dd356d22"
 dependencies = [
  "critical-section",
  "embedded-hal 1.0.0",
  "embedded-hal-async",
- "portable-atomic",
 ]
 
 [[package]]
@@ -1902,8 +1901,7 @@ dependencies = [
 
 [[package]]
 name = "esp-hal-app-framework"
-version = "0.6.0"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.6.0#036e0a91784e642666652083c336a343ea6d9879"
+version = "0.6.1"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -1951,7 +1949,7 @@ dependencies = [
  "futures",
  "futures-util",
  "getrandom 0.2.16",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.1",
  "hmac",
  "log",
  "mipidsi",
@@ -1977,7 +1975,6 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework-macros"
 version = "0.1.0"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.6.0#036e0a91784e642666652083c336a343ea6d9879"
 dependencies = [
  "flate2",
  "proc-macro2",
@@ -2416,6 +2413,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
+name = "foldhash"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
+
+[[package]]
 name = "font-types"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2846,8 +2849,7 @@ checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
  "allocator-api2 0.2.21",
  "equivalent",
- "foldhash",
- "serde",
+ "foldhash 0.1.5",
 ]
 
 [[package]]
@@ -2855,6 +2857,13 @@ name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
+dependencies = [
+ "allocator-api2 0.2.21",
+ "equivalent",
+ "foldhash 0.2.0",
+ "serde",
+ "serde_core",
+]
 
 [[package]]
 name = "heapless"
@@ -3159,7 +3168,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.58.0",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -5204,7 +5213,7 @@ checksum = "4fa237f2807440d238e0364a218270b98f767a00d3dada77b1c53ae88940e2e7"
 dependencies = [
  "base64 0.22.1",
  "chrono",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.1",
  "hex",
  "serde_core",
  "serde_json",
@@ -5274,7 +5283,8 @@ dependencies = [
  "esp-hal-app-framework",
  "esp-mbedtls",
  "getrandom 0.2.16",
- "hashbrown 0.15.5",
+ "hashbrown 0.16.1",
+ "hex",
  "hmac",
  "log",
  "miniz_oxide",
@@ -6324,7 +6334,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
