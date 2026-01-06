@@ -892,7 +892,7 @@ impl ViewModel {
     }
 
     fn ui_encode_location_tag(&self) {
-        const LOCATION_URL_PREFIX_V1: &str = "https://info.filament3d.org/TESTFWD/";
+        const LOCATION_URL_PREFIX_V1: &str = "https://tag.spoolease.io/L1/";
         let spool_tag_borrow = self.spool_tag_model.borrow();
         let descriptor = format!("{LOCATION_URL_PREFIX_V1}?TG={TAG_PLACEHOLDER}");
         let encode_cookie = LocationEncodeCookie {

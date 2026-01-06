@@ -1,5 +1,5 @@
 base_target="spoolease-bin"
-path_in_base_target="/bins/0.5"
+path_in_base_target="/bins/0.6"
 rel_train="ota-unstable" # beta
 product="console"
 

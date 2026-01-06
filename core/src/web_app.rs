@@ -479,10 +479,10 @@ impl AppWithStateBuilder for NestedAppBuilder {
         );
 
         let router = router.route(
-            "/TESTFWD/",
+            "/L1/",
             get_service(picoserve::response::File::with_content_type_and_headers(
                 "text/html",
-                include_bytes_gz!("static/filament3dorg/index.html"),
+                include_bytes_gz!("static/consoletag/index.html"),
                 &[("Content-Encoding", "gzip")],
             )),
         );
