@@ -559,15 +559,28 @@ impl AppWithStateBuilder for NestedAppBuilder {
         let router = router.route(
             "/api/tag-scanned",
             post(
-                async move |State(Encryption(_key)): State<Encryption>, State(state): State<ConsoleAppState>, tag_scanned: TagScannedDTO| {
+                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, tag_scanned: TagScannedDTO| {
                     let store = state.store;
                     if let Some(location_rec) = store.get_location_by_hex_tag(&tag_scanned.tag_id_hex) {
-                        serde_json::to_string(&TagScannedResponse {
-                            tag_info: TagInfo::Location { location_rec },
-                        })
-                        .unwrap()
+                        TagScannedResponse {
+                            tag_info: TagInfo::Location { location: location_rec.location },
+                        }.encrypt(&key.borrow())
                     } else {
-                        serde_json::to_string(&TagScannedResponse { tag_info: TagInfo::Unknown }).unwrap()
+                        TagScannedResponse { tag_info: TagInfo::Unknown }.encrypt(&key.borrow())
+                    }
+                },
+            ),
+        );
+
+        let router = router.route(
+            "/api/set-tag-location",
+            post(
+                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, set_tag_location: SetTagLocationDTO| {
+                    let store = state.store;
+                    match store.insert_tag_location(&set_tag_location.tag_id_hex, &set_tag_location.location).await {
+                        Ok(true) => GenericResponse { error: None, text: "Location assigned to tag".to_string()}.encrypt(&key.borrow()),
+                        Ok(false) => GenericResponse { error: None, text: "Tag's location updated".to_string()}.encrypt(&key.borrow()),
+                        Err(err) => GenericResponse{ error: Some(format!("Error setting tag location: {err:?}")), text: String::new()}.encrypt(&key.borrow()),
                     }
                 },
             ),
@@ -575,15 +588,18 @@ impl AppWithStateBuilder for NestedAppBuilder {
 
         #[allow(clippy::let_and_return)]
         let router = router.route(
-            "/api/set-tag-location",
-            post(
-                async move |State(Encryption(_key)): State<Encryption>, State(state): State<ConsoleAppState>, set_tag_location: SetTagLocationDTO| {
-                    let store = state.store;
-                    match store.insert_tag_location(&set_tag_location.tag_id_hex, &set_tag_location.location).await {
-                        Ok(true) => serde_json::to_string(&GenericResponse { error: None, text: "Location assigned to tag".to_string()}).unwrap(),
-                        Ok(false) => serde_json::to_string(&GenericResponse { error: None, text: "Tag's location updated".to_string()}).unwrap(),
-                        Err(err) => serde_json::to_string(&GenericResponse{ error: Some(format!("Error setting tag location: {err:?}")), text: String::new()}).unwrap(),
+            "/api/spool-staging",
+            get(
+                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>| {
+                    let view_model = state.view_model.borrow();
+                    let filament_staging = view_model.filament_staging.borrow();
+                    if let Some(spool_rec) = filament_staging.spool_rec() {
+                        let store = state.store;
+                        if let Some(record_csv) = store.get_spool_csv_by_id(&spool_rec.id) {
+                            return SpoolStagingResponse { csv_record: record_csv }.encrypt(&key.borrow())
+                        }
                     }
+                    return SpoolStagingResponse { csv_record: String::new() }.encrypt(&key.borrow())
                 },
             ),
         );
@@ -954,13 +970,13 @@ pub struct TagScannedDTO {
     tag_id_hex: String,
 }
 
-not_encrypted_input!(TagScannedDTO);
+encrypted_input!(TagScannedDTO);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum TagInfo {
     Unknown,
-    Spool { spool_rec: SpoolRecord },
-    Location { location_rec: TagLocationRecord },
+    // Spool { spool_rec: SpoolRecord },
+    Location { location: String },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -973,7 +989,12 @@ pub struct SetTagLocationDTO {
     tag_id_hex: String,
     location: String,
 }
-not_encrypted_input!(SetTagLocationDTO);
+encrypted_input!(SetTagLocationDTO);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SpoolStagingResponse {
+    pub csv_record: String
+}
 
 /////////////////////////////////////////////
 

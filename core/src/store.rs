@@ -530,6 +530,15 @@ impl Store {
         None
     }
 
+    pub fn get_spool_csv_by_id(&self, id: &str) -> Option<String> {
+        if let Some(spools_db) = self.spools_db.get() {
+            if let Some(current_rec) = spools_db.records.borrow().get(id) {
+                return current_rec.to_csv_string().ok();
+            }
+        }
+        None
+    }
+
     // TODO: once working, use it in other places reading ext
     pub async fn get_spool_ext_by_id(&self, id: &str) -> Result<SpoolRecordExt, StoreError> {
         if self.get_spool_by_id(id).is_none() {

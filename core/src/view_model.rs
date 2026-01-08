@@ -86,7 +86,7 @@ pub struct ViewModel {
     pub bambu_printer_model: SelectedPrinter,
     spool_tag_model: Rc<RefCell<spool_tag::SpoolTag>>,
     spool_scale_model: Rc<RefCell<spool_scale::SpoolScale>>,
-    filament_staging: Rc<RefCell<FilamentStaging>>,
+    pub filament_staging: Rc<RefCell<FilamentStaging>>,
     printers_view_state: HashMap<String, PrinterUiState>,
 
     // cores_list_vec_rc: slint::ModelRc<crate::app::SelectorOption>,
