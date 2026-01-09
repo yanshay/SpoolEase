@@ -428,11 +428,11 @@ async fn main(spawner: Spawner) {
     );
 
     let config = picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(5)),
-        read_request: Some(Duration::from_millis(5000)),
-        write: Some(Duration::from_millis(5000)),
-    })
-    .keep_connection_alive();
+        start_read_request: None, // Some(Duration::from_secs(5)),
+        read_request: None, // Some(Duration::from_millis(5000)),
+        write: None, // Some(Duration::from_millis(5000)),
+    });
+    // .keep_connection_alive();
 
     let web_server_runner = mk_static!(
         framework::web_server::WebAppRunner<ConsoleAppState, NestedAppBuilder>,
