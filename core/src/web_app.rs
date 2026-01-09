@@ -25,7 +25,6 @@ use framework::{
     framework_web_app::{
         decrypt, CustomNotFound, Encryptable, EncryptedRejection, Encryption, NestedAppWithWebAppStateBuilder, SetConfigResponseDTO, WebAppState,
     },
-    not_encrypted_input,
     prelude::*,
 };
 use framework_macros::include_bytes_gz;
@@ -35,7 +34,7 @@ use shared::gcode_analysis_task::Fetch3mf;
 use crate::app_config::{AppConfig, DefaultPrinterConfig, PrinterConfig, PrintersConfig, ScaleConfig, FILAMENT_BRAND_NAMES, SPOOLS_CATALOG};
 use crate::bambu::KInfo;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
-use crate::spools_storage::{StorageConfig, TagLocationRecord};
+use crate::spools_storage::{StorageConfig};
 use crate::store::{BackupMeta, FileMeta, Store};
 use crate::view_model::ViewModel;
 
@@ -577,16 +576,22 @@ impl AppWithStateBuilder for NestedAppBuilder {
             post(
                 async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, set_tag_location: SetTagLocationDTO| {
                     let store = state.store;
-                    match store.insert_tag_location(&set_tag_location.tag_id_hex, &set_tag_location.location).await {
-                        Ok(true) => GenericResponse { error: None, text: "Location assigned to tag".to_string()}.encrypt(&key.borrow()),
-                        Ok(false) => GenericResponse { error: None, text: "Tag's location updated".to_string()}.encrypt(&key.borrow()),
-                        Err(err) => GenericResponse{ error: Some(format!("Error setting tag location: {err:?}")), text: String::new()}.encrypt(&key.borrow()),
+                    if set_tag_location.location.is_empty() {
+                      match store.delete_location(&set_tag_location.tag_id_hex).await {
+                          Ok(_) => GenericResponse { error: None, text: "Tag location cleared".to_string()}.encrypt(&key.borrow()),
+                          Err(err) => GenericResponse{ error: Some(format!("Failed to clear tag location: {err:?}")), text: String::new()}.encrypt(&key.borrow()),
+                      }  
+                    } else {
+                        match store.insert_tag_location(&set_tag_location.tag_id_hex, &set_tag_location.location).await {
+                            Ok(true) => GenericResponse { error: None, text: "Location assigned to tag".to_string()}.encrypt(&key.borrow()),
+                            Ok(false) => GenericResponse { error: None, text: "Tag's location updated".to_string()}.encrypt(&key.borrow()),
+                            Err(err) => GenericResponse{ error: Some(format!("Error setting tag location: {err:?}")), text: String::new()}.encrypt(&key.borrow()),
+                        }
                     }
                 },
             ),
         );
 
-        #[allow(clippy::let_and_return)]
         let router = router.route(
             "/api/spool-staging",
             get(
@@ -596,23 +601,53 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     if let Some(spool_rec) = filament_staging.spool_rec() {
                         let store = state.store;
                         if let Some(record_csv) = store.get_spool_csv_by_id(&spool_rec.id) {
-                            return SpoolStagingResponse { csv_record: record_csv }.encrypt(&key.borrow())
+                            return SpoolStagingResponse { csv_record: record_csv }.encrypt(&key.borrow());
                         }
                     }
-                    return SpoolStagingResponse { csv_record: String::new() }.encrypt(&key.borrow())
+                    return SpoolStagingResponse { csv_record: String::new() }.encrypt(&key.borrow());
                 },
             ),
         );
 
-        // #[allow(clippy::let_and_return)]
-        // let router = router.route(
-        //     "/style.css",
-        //     get_service(picoserve::response::File::with_content_type_and_headers(
-        //         "text/css",
-        //         include_bytes!("../static/inventory/style.css.gz"),
-        //         &[("Content-Encoding", "gzip")],
-        //     )),
-        // );
+        #[allow(clippy::let_and_return)]
+        let router = router.route(
+            "/api/spool-location",
+            post(
+                async move |State(Encryption(key)): State<Encryption>,
+                            State(state): State<ConsoleAppState>,
+                            set_spool_location: SetSpoolLocationDTO| {
+                    let store = state.store;
+                    if let Some(mut spool_rec) = store.get_spool_by_id(&set_spool_location.spool_id) {
+                        match set_spool_location.location_type {
+                            LocationType::Assigned => spool_rec.assigned_location = set_spool_location.location,
+                            LocationType::Actual => spool_rec.actual_location = set_spool_location.location,
+                        }
+                        match store.update_spool(spool_rec, None).await {
+                            Ok(_) => {
+                                return GenericResponse {
+                                    text: format!("Spool {} updated", set_spool_location.spool_id),
+                                    error: None,
+                                }
+                                .encrypt(&key.borrow())
+                            }
+                            Err(err) => {
+                                return GenericResponse {
+                                    text: format!("Tried to update Spool {}", set_spool_location.spool_id),
+                                    error: Some(format!("Failed to update Spool {} : {err}", set_spool_location.spool_id)),
+                                }
+                                .encrypt(&key.borrow())
+                            }
+                        }
+                    } else {
+                        return GenericResponse {
+                            text: format!("Tried to update Spool {}", set_spool_location.spool_id),
+                            error: Some(format!("No Spool {} in store", set_spool_location.spool_id)),
+                        }
+                        .encrypt(&key.borrow());
+                    }
+                },
+            ),
+        );
 
         router
     }
@@ -993,8 +1028,21 @@ encrypted_input!(SetTagLocationDTO);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SpoolStagingResponse {
-    pub csv_record: String
+    pub csv_record: String,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+enum LocationType {
+    Assigned,
+    Actual,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetSpoolLocationDTO {
+    location: String,
+    location_type: LocationType,
+    spool_id: String,
+}
+encrypted_input!(SetSpoolLocationDTO);
 
 /////////////////////////////////////////////
 

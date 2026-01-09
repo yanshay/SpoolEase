@@ -135,7 +135,6 @@ pub struct Store {
 
     pub locations_db: OnceCell<CsvDb<TagLocationRecord, TheSpi, 20, 5>>,
     last_location_id: RefCell<i32>,
-    location_tag_id_index: RefCell<HashMap<String, String>>,
 }
 
 impl Store {
@@ -153,7 +152,6 @@ impl Store {
             storage_config: RefCell::new(StorageConfig::default()),
             locations_db: OnceCell::new(),
             last_location_id: RefCell::new(0),
-            location_tag_id_index: RefCell::new(HashMap::new()),
         });
         *store.store_rc.borrow_mut() = Some(store.clone());
         store
@@ -533,7 +531,13 @@ impl Store {
     pub fn get_spool_csv_by_id(&self, id: &str) -> Option<String> {
         if let Some(spools_db) = self.spools_db.get() {
             if let Some(current_rec) = spools_db.records.borrow().get(id) {
-                return current_rec.to_csv_string().ok();
+                if let Ok(mut csv_str) = current_rec.to_csv_string() {
+                    // the to_csv_string adds a trailing \n automatically
+                    if csv_str.ends_with('\n') {
+                        csv_str.pop(); // removes last char
+                    }
+                    return Some(csv_str);
+                }
             }
         }
         None
@@ -707,18 +711,6 @@ impl Store {
 
     // Locations Records
 
-    pub fn insert_location_tag_to_tag_id_index(&self, tag_id: String, location_id: String) -> Option<String> {
-        let res = self.location_tag_id_index.borrow_mut().insert(tag_id, location_id);
-        if res.is_none() {
-            // if was no key (and now there is) need to send an update on add
-            for weak_observer in self.observers.borrow().iter() {
-                let observer = weak_observer.upgrade().unwrap();
-                observer.borrow().on_tag_added();
-            }
-        }
-        res
-    }
-
     pub fn get_location_by_hex_tag(&self, tag_id_hex: &str) -> Option<TagLocationRecord> {
         if let Some(locations_db) = self.locations_db.get() {
             if let Some(current_rec) = locations_db.records.borrow().get(tag_id_hex) {
@@ -726,18 +718,6 @@ impl Store {
             }
         }
         None
-    }
-
-    pub fn remove_location_tag_from_tag_id_index(&self, tag_id: &str) -> Option<String> {
-        let res = self.location_tag_id_index.borrow_mut().remove(tag_id);
-        // if res.is_some() {
-            // if was key previously (and now isn't) need to send an update on remove
-            // for weak_observer in self.observers.borrow().iter() {
-            //     let observer = weak_observer.upgrade().unwrap();
-            //     observer.borrow().on_location_tag_removed();
-            // }
-        // }
-        res
     }
 
     pub async fn delete_location(&self, tag_id_hex: &str) -> Result<Option<TagLocationRecord>, StoreError> {
@@ -995,12 +975,6 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
             let records = locations_db.records.borrow();
             for record in records.iter() {
                 if let Ok(id) = record.1.data.id.parse::<i32>() {
-                    if !record.1.data.tag_id.is_empty() {
-                        store
-                            .location_tag_id_index
-                            .borrow_mut()
-                            .insert(record.1.data.tag_id.clone(), record.1.data.id.clone());
-                    }
                     if id > largest_location_id {
                         largest_location_id = id;
                     }
