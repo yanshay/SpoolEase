@@ -12,14 +12,21 @@ pub struct StorageConfig {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RackConfig {
     pub name: String,
-    pub num_shelves: Option<i32>,
-    pub num_positions_per_shelf: Option<i32>,
-    pub num_bins_per_position: Option<i32>,
-    pub num_spools_per_bin: Option<i32>,
+    pub num_bays: i32,
+    pub num_shelves: i32,
+    pub num_positions: i32,
+    pub num_containers: i32,
+    pub container_capacity: i32,
+    pub bay_numbering_order: BayNumOrder,
     pub shelf_numbering_order: ShelfNumOrder,
     pub position_numbering_order: PosNumOrder,
-    pub bins_numbering_order: BinNumOrder,
-    pub shelf_overrides: HashMap<i32, ShelfOverride>,
+    pub container_numbering_order: ContainerNumOrder,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum BayNumOrder {
+    LeftToRight,
+    RightToLeft,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,20 +42,15 @@ pub enum PosNumOrder {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum BinNumOrder {
+pub enum ContainerNumOrder {
+    Unordered,
     TopDown,
     BottomUp,
     FrontToBack,
     BackToFront,
+    LeftToRight,
+    RightToLeft,
 }
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ShelfOverride {
-    num_positions: Option<i32>,
-    num_bins_per_position: Option<i32>,
-    num_spools_per_bin: Option<i32>,
-}
-
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
 pub struct TagLocationRecord {
