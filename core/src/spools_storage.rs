@@ -6,7 +6,7 @@ use crate::csvdb::CsvDbId;
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct StorageConfig {
-    rack_config: HashMap<i32, RackConfig>,
+    pub rack_config: HashMap<String, RackConfig>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

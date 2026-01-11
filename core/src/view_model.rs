@@ -24,7 +24,8 @@ use shared::gcode_analysis_task::{
     GcodeAnalysisRequestChannel, GcodeAnalyzerObserver,
 };
 use shared::settings::{
-    OTA_DOMAIN_DEBUG, OTA_DOMAIN_STABLE, OTA_DOMAIN_UNSTABLE, OTA_TLS_CERTIFICATE, SCALE_DEBUG_OTA_PATH, SCALE_STABLE_OTA_PATH, SCALE_UNSTABLE_OTA_PATH
+    OTA_DOMAIN_DEBUG, OTA_DOMAIN_STABLE, OTA_DOMAIN_UNSTABLE, OTA_TLS_CERTIFICATE, SCALE_DEBUG_OTA_PATH, SCALE_STABLE_OTA_PATH,
+    SCALE_UNSTABLE_OTA_PATH,
 };
 use shared::types::AppOtaTrain;
 use shared::utils::channel_send;
@@ -666,7 +667,6 @@ impl ViewModel {
             .unwrap()
             .global::<crate::app::AppBackend>()
             .on_encode_location_tag(move || moved_view_model.borrow().ui_encode_location_tag());
-
     }
 
     fn perform_select_printer(
@@ -895,9 +895,7 @@ impl ViewModel {
         const LOCATION_URL_PREFIX_V1: &str = "https://tag.spoolease.io/L1/";
         let spool_tag_borrow = self.spool_tag_model.borrow();
         let descriptor = format!("{LOCATION_URL_PREFIX_V1}?TG={TAG_PLACEHOLDER}");
-        let encode_cookie = LocationEncodeCookie {
-            location: String::new()
-        };
+        let encode_cookie = LocationEncodeCookie { location: String::new() };
         let encode_cookie_str = serde_json::to_string(&encode_cookie).unwrap();
         spool_tag_borrow.write_tag(&descriptor, None, encode_cookie_str);
     }
@@ -1253,6 +1251,24 @@ impl ViewModel {
             slint::Color::default()
         };
 
+        let assigned_location;
+        if let Some(location_str) = spool_rec.assigned_location.strip_prefix("#R:") {
+            if let Some((rack_id_str, rest)) = location_str.split_once('/') {
+                let storage_config = self.store.storage_config.borrow();
+                if let Some(rack) = storage_config.rack_config.get(rack_id_str) {
+                    assigned_location = slint::format!("{}/{rest}", rack.name);
+                } else {
+                    assigned_location = spool_rec.assigned_location.into();
+                }
+            } else {
+                assigned_location = spool_rec.assigned_location.into();
+            }
+        } else if let Some(location_str) = spool_rec.assigned_location.strip_prefix("@") {
+            assigned_location = location_str.to_shared_string();
+        } else {
+            assigned_location = spool_rec.assigned_location.into();
+        };
+
         UiSpoolRecordDisplay {
             pa_line1: (if record.ext_has_k { "Configured" } else { "Not Configured" }).to_shared_string(),
             pa_line2: SharedString::new(),
@@ -1262,6 +1278,7 @@ impl ViewModel {
             temp_max,
             color,
             weight_left,
+            assigned_location,
         }
     }
 
@@ -1270,7 +1287,9 @@ impl ViewModel {
         _bambu_printer_borrow: &BambuPrinter,
         full_spool_rec: &Option<FullSpoolRecord>,
     ) -> Option<crate::app::UiSpoolRecordDisplay> {
-        full_spool_rec.as_ref().map(|full_spool_rec| self.ui_get_spool_record_display(&full_spool_rec.spool_rec.id.to_shared_string()))
+        full_spool_rec
+            .as_ref()
+            .map(|full_spool_rec| self.ui_get_spool_record_display(&full_spool_rec.spool_rec.id.to_shared_string()))
     }
 
     fn update_ui_from_printer(&self, bambu_printer: &BambuPrinter) {
@@ -1381,7 +1400,7 @@ impl ViewModel {
     }
 
     fn try_dispatch_next_gcode_job(&mut self) {
-        let console_tls_slots_capacity = 100;// with new esp-mbedtls seems no limit, // 3 - self.bambu_printer_model.printers.len(); // per memory available
+        let console_tls_slots_capacity = 100; // with new esp-mbedtls seems no limit, // 3 - self.bambu_printer_model.printers.len(); // per memory available
         let scale_tls_slots_capacity: usize = 100; // if self.app_config.borrow().is_scale_available() { 4 } else { 0 };
         let console_tls_slots_used: usize = self
             .gcode_jobs
@@ -2464,7 +2483,7 @@ impl SpoolTagObserver for ViewModel {
                         spool_rec.encode_time = encode_cookie.encode_time;
                         let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec });
                     }
-                } else if let Ok(encode_cookie) = serde_json::from_str::<LocationEncodeCookie>(cookie) { 
+                } else if let Ok(encode_cookie) = serde_json::from_str::<LocationEncodeCookie>(cookie) {
                     debug!(">>>> TODO: Store the tag into DB, descriptor: {_encoded_descriptor}");
                 }
                 if let Ok(spool_tag_borrow) = self.spool_tag_model.try_borrow() {

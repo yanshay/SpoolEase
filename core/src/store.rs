@@ -316,7 +316,7 @@ impl Store {
         Ok(())
     }
 
-//// Spools Database Methods 
+    //// Spools Database Methods
 
     pub fn query_spools(&self) -> Option<String> {
         if let Some(spools_db) = self.spools_db.get() {
@@ -785,7 +785,10 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
             let mut file_store = file_store.lock().await;
             if let Ok(storage_config_str) = file_store.read_file_str("/store/storcfg.jsn").await {
                 match serde_json::from_str::<StorageConfig>(&storage_config_str) {
-                    Ok(storage_config) => *store.storage_config.borrow_mut() = storage_config,
+                    Ok(storage_config) => {
+                        *store.storage_config.borrow_mut() = storage_config;
+                        term_info!("Loaded spools storage configuration (storage racks)");
+                    }
                     Err(err) => {
                         term_error!("Error loading Spools Storage Configuration (Storage Racks): {}", err);
                         view_model.borrow().message_box(

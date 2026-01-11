@@ -139,6 +139,12 @@ export component SpoolDisplay inherits Rectangle {
                 text: spool-display.pa-line1;
             }
 
+            if mode != SpoolDisplayMode.ImportTagDefinition: LabeledInfo {
+                vertical-stretch: 1;
+                label: "Location:";
+                text: spool-display.assigned-location!="" ? spool-display.assigned-location + " (Assigned)" : "No Assigned Location";
+            }
+
             HorizontalLayout {
                 vertical-stretch: 1;
                 VerticalLayout {
@@ -159,7 +165,7 @@ export component SpoolDisplay inherits Rectangle {
                     property <string> advertised: spool-display.spool-record.weight-advertised <= 0 ? "-" : ((spool-display.spool-record.weight-advertised > 500) && (Math.mod(spool-display.spool-record.weight-advertised,500)) == 0) ? "\{spool-display.spool-record.weight-advertised / 1000}kg" : "\{spool-display.spool-record.weight-advertised}g";
                     property <string> gross: spool-display.spool-record.weight-current > 0 ? "\{spool-display.spool-record.weight-current}g" : "-";
                     property <int> net_value: calc-net(spool-display.spool-record.weight-new, spool-display.spool-record.weight-current, spool-display.spool-record.weight-core, spool-display.spool-record.weight-advertised, spool-display.spool-record.consumed-since-weight);
-                    property <string> net: net_value != 0 ? "\{net_value}g" : "–";
+                    property <string> net: net_value != 0 ? "\{net_value}g" : "-";
 
                     weight-label: advertised;
                     weight-empty: core;
