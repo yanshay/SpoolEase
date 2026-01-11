@@ -117,15 +117,13 @@ impl SpoolRecordExt {
             .get(diameter)?
             .nozzles;
 
-        let res = nozzles.get(&calibration_nozzle_type_str).or_else(|| {
+        nozzles.get(&calibration_nozzle_type_str).or_else(|| {
             if nozzle_type_code == NozzleType::Standard {
                 nozzles.get("")
             } else {
                 None
             }
-        });
-
-        res
+        })
     }
 }
 

@@ -207,10 +207,10 @@ impl OpenPrintTagTag {
 
                     let meta = decoder.decode::<Meta>();
                     let mut main_region_offset = decoder.position();
-                    if let Ok(meta) = meta {
-                        if let Some(meta_main_region_offset) = meta.main_region_offset {
-                            main_region_offset = meta_main_region_offset
-                        }
+                    if let Ok(meta) = meta
+                        && let Some(meta_main_region_offset) = meta.main_region_offset
+                    {
+                        main_region_offset = meta_main_region_offset
                     }
 
                     decoder.set_position(main_region_offset);

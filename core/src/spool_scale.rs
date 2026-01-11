@@ -236,7 +236,7 @@ impl SpoolScale {
             );
         }
     }
-    pub fn connected(&self) { 
+    pub fn connected(&self) {
         // don't change to &mut, if changed will panic on borrow since during connect notification sending data back to scale that needs borrow
         // one solution is to pass reference to self to the object being notified so it can use it instead of borrowing (maybe possible)
         self.notify_scale_connected();
@@ -413,10 +413,12 @@ pub fn init(
 
     spawner.spawn_heap(monitor_scales_task(spool_scale_rc.clone(), ssdp_pub_sub)).ok();
 
-    if let Some(spool_scale_config) = &app_config.clone().borrow().configured_scale {
-        if spool_scale_config.available {
-            spawner.spawn_heap(spool_scale_task(framework, app_config, stack, spool_scale_rc.clone(), ssdp_pub_sub)).ok();
-        }
+    if let Some(spool_scale_config) = &app_config.clone().borrow().configured_scale
+        && spool_scale_config.available
+    {
+        spawner
+            .spawn_heap(spool_scale_task(framework, app_config, stack, spool_scale_rc.clone(), ssdp_pub_sub))
+            .ok();
     }
 
     spool_scale_rc
@@ -430,12 +432,12 @@ pub async fn monitor_scales_task(spool_scale_rc: Rc<RefCell<SpoolScale>>, ssdp_p
         match ssdp_info {
             embassy_sync::pubsub::WaitResult::Lagged(_) => (),
             embassy_sync::pubsub::WaitResult::Message(ssdp_info) => {
-                if ssdp_info.nt.contains("urn:spoolease-io:device:spoolscale") {
-                    if let Ok(found_ip) = embassy_net::Ipv4Address::from_str(&ssdp_info.location) {
-                        let spoolscale_ip = found_ip;
-                        let spoolscale_name = Some(ssdp_info.usn);
-                        spool_scale_rc.borrow_mut().available_scales.insert((spoolscale_name, spoolscale_ip));
-                    }
+                if ssdp_info.nt.contains("urn:spoolease-io:device:spoolscale")
+                    && let Ok(found_ip) = embassy_net::Ipv4Address::from_str(&ssdp_info.location)
+                {
+                    let spoolscale_ip = found_ip;
+                    let spoolscale_name = Some(ssdp_info.usn);
+                    spool_scale_rc.borrow_mut().available_scales.insert((spoolscale_name, spoolscale_ip));
                 }
             }
         }
@@ -484,11 +486,11 @@ pub async fn spool_scale_task(
                 embassy_sync::pubsub::WaitResult::Lagged(_) => (),
                 embassy_sync::pubsub::WaitResult::Message(ssdp_info) => {
                     if ssdp_info.nt.contains("urn:spoolease-io:device:spoolscale") {
-                        if let Some(spoolscale_name) = &configured_name {
-                            if ssdp_info.usn != *spoolscale_name {
-                                debug!("Found a SpoolScale, but with name {} and not {spoolscale_name}", ssdp_info.usn);
-                                continue;
-                            }
+                        if let Some(spoolscale_name) = &configured_name
+                            && ssdp_info.usn != *spoolscale_name
+                        {
+                            debug!("Found a SpoolScale, but with name {} and not {spoolscale_name}", ssdp_info.usn);
+                            continue;
                         }
                         if let Ok(found_ip) = embassy_net::Ipv4Address::from_str(&ssdp_info.location) {
                             spoolscale_ip = found_ip;
@@ -760,7 +762,9 @@ pub async fn spool_scale_task(
                                 json = if key.is_empty() {
                                     term_error!("Empty SpoolScale Security Key configured in Console , can't send message to scale");
                                     if matches!(console_to_scale, ConsoleToScale::UpdateFirmware { .. }) {
-                                        spool_scale_rc.borrow().notify_ota_progress_update(&OtaProgressUpdate::Failed { text: "Scale Security Key not set in Console\nCan't Update Scale Firmware".to_string() });
+                                        spool_scale_rc.borrow().notify_ota_progress_update(&OtaProgressUpdate::Failed {
+                                            text: "Scale Security Key not set in Console\nCan't Update Scale Firmware".to_string(),
+                                        });
                                     }
                                     continue;
                                 } else {
@@ -785,7 +789,10 @@ pub async fn spool_scale_task(
                                                     // log at most 200 characters
                                                     let idx = json.char_indices().nth(200).map(|(i, _)| i).unwrap_or(json.len());
                                                     let str_to_print: &str = &json[..idx];
-                                                    debug!("SpoolScale: Sent message to scale: {str_to_print}{}", if str_to_print.len() < json.len() { "  ..." } else {""});
+                                                    debug!(
+                                                        "SpoolScale: Sent message to scale: {str_to_print}{}",
+                                                        if str_to_print.len() < json.len() { "  ..." } else { "" }
+                                                    );
                                                 }
                                                 Err(send_to_scale_flush_err) => {
                                                     error!("SpoolScale: Error sending message payload {send_to_scale_flush_err:?}, disconnecting");

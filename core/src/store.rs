@@ -348,14 +348,13 @@ impl Store {
             None
         };
 
-        if let Some(deleted_record) = deleted_record {
-            if !deleted_record.tag_id.is_empty() {
-                if let Ok(spool_rec_ext_file_path) = spool_rec_ext_file_path(&deleted_record.id) {
-                    let file_store = self.framework.borrow().file_store();
-                    let mut file_store = file_store.lock().await;
-                    let _ = file_store.delete_file(&spool_rec_ext_file_path).await;
-                }
-            }
+        if let Some(deleted_record) = deleted_record
+            && !deleted_record.tag_id.is_empty()
+            && let Ok(spool_rec_ext_file_path) = spool_rec_ext_file_path(&deleted_record.id)
+        {
+            let file_store = self.framework.borrow().file_store();
+            let mut file_store = file_store.lock().await;
+            let _ = file_store.delete_file(&spool_rec_ext_file_path).await;
         }
         Ok(())
     }
@@ -487,12 +486,11 @@ impl Store {
         }
     }
     pub fn get_spool_by_hex_tag(&self, tag_id_hex: &str) -> Option<SpoolRecord> {
-        if let Some(spools_db) = self.spools_db.get() {
-            if let Some(spool_id) = self.spool_tag_id_index.borrow().get(tag_id_hex) {
-                if let Some(current_rec) = spools_db.records.borrow().get(spool_id) {
-                    return Some(current_rec.data.clone());
-                }
-            }
+        if let Some(spools_db) = self.spools_db.get()
+            && let Some(spool_id) = self.spool_tag_id_index.borrow().get(tag_id_hex)
+            && let Some(current_rec) = spools_db.records.borrow().get(spool_id)
+        {
+            return Some(current_rec.data.clone());
         }
         None
     }
@@ -520,25 +518,24 @@ impl Store {
     }
 
     pub fn get_spool_by_id(&self, id: &str) -> Option<SpoolRecord> {
-        if let Some(spools_db) = self.spools_db.get() {
-            if let Some(current_rec) = spools_db.records.borrow().get(id) {
-                return Some(current_rec.data.clone());
-            }
+        if let Some(spools_db) = self.spools_db.get()
+            && let Some(current_rec) = spools_db.records.borrow().get(id)
+        {
+            return Some(current_rec.data.clone());
         }
         None
     }
 
     pub fn get_spool_csv_by_id(&self, id: &str) -> Option<String> {
-        if let Some(spools_db) = self.spools_db.get() {
-            if let Some(current_rec) = spools_db.records.borrow().get(id) {
-                if let Ok(mut csv_str) = current_rec.to_csv_string() {
-                    // the to_csv_string adds a trailing \n automatically
-                    if csv_str.ends_with('\n') {
-                        csv_str.pop(); // removes last char
-                    }
-                    return Some(csv_str);
-                }
+        if let Some(spools_db) = self.spools_db.get()
+            && let Some(current_rec) = spools_db.records.borrow().get(id)
+            && let Ok(mut csv_str) = current_rec.to_csv_string()
+        {
+            // the to_csv_string adds a trailing \n automatically
+            if csv_str.ends_with('\n') {
+                csv_str.pop(); // removes last char
             }
+            return Some(csv_str);
         }
         None
     }
@@ -587,11 +584,11 @@ impl Store {
                     if !tag_id.is_empty() && !tag_id.starts_with("-") {
                         // not sure needed, may be 3.5 related
                         // first search if this tag_id is in use already and strike it out before adding this tag to index
-                        if let Some(mut existing_spool_rec_with_tag_id) = self.get_spool_by_hex_tag(&tag_id) {
-                            if existing_spool_rec_with_tag_id.id != id {
-                                existing_spool_rec_with_tag_id.tag_id = format!("-{}", existing_spool_rec_with_tag_id.tag_id);
-                                spools_db.insert(existing_spool_rec_with_tag_id).await.context(CsvDbSnafu)?;
-                            }
+                        if let Some(mut existing_spool_rec_with_tag_id) = self.get_spool_by_hex_tag(&tag_id)
+                            && existing_spool_rec_with_tag_id.id != id
+                        {
+                            existing_spool_rec_with_tag_id.tag_id = format!("-{}", existing_spool_rec_with_tag_id.tag_id);
+                            spools_db.insert(existing_spool_rec_with_tag_id).await.context(CsvDbSnafu)?;
                         }
                         self.insert_spool_tag_to_tag_id_index(tag_id, id);
                     } else {
@@ -712,10 +709,10 @@ impl Store {
     // Locations Records
 
     pub fn get_location_by_hex_tag(&self, tag_id_hex: &str) -> Option<TagLocationRecord> {
-        if let Some(locations_db) = self.locations_db.get() {
-            if let Some(current_rec) = locations_db.records.borrow().get(tag_id_hex) {
-                return Some(current_rec.data.clone());
-            }
+        if let Some(locations_db) = self.locations_db.get()
+            && let Some(current_rec) = locations_db.records.borrow().get(tag_id_hex)
+        {
+            return Some(current_rec.data.clone());
         }
         None
     }
@@ -973,35 +970,31 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
     // create tag indexes and find largest_id's in lists, would be better if we persisted that
 
     let mut largest_location_id = 0;
-    if locations_db_available {
-        if let Some(locations_db) = store.spools_db.get() {
-            let records = locations_db.records.borrow();
-            for record in records.iter() {
-                if let Ok(id) = record.1.data.id.parse::<i32>() {
-                    if id > largest_location_id {
-                        largest_location_id = id;
-                    }
-                }
+    if locations_db_available && let Some(locations_db) = store.spools_db.get() {
+        let records = locations_db.records.borrow();
+        for record in records.iter() {
+            if let Ok(id) = record.1.data.id.parse::<i32>()
+                && id > largest_location_id
+            {
+                largest_location_id = id;
             }
         }
     }
     *store.last_location_id.borrow_mut() = largest_location_id;
 
     let mut largest_spool_id = 0;
-    if spools_db_available {
-        if let Some(spools_db) = store.spools_db.get() {
-            let records = spools_db.records.borrow();
-            for record in records.iter() {
-                if let Ok(id) = record.1.data.id.parse::<i32>() {
-                    if !record.1.data.tag_id.is_empty() && record.1.data.tag_id.as_bytes()[0] != b'-' {
-                        store
-                            .spool_tag_id_index
-                            .borrow_mut()
-                            .insert(record.1.data.tag_id.clone(), record.1.data.id.clone());
-                    }
-                    if id > largest_spool_id {
-                        largest_spool_id = id;
-                    }
+    if spools_db_available && let Some(spools_db) = store.spools_db.get() {
+        let records = spools_db.records.borrow();
+        for record in records.iter() {
+            if let Ok(id) = record.1.data.id.parse::<i32>() {
+                if !record.1.data.tag_id.is_empty() && record.1.data.tag_id.as_bytes()[0] != b'-' {
+                    store
+                        .spool_tag_id_index
+                        .borrow_mut()
+                        .insert(record.1.data.tag_id.clone(), record.1.data.id.clone());
+                }
+                if id > largest_spool_id {
+                    largest_spool_id = id;
                 }
             }
         }

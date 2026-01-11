@@ -4,7 +4,7 @@ use alloc::{
     rc::Rc,
     string::{String, ToString},
 };
-use embassy_futures::select::{select, Either};
+use embassy_futures::select::{Either, select};
 use framework::{error, info, prelude::Framework};
 use hashbrown::HashMap;
 
@@ -87,30 +87,29 @@ pub async fn ssdp_task(
             }
         };
 
-        if let Ok(data) = data {
-            if let Ok(s) = core::str::from_utf8(data) {
-                let mut ssdp_notify = SSDPInfo::default();
+        if let Ok(data) = data
+            && let Ok(s) = core::str::from_utf8(data)
+        {
+            let mut ssdp_notify = SSDPInfo::default();
 
-                for line in s.lines() {
-                    if let Some((first, second)) = line.split_once(" ") {
-                        match first {
-                            "NOTIFY" => (),
-                            "HOST:" => (),
-                            "Server:" => (),
-                            "NT:" => ssdp_notify.nt = second.to_string(),
-                            "Location:" => ssdp_notify.location = second.to_string(),
-                            "USN:" => ssdp_notify.usn = second.to_string(),
-                            _ => {
-                                ssdp_notify.custom.insert(first.to_string(), second.to_string());
-                            }
+            for line in s.lines() {
+                if let Some((first, second)) = line.split_once(" ") {
+                    match first {
+                        "NOTIFY" => (),
+                        "HOST:" => (),
+                        "Server:" => (),
+                        "NT:" => ssdp_notify.nt = second.to_string(),
+                        "Location:" => ssdp_notify.location = second.to_string(),
+                        "USN:" => ssdp_notify.usn = second.to_string(),
+                        _ => {
+                            ssdp_notify.custom.insert(first.to_string(), second.to_string());
                         }
                     }
                 }
-                if ssdp_notify.is_valid() {
-                    ssdp_pub_sub.publisher().unwrap().publish_immediate(ssdp_notify);
-                }
+            }
+            if ssdp_notify.is_valid() {
+                ssdp_pub_sub.publisher().unwrap().publish_immediate(ssdp_notify);
             }
         }
     }
 }
-

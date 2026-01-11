@@ -95,7 +95,7 @@ pub struct ScaleConfig {
     pub name: Option<String>,
     #[serde(serialize_with = "serialize_option_ipv4", deserialize_with = "deserialize_option_ipv4")]
     pub ip: Option<Ipv4Address>,
-    pub key: Option<String>, 
+    pub key: Option<String>,
 }
 
 pub struct AppConfig {
@@ -165,27 +165,27 @@ impl AppConfig {
             if let Ok(printers_config) = serde_json::from_str::<PrintersConfig>(&printers_store) {
                 self.configured_printers = printers_config;
                 let config = self.framework.borrow_mut().fetch(String::from(DEFAULT_PRINTER_CONFIG_KEY));
-                if let Ok(Some(default_printer_store)) = config {
-                    if let Ok(default_printer_config) = serde_json::from_str::<DefaultPrinterConfig>(&default_printer_store) {
-                        self.configured_default_printer = default_printer_config;
-                    }
+                if let Ok(Some(default_printer_store)) = config
+                    && let Ok(default_printer_config) = serde_json::from_str::<DefaultPrinterConfig>(&default_printer_store)
+                {
+                    self.configured_default_printer = default_printer_config;
                 }
             }
         } else {
             // backwards compatibility with a single printer
             let config = self.framework.borrow_mut().fetch(String::from(PRINTER_CONFIG_KEY));
-            if let Ok(Some(printer_store)) = config {
-                if let Ok(printer_config) = serde_json::from_str::<PrinterConfig>(&printer_store) {
-                    self.configured_default_printer.serial = printer_config.serial.clone();
-                    self.configured_printers.printers.push(printer_config);
-                }
+            if let Ok(Some(printer_store)) = config
+                && let Ok(printer_config) = serde_json::from_str::<PrinterConfig>(&printer_store)
+            {
+                self.configured_default_printer.serial = printer_config.serial.clone();
+                self.configured_printers.printers.push(printer_config);
             }
         }
         let config = self.framework.borrow_mut().fetch(String::from(DEFAULT_PRINTER_CONFIG_KEY));
-        if let Ok(Some(default_printer_store)) = config {
-            if let Ok(printers_config) = serde_json::from_str::<DefaultPrinterConfig>(&default_printer_store) {
-                self.configured_default_printer = printers_config;
-            }
+        if let Ok(Some(default_printer_store)) = config
+            && let Ok(printers_config) = serde_json::from_str::<DefaultPrinterConfig>(&default_printer_store)
+        {
+            self.configured_default_printer = printers_config;
         }
         // Load core weights configuration
 
@@ -205,11 +205,11 @@ impl AppConfig {
         }
 
         let config = self.framework.borrow_mut().fetch(String::from(SCALE_CONFIG_KEY));
-        if let Ok(Some(scale_store)) = config {
-            if let Ok(scale_config) = serde_json::from_str::<ScaleConfig>(&scale_store) {
-                self.configured_scale = Some(scale_config);
-                self.update_scale_encryption_key();
-            }
+        if let Ok(Some(scale_store)) = config
+            && let Ok(scale_config) = serde_json::from_str::<ScaleConfig>(&scale_store)
+        {
+            self.configured_scale = Some(scale_config);
+            self.update_scale_encryption_key();
         }
 
         let mut section = String::from("");
@@ -329,12 +329,12 @@ impl AppConfig {
     }
 
     pub fn update_scale_encryption_key(&mut self) {
-        if let Some(configured_scale) = &self.configured_scale {
-            if let Some(scale_security_key) = &configured_scale.key {
-                let encryption_key = self.framework.borrow().derive_encryption_key(scale_security_key);
-                self.scale_encryption_key.replace(encryption_key);
-                return;        
-            }
+        if let Some(configured_scale) = &self.configured_scale
+            && let Some(scale_security_key) = &configured_scale.key
+        {
+            let encryption_key = self.framework.borrow().derive_encryption_key(scale_security_key);
+            self.scale_encryption_key.replace(encryption_key);
+            return;
         }
         self.scale_encryption_key.replace(alloc::vec![]);
     }
@@ -371,10 +371,10 @@ impl AppConfig {
     pub fn set_filaments(&mut self, custom_filaments: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
         if let Some(custom_filaments) = &custom_filaments {
             let mut skip_store = false;
-            if let Some(curr_custom_filaments) = &self.custom_filaments {
-                if curr_custom_filaments == custom_filaments {
-                    skip_store = true; // no change, better skip writing to flash
-                }
+            if let Some(curr_custom_filaments) = &self.custom_filaments
+                && curr_custom_filaments == custom_filaments
+            {
+                skip_store = true; // no change, better skip writing to flash
             }
             if !skip_store {
                 self.framework
@@ -392,6 +392,7 @@ impl AppConfig {
         self.root_redirect = "/config".to_string();
     }
 
+    #[allow(dead_code)]
     pub fn is_scale_available(&self) -> bool {
         let mut available = false;
         if let Some(scale_config) = &self.configured_scale {
