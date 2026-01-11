@@ -1989,7 +1989,7 @@ impl BambuPrinter {
         Ok(self.get_extruder(self.get_extruder_id_for_tray(tray_id)?))
     }
 
-    pub fn set_tray_filament(&mut self, tray_id: i32, full_spool_rec: &FullSpoolRecord, temp_min: u32, temp_max: u32) {
+    pub fn set_tray_filament(&mut self, tray_id: i32, full_spool_rec: &FullSpoolRecord, temp_min: u32, temp_max: u32) -> Result<(), String> {
         let (ams_id_for_set_filament, ams_tray_id, slot_id, original_tray_id) = self.get_quad_for_set_filament_from_tray_id(tray_id);
 
         // setting_id can't be extracted from just tray information, it's available only if there is a cali_idx on the tray.
@@ -2011,6 +2011,8 @@ impl BambuPrinter {
         };
         let filament_ok_to_send = self.fill_filament_defaults_if_needed(&mut filament);
 
+        // Send printer material & color
+
         if filament_ok_to_send {
             let cmd = crate::bambu_api::AmsFilamentSettingCommand::new(
                 ams_id_for_set_filament,
@@ -2027,6 +2029,8 @@ impl BambuPrinter {
             if !self.is_locked() {
                 self.publish_payload(payload);
             }
+
+            // Send printer pressure advance
 
             let extruder_id = self.get_extruder_id_for_tray(tray_id).unwrap_or_default();
             let cmd = crate::bambu_api::ExtrusionCaliSelCommand::new(
@@ -2045,14 +2049,18 @@ impl BambuPrinter {
             if !self.is_locked() {
                 self.publish_payload(payload);
             }
+           
+            // Deal with meta information - spool_id, consumed_since_weight, etc.
 
             self.update_any_tray(tray_id as usize, |tray| {
                 tray.meta_info = TrayMetaInfo::default();
                 tray.meta_info.spool_id = Some(full_spool_rec.spool_rec.id.clone());
                 tray.meta_info.consumed_since_weight = full_spool_rec.spool_rec.consumed_since_weight;
             });
+            Ok(())
         } else {
             error!("Error trying to set slot information due to missing information (material type at least is required)");
+            Err("Missing information".to_string())
         }
     }
 

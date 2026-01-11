@@ -793,6 +793,18 @@ impl ViewModel {
         None
     }
 
+    fn set_tray_filament(&self, bambu_printer: &mut BambuPrinter, tray_id: i32, full_spool_rec: &FullSpoolRecord, temp_min: u32, temp_max: u32) {
+        if bambu_printer.set_tray_filament(tray_id, full_spool_rec, temp_min, temp_max).is_ok() {
+            // spool_rec loaded to slot, so remove it from it's actual location
+
+            if !full_spool_rec.spool_rec.actual_location.is_empty() {
+                let mut spool_rec = full_spool_rec.spool_rec.clone();
+                spool_rec.actual_location = String::new();
+                let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec });
+            }
+        }
+    }
+
     fn set_staging_to_tray_direct(
         &self,
         filament_staging: &Rc<RefCell<FilamentStaging>>,
@@ -813,7 +825,8 @@ impl ViewModel {
             if let Some(filament_info) =
                 self.get_filament_info(&full_spool_rec.spool_rec.slicer_filament, Some(&full_spool_rec.spool_rec.material_type))
             {
-                bambu_printer.set_tray_filament(
+                self.set_tray_filament(
+                    bambu_printer,
                     tray_id,
                     full_spool_rec,
                     filament_info.nozzle_temp_low as u32,
@@ -2095,7 +2108,13 @@ impl ViewModel {
                 .borrow()
                 .get_filament_info(&full_spool_rec.spool_rec.slicer_filament, Some(&full_spool_rec.spool_rec.material_type));
             if let Some(filament_info) = filament_info {
-                view_model.borrow().bambu_printer_model.borrow_mut().set_tray_filament(
+                let bambu_printer = {
+                    let view_model_borrow = view_model.borrow();
+                    view_model_borrow.bambu_printer_model.clone()
+                };
+                let mut bambu_printer_mut = bambu_printer.borrow_mut();
+                view_model.borrow().set_tray_filament(
+                    &mut bambu_printer_mut,
                     tray_id,
                     &full_spool_rec,
                     filament_info.nozzle_temp_low as u32,
