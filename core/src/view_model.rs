@@ -13,15 +13,15 @@ use alloc::{
 use embassy_net::Stack;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel;
-use embassy_time::{with_timeout, Duration, Timer};
+use embassy_time::{Duration, Timer, with_timeout};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use hashbrown::HashMap;
-use ndef_rs::payload::UriPayload;
 use ndef_rs::NdefMessage;
+use ndef_rs::payload::UriPayload;
 use serde::{Deserialize, Serialize};
 use shared::gcode_analysis_task::{
-    fetch_gcode_analysis_task, Fetch3mf, FilamentUsage, GcodeAnalysisNotification, GcodeAnalysisNotificationChannel, GcodeAnalysisRequest,
-    GcodeAnalysisRequestChannel, GcodeAnalyzerObserver,
+    Fetch3mf, FilamentUsage, GcodeAnalysisNotification, GcodeAnalysisNotificationChannel, GcodeAnalysisRequest, GcodeAnalysisRequestChannel,
+    GcodeAnalyzerObserver, fetch_gcode_analysis_task,
 };
 use shared::settings::{
     OTA_DOMAIN_DEBUG, OTA_DOMAIN_STABLE, OTA_DOMAIN_UNSTABLE, OTA_TLS_CERTIFICATE, SCALE_DEBUG_OTA_PATH, SCALE_STABLE_OTA_PATH,
@@ -34,12 +34,12 @@ use slint::{ComponentHandle, Model, SharedString, ToSharedString};
 use framework::prelude::*;
 use framework::{
     framework::{FrameworkObserver, WebConfigMode},
-    terminal::{self, term_mut, TerminalObserver},
+    terminal::{self, TerminalObserver, term_mut},
 };
 
 use crate::app::{UiSlotDisplay, UiSpoolRecord, UiSpoolRecordDisplay};
 use crate::app_config::{BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS};
-use crate::app_ota::{app_ota_task, AppOtaProduct, AppOtaRequest, AppOtaRequestChannel};
+use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
 use crate::bambu::bambu_print::PrintProject;
 use crate::bambu::{Filament, KExtruder, KInfo, KNozzleDiameter, KNozzleId, KPrinter, SpoolId, Tray, TrayBits};
 use crate::color_utils::get_color_name;
@@ -47,10 +47,10 @@ use crate::filament_staging::StagingOrigin;
 use crate::settings::OTA_TOML_FILENAME;
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleWeight, SpoolScaleObserver};
-use crate::ssdp::{ssdp_task, SSDPPubSubChannel};
-use crate::store::{store_safe_time_now, Store, StoreObserver};
+use crate::ssdp::{SSDPPubSubChannel, ssdp_task};
+use crate::store::{Store, StoreObserver, store_safe_time_now};
 
-use crate::tag_standards::{BambuLabTag, OpenPrintTagTag, BAMBULAB_TAG_TYPE, OPENPRINTTAG_TAG_TYPE};
+use crate::tag_standards::{BAMBULAB_TAG_TYPE, BambuLabTag, OPENPRINTTAG_TAG_TYPE, OpenPrintTagTag};
 use crate::types::FilamentSupInfo;
 use crate::{
     app_config::AppConfig,
@@ -337,12 +337,11 @@ impl ViewModel {
         let moved_view_model = self.view_model.clone().unwrap();
         ui_app_backend.on_recently_added_spool_id_if_untagged(move || {
             let store = moved_view_model.borrow().store.clone();
-            if let Some(spool_id) = &moved_view_model.borrow().recently_added_spool_id {
-                if let Some(spool_rec) = store.get_spool_by_id(spool_id) {
-                    if spool_rec.tag_id.is_empty() {
-                        return spool_id.to_shared_string();
-                    }
-                }
+            if let Some(spool_id) = &moved_view_model.borrow().recently_added_spool_id
+                && let Some(spool_rec) = store.get_spool_by_id(spool_id)
+                && spool_rec.tag_id.is_empty()
+            {
+                return spool_id.to_shared_string();
             }
             SharedString::new()
         });
@@ -707,10 +706,10 @@ impl ViewModel {
 
                 borrowed_view_model.update_ui_from_printer(&borrowed_view_model.bambu_printer_model.printers[i].borrow());
                 // now we'll resrore to the corret curr_ams if user was already there before, if not it will stay on the correct first ams
-                if let Some(printer_view_state) = &borrowed_view_model.printers_view_state.get(&selected_printer_string) {
-                    if let Some(past_curr_ams_id) = printer_view_state.curr_ams {
-                        moved_ui.unwrap().global::<crate::app::AppState>().set_curr_ams_id(past_curr_ams_id);
-                    }
+                if let Some(printer_view_state) = &borrowed_view_model.printers_view_state.get(&selected_printer_string)
+                    && let Some(past_curr_ams_id) = printer_view_state.curr_ams
+                {
+                    moved_ui.unwrap().global::<crate::app::AppState>().set_curr_ams_id(past_curr_ams_id);
                 }
                 borrowed_view_model.register_printer_related_listeners();
                 break;
@@ -729,20 +728,19 @@ impl ViewModel {
                 let mut split = line.split(',');
                 if let (Some(code), Some(name), Some(nozzle_temp_low), Some(nozzle_temp_high)) =
                     (split.next(), split.next(), split.next(), split.next())
+                    && code == search_code
                 {
-                    if code == search_code {
-                        let name = decode_csv_field(name);
-                        let nozzle_temp_low = nozzle_temp_low.parse::<i32>().unwrap_or_default();
-                        let nozzle_temp_high = nozzle_temp_high.parse::<i32>().unwrap_or_default();
-                        return Some(FilamentSupInfo {
-                            origin_is_material: false,
-                            base_filament: base,
-                            slicer_name: name,
-                            slicer_code: code.to_string(),
-                            nozzle_temp_low,
-                            nozzle_temp_high,
-                        });
-                    }
+                    let name = decode_csv_field(name);
+                    let nozzle_temp_low = nozzle_temp_low.parse::<i32>().unwrap_or_default();
+                    let nozzle_temp_high = nozzle_temp_high.parse::<i32>().unwrap_or_default();
+                    return Some(FilamentSupInfo {
+                        origin_is_material: false,
+                        base_filament: base,
+                        slicer_name: name,
+                        slicer_code: code.to_string(),
+                        nozzle_temp_low,
+                        nozzle_temp_high,
+                    });
                 }
             }
             base = false;
@@ -757,18 +755,15 @@ impl ViewModel {
                     continue;
                 } // skip title line
                 let mut split = material_line.split(',');
-                if let Some(list_material) = split.next() {
-                    if list_material == material {
-                        if let (Some(filament_id), Some(nozzle_temp_low), Some(nozzle_temp_high)) = (split.next(), split.next(), split.next()) {
-                            if let (Ok(_wrong_nozzle_temp_low), Ok(_wrong_nozzle_temp_high)) =
-                                (nozzle_temp_low.parse::<u32>(), nozzle_temp_high.parse::<u32>())
-                            {
-                                material_code = filament_id;
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
+                if let Some(list_material) = split.next()
+                    && list_material == material
+                    && let (Some(filament_id), Some(nozzle_temp_low), Some(nozzle_temp_high)) = (split.next(), split.next(), split.next())
+                    && let (Ok(_wrong_nozzle_temp_low), Ok(_wrong_nozzle_temp_high)) =
+                        (nozzle_temp_low.parse::<u32>(), nozzle_temp_high.parse::<u32>())
+                {
+                    material_code = filament_id;
+                    found = true;
+                    break;
                 }
             }
 
@@ -777,20 +772,19 @@ impl ViewModel {
                     let mut split = line.split(',');
                     if let (Some(code), Some(name), Some(nozzle_temp_low), Some(nozzle_temp_high)) =
                         (split.next(), split.next(), split.next(), split.next())
+                        && code == material_code
                     {
-                        if code == material_code {
-                            let name = decode_csv_field(name);
-                            let nozzle_temp_low = nozzle_temp_low.parse::<i32>().unwrap_or_default();
-                            let nozzle_temp_high = nozzle_temp_high.parse::<i32>().unwrap_or_default();
-                            return Some(FilamentSupInfo {
-                                origin_is_material: true,
-                                base_filament: true,
-                                slicer_name: name,
-                                slicer_code: code.to_string(),
-                                nozzle_temp_low,
-                                nozzle_temp_high,
-                            });
-                        }
+                        let name = decode_csv_field(name);
+                        let nozzle_temp_low = nozzle_temp_low.parse::<i32>().unwrap_or_default();
+                        let nozzle_temp_high = nozzle_temp_high.parse::<i32>().unwrap_or_default();
+                        return Some(FilamentSupInfo {
+                            origin_is_material: true,
+                            base_filament: true,
+                            slicer_name: name,
+                            slicer_code: code.to_string(),
+                            nozzle_temp_low,
+                            nozzle_temp_high,
+                        });
                     }
                 }
             }
@@ -806,7 +800,10 @@ impl ViewModel {
             if !full_spool_rec.spool_rec.actual_location.is_empty() {
                 let mut spool_rec = full_spool_rec.spool_rec.clone();
                 spool_rec.actual_location = String::new();
-                let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box: None });
+                let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec {
+                    spool_rec,
+                    message_box: None,
+                });
             }
         }
     }
@@ -924,7 +921,13 @@ impl ViewModel {
                 let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box });
             }
         } else {
-            self.message_box("Unexpected Internal Error", &format!("Spool {}  not Found", spool_id), "", crate::app::StatusType::Error, 0);
+            self.message_box(
+                "Unexpected Internal Error",
+                &format!("Spool {}  not Found", spool_id),
+                "",
+                crate::app::StatusType::Error,
+                0,
+            );
         }
     }
 
@@ -994,9 +997,11 @@ impl ViewModel {
             &bambu_printer_borrow.get_any_tray(tray_id as usize).meta_info.spool_id.clone()
         };
 
-        if let Some(spool_id) = tray_spool_id.as_ref() && [StagingOrigin::Empty, StagingOrigin::Unloaded].contains(self.filament_staging.borrow().origin()) {
+        if let Some(spool_id) = tray_spool_id.as_ref()
+            && [StagingOrigin::Empty, StagingOrigin::Unloaded].contains(self.filament_staging.borrow().origin())
+        {
             // only if empty or was unloaded (so not scanned or encoded)
-            if let Some(spool_rec) = self.store.get_spool_by_id(&spool_id) {
+            if let Some(spool_rec) = self.store.get_spool_by_id(spool_id) {
                 self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Unloaded);
                 self.display_filament_staging_direct(&self.bambu_printer_model.borrow(), true);
                 let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
@@ -1024,11 +1029,11 @@ impl ViewModel {
     }
 
     fn ui_erase_tag_by_spool_id(&self, spool_id: &str) -> bool {
-        if let Some(spool_rec) = self.store.get_spool_by_id(spool_id) {
-            if spool_rec.has_valid_tag_id() {
-                self.ui_erase_tag(&spool_rec.tag_id);
-                return true;
-            }
+        if let Some(spool_rec) = self.store.get_spool_by_id(spool_id)
+            && spool_rec.has_valid_tag_id()
+        {
+            self.ui_erase_tag(&spool_rec.tag_id);
+            return true;
         }
         error!("Received to erase spool's tag with invalid tag id");
         let ui = self.ui_weak.unwrap();
@@ -2091,7 +2096,13 @@ impl ViewModel {
                     view_model_borrow.display_filament_staging(false);
                 }
                 if let Some(message_box) = message_box {
-                    view_model_borrow.message_box(&message_box.title, &message_box.text, &message_box.text2, crate::app::StatusType::Success, message_box.timeout);
+                    view_model_borrow.message_box(
+                        &message_box.title,
+                        &message_box.text,
+                        &message_box.text2,
+                        crate::app::StatusType::Success,
+                        message_box.timeout,
+                    );
                 }
             }
             Err(_) => {
@@ -2251,11 +2262,7 @@ impl ViewModel {
                 break;
             }
         }
-        if found_printer {
-            Ok(())
-        } else {
-            Err("Printer not found".to_string())
-        }
+        if found_printer { Ok(()) } else { Err("Printer not found".to_string()) }
     }
 
     pub fn update_firmware_versions(&self, fw: &[crate::app_ota::FirmwareInfo]) {
@@ -2391,16 +2398,14 @@ impl BambuPrinterObserver for ViewModel {
 
         // Unloaded spool case - load tag if exist on that spool to staging (for weighting)
         // take one of the unloaded tags (realistically there should be only one)
-        if let Some(removed_spool) = removed_tags.iter().next() {
-            if [StagingOrigin::Empty, StagingOrigin::Unloaded].contains(self.filament_staging.borrow().origin()) {
-                // only if empty or was unloaded (so not scanned or encoded)
-                if let Some(spool_rec) = self.store.get_spool_by_id(removed_spool.1) {
-                    self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Unloaded);
-                    self.display_filament_staging_direct(bambu_printer, true);
-                    let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
-                    // let _ = self.store.try_send_op(StoreOp::ReadExtInfo { id: removed_spool.1.clone() });
-                }
-            }
+        if let Some(removed_spool) = removed_tags.iter().next()
+            && [StagingOrigin::Empty, StagingOrigin::Unloaded].contains(self.filament_staging.borrow().origin()) // only if empty or was unloaded (so not scanned or encoded)
+            && let Some(spool_rec) = self.store.get_spool_by_id(removed_spool.1)
+        {
+            self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Unloaded);
+            self.display_filament_staging_direct(bambu_printer, true);
+            let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
+            // let _ = self.store.try_send_op(StoreOp::ReadExtInfo { id: removed_spool.1.clone() });
         }
     }
 
@@ -2545,7 +2550,10 @@ impl SpoolTagObserver for ViewModel {
                 if let Ok(encode_cookie) = serde_json::from_str::<SpoolEncodeCookie>(cookie) {
                     if let Some(mut spool_rec) = self.store.get_spool_by_id(&encode_cookie.spool_rec_id) {
                         spool_rec.encode_time = encode_cookie.encode_time;
-                        let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box: None });
+                        let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec {
+                            spool_rec,
+                            message_box: None,
+                        });
                     }
                 } else if let Ok(encode_cookie) = serde_json::from_str::<LocationEncodeCookie>(cookie) {
                     debug!(">>>> TODO: Store the tag into DB, descriptor: {_encoded_descriptor}");
@@ -2620,22 +2628,22 @@ impl SpoolTagObserver for ViewModel {
                     } else {
                         // Not known
                         // Check if some special format
-                        if let Some(ndef_bytes) = message {
-                            if let Ok(ndef) = NdefMessage::decode(ndef_bytes) {
-                                for record in ndef.records() {
-                                    if core::str::from_utf8(record.record_type()) == Ok("application/vnd.openprinttag") {
-                                        let hex_tag = hex::encode_upper(uid);
-                                        info!("Scanned an OpenPrintTag tag");
-                                        let open_print_tag = OpenPrintTagTag::new(&hex_tag, ndef_bytes);
-                                        let open_print_tag_str = serde_json::to_string(&open_print_tag).unwrap();
-                                        let ui = self.ui_weak.clone();
-                                        ui.unwrap().global::<crate::app::AppState>().invoke_new_definition_tag_scanned(
-                                            OPENPRINTTAG_TAG_TYPE.to_shared_string(),
-                                            hex_tag.into(),
-                                            open_print_tag_str.into(),
-                                        );
-                                        return;
-                                    }
+                        if let Some(ndef_bytes) = message
+                            && let Ok(ndef) = NdefMessage::decode(ndef_bytes)
+                        {
+                            for record in ndef.records() {
+                                if core::str::from_utf8(record.record_type()) == Ok("application/vnd.openprinttag") {
+                                    let hex_tag = hex::encode_upper(uid);
+                                    info!("Scanned an OpenPrintTag tag");
+                                    let open_print_tag = OpenPrintTagTag::new(&hex_tag, ndef_bytes);
+                                    let open_print_tag_str = serde_json::to_string(&open_print_tag).unwrap();
+                                    let ui = self.ui_weak.clone();
+                                    ui.unwrap().global::<crate::app::AppState>().invoke_new_definition_tag_scanned(
+                                        OPENPRINTTAG_TAG_TYPE.to_shared_string(),
+                                        hex_tag.into(),
+                                        open_print_tag_str.into(),
+                                    );
+                                    return;
                                 }
                             }
                         }
@@ -2986,10 +2994,10 @@ fn get_brand_from_text(text: &str) -> Option<&'static str> {
     // prioritize start with
     for brand in FILAMENT_BRAND_NAMES.lines() {
         if brand.contains(',') {
-            if let Some((keyword, brand)) = brand.split_once(',') {
-                if text.starts_with(&keyword.to_lowercase()) {
-                    return Some(brand);
-                }
+            if let Some((keyword, brand)) = brand.split_once(',')
+                && text.starts_with(&keyword.to_lowercase())
+            {
+                return Some(brand);
             }
         } else if text.starts_with(&brand.to_lowercase()) {
             return Some(brand);
@@ -2998,10 +3006,10 @@ fn get_brand_from_text(text: &str) -> Option<&'static str> {
     // if not found continue to contains
     for brand in FILAMENT_BRAND_NAMES.lines() {
         if brand.contains(',') {
-            if let Some((keyword, brand)) = brand.split_once(',') {
-                if text.contains(&keyword.to_lowercase()) {
-                    return Some(brand);
-                }
+            if let Some((keyword, brand)) = brand.split_once(',')
+                && text.contains(&keyword.to_lowercase())
+            {
+                return Some(brand);
             }
         } else if text.contains(&brand.to_lowercase()) {
             return Some(brand);
@@ -3365,7 +3373,9 @@ pub async fn app_async_task(view_model: Rc<RefCell<ViewModel>>) {
                 final_step,
                 from_button,
             } => ViewModel::set_spool_weight_async(view_model.clone(), spool_id, weight_current, weight_new, final_step, from_button).await,
-            AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box } => ViewModel::update_spool_rec_async(view_model.clone(), spool_rec, message_box).await,
+            AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box } => {
+                ViewModel::update_spool_rec_async(view_model.clone(), spool_rec, message_box).await
+            }
             AppAsyncTaskRequest::ConfigureTrayWithSpool { tray_id, spool_id } => {
                 ViewModel::configure_tray_with_spool_async(view_model.clone(), tray_id, spool_id).await
             }
