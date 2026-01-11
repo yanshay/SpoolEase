@@ -667,6 +667,12 @@ impl ViewModel {
             .unwrap()
             .global::<crate::app::AppBackend>()
             .on_encode_location_tag(move || moved_view_model.borrow().ui_encode_location_tag());
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_update_actual_location_to_assigned(move |spool_id| moved_view_model.borrow().ui_update_actual_location_to_assigned(&spool_id));
     }
 
     fn perform_select_printer(
@@ -800,7 +806,7 @@ impl ViewModel {
             if !full_spool_rec.spool_rec.actual_location.is_empty() {
                 let mut spool_rec = full_spool_rec.spool_rec.clone();
                 spool_rec.actual_location = String::new();
-                let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec });
+                let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box: None });
             }
         }
     }
@@ -904,6 +910,24 @@ impl ViewModel {
             });
     }
 
+    fn ui_update_actual_location_to_assigned(&self, spool_id: &str) {
+        let store = self.store.clone();
+        if let Some(mut spool_rec) = store.get_spool_by_id(spool_id) {
+            if !spool_rec.assigned_location.is_empty() {
+                spool_rec.actual_location = spool_rec.assigned_location.clone();
+                let message_box = Some(MessageBox {
+                    title: "Storage Notice".to_string(),
+                    text: "Updated Spool's Actual Location\nto its Assigned Location".to_string(),
+                    text2: "".to_string(),
+                    timeout: -1,
+                });
+                let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box });
+            }
+        } else {
+            self.message_box("Unexpected Internal Error", &format!("Spool {}  not Found", spool_id), "", crate::app::StatusType::Error, 0);
+        }
+    }
+
     fn ui_encode_location_tag(&self) {
         const LOCATION_URL_PREFIX_V1: &str = "https://tag.spoolease.io/L1/";
         let spool_tag_borrow = self.spool_tag_model.borrow();
@@ -965,9 +989,24 @@ impl ViewModel {
     }
 
     fn ui_untag_slot(&self, tray_id: i32) {
+        let tray_spool_id = {
+            let bambu_printer_borrow = self.bambu_printer_model.borrow();
+            &bambu_printer_borrow.get_any_tray(tray_id as usize).meta_info.spool_id.clone()
+        };
+
+        if let Some(spool_id) = tray_spool_id.as_ref() && [StagingOrigin::Empty, StagingOrigin::Unloaded].contains(self.filament_staging.borrow().origin()) {
+            // only if empty or was unloaded (so not scanned or encoded)
+            if let Some(spool_rec) = self.store.get_spool_by_id(&spool_id) {
+                self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Unloaded);
+                self.display_filament_staging_direct(&self.bambu_printer_model.borrow(), true);
+                let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
+            }
+        }
+
         self.bambu_printer_model
             .borrow_mut()
             .update_any_tray(tray_id as usize, |tray| tray.meta_info.spool_id = None);
+
         self.update_ui_from_printer(&self.bambu_printer_model.borrow());
     }
     fn ui_reset_slot(&self, tray_id: i32) {
@@ -1240,6 +1279,8 @@ impl ViewModel {
             weight_core: spool_rec.weight_core.unwrap_or_default(),
             weight_current: spool_rec.weight_current.unwrap_or_default(),
             weight_new: spool_rec.weight_new.unwrap_or_default(),
+            actual_location: spool_rec.actual_location.into(),
+            assigned_location: spool_rec.assigned_location.to_shared_string(),
         };
 
         // for now, on purpose, not filling in fields that aren't in the tag, to show the real tag information
@@ -1321,7 +1362,7 @@ impl ViewModel {
         // ----- handle number of ams's and curr_ams -----
         // OPT: calculate only when ams_exists change (store in printer struct), here use the value calculated there
         //      don't forget to consider loading the ams_exist from state which will need to recalculate, so add inner_set_ams_exist_bits
-        if let Some(mut ams_exist_bits) = bambu_printer.ams_exist_bits() {
+        if let Some(mut ams_exist_bits) = *bambu_printer.ams_exist_bits() {
             let mut ams_exist_vec = Vec::<i32>::new();
             let mut first_ams = -1;
             for ams_id in 0..=3 + 8 {
@@ -2032,10 +2073,11 @@ impl ViewModel {
         }
     }
 
-    async fn update_spool_rec_async(view_model: Rc<RefCell<ViewModel>>, spool_rec: SpoolRecord) {
+    async fn update_spool_rec_async(view_model: Rc<RefCell<ViewModel>>, spool_rec: SpoolRecord, message_box: Option<MessageBox>) {
         let store = view_model.borrow().store.clone();
         match store.update_spool(spool_rec.clone(), None).await {
             Ok(_) => {
+                // Check if need to update staging, and do if needed
                 let view_model_borrow = view_model.borrow();
                 let need_replace_staging = if let Some(staging_spool_rec) = view_model_borrow.filament_staging.borrow().spool_rec() {
                     staging_spool_rec.id == spool_rec.id
@@ -2047,6 +2089,9 @@ impl ViewModel {
                         view_model_borrow.filament_staging.borrow_mut().update_spool_rec_keep_rest(spool_rec);
                     }
                     view_model_borrow.display_filament_staging(false);
+                }
+                if let Some(message_box) = message_box {
+                    view_model_borrow.message_box(&message_box.title, &message_box.text, &message_box.text2, crate::app::StatusType::Success, message_box.timeout);
                 }
             }
             Err(_) => {
@@ -2500,7 +2545,7 @@ impl SpoolTagObserver for ViewModel {
                 if let Ok(encode_cookie) = serde_json::from_str::<SpoolEncodeCookie>(cookie) {
                     if let Some(mut spool_rec) = self.store.get_spool_by_id(&encode_cookie.spool_rec_id) {
                         spool_rec.encode_time = encode_cookie.encode_time;
-                        let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec });
+                        let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box: None });
                     }
                 } else if let Ok(encode_cookie) = serde_json::from_str::<LocationEncodeCookie>(cookie) {
                     debug!(">>>> TODO: Store the tag into DB, descriptor: {_encoded_descriptor}");
@@ -3238,6 +3283,14 @@ struct GcodeJob {
 }
 
 #[derive(Debug, Clone)]
+struct MessageBox {
+    title: String,
+    text: String,
+    text2: String,
+    timeout: i32,
+}
+
+#[derive(Debug, Clone)]
 enum AppAsyncTaskRequest {
     ProcessV1TagRead {
         tag_id: String,
@@ -3263,6 +3316,7 @@ enum AppAsyncTaskRequest {
     },
     UpdateSpoolRec {
         spool_rec: SpoolRecord,
+        message_box: Option<MessageBox>,
     },
     ConfigureTrayWithSpool {
         tray_id: i32,
@@ -3311,7 +3365,7 @@ pub async fn app_async_task(view_model: Rc<RefCell<ViewModel>>) {
                 final_step,
                 from_button,
             } => ViewModel::set_spool_weight_async(view_model.clone(), spool_id, weight_current, weight_new, final_step, from_button).await,
-            AppAsyncTaskRequest::UpdateSpoolRec { spool_rec } => ViewModel::update_spool_rec_async(view_model.clone(), spool_rec).await,
+            AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box } => ViewModel::update_spool_rec_async(view_model.clone(), spool_rec, message_box).await,
             AppAsyncTaskRequest::ConfigureTrayWithSpool { tray_id, spool_id } => {
                 ViewModel::configure_tray_with_spool_async(view_model.clone(), tray_id, spool_id).await
             }

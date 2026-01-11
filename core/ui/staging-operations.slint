@@ -109,6 +109,15 @@ component OperationSelectionStep inherits Rectangle {
 
             Row {
                 MyButton {
+                    visible: true;
+                    enabled: AppState.spool-staging-info.spool-record.assigned-location != "";
+                    text: "Placed in Assigned Spot";
+                    clicked => {
+                        AppBackend.update-actual-location-to-assigned(AppState.spool-staging-info.spool-record.id);
+                    }
+                }
+
+                MyButton {
                     visible: false;
                     enabled: false;
                     text: "Mark as Dried";

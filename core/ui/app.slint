@@ -49,6 +49,8 @@ export struct UiSpoolRecord {
     consumed-since-add: float,
     consumed-since-weight: float,
     ext-has-k: bool,
+    assigned-location: string,
+    actual-location: string,
 }
 
 export struct UiSpoolRecordDisplay {
@@ -153,6 +155,8 @@ export global AppBackend {
     callback ota-check-firmwares();
     callback ota-update-firmware(product: string, train: string);
     callback encode-location-tag();
+    callback update-actual-location-to-assigned(spool-id: string);
+    callback unload-slot-tag(tray-id: int, spool-id: string);
 }
 
 export enum NewScannedTagType {
