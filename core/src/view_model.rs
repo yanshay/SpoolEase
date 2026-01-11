@@ -798,7 +798,7 @@ impl ViewModel {
             // spool_rec loaded to slot, so remove it from it's actual location
 
             if !full_spool_rec.spool_rec.actual_location.is_empty() {
-                let mut spool_rec = full_spool_rec.spool_rec.clone();
+                let mut spool_rec = Box::new(full_spool_rec.spool_rec.clone());
                 spool_rec.actual_location = String::new();
                 let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec {
                     spool_rec,
@@ -909,7 +909,7 @@ impl ViewModel {
 
     fn ui_update_actual_location_to_assigned(&self, spool_id: &str) {
         let store = self.store.clone();
-        if let Some(mut spool_rec) = store.get_spool_by_id(spool_id) {
+        if let Some(mut spool_rec) = store.get_spool_by_id(spool_id).map(Box::new) {
             if !spool_rec.assigned_location.is_empty() {
                 spool_rec.actual_location = spool_rec.assigned_location.clone();
                 let message_box = Some(MessageBox {
@@ -2078,9 +2078,9 @@ impl ViewModel {
         }
     }
 
-    async fn update_spool_rec_async(view_model: Rc<RefCell<ViewModel>>, spool_rec: SpoolRecord, message_box: Option<MessageBox>) {
+    async fn update_spool_rec_async(view_model: Rc<RefCell<ViewModel>>, spool_rec: Box<SpoolRecord>, message_box: Option<MessageBox>) {
         let store = view_model.borrow().store.clone();
-        match store.update_spool(spool_rec.clone(), None).await {
+        match store.update_spool(*spool_rec.clone(), None).await {
             Ok(_) => {
                 // Check if need to update staging, and do if needed
                 let view_model_borrow = view_model.borrow();
@@ -2091,7 +2091,7 @@ impl ViewModel {
                 };
                 if need_replace_staging {
                     {
-                        view_model_borrow.filament_staging.borrow_mut().update_spool_rec_keep_rest(spool_rec);
+                        view_model_borrow.filament_staging.borrow_mut().update_spool_rec_keep_rest(*spool_rec);
                     }
                     view_model_borrow.display_filament_staging(false);
                 }
@@ -2548,7 +2548,7 @@ impl SpoolTagObserver for ViewModel {
                 // They internally handle the switch from write to read for themselves, but not for the other.
                 // So here we use the try_borrow to check who needs extra notification to stop writing
                 if let Ok(encode_cookie) = serde_json::from_str::<SpoolEncodeCookie>(cookie) {
-                    if let Some(mut spool_rec) = self.store.get_spool_by_id(&encode_cookie.spool_rec_id) {
+                    if let Some(mut spool_rec) = self.store.get_spool_by_id(&encode_cookie.spool_rec_id).map(Box::new) {
                         spool_rec.encode_time = encode_cookie.encode_time;
                         let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec {
                             spool_rec,
@@ -3323,7 +3323,7 @@ enum AppAsyncTaskRequest {
         from_button: bool,
     },
     UpdateSpoolRec {
-        spool_rec: SpoolRecord,
+        spool_rec: Box<SpoolRecord>,
         message_box: Option<MessageBox>,
     },
     ConfigureTrayWithSpool {
