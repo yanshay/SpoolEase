@@ -110,10 +110,14 @@ component OperationSelectionStep inherits Rectangle {
             Row {
                 MyButton {
                     visible: true;
-                    enabled: AppState.spool-staging-info.spool-record.assigned-location != "";
-                    text: "Placed in Assigned Spot";
+                    enabled: AppState.spool-staging-info.spool-record.actual-location != "" || AppState.spool-staging-info.spool-record.assigned-location != "";
+                    text: AppState.spool-staging-info.spool-record.actual-location != "" ? "Picked from Storage" : "Placed in Assigned Spot";
                     clicked => {
-                        AppBackend.update-actual-location-to-assigned(AppState.spool-staging-info.spool-record.id);
+                        if (AppState.spool-staging-info.spool-record.actual-location != "") {
+                            AppBackend.update-actual-location(AppState.spool-staging-info.spool-record.id, "", "Cleared Spool's Actual Location");
+                        } else {
+                            AppBackend.update-actual-location(AppState.spool-staging-info.spool-record.id, AppState.spool-staging-info.spool-record.assigned-location, "Updated Spool's Actual Location\nto its Assigned Location");
+                        }
                     }
                 }
 

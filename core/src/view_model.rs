@@ -671,7 +671,7 @@ impl ViewModel {
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_update_actual_location_to_assigned(move |spool_id| moved_view_model.borrow().ui_update_actual_location_to_assigned(&spool_id));
+            .on_update_actual_location(move |spool_id, location, message| moved_view_model.borrow().ui_update_actual_location(&spool_id, &location, &message));
     }
 
     fn perform_select_printer(
@@ -907,19 +907,17 @@ impl ViewModel {
             });
     }
 
-    fn ui_update_actual_location_to_assigned(&self, spool_id: &str) {
+    fn ui_update_actual_location(&self, spool_id: &str, location: &str, message: &str) {
         let store = self.store.clone();
         if let Some(mut spool_rec) = store.get_spool_by_id(spool_id).map(Box::new) {
-            if !spool_rec.assigned_location.is_empty() {
-                spool_rec.actual_location = spool_rec.assigned_location.clone();
-                let message_box = Some(MessageBox {
-                    title: "Storage Notice".to_string(),
-                    text: "Updated Spool's Actual Location\nto its Assigned Location".to_string(),
-                    text2: "".to_string(),
-                    timeout: -1,
-                });
-                let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box });
-            }
+            spool_rec.actual_location = location.to_string();
+            let message_box = Some(MessageBox {
+                title: "Storage Notice".to_string(),
+                text: message.to_string(),
+                text2: "".to_string(),
+                timeout: -1,
+            });
+            let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box });
         } else {
             self.message_box(
                 "Unexpected Internal Error",

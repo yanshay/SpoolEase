@@ -155,7 +155,7 @@ export global AppBackend {
     callback ota-check-firmwares();
     callback ota-update-firmware(product: string, train: string);
     callback encode-location-tag();
-    callback update-actual-location-to-assigned(spool-id: string);
+    callback update-actual-location(spool-id: string, location: string, message: string);
     callback unload-slot-tag(tray-id: int, spool-id: string);
 }
 
