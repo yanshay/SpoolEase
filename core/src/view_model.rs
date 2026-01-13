@@ -674,6 +674,14 @@ impl ViewModel {
             .on_update_actual_location(move |spool_id, location, message| {
                 moved_view_model.borrow().ui_update_actual_location(&spool_id, &location, &message)
             });
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_location_str_to_location(move |location_str| {
+                moved_view_model.borrow().ui_location_str_to_location(&location_str)
+            });
     }
 
     fn perform_select_printer(
@@ -907,6 +915,33 @@ impl ViewModel {
             .on_set_staging_to_tray(move |tray_id: i32| {
                 Self::set_staging_to_tray(&moved_view_model, &moved_filament_staging, &moved_bambu_printer, &moved_ui, tray_id);
             });
+    }
+
+    fn ui_location_str_to_location(&self, location_str: &str) -> crate::app::Location {
+        let mut location = crate::app::Location::default();
+
+        if let Some(input) = location_str.strip_prefix('#') {
+            for segment in input.split('/') {
+                if let Some((key, value_str)) = segment.split_once(':')
+                    && let Ok(value) = value_str.parse::<i32>()
+                {
+                    match key {
+                        "R" => {
+                            location.rack = value;
+                            if let Some(rack) = self.store.storage_config.borrow().rack_config.get(value_str) {
+                                location.rack_name = rack.name.to_shared_string();
+                            }
+                        }
+                        "B" => location.bay = value,
+                        "S" => location.shelf = value,
+                        "P" => location.position = value,
+                        "C" => location.container = value,
+                        _ => (),
+                    }
+                }
+            }
+        }
+        location
     }
 
     fn ui_update_actual_location(&self, spool_id: &str, location: &str, message: &str) {
@@ -2041,9 +2076,10 @@ impl ViewModel {
         if let Some(mut spool_rec) = store.get_spool_by_id(&spool_id) {
             spool_rec.weight_current = Some(weight_current);
             spool_rec.consumed_since_weight = 0.0;
-            if weight_new >= 0 { // ignore -1 (and potentially other negative numbers which are invalid)
+            if weight_new >= 0 {
+                // ignore -1 (and potentially other negative numbers which are invalid)
                 spool_rec.weight_new = Some(weight_new);
-                if weight_new != 0 { 
+                if weight_new != 0 {
                     spool_rec.added_full = Some(true);
                     // in this case also potentially update empty if not already filled earlier
                     if spool_rec.weight_core.unwrap_or(0) == 0 && spool_rec.weight_advertised.unwrap_or(0) != 0 {

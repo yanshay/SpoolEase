@@ -76,6 +76,15 @@ export struct UiSlotDisplay {
   available-in-spool: float,
 }
 
+export struct Location {
+  rack: int,
+  rack-name: string,    
+  bay: int,
+  shelf: int,
+  position: int,
+  container: int,
+  }
+
 // Consts
 
 export global AppConsts {
@@ -157,6 +166,7 @@ export global AppBackend {
     callback encode-location-tag();
     callback update-actual-location(spool-id: string, location: string, message: string);
     callback unload-slot-tag(tray-id: int, spool-id: string);
+    pure callback location-str-to-location(location-str: string) -> Location;
 }
 
 export enum NewScannedTagType {
@@ -188,6 +198,7 @@ export enum StagingOperationsPage {
   SpoolDisplay,
   OperationSelection,
   UpdateWeight,
+  PlaceSpoolInAssignedLocation,
 }
 
 export struct Firmwares {

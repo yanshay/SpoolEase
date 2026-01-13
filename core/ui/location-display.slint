@@ -1,0 +1,187 @@
+import { MyText } from "framework/widgets.slint";
+import { Location } from "app.slint";
+
+component FramedText inherits Rectangle {
+    in property <length> border-width-l;
+    in property <length> border-width-r;
+    in property <length> border-width-t;
+    in property <length> border-width-b;
+    in property <length> inner-border-top-left-radius;
+    in property <length> inner-border-top-right-radius;
+    in property <length> inner-border-bottom-left-radius;
+    in property <length> inner-border-bottom-right-radius;
+    in property <color> inner-background;
+    in property <string> text;
+
+    Rectangle {
+        x: border-width-l;
+        y: border-width-t;
+        width: parent.width - border-width-l - border-width-r;
+        height: parent.height - border-width-b - border-width-t;
+        border-top-left-radius: inner-border-top-left-radius;
+        border-top-right-radius: inner-border-top-right-radius;
+        border-bottom-left-radius: inner-border-bottom-left-radius;
+        border-bottom-right-radius: inner-border-bottom-right-radius;
+        background: inner-background;
+        txt := MyText {
+            text: text;
+        }
+    }
+}
+
+export component LocationDisplay inherits Rectangle {
+    in property <Location> location: { rack: 0, rack-name: "<Missing>", bay: 1, shelf: 2, position: 3, container: 4 };
+    max-width: 460px;
+    height: 120px;
+    background: white;
+    in property <color> borders-color: skyblue;
+    in property <length> min-part-width: (460px-8px*3)/4;
+
+    VerticalLayout {
+        VerticalLayout {
+            width: 460px;
+            spacing: 8px;
+            rack := Rectangle {
+                background: borders-color;
+                height: 40px;
+                border-radius: self.height / 2;
+                MyText {
+                    text: "Rack: \{location.rack-name}";
+                }
+            }
+
+            HorizontalLayout {
+                alignment: center;
+                spacing: 8px;
+                if location.bay != 0: bay := VerticalLayout {
+                    min-width: min-part-width;
+                    FramedText {
+                        text: "Bay";
+                        background: borders-color;
+                        inner-background: white;
+                        border-width-l: 5px;
+                        border-width-r: 5px;
+                        border-width-t: 1px;
+                        border-width-b: 0px;
+                        border-color: black;
+                    }
+
+                    FramedText {
+                        text: location.bay;
+                        background: borders-color;
+                        inner-background: white;
+                        border-width-l: 5px;
+                        border-width-r: 5px;
+                        border-width-t: 1px;
+                        border-width-b: 1px;
+                        border-color: black;
+                    }
+                }
+
+                if location.shelf != 0: shelf := VerticalLayout {
+                    min-width: min-part-width;
+                    FramedText {
+                        text: "Shelf";
+                        background: borders-color;
+                        inner-background: white;
+                        border-width-l: 1px;
+                        border-width-r: 1px;
+                        border-width-t: 5px;
+                        border-width-b: 2px;
+                        border-color: black;
+                    }
+
+                    FramedText {
+                        text: location.shelf;
+                        background: borders-color;
+                        inner-background: white;
+                        border-width-l: 1px;
+                        border-width-r: 1px;
+                        border-width-t: 3px;
+                        border-width-b: 5px;
+                        border-color: black;
+                    }
+                }
+
+                if location.position != 0: position := VerticalLayout {
+                    min-width: min-part-width;
+                    FramedText {
+                        text: "Position";
+                        background: borders-color;
+                        inner-background: white;
+                        border-width-l: 1px;
+                        border-width-r: 1px;
+                        border-width-t: 1px;
+                        border-width-b: 0px;
+                        border-color: black;
+                    }
+
+                    HorizontalLayout {
+                        left-one := FramedText {
+                            horizontal-stretch: 2;
+                            background: borders-color;
+                            inner-background: white;
+                            border-width-l: 1px;
+                            border-width-r: 1px;
+                            border-width-t: 1px;
+                            border-width-b: 1px;
+                            border-color: black;
+                        }
+
+                        FramedText {
+                            horizontal-stretch: 3;
+                            text: location.position;
+                            background: borders-color;
+                            inner-background: white;
+                            border-width-l: 4px;
+                            border-width-r: 4px;
+                            border-width-t: 1px;
+                            border-width-b: 1px;
+                            border-color: black;
+                        }
+
+                        FramedText {
+                            horizontal-stretch: 2;
+                            background: borders-color;
+                            inner-background: white;
+                            border-width-l: 1px;
+                            border-width-r: 1px;
+                            border-width-t: 1px;
+                            border-width-b: 1px;
+                            border-color: black;
+                        }
+                    }
+                }
+
+                if location.container != 0: container := VerticalLayout {
+                    min-width: min-part-width;
+                    FramedText {
+                        text: "Container";
+                        background: borders-color;
+                        inner-background: white;
+                        border-width-l: 1px;
+                        border-width-r: 1px;
+                        border-width-t: 1px;
+                        border-width-b: 0px;
+                        border-color: black;
+                    }
+
+                    FramedText {
+                        text: location.container;
+                        background: borders-color;
+                        inner-background: white;
+                        border-width-l: 1px;
+                        border-width-r: 1px;
+                        border-width-t: 1px;
+                        border-width-b: 1px;
+                        border-color: black;
+                        inner-border-bottom-left-radius: 40px;
+                        border-bottom-left-radius: self.inner-border-bottom-left-radius + 1px;
+                        inner-border-bottom-right-radius: self.inner-border-bottom-left-radius ;
+                        border-bottom-right-radius: self.inner-border-bottom-left-radius + 1px;
+                    }
+                }
+            }
+        }
+    }
+}

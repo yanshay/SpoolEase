@@ -109,7 +109,7 @@ async fn main(spawner: Spawner) {
     info!("Using PSRAM start: {start:x?} size: {size}");
 
     // Second, reserve from 'standard' area, if need additional memory for esp-wifi/esp-mbedtls, need to increase this
-    esp_alloc::heap_allocator!(size: 122 * 1024);
+    esp_alloc::heap_allocator!(size: 120 * 1024);
 
     // Last, reserve DRAM2 area (area used by bootloader during boot)
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 64*1024); // 72kb in new memory.x ?
