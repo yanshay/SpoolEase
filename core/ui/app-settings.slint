@@ -20,14 +20,13 @@ export component ScalesInformation inherits Rectangle {
             alignment: start;
             title := Title {
                 width: root.width;
-                text: AppState.spool-scale-state == SpoolScaleState.NotAvailable ? "Scale Not Available" : 
-                     (AppState.spool-scale-state == SpoolScaleState.Unknown || AppState.spool-scale-state == SpoolScaleState.Disconnected) ?"Trying to Connect to Scale" :  
-                     "Connected to Scale";
+                text: AppState.spool-scale-state == SpoolScaleState.NotAvailable ? "Scale Not Available" : (AppState.spool-scale-state == SpoolScaleState.Unknown || AppState.spool-scale-state == SpoolScaleState.Disconnected) ? "Trying to Connect to Scale" : "Connected to Scale";
             }
 
             MyText {
+                x: 10px;
                 vertical-alignment: center;
-                width: root.width;
+                width: root.width - self.x * 2;
                 height: title.height;
                 text: AppBackend.get-connected-scale-info();
             }
@@ -38,20 +37,32 @@ export component ScalesInformation inherits Rectangle {
             }
 
             for scale in AppBackend.get-available-scales-info(): MyText {
+                x: 10px;
                 vertical-alignment: center;
-                width: root.width;
+                width: root.width - self.x * 2;
                 height: 30px;
                 text: scale;
             }
         }
 
-        MyButton {
-            clicked => {
-                root.clicked()
+        VerticalLayout {
+            MyText {
+                x: 10px;
+                width: root.width - self.x * 2;
+                height: 54px;
+                vertical-alignment: center;
+                wrap: word-wrap;
+                text: "Note: To connect a scale from this list, configure its name or IP in the Console Web Config.";
             }
-            width: root.width;
-            height: 56px;
-            text: "Ok";
+
+            MyButton {
+                clicked => {
+                    root.clicked()
+                }
+                width: root.width;
+                height: 56px;
+                text: "Ok";
+            }
         }
     }
 }
