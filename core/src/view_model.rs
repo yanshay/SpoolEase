@@ -671,7 +671,9 @@ impl ViewModel {
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_update_actual_location(move |spool_id, location, message| moved_view_model.borrow().ui_update_actual_location(&spool_id, &location, &message));
+            .on_update_actual_location(move |spool_id, location, message| {
+                moved_view_model.borrow().ui_update_actual_location(&spool_id, &location, &message)
+            });
     }
 
     fn perform_select_printer(
@@ -2039,11 +2041,18 @@ impl ViewModel {
         if let Some(mut spool_rec) = store.get_spool_by_id(&spool_id) {
             spool_rec.weight_current = Some(weight_current);
             spool_rec.consumed_since_weight = 0.0;
-            if weight_new != -1 {
+            if weight_new >= 0 { // ignore -1 (and potentially other negative numbers which are invalid)
                 spool_rec.weight_new = Some(weight_new);
-                if weight_new != 0 {
+                if weight_new != 0 { 
                     spool_rec.added_full = Some(true);
-                } // else - don't touch added-full
+                    // in this case also potentially update empty if not already filled earlier
+                    if spool_rec.weight_core.unwrap_or(0) == 0 && spool_rec.weight_advertised.unwrap_or(0) != 0 {
+                        let new_weight_core = weight_new - spool_rec.weight_advertised.unwrap();
+                        if new_weight_core > 0 {
+                            spool_rec.weight_core = Some(new_weight_core);
+                        }
+                    }
+                } // else - don't touch added-full or weight_core
             } // else - don't touch weight-new
             match store.update_spool(spool_rec.clone(), None).await {
                 Ok(_) => {
