@@ -5,6 +5,7 @@ import { Utils } from "utils.slint";
 import { ScaleWeightDisplay } from "app-widgets.slint";
 import { UpdateWeightPage } from "common-operations.slint";
 import { LocationDisplay } from "location-display.slint";
+import { NumPad } from "numpad.slint";
 
 component SpoolDisplayStep inherits Rectangle {
     callback more-clicked();
@@ -206,6 +207,40 @@ component PlaceSpoolInAssignedLocationStep inherits Rectangle {
     }
 }
 
+component SelectSpoolToLoadStep inherits Rectangle {
+    width: 480px;
+    height: 320px;
+    background: white;
+    VerticalLayout {
+        Title {
+            text: "Enter Spool ID to Load to Staging";
+        }
+
+        Rectangle {
+            num-pad := NumPad {
+                number: AppState.new-tag-scan-spool-id-int;
+                ok-visible: false;
+                display-postfix: "";
+            }
+        }
+
+        WizardButtons {
+            next-text: "Load Spool";
+            next-enabled: true;
+            back-enabled: false;
+            next-clicked => {
+                num-pad.display-error = AppBackend.load-staging(num-pad.number);
+                if num-pad.display-error == "" {
+                    AppState.control-state = ControlState.Ready;
+                }
+            }
+            cancel-clicked => {
+                AppState.control-state = ControlState.Ready;
+            }
+        }
+    }
+}
+
 export component StagingOperations {
     property <UiSpoolRecordDisplay> spool-display: AppBackend.get-spool-record-display(AppState.spool-staging-info.spool-record.id);
     if AppState.staging-operation-page == StagingOperationsPage.SpoolDisplay: SpoolDisplayStep {
@@ -228,4 +263,5 @@ export component StagingOperations {
     if AppState.staging-operation-page == StagingOperationsPage.PlaceSpoolInAssignedLocation: PlaceSpoolInAssignedLocationStep {
         spool-display: spool-display;
     }
+    if AppState.staging-operation-page == StagingOperationsPage.SelectSpoolToLoad: SelectSpoolToLoadStep { }
 }

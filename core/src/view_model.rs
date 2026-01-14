@@ -679,9 +679,13 @@ impl ViewModel {
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_location_str_to_location(move |location_str| {
-                moved_view_model.borrow().ui_location_str_to_location(&location_str)
-            });
+            .on_location_str_to_location(move |location_str| moved_view_model.borrow().ui_location_str_to_location(&location_str));
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_load_staging(move |spool_id| moved_view_model.borrow().ui_load_staging(&spool_id));
     }
 
     fn perform_select_printer(
@@ -915,6 +919,17 @@ impl ViewModel {
             .on_set_staging_to_tray(move |tray_id: i32| {
                 Self::set_staging_to_tray(&moved_view_model, &moved_filament_staging, &moved_bambu_printer, &moved_ui, tray_id);
             });
+    }
+
+    fn ui_load_staging(&self, spool_id: &str) -> SharedString {
+        if let Some(spool_rec) = self.store.get_spool_by_id(spool_id) {
+            self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Scanned);
+            self.display_filament_staging(true);
+            let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
+            SharedString::new()
+        } else {
+            SharedString::from("Spool Not Found")
+        }
     }
 
     fn ui_location_str_to_location(&self, location_str: &str) -> crate::app::Location {

@@ -1,5 +1,5 @@
 import { MyText, MyButton } from "framework/widgets.slint";
-import { AppState, AppConsts, AppBackend, SpoolStagingState, ControlState, SpoolScaleState } from "app.slint";
+import { AppState, AppConsts, AppBackend, SpoolStagingState, ControlState, SpoolScaleState, StagingOperationsPage } from "app.slint";
 import { Utils } from "utils.slint"; 
 import { FrameworkState } from "framework/framework.slint";
 
@@ -49,15 +49,15 @@ export component SpoolStaging inherits Window {
                         color: Utils.contrasting_color(filament-box.background);
                     }
 
-                  if AppState.spool-staging-info.weight-left != "": Text {
+                    if AppState.spool-staging-info.weight-left != "": Text {
                         horizontal-alignment: center;
                         font-size: 20px;
                         text: AppState.spool-staging-info.weight-left;
                         color: Utils.contrasting_color(filament-box.background);
-                  }
+                    }
 
                   // K Value (show only if no ID, otherwiser no room)
-                  if AppState.spool-staging-info.weight-left == "" : k-value := Text {
+                  if AppState.spool-staging-info.weight-left == "": k-value := Text {
                         horizontal-alignment: center;
                         font-size: 20px;
                         text: "K: " + (AppState.spool-staging-info.spool-record.ext-has-k ? "✔" : "-");
@@ -100,15 +100,9 @@ export component SpoolStaging inherits Window {
         width: parent.width;
         height: parent.height;
         clicked => {
-            if AppState.spool-staging-state != SpoolStagingState.Empty {
-              AppState.staging-selected();
-                // if AppState.control-state == ControlState.StagingSelected { // second press on staging (next else is the first press)
-                //     AppState.show-filament-information(999);
-                // } else {
-                //     AppState.control-state = ControlState.StagingSelected;
-                // }
-            } else if FrameworkState.ota-info.newer {
-                root.clicked-ota();
+            AppState.staging-selected();
+            if AppState.spool-staging-state == SpoolStagingState.Empty {
+                AppState.staging-operation-page = StagingOperationsPage.SelectSpoolToLoad;
             }
         }
     }

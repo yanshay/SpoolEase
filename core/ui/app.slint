@@ -167,6 +167,7 @@ export global AppBackend {
     callback update-actual-location(spool-id: string, location: string, message: string);
     callback unload-slot-tag(tray-id: int, spool-id: string);
     pure callback location-str-to-location(location-str: string) -> Location;
+    callback load-staging(spool-id: string) -> string; // returns error if not found
 }
 
 export enum NewScannedTagType {
@@ -199,6 +200,7 @@ export enum StagingOperationsPage {
   OperationSelection,
   UpdateWeight,
   PlaceSpoolInAssignedLocation,
+  SelectSpoolToLoad
 }
 
 export struct Firmwares {
