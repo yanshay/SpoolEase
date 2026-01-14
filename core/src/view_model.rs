@@ -1338,8 +1338,8 @@ impl ViewModel {
             assigned_location: spool_rec.assigned_location.to_shared_string(),
         };
 
-        // for now, on purpose, not filling in fields that aren't in the tag, to show the real tag information
-        let (slicer_filament_name, temp_min, temp_max) = if let Some(filament_info) = &self.get_filament_info(&record.slicer_filament, None) {
+        // Changed this (for now, on purpose, not filling in fields that aren't in the tag, to show the real tag information)
+        let (slicer_filament_name, temp_min, temp_max) = if let Some(filament_info) = &self.get_filament_info(&record.slicer_filament, Some(&record.material_type)) {
             (
                 slint::format!(
                     "{}{}",

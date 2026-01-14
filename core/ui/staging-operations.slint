@@ -113,10 +113,10 @@ component OperationSelectionStep inherits Rectangle {
                 MyButton {
                     visible: true;
                     enabled: AppState.spool-staging-info.spool-record.actual-location != "" || AppState.spool-staging-info.spool-record.assigned-location != "";
-                    text: AppState.spool-staging-info.spool-record.actual-location != "" ? "Picked from Storage" : "Place in Assigned Spot";
+                    text: AppState.spool-staging-info.spool-record.actual-location != "" ? "Pick from Storage" : "Place in Assigned Spot";
                     clicked => {
                         if (AppState.spool-staging-info.spool-record.actual-location != "") {
-                            AppBackend.update-actual-location(AppState.spool-staging-info.spool-record.id, "", "Cleared Spool's Actual Location");
+                            AppState.staging-operation-page = StagingOperationsPage.PickSpoolFromActualLocation;
                         } else {
                             AppState.staging-operation-page = StagingOperationsPage.PlaceSpoolInAssignedLocation;
                         }
@@ -151,7 +151,7 @@ component OperationSelectionStep inherits Rectangle {
     }
 }
 
-component PlaceSpoolInAssignedLocationStep inherits Rectangle {
+component PlacePickSpool inherits Rectangle {
     width: 480px;
     height: 320px;
     background: white;
@@ -160,13 +160,14 @@ component PlaceSpoolInAssignedLocationStep inherits Rectangle {
     property <string> brand: spool-display.spool-record.brand == "" ? "" : "\{spool-display.spool-record.brand} ";
     property <string> material-subtype: spool-display.spool-record.material-subtype == "" ? "" : " \{spool-display.spool-record.material_subtype}";
     property <string> color-name: spool-display.spool-record.color-name == "" ? "" : " \{spool-display.spool-record.color-name}";
+    property <bool> pick: AppState.staging-operation-page == StagingOperationsPage.PickSpoolFromActualLocation; // else it is place spool
     VerticalLayout {
         alignment: space-between;
 
         VerticalLayout {
             spacing: 10px;
             Title {
-                text: "Place Spool \{spool-display.spool-record.id} in Assigned Location";
+                text: pick ? "Pick Spool \{spool-display.spool-record.id} From Actual Location" : "Place Spool \{spool-display.spool-record.id} in Assigned Location";
             }
 
             VerticalLayout {
@@ -180,21 +181,25 @@ component PlaceSpoolInAssignedLocationStep inherits Rectangle {
                 }
 
                 MyText {
-                    text: "Spool's assigned location";
+                    text: pick ? "Spool's Actual Location" : "Spool's Assigned Location";
                 }
 
                 LocationDisplay {
-                    location: AppBackend.location-str-to-location(spool-display.spool-record.assigned-location);
+                    location: pick ? AppBackend.location-str-to-location(spool-display.spool-record.actual-location) : AppBackend.location-str-to-location(spool-display.spool-record.assigned-location);
                 }
             }
         }
 
         WizardButtons {
-            next-text: "Placed Spool";
+            next-text: pick ? "Spool Picked" : "Spool Placed";
             next-enabled: true;
             back-enabled: true;
             next-clicked => {
-                AppBackend.update-actual-location(AppState.spool-staging-info.spool-record.id, AppState.spool-staging-info.spool-record.assigned-location, "Updated Spool's Actual Location\nto its Assigned Location");
+                if pick {
+                    AppBackend.update-actual-location(AppState.spool-staging-info.spool-record.id, "", "Cleared Spool's Actual Location");
+                } else {
+                    AppBackend.update-actual-location(AppState.spool-staging-info.spool-record.id, AppState.spool-staging-info.spool-record.assigned-location, "Updated Spool's Actual Location\nto its Assigned Location");
+                }
                 AppState.control-state = ControlState.Ready;
             }
             back-clicked => {
@@ -260,7 +265,7 @@ export component StagingOperations {
             AppState.staging-operation-page = AppState.prev-staging-operation-page;
         }
     }
-    if AppState.staging-operation-page == StagingOperationsPage.PlaceSpoolInAssignedLocation: PlaceSpoolInAssignedLocationStep {
+    if AppState.staging-operation-page == StagingOperationsPage.PlaceSpoolInAssignedLocation || AppState.staging-operation-page == StagingOperationsPage.PickSpoolFromActualLocation: PlacePickSpool {
         spool-display: spool-display;
     }
     if AppState.staging-operation-page == StagingOperationsPage.SelectSpoolToLoad: SelectSpoolToLoadStep { }

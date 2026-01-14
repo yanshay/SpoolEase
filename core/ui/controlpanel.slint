@@ -189,7 +189,7 @@ export component Ready inherits ControlPanelBase {
         AppState.available-printers.length >= 1 && AppState.some-printer-connected ? "" : "- Connecting to Printer(s) -"
     ];
     button1-text: (AppState.spool-staging-state != SpoolStagingState.Empty) ? "Clear Staging" : "";
-    button1-timeout: (AppState.spool-staging-state != SpoolStagingState.Empty) ? 60 : 0;
+    button1-timeout: (AppState.spool-staging-state != SpoolStagingState.Empty) ? 99 : 0;
     clicked1() => {
         AppBackend.clear-staging();
     }
