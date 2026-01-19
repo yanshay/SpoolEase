@@ -427,12 +427,14 @@ async fn main(spawner: Spawner) {
         framework::framework_web_app::WebAppState::<ConsoleAppState>::new(framework.borrow().encryption_key, framework.clone(), console_app_state)
     );
 
+    // Timeouts here are CRITICAL !!!
+    // Especially the write. Sometimes there is a failure to write back, and if the timeout is not set the connection hangs and no longer available
+    // After several like that no listeners are available any longer
     let config = picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: None, // Some(Duration::from_secs(5)),
-        read_request: None, // Some(Duration::from_millis(5000)),
-        write: None, // Some(Duration::from_millis(5000)),
-    });
-    // .keep_connection_alive();
+        start_read_request: Some(Duration::from_secs(3)),
+        read_request: Some(Duration::from_secs(1)),
+        write: Some(Duration::from_secs(1)),
+    }).keep_connection_alive();
 
     let web_server_runner = mk_static!(
         framework::web_server::WebAppRunner<ConsoleAppState, NestedAppBuilder>,
