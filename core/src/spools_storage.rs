@@ -16,7 +16,6 @@ pub struct RackConfig {
     pub num_shelves: i32,
     pub num_positions: i32,
     pub num_containers: i32,
-    pub container_capacity: i32,
     pub bay_numbering_order: BayNumOrder,
     pub shelf_numbering_order: ShelfNumOrder,
     pub position_numbering_order: PosNumOrder,
