@@ -1051,7 +1051,7 @@ impl BambuPrinter {
                             new_tray.meta_info = TrayMetaInfo::default();
                         } else {
                             new_tray.state = self.get_tray_detailed_ready_state(tray_id);
-                            if old_tray.state == TrayState::Loaded && new_tray.state == TrayState::Empty {
+                            if old_tray.state != TrayState::Empty && new_tray.state == TrayState::Empty {
                                 // this is the case of unloading external tray
                                 new_tray.meta_info = TrayMetaInfo::default();
                             } else {
@@ -1088,6 +1088,7 @@ impl BambuPrinter {
         Self::get_active_extruder_from_extruder_state(self.extruder_state())
     }
 
+    // returns 0..15, 128.. for AMS-HT, 254/255
     fn get_common_tray_active(active_extruder: usize, extruder_tray_now: i32) -> Option<i32> {
         if extruder_tray_now == 255 {
             None
@@ -1101,6 +1102,8 @@ impl BambuPrinter {
             Some(extruder_tray_now)
         }
     }
+
+    // returns 0..15, 128.. for AMS-HT, 254/255
     fn get_tray_active(&self) -> Option<i32> {
         let active_extruder = self.get_active_extruder()?;
         Self::get_common_tray_active(active_extruder, self.tray_now[active_extruder])
@@ -1123,40 +1126,51 @@ impl BambuPrinter {
     }
 
     fn get_tray_detailed_ready_state(&self, tray_id: i32) -> TrayState {
-        // tray_id - 0..24
-        // tray_active: tray_xxx format (0..16, 128..135, 254, 255)
+        // tray_id: 0..15, 16.., 254, 255
+        // To know if a tray is active is different between AMS and external tray. 
+        // For AMS - Loaded is when it is actually the active extruder, Ready is when filament available in AMS.
+        //           We don't have a state for Loaded into extruder but not Printing, maybe should add such.
+        //           So Loaded is when extruder is active and the tray is in the extruder
+        //           Ready is when filament is available in AMS whether loaded in INACTIVE extruder or not.
+        // 
+        // For external - there is no such thing as in AMS.
+        //           In single extruder if the tray_now is 254 then it means it is loaded and ready, since once it is loaded it is the printing one, no other option
+        //           In dual extruder if the relevant extruder snow is 254 then it is ready, if the extruder is active it is loaded
+        //           
 
-        // Normal trays are ready or loaded in this function (which checks for detailed ready)
-        // External are either Empty or Loaded, no such thing as ready
 
-        let perliminary_res = if let Some(active_tray_id) = self.get_tray_active() {
-            if active_tray_id == tray_id {
-                TrayState::Loaded
+        if tray_id != 254 && tray_id != 255 {
+            if let Some(mut active_tray_id) = self.get_tray_active() {
+                // tray_active: tray_xxx format (0..16, 128..135, 254, 255)
+                if active_tray_id >= 128 {
+                    // AMS-HT case
+                    active_tray_id = active_tray_id - 128 + 16;
+                }
+                if active_tray_id == tray_id {
+                    TrayState::Loaded
+                } else {
+                    TrayState::Ready
+                }
             } else {
                 TrayState::Ready
             }
         } else {
-            TrayState::Ready
-        };
+            // get external slot number of the relevant tray (each external slot means a different extruder)
+            let extruder_id = self.get_extruder_id_for_tray(tray_id).unwrap() as usize;
 
-        if (tray_id == 254 || tray_id == 255) && perliminary_res == TrayState::Ready {
-            TrayState::Empty
-        } else {
-            perliminary_res
+            // get the tray_now of that extruder
+            if self.tray_now[extruder_id] == 254 {
+                // if that tray_now is 254, then it is at least ready (second option)
+                if self.get_active_extruder() == Some(extruder_id) {
+                    // if it is ready and the extruder is active then it is also loaded
+                    TrayState::Loaded
+                } else {
+                    TrayState::Ready
+                }
+            } else {
+                TrayState::Empty
+            }
         }
-
-        // loading/unloading is more complex, should also use "ams_status" and maybe "ams_rfid" from mqtt
-        // See Bambustudio statuspanel.cpp & DeviceManager.cpp
-        // ams_status_main and ams_status_sub
-        // It seems to be as follows, but not implemented, not needed and not sure fully reliable
-        // assume switch from slot 2 to slot 1:
-        //
-        // tray_tar   tray_now  tray_pre  ams_status&0xFF
-        //
-        //    2          2         2                        initial state
-        //    1          2                     2, 3, 4      unloading tray_now
-        //    1          1                     5, 6, 7      loading tray_now (same as tar now)
-        //    1          1         1    ?ams_status = 768   loaded/printing (maybe earlier using additional field)
     }
 
     pub fn get_ams_and_slot_id(tray_id: usize) -> (usize, usize) {
@@ -1223,7 +1237,7 @@ impl BambuPrinter {
         let external_tray_id = if extruder_id == 0 { 255 } else { 254 };
         let new_tray = self.get_updated_tray(&old_tray, Some(v_tray), external_tray_id);
         if let Some(new_tray) = new_tray {
-            let removed_tag = if old_tray.state == TrayState::Loaded && new_tray.state != TrayState::Loaded {
+            let removed_tag = if old_tray.state != TrayState::Empty && new_tray.state == TrayState::Empty {
                 old_tray.meta_info.spool_id
             } else {
                 None
@@ -1412,9 +1426,9 @@ impl BambuPrinter {
             for (extruder_id, external_tray_id) in [(0u32, 255), (1u32, 254)] {
                 let new_vt_tray_detailed_ready_state = self.get_tray_detailed_ready_state(external_tray_id);
                 let curr_vt_tray_detailed_ready_state = self.virt_trays()[extruder_id as usize].state;
-                self.update_virt_tray(0, |tray| tray.state = new_vt_tray_detailed_ready_state);
+                self.update_virt_tray(extruder_id, |tray| tray.state = new_vt_tray_detailed_ready_state);
 
-                if curr_vt_tray_detailed_ready_state == TrayState::Loaded && new_vt_tray_detailed_ready_state != TrayState::Loaded {
+                if curr_vt_tray_detailed_ready_state != TrayState::Empty && new_vt_tray_detailed_ready_state == TrayState::Empty {
                     let mut vt_tray = self.virt_trays()[extruder_id as usize].clone();
                     let spool_id = vt_tray.meta_info.spool_id.take();
                     vt_tray.meta_info = TrayMetaInfo::default();
