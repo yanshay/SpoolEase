@@ -20,6 +20,7 @@ import { TrayOperations } from "tray-operations.slint";
 import { MessageBox } from "message-box.slint";
 import { AppOtaSelect } from "ota.slint";
 import { Storage } from "storage.slint";
+import { Slots } from "slots.slint";
 
 // reexport to rust
 
@@ -30,7 +31,7 @@ export component AppWindow inherits Window {
     width: 480px;
     height: 320px;
 
-    property <int> current-page: (FrameworkState.web-config-state == WebConfigState.Started-AP || FrameworkState.web-config-state == WebConfigState.Started-STA-Displayed) ? 2 : (AppState.control-state == ControlState.Booting || /*AppState.control-state == ControlState.ConnectingToPrinter ||*/ AppState.control-state == ControlState.BootFailed) ? 0 : 1;
+    property <int> current-page:1; // (FrameworkState.web-config-state == WebConfigState.Started-AP || FrameworkState.web-config-state == WebConfigState.Started-STA-Displayed) ? 2 : (AppState.control-state == ControlState.Booting || /*AppState.control-state == ControlState.ConnectingToPrinter ||*/ AppState.control-state == ControlState.BootFailed) ? 0 : 1;
     changed current-page => {
         if current-page != 0 && terminal.is-scrolled() { // if maybe moved away from terminal 
           reset-terminal-scroll.running = true;
@@ -80,7 +81,7 @@ export component AppWindow inherits Window {
                 } else if self.handle-swipe-right && self.current-position.x > self.pressed-position.x + (self.width / 5) {
                     AppState.select-printer = false;
                     current-page_x = 0;
-                } else if current-page_x == 0 && top.x == -480px &&  self.current-position.x > self.pressed-position.x + (self.width / 5) {
+                } else if current-page_x == 0 && top.x == -480px && self.current-position.x > self.pressed-position.x + (self.width / 5) {
                     top.x = 0px;
                 } else if current-page_x == 0 && top.x == 0px && self.current-position.x < self.pressed-position.x - (self.width / 5) {
                     top.x = -480px;
@@ -108,59 +109,40 @@ export component AppWindow inherits Window {
                 background: #16161e;
             }
 
-            // Page 1 :  App Window
-            page1 := VerticalLayout {
+            // Page 1 :  App Window - ControlPanel at the bottom and Storage <-> Slots at the top (swipable left/right)
+            page1 := Rectangle {
+                background: white;
                 height: parent.height;
                 width: parent.width;
-                alignment: stretch;
-                top := HorizontalLayout {
-                    x: -480px;
-                    animate x {
-                        duration: 1000ms;
-                        easing: ease-in-out;
-                    }
-                    spacing: AppConsts.trays-spacing;
-                    Storage {
-                      width: 480px;
-                    }
-                    // Separating the external tray from the ams trays so can scroll the ams trays in case of several ams's
-                    if AppState.ams-exists.length > 0: 
-                      ams := Trays {
-                        is_ams: true;
-                        title: "AMS - " + (AppState.curr-ams-id + 1);
-                        include-paging-left: false;
-                        include-paging-right: false;
-                        tray_numbers: AppState.curr-ams-id <= 3 ? [
-                            AppState.get_tray_index(AppState.curr-ams-id, 0),
-                            AppState.get_tray_index(AppState.curr-ams-id, 1),
-                            AppState.get_tray_index(AppState.curr-ams-id, 2),
-                            AppState.get_tray_index(AppState.curr-ams-id, 3),
-                        ] : [AppState.get_tray_index(AppState.curr-ams-id, 0)];
-                        trays-state: AppState.trays-state;
-                    }
+                VerticalLayout {
+                    height: parent.height;
+                    width: parent.width;
+                    alignment: stretch;
+                    top := HorizontalLayout {
+                        x: -480px;
+                        animate x {
+                            duration: 1000ms;
+                            easing: ease-in-out;
+                        }
+                        Storage {
+                            width: 480px;
+                        }
 
-                    external := Trays {
-                        is_ams: false;
-                        title: AppState.num-extruders == 1 ? "External" : AppState.displayed-extruder == 0 ? "Ext Right" : "Ext Left";
-                        tray_numbers: [AppState.displayed-extruder];
-                        trays-state: AppState.trays-state;
-                        title-clicked => { 
-                          if AppState.num-extruders == 2 {
-                            AppState.displayed-extruder = 1 - AppState.displayed-extruder;
-                          }
+                        slots := Slots {
+                            width: 480px;
                         }
                     }
-                }
 
-                bottom := ControlPanel {
-                    clicked-ota => {
-                        root.current-page = 2;
-                        FrameworkState.ota-clear-message();
-                        FrameworkState.ota-state = OtaState.Checking;
-                        AppBackend.ota-check-firmwares();
+                    bottom := ControlPanel {
+                        clicked-ota => {
+                            root.current-page = 2;
+                            FrameworkState.ota-clear-message();
+                            FrameworkState.ota-state = OtaState.Checking;
+                            AppBackend.ota-check-firmwares();
+                        }
+                        staging-section-width: slots.slot-width;
+                        button-width: slots.slot-width;
                     }
-                    staging-section-width: external.width;
-                    button-width: external.width;
                 }
             }
 

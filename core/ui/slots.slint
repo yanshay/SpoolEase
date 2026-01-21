@@ -1,0 +1,34 @@
+import { Trays } from "trays.slint";
+import { AppConsts, AppState } from "app.slint";
+
+export component Slots inherits HorizontalLayout {
+    out property <length> slot-width: external.width;
+    spacing: AppConsts.trays-spacing;
+                            // Separating the external tray from the ams trays so can scroll the ams trays in case of several ams's
+                            if AppState.ams-exists.length > 0: 
+                              ams := Trays {
+        is_ams: true;
+        title: "AMS - " + (AppState.curr-ams-id + 1);
+        include-paging-left: false;
+        include-paging-right: false;
+        tray_numbers: AppState.curr-ams-id <= 3 ? [
+            AppState.get_tray_index(AppState.curr-ams-id, 0),
+            AppState.get_tray_index(AppState.curr-ams-id, 1),
+            AppState.get_tray_index(AppState.curr-ams-id, 2),
+            AppState.get_tray_index(AppState.curr-ams-id, 3),
+        ] : [AppState.get_tray_index(AppState.curr-ams-id, 0)];
+        trays-state: AppState.trays-state;
+    }
+
+    external := Trays {
+        is_ams: false;
+        title: AppState.num-extruders == 1 ? "External" : AppState.displayed-extruder == 0 ? "Ext Right" : "Ext Left";
+        tray_numbers: [AppState.displayed-extruder];
+        trays-state: AppState.trays-state;
+        title-clicked => {
+            if AppState.num-extruders == 2 {
+                AppState.displayed-extruder = 1 - AppState.displayed-extruder;
+            }
+        }
+    }
+}
