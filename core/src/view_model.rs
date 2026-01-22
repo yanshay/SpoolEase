@@ -223,8 +223,8 @@ impl ViewModel {
         let mut printer_index = 0; // starts from zero and incremented only on successful init and adding to array
         let mut available_printers: Vec<SharedString> = Vec::new();
         for printer_config in &self.app_config.borrow().configured_printers.printers {
-            if printer_number > 5 {
-                term_info!("Printers limit reached - max five printers supported");
+            if printer_number > 4 {
+                term_info!("Printers limit reached - max four printers supported");
                 break;
             }
             match bambu::init(
