@@ -244,7 +244,7 @@ impl BambuPrinter {
         &self.inner_virt_trays
     }
     pub fn set_virt_tray(&mut self, extruder_id: u32, tray: Tray) {
-        if tray != self.inner_virt_trays[extruder_id as usize] {
+        if tray != self.inner_virt_trays[extruder_id as usize] || tray.meta_info != self.inner_virt_trays[extruder_id as usize].meta_info {
             self.inner_virt_trays[extruder_id as usize] = tray;
             self.virt_trays_dirty = true;
         }
@@ -1055,6 +1055,7 @@ impl BambuPrinter {
                 } else if let Ok(tray_update) = self.tray_from_update(tray_update) {
                     if let Some(mut new_tray) = tray_update {
                         if matches!(new_tray.filament, Filament::Unknown) {
+                            // TODO: Need to think about the edge case of filament unknown but tag available (can for example be if removing filament information after loading tag)
                             new_tray.state = TrayState::Empty;
                             new_tray.meta_info = TrayMetaInfo::default();
                         } else {
@@ -1127,17 +1128,16 @@ impl BambuPrinter {
 
     fn get_tray_detailed_ready_state(&self, tray_id: i32) -> TrayState {
         // tray_id: 0..15, 16.., 254, 255
-        // To know if a tray is active is different between AMS and external tray. 
+        // To know if a tray is active is different between AMS and external tray.
         // For AMS - Loaded is when it is actually the active extruder, Ready is when filament available in AMS.
         //           We don't have a state for Loaded into extruder but not Printing, maybe should add such.
         //           So Loaded is when extruder is active and the tray is in the extruder
         //           Ready is when filament is available in AMS whether loaded in INACTIVE extruder or not.
-        // 
+        //
         // For external - there is no such thing as in AMS.
         //           In single extruder if the tray_now is 254 then it means it is loaded and ready, since once it is loaded it is the printing one, no other option
         //           In dual extruder if the relevant extruder snow is 254 then it is ready, if the extruder is active it is loaded
-        //           
-
+        //
 
         if tray_id != 254 && tray_id != 255 {
             if let Some(mut active_tray_id) = self.get_tray_active() {
@@ -1213,15 +1213,17 @@ impl BambuPrinter {
     }
 
     #[allow(non_snake_case)]
-    pub fn process_print_message__vir_slots(&mut self, vir_slot: &[PrintTray]) -> (bool, Option<SpoolId>) {
+    pub fn process_print_message__vir_slots(&mut self, vir_slot: &[PrintTray]) -> (bool, HashMap<usize, SpoolId>) {
         let mut changed_res = false;
-        let mut removed_tag_res = None;
+        let mut removed_tag_res = HashMap::new();
         for vt_slot in vir_slot {
             if let Some(external_slot_id) = vt_slot.id {
                 let extruder_id = if external_slot_id == 254 { 1 } else { 0 };
                 let (changed, removed_tag) = self.process_print_message__vt_tray(extruder_id, vt_slot);
                 changed_res |= changed;
-                removed_tag_res = removed_tag;
+                if let Some(removed_tag) = removed_tag {
+                    removed_tag_res.insert(external_slot_id as usize, removed_tag);
+                }
             }
         }
         (changed_res, removed_tag_res)
@@ -1402,22 +1404,24 @@ impl BambuPrinter {
 
         // Deal with external tray changes
         let mut vt_tray_change_made = false;
-        let removed_tag;
         if let Some(vir_slot) = &print.vir_slot {
             // this is hd2 version of external slotS
+            let removed_tag;
             (vt_tray_change_made, removed_tag) = self.process_print_message__vir_slots(vir_slot);
-            if let Some(removed_tag) = removed_tag {
-                removed_tags.insert(254, removed_tag);
-            }
+            removed_tags.extend(removed_tag);
         } else if let Some(v_tray) = &print.vt_tray {
             // this is older printers external slot
+            let removed_tag;
             (vt_tray_change_made, removed_tag) = self.process_print_message__vt_tray(0, v_tray);
             if let Some(removed_tag) = removed_tag {
-                removed_tags.insert(254, removed_tag);
+                removed_tags.insert(255, removed_tag);
             }
         } else if tray_xxx_change_made {
             // I believe this situation can happen only in pre H2D printers ( in H2D always seen vir_slot)
             // Still, let's handle it just in case
+            // documenting retroactively: seems like external tray state can change w/o vt_tray in message
+            // then the state should be deduced from the tray_xxx
+            // and with that also the removed tags
             for (extruder_id, external_tray_id) in [(0u32, 255), (1u32, 254)] {
                 let new_vt_tray_detailed_ready_state = self.get_tray_detailed_ready_state(external_tray_id);
                 let curr_vt_tray_detailed_ready_state = self.virt_trays()[extruder_id as usize].state;
