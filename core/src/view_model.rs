@@ -2267,7 +2267,7 @@ impl ViewModel {
         let num_of_printers = self.bambu_printer_model.printers.len();
         for printer in &self.bambu_printer_model.printers {
             let printer_borrow = printer.borrow();
-            for tray_id in (0..printer_borrow.ams_trays().len() - 1).chain([254, 255]) {
+            for tray_id in (0..printer_borrow.ams_trays().len()).chain([254, 255]) {
                 // TODO: need to fix for H2 Series, deal with two external spools
                 if let Some(spool_id) = &printer_borrow.get_any_tray(tray_id).meta_info.spool_id {
                     let (ams_id, slot_id) = BambuPrinter::get_ams_and_slot_id(tray_id);
@@ -3241,13 +3241,13 @@ pub async fn store_printers_consume(view_model: Rc<RefCell<ViewModel>>) {
         for printer_index in 0..num_of_printers {
             let printer = view_model.borrow().bambu_printer_model.printers[printer_index].clone();
             let num_of_trays = printer.borrow().ams_trays().len();
-            for tray_id in 0..num_of_trays {
+            for tray_id in (0..num_of_trays).chain([254, 255]) {
                 let spool_id;
                 let consumed_during_print;
                 let consumed_during_print_saved;
                 {
                     let printer_borrow = printer.borrow();
-                    let tray = &printer_borrow.ams_trays()[tray_id];
+                    let tray = &printer_borrow.get_any_tray(tray_id);
                     spool_id = if let Some(spool_id) = &tray.meta_info.spool_id {
                         spool_id.clone()
                     } else {
@@ -3275,7 +3275,7 @@ pub async fn store_printers_consume(view_model: Rc<RefCell<ViewModel>>) {
                         Ok(_) => {
                             // update saved in tray
                             let mut printer_borrow = printer.borrow_mut();
-                            printer_borrow.update_ams_tray(tray_id, |tray| {
+                            printer_borrow.update_any_tray(tray_id, |tray| {
                                 tray.meta_info.consumed_since_load_saved = tray.meta_info.consumed_since_load
                             });
                         }
