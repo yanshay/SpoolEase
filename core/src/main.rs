@@ -48,15 +48,7 @@ use embassy_time::{Duration, Timer};
 
 use esp_backtrace as _;
 use esp_hal::{
-    clock::CpuClock,
-    dma::DmaTxBuf,
-    dma_buffers,
-    gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
-    rng::Rng,
-    rtc_cntl::Rtc,
-    spi::{self, master::Spi},
-    time::{Rate},
-    timer::timg::TimerGroup,
+    clock::CpuClock, dma::DmaTxBuf, dma_buffers, gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull}, psram::PsramConfig, rng::Rng, rtc_cntl::Rtc, spi::{self, master::Spi}, time::Rate, timer::timg::TimerGroup
 };
 
 use framework::prelude::*;
@@ -93,8 +85,11 @@ async fn main(spawner: Spawner) {
 
     esp_println::logger::init_logger_from_env();
     info!("Application Start");
-
-    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
+    let psram_config = PsramConfig {
+        ram_frequency: esp_hal::psram::SpiRamFreq::Freq80m,
+        ..Default::default()
+    };
+    let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max()).with_psram(psram_config);
     let peripherals = esp_hal::init(config);
 
     #[allow(static_mut_refs)]
