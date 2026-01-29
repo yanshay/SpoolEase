@@ -456,6 +456,7 @@ impl Store {
                         tag_type: current_record.tag_type.clone(),
                         assigned_location: spool_record.assigned_location.clone(),
                         actual_location: spool_record.actual_location.clone(),
+                        spools_count: spool_record.spools_count,
                     }
                 } else {
                     return Err(StoreError::NotFound { id: spool_record.id.clone() });

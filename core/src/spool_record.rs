@@ -8,7 +8,7 @@ use alloc::{
     format,
     string::{String, ToString},
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use shared::utils::{
     deserialize_bool_yn_empty_n, deserialize_f32_base64, deserialize_optional, deserialize_optional_bool_yn, serialize_bool_yn, serialize_f32_base64,
     serialize_optional_bool_yn,
@@ -61,6 +61,9 @@ pub struct SpoolRecord {
     pub assigned_location: String,
     #[serde(default)]
     pub actual_location: String,
+    #[serde(default="default_one")]
+    #[serde(deserialize_with = "one_if_empty")]
+    pub spools_count: i32,
 
     // !!! Don't Forget to set default for any field!
     // pub update_time
@@ -85,6 +88,20 @@ pub struct SpoolRecord {
     // pub last_used: Option<()>,
 }
 
+fn default_one() -> i32 {
+    1
+}
+
+fn one_if_empty<'de, D>(d: D) -> Result<i32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: Option<String> = Option::deserialize(d)?;
+    Ok(match s.as_deref() {
+        None | Some("") => 1,
+        Some(v) => v.parse().map_err(serde::de::Error::custom)?,
+    })
+}
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum OriginData {
     SpoolEaseV1 { uid: String, url: String },

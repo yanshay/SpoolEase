@@ -3105,6 +3105,7 @@ impl TagInformationV1 {
             tag_type: String::new(),
             assigned_location: String::new(),
             actual_location: String::new(),
+            spools_count: 1,
         }
     }
 }

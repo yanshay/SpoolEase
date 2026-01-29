@@ -328,6 +328,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         tag_type: String::new(),
                         assigned_location: add_spool.assigned_location,
                         actual_location: add_spool.actual_location,
+                        spools_count: add_spool.spools_count,
                     };
                     if new_spool.id.is_empty() {
                         match store
@@ -927,6 +928,7 @@ pub struct AddSpoolDTO {
     pub k_info: Option<KInfo>,
     pub assigned_location: String,
     pub actual_location: String,
+    pub spools_count: i32,
 }
 encrypted_input!(AddSpoolDTO);
 
