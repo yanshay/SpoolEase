@@ -923,10 +923,14 @@ impl ViewModel {
 
     fn ui_load_staging(&self, spool_id: &str) -> SharedString {
         if let Some(spool_rec) = self.store.get_spool_by_id(spool_id) {
-            self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Scanned);
-            self.display_filament_staging(true);
-            let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
-            SharedString::new()
+            if spool_rec.spools_count <=1 {
+                self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Scanned);
+                self.display_filament_staging(true);
+                let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
+                SharedString::new()
+            } else {
+                SharedString::from("Can't load Stock")
+            }
         } else {
             SharedString::from("Spool Not Found")
         }
@@ -1128,10 +1132,14 @@ impl ViewModel {
 
     fn ui_can_link_spool_to_tag(&self, id: &str) -> SharedString {
         if let Some(spool_rec) = self.store.get_spool_by_id(id) {
-            if spool_rec.tag_id.is_empty() || spool_rec.tag_id.starts_with("-") {
-                SharedString::new()
+            if spool_rec.spools_count <=1 {
+                if spool_rec.tag_id.is_empty() || spool_rec.tag_id.starts_with("-") {
+                    SharedString::new()
+                } else {
+                    SharedString::from("Spool Is Tagged")
+                }
             } else {
-                SharedString::from("Spool Is Tagged")
+                SharedString::from("Can't link Stock")
             }
         } else {
             SharedString::from("Spool Not Found")

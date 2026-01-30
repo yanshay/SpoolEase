@@ -7,23 +7,23 @@ use alloc::rc::Rc;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use embedded_sdmmc::asynchronous::LfnBuffer;
-use framework::framework_web_app::{encrypt, encrypt_bytes, FrameworkState};
+use framework::framework_web_app::{FrameworkState, encrypt, encrypt_bytes};
 use hashbrown::HashMap;
-use picoserve::response::chunked::{ChunkWriter, ChunkedResponse, ChunksWritten};
 use picoserve::response::StatusCode;
+use picoserve::response::chunked::{ChunkWriter, ChunkedResponse, ChunksWritten};
 use picoserve::routing::{get, get_service};
 use picoserve::{
+    AppWithStateBuilder,
     extract::{FromRequest, State},
     io::Read,
     request::{RequestBody, RequestParts},
     routing::post,
-    AppWithStateBuilder,
 };
 
 use framework::{
     encrypted_input,
     framework_web_app::{
-        decrypt, CustomNotFound, Encryptable, EncryptedRejection, Encryption, NestedAppWithWebAppStateBuilder, SetConfigResponseDTO, WebAppState,
+        CustomNotFound, Encryptable, EncryptedRejection, Encryption, NestedAppWithWebAppStateBuilder, SetConfigResponseDTO, WebAppState, decrypt,
     },
     prelude::*,
 };
@@ -31,10 +31,10 @@ use framework_macros::include_bytes_gz;
 use serde::{Deserialize, Serialize};
 use shared::gcode_analysis_task::Fetch3mf;
 
-use crate::app_config::{AppConfig, DefaultPrinterConfig, PrinterConfig, PrintersConfig, ScaleConfig, FILAMENT_BRAND_NAMES, SPOOLS_CATALOG};
+use crate::app_config::{AppConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrintersConfig, SPOOLS_CATALOG, ScaleConfig};
 use crate::bambu::KInfo;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
-use crate::spools_storage::{StorageConfig};
+use crate::spools_storage::StorageConfig;
 use crate::store::{BackupMeta, FileMeta, Store};
 use crate::view_model::ViewModel;
 
@@ -73,7 +73,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
         let router = picoserve::Router::from_service(CustomNotFound {
             web_server_captive: self.framework.borrow().settings.web_server_captive,
         }); // Handler in case page is not found for captive portal support
-            // let router = router.route("/", get(|| Redirect::to("/config"))); // Redirect root for now
+        // let router = router.route("/", get(|| Redirect::to("/config"))); // Redirect root for now
 
         // Redirect root to the current active application - either config, or encode or whatever
         // For that, in order to preserve the hash (for sk=...), using a html/js redirect technique
@@ -296,6 +296,21 @@ impl AppWithStateBuilder for NestedAppBuilder {
             post(
                 async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, add_spool: AddSpoolDTO| {
                     let store = state.store;
+                    let mut split_spool = None;
+
+                    if let Some(split_id) = add_spool.split
+                        && let Some(splitted_spool) = store.get_spool_by_id(&split_id)
+                    {
+                        if splitted_spool.spools_count - add_spool.spools_count < 1 {
+                            return format!(
+                                "Spool {split_id} had {} and can't split out {}",
+                                splitted_spool.spools_count, add_spool.spools_count
+                            );
+                        } else {
+                            split_spool = Some(splitted_spool);
+                        }
+                    }
+                    // this happens on successful split or when a simple add/edit and not split
                     let new_spool = SpoolRecord {
                         id: add_spool.id,
                         tag_id: add_spool.tag_id,
@@ -330,7 +345,8 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         actual_location: add_spool.actual_location,
                         spools_count: add_spool.spools_count,
                     };
-                    if new_spool.id.is_empty() {
+
+                    let spool_id = if new_spool.id.is_empty() {
                         match store
                             .add_spool(
                                 new_spool,
@@ -342,35 +358,39 @@ impl AppWithStateBuilder for NestedAppBuilder {
                             )
                             .await
                         {
-                            Ok(new_id) => match store.query_spools() {
-                                Some(csv) => {
-                                    state.view_model.borrow_mut().recently_added_spool_id = Some(new_id.clone());
-                                    AddSpoolDTOResponse { id: new_id, csv }.encrypt(&key.borrow())
-                                }
-                                None => {
-                                    error!("Failed to generate response to spoole query");
-                                    "".to_string()
-                                }
-                            },
+                            Ok(new_id) => {
+                                state.view_model.borrow_mut().recently_added_spool_id = Some(new_id.clone());
+                                new_id
+                            }
                             Err(err) => {
                                 error!("Failed to add spool : {err}");
-                                err.to_string()
+                                return err.to_string();
                             }
                         }
                     } else {
                         let id = new_spool.id.clone();
                         match store.edit_spool_from_web(new_spool, add_spool.k_info).await {
-                            Ok(_) => match store.query_spools() {
-                                Some(csv) => AddSpoolDTOResponse { id, csv }.encrypt(&key.borrow()),
-                                None => {
-                                    error!("Failed to generate response to spoole query");
-                                    "".to_string()
-                                }
-                            },
+                            Ok(_) => id,
                             Err(err) => {
                                 error!("Failed to edit spool : {err}");
-                                err.to_string()
+                                return err.to_string();
                             }
+                        }
+                    };
+
+                    if let Some(mut split_spool) = split_spool {
+                        split_spool.spools_count -= add_spool.spools_count;
+                        if let Err(err) = store.update_spool(split_spool, None).await {
+                            error!("Critical: Added new splitted spool/stock but failed to update splitted stock : {err}");
+                            return err.to_string();
+                        }
+                    }
+
+                    match store.query_spools() {
+                        Some(csv) => AddSpoolDTOResponse { id: spool_id, csv }.encrypt(&key.borrow()),
+                        None => {
+                            error!("Failed to generate response to spoole query");
+                            "Failed to generate response to spoole query".to_string()
                         }
                     }
                 },
@@ -563,8 +583,11 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     let store = state.store;
                     if let Some(location_rec) = store.get_location_by_hex_tag(&tag_scanned.tag_id_hex) {
                         TagScannedResponse {
-                            tag_info: TagInfo::Location { location: location_rec.location },
-                        }.encrypt(&key.borrow())
+                            tag_info: TagInfo::Location {
+                                location: location_rec.location,
+                            },
+                        }
+                        .encrypt(&key.borrow())
                     } else {
                         TagScannedResponse { tag_info: TagInfo::Unknown }.encrypt(&key.borrow())
                     }
@@ -578,15 +601,35 @@ impl AppWithStateBuilder for NestedAppBuilder {
                 async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, set_tag_location: SetTagLocationDTO| {
                     let store = state.store;
                     if set_tag_location.location.is_empty() {
-                      match store.delete_location(&set_tag_location.tag_id_hex).await {
-                          Ok(_) => GenericResponse { error: None, text: "Tag location cleared".to_string()}.encrypt(&key.borrow()),
-                          Err(err) => GenericResponse{ error: Some(format!("Failed to clear tag location: {err:?}")), text: String::new()}.encrypt(&key.borrow()),
-                      }  
+                        match store.delete_location(&set_tag_location.tag_id_hex).await {
+                            Ok(_) => GenericResponse {
+                                error: None,
+                                text: "Tag location cleared".to_string(),
+                            }
+                            .encrypt(&key.borrow()),
+                            Err(err) => GenericResponse {
+                                error: Some(format!("Failed to clear tag location: {err:?}")),
+                                text: String::new(),
+                            }
+                            .encrypt(&key.borrow()),
+                        }
                     } else {
                         match store.insert_tag_location(&set_tag_location.tag_id_hex, &set_tag_location.location).await {
-                            Ok(true) => GenericResponse { error: None, text: "Location assigned to tag".to_string()}.encrypt(&key.borrow()),
-                            Ok(false) => GenericResponse { error: None, text: "Tag's location updated".to_string()}.encrypt(&key.borrow()),
-                            Err(err) => GenericResponse{ error: Some(format!("Error setting tag location: {err:?}")), text: String::new()}.encrypt(&key.borrow()),
+                            Ok(true) => GenericResponse {
+                                error: None,
+                                text: "Location assigned to tag".to_string(),
+                            }
+                            .encrypt(&key.borrow()),
+                            Ok(false) => GenericResponse {
+                                error: None,
+                                text: "Tag's location updated".to_string(),
+                            }
+                            .encrypt(&key.borrow()),
+                            Err(err) => GenericResponse {
+                                error: Some(format!("Error setting tag location: {err:?}")),
+                                text: String::new(),
+                            }
+                            .encrypt(&key.borrow()),
                         }
                     }
                 },
@@ -629,14 +672,14 @@ impl AppWithStateBuilder for NestedAppBuilder {
                                     text: format!("Spool {} updated", set_spool_location.spool_id),
                                     error: None,
                                 }
-                                .encrypt(&key.borrow())
+                                .encrypt(&key.borrow());
                             }
                             Err(err) => {
                                 return GenericResponse {
                                     text: format!("Tried to update Spool {}", set_spool_location.spool_id),
                                     error: Some(format!("Failed to update Spool {} : {err}", set_spool_location.spool_id)),
                                 }
-                                .encrypt(&key.borrow())
+                                .encrypt(&key.borrow());
                             }
                         }
                     } else {
@@ -929,6 +972,7 @@ pub struct AddSpoolDTO {
     pub assigned_location: String,
     pub actual_location: String,
     pub spools_count: i32,
+    pub split: Option<String>,
 }
 encrypted_input!(AddSpoolDTO);
 
