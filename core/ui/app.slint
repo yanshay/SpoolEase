@@ -11,6 +11,11 @@ export enum UiTrayState { Unknown, Empty, Spool, Reading, Ready, Loading, Unload
 // Unloading - during the process of unloading from the extruder
 export enum UiFilamentState { Unknown, Known }
 
+export struct Printer {
+    name: string,
+    connected: bool,
+}
+
 export struct UiFilament {
   state: UiFilamentState,
   color: color,
@@ -142,7 +147,7 @@ export global AppBackend {
     callback encode-tag() -> bool;
     callback read-tag-mode();
     callback web-config-web-app();
-    callback select-printer(printer: string);
+    callback select-printer(printer: int);
     callback calibrate-scale(weight: int);
     pure callback get-connected-scale-info() -> string;
     pure callback get-available-scales-info() -> [string];
@@ -251,7 +256,6 @@ export global AppState {
     changed control-state => {
         self.stop-highlight-trays();
     }
-    in-out property <bool> some-printer-connected: false;
 
     // Global state variables for New Tag Scan Control-State
     in-out property <NewScannedTagType> new-tag-scan-tag-type; // Simple or Definition
@@ -289,16 +293,31 @@ export global AppState {
     in-out property <int> curr-ams-id: 0;
     in-out property <[int]> ams-exists: [0];
 
-    in-out property <string> curr-printer: "";
+    in-out property <int> curr-printer: -1;
     in-out property <int> num-extruders: 1;
     in-out property <int> displayed-extruder: 0;
-    in-out property <[string]> available-printers: [];
-    in-out property <string> default-printer: "";
-    in-out property <string> pending-curr-printer: "";
+    in-out property <[Printer]> available-printers: [];
+    in-out property <int> default-printer: -1;
+    in-out property <int> pending-curr-printer: -1;
+    pure public function curr-printer-name() -> string {
+        if curr-printer != -1 && available-printers.length != 0 {
+            return available-printers[curr-printer].name;
+        } else {
+            return "";
+        }
+    }
+    pure public function curr-printer-connected() -> bool {
+        if curr-printer != -1 && available-printers.length != 0 {
+            return available-printers[curr-printer].connected;
+        } else {
+            return false;
+        }
+    }
+
     changed pending-curr-printer => {
-        if pending-curr-printer != "" {
+        if pending-curr-printer != -1 {
             AppBackend.select-printer(pending-curr-printer);
-            pending-curr-printer = "";
+            pending-curr-printer = -1;
         }
     }
 
@@ -379,13 +398,6 @@ export global AppState {
         self.message-box-text2 = "";
         self.message-box-type = StatusType.Normal;
         self.message-box-timeout = 0;
-    }
-
-    public function printer-connected(printer-name: string) {
-        if self.control-state == ControlState.Booting /*|| self.control-state == ControlState.ConnectingToPrinter*/ {
-            self.control-state = ControlState.Ready;
-        }
-        self.some-printer-connected = true;
     }
 
     public function initialization_completed() {
@@ -504,7 +516,7 @@ export global AppState {
 
     // ams-id here is as follows : 0..3 (normal), 4.. (HT), 255 (external)
     // tray-id is the tray number inside the AMS (in HT all are 0) or 254/255 for external
-    public function tray-update-succeeded(printer: string, configured-entity: string, tray-id: int) {
+    public function tray-update-succeeded(printer: int, configured-entity: string, tray-id: int) {
         self.control-state = ControlState.PostAction;
         self.user-message = "Configured Successfully\n\{configured-entity}";
         self.user-message-type = StatusType.Success;
@@ -666,18 +678,19 @@ export global AppState {
     public function emulated-tag-scanned() {
     }
 
-    public function set-printers-info(available-printers: [string], default_printer: string) {
+    public function set-printers-info(available-printers: [Printer], default_printer: int) {
         self.available-printers = available-printers;
         self.default-printer = default-printer;
     }
 
-    public function set-curr-printer(curr-printer: string) {
+    public function set-curr-printer(curr-printer: int) {
         self.curr-printer = curr_printer;
     }
+
     // the below is a function to call with delay the select-printer
     // to avoid rust's borrowing issues in the implementation
     // uses property changed for delayed call
-    public function set-later-curr-printer(curr-printer: string) {
+    public function set-later-curr-printer(curr-printer: int) {
         self.pending-curr-printer = curr-printer
     }
 

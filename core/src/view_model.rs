@@ -227,7 +227,7 @@ impl ViewModel {
         let mut default_printer_set = false;
         let mut printer_number = 1; // starts from one and incremented for any printer
         let mut printer_index = 0; // starts from zero and incremented only on successful init and adding to array
-        let mut available_printers: Vec<SharedString> = Vec::new();
+        let mut available_printers: Vec<crate::app::Printer> = Vec::new();
         for printer_config in &self.app_config.borrow().configured_printers.printers {
             if printer_number > 4 {
                 term_info!("Printers limit reached - max four printers supported");
@@ -251,7 +251,11 @@ impl ViewModel {
                         self.bambu_printer_model.index = self.bambu_printer_model.printers.len() - 1;
                         default_printer_set = true;
                     }
-                    available_printers.push(bambu_printer_model.borrow().printer_selector_name.to_shared_string());
+                    let printer = crate::app::Printer {
+                        connected: false,
+                        name: bambu_printer_model.borrow().printer_selector_name.to_shared_string(),
+                    };
+                    available_printers.push(printer);
 
                     // notification from printer on events, should be treated for all printers,
                     // but selected printer should be considered as to what to update in the UI
@@ -274,21 +278,18 @@ impl ViewModel {
         let ui_app_state = ui.global::<crate::app::AppState>();
 
         if !self.bambu_printer_model.printers.is_empty() {
-            let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index]
-                .borrow()
-                .printer_selector_name
-                .to_shared_string();
+            let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index].borrow().printer_index as i32;
             let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers));
-            ui_app_state.invoke_set_printers_info(available_printers, default_printer.clone());
+            ui_app_state.invoke_set_printers_info(available_printers, default_printer);
             ui_app_state.invoke_set_curr_printer(default_printer);
             self.register_printer_related_listeners();
 
             let moved_ui = self.ui_weak.clone();
             let moved_view_model = self.view_model.as_ref().unwrap().clone();
             // this select_printer handler CAN'T depend on printer because then it would need to change itself while running
-            ui_app_backend.on_select_printer(move |selected_printer: SharedString| {
+            ui_app_backend.on_select_printer(move |selected_printer: i32| {
                 // First stored UI for this printer for when we switch back to it
-                Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), &selected_printer);
+                Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), selected_printer);
             });
             self.framework
                 .borrow()
@@ -688,11 +689,7 @@ impl ViewModel {
             .on_load_staging(move |spool_id| moved_view_model.borrow().ui_load_staging(&spool_id));
     }
 
-    fn perform_select_printer(
-        moved_ui: slint::Weak<crate::app::AppWindow>,
-        moved_view_model: Rc<RefCell<ViewModel>>,
-        selected_printer: &SharedString,
-    ) {
+    fn perform_select_printer(moved_ui: slint::Weak<crate::app::AppWindow>, moved_view_model: Rc<RefCell<ViewModel>>, selected_printer: i32) {
         // Collect printer view state to store until we switch back
         let current_shown_ams = moved_ui.unwrap().global::<crate::app::AppState>().get_curr_ams_id();
         let current_printer_selector_name = moved_ui.unwrap().global::<crate::app::AppState>().get_curr_printer();
@@ -706,29 +703,24 @@ impl ViewModel {
         // Then process select
         let mut borrowed_view_model = moved_view_model.borrow_mut();
         let selected_printer_string = selected_printer.to_string();
-        for (i, printer) in borrowed_view_model.bambu_printer_model.printers.iter().enumerate() {
-            if selected_printer_string == printer.borrow().printer_selector_name {
-                moved_ui
-                    .unwrap()
-                    .global::<crate::app::AppState>()
-                    .invoke_set_curr_printer(selected_printer.to_shared_string());
-                borrowed_view_model.bambu_printer_model.index = i;
+        moved_ui
+            .unwrap()
+            .global::<crate::app::AppState>()
+            .invoke_set_curr_printer(selected_printer);
+        borrowed_view_model.bambu_printer_model.index = selected_printer as usize;
 
-                // while strange, this is importnat here for restoring curr_ams after, next call will set it to the first (in case 0 doesn't exist)
-                // Internally this will pass only for the currently displayed printer in the UI
-                moved_ui.unwrap().global::<crate::app::AppState>().set_curr_ams_id(0);
+        // while strange, this is importnat here for restoring curr_ams after, next call will set it to the first (in case 0 doesn't exist)
+        // Internally this will pass only for the currently displayed printer in the UI
+        moved_ui.unwrap().global::<crate::app::AppState>().set_curr_ams_id(0);
 
-                borrowed_view_model.update_ui_from_printer(&borrowed_view_model.bambu_printer_model.printers[i].borrow());
-                // now we'll resrore to the corret curr_ams if user was already there before, if not it will stay on the correct first ams
-                if let Some(printer_view_state) = &borrowed_view_model.printers_view_state.get(&selected_printer_string)
-                    && let Some(past_curr_ams_id) = printer_view_state.curr_ams
-                {
-                    moved_ui.unwrap().global::<crate::app::AppState>().set_curr_ams_id(past_curr_ams_id);
-                }
-                borrowed_view_model.register_printer_related_listeners();
-                break;
-            }
+        borrowed_view_model.update_ui_from_printer(&borrowed_view_model.bambu_printer_model.printers[selected_printer as usize].borrow());
+        // now we'll restore to the corret curr_ams if user was already there before, if not it will stay on the correct first ams
+        if let Some(printer_view_state) = &borrowed_view_model.printers_view_state.get(&selected_printer_string)
+            && let Some(past_curr_ams_id) = printer_view_state.curr_ams
+        {
+            moved_ui.unwrap().global::<crate::app::AppState>().set_curr_ams_id(past_curr_ams_id);
         }
+        borrowed_view_model.register_printer_related_listeners();
     }
 
     fn get_filament_info(&self, search_code: &str, material: Option<&str>) -> Option<FilamentSupInfo> {
@@ -852,7 +844,7 @@ impl ViewModel {
                 filament_staging.clear();
                 ui.unwrap().global::<crate::app::AppState>().invoke_empty_spool_staging();
                 ui.unwrap().global::<crate::app::AppState>().invoke_tray_update_succeeded(
-                    bambu_printer.printer_selector_name.to_shared_string(),
+                    bambu_printer.printer_index as i32,
                     full_slot_description.into(),
                     tray_id_for_ui,
                 );
@@ -923,7 +915,7 @@ impl ViewModel {
 
     fn ui_load_staging(&self, spool_id: &str) -> SharedString {
         if let Some(spool_rec) = self.store.get_spool_by_id(spool_id) {
-            if spool_rec.spools_count <=1 {
+            if spool_rec.spools_count <= 1 {
                 self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Scanned);
                 self.display_filament_staging(true);
                 let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
@@ -1132,7 +1124,7 @@ impl ViewModel {
 
     fn ui_can_link_spool_to_tag(&self, id: &str) -> SharedString {
         if let Some(spool_rec) = self.store.get_spool_by_id(id) {
-            if spool_rec.spools_count <=1 {
+            if spool_rec.spools_count <= 1 {
                 if spool_rec.tag_id.is_empty() || spool_rec.tag_id.starts_with("-") {
                     SharedString::new()
                 } else {
@@ -1347,19 +1339,20 @@ impl ViewModel {
         };
 
         // Changed this (for now, on purpose, not filling in fields that aren't in the tag, to show the real tag information)
-        let (slicer_filament_name, temp_min, temp_max) = if let Some(filament_info) = &self.get_filament_info(&record.slicer_filament, Some(&record.material_type)) {
-            (
-                slint::format!(
-                    "{}{}",
-                    filament_info.slicer_name,
-                    if filament_info.base_filament { " (base)" } else { "" }
-                ),
-                filament_info.nozzle_temp_low,
-                filament_info.nozzle_temp_high,
-            )
-        } else {
-            Default::default()
-        };
+        let (slicer_filament_name, temp_min, temp_max) =
+            if let Some(filament_info) = &self.get_filament_info(&record.slicer_filament, Some(&record.material_type)) {
+                (
+                    slint::format!(
+                        "{}{}",
+                        filament_info.slicer_name,
+                        if filament_info.base_filament { " (base)" } else { "" }
+                    ),
+                    filament_info.nozzle_temp_low,
+                    filament_info.nozzle_temp_high,
+                )
+            } else {
+                Default::default()
+            };
 
         let color = if record.color_code.len() >= 6 {
             let color = u32::from_str_radix(&record.color_code[..6], 16).unwrap() + 0xFF000000; // the plus 0xFF at the end is fo add alpha
@@ -2199,19 +2192,6 @@ impl ViewModel {
                 match store.get_spool_ext_by_id(&spool_id).await {
                     Ok(spool_rec_ext) => {
                         full_spool_rec.spool_rec_ext = spool_rec_ext;
-
-                        let view_model_borrow = view_model.borrow();
-                        let tray_id_for_ui = tray_id;
-                        let full_slot_description = Self::full_slot_description(&view_model.borrow().bambu_printer_model.borrow(), tray_id);
-                        view_model_borrow
-                            .ui_weak
-                            .unwrap()
-                            .global::<crate::app::AppState>()
-                            .invoke_tray_update_succeeded(
-                                full_slot_description.into(),
-                                view_model_borrow.bambu_printer_model.borrow().printer_selector_name.to_shared_string(),
-                                tray_id_for_ui,
-                            );
                     }
                     Err(err) => {
                         error!("Failed to load Spool {spool_id} Extended Info when configuring slot");
@@ -2242,6 +2222,15 @@ impl ViewModel {
                     filament_info.nozzle_temp_low as u32,
                     filament_info.nozzle_temp_high as u32,
                 );
+
+                let view_model_borrow = view_model.borrow();
+                let tray_id_for_ui = tray_id;
+                let full_slot_description = Self::full_slot_description(&bambu_printer_mut, tray_id);
+                view_model_borrow
+                    .ui_weak
+                    .unwrap()
+                    .global::<crate::app::AppState>()
+                    .invoke_tray_update_succeeded(bambu_printer_mut.printer_index as i32, full_slot_description.into(), tray_id_for_ui);
             } else {
                 error!("Failed to resolve filament temps for spool {spool_id}");
                 view_model.borrow().message_box(
@@ -2476,6 +2465,8 @@ impl BambuPrinterObserver for ViewModel {
     }
 
     fn on_printer_connect_status(&self, bambu_printer: &mut BambuPrinter, status: bool) {
+        let ui_borrow = self.ui_weak.unwrap();
+        let ui = ui_borrow.global::<crate::app::AppState>();
         if status {
             // TODO: I can't borrow at this stage because my_mqtt reports this and need to borrow_mut so now can't borrow.
             //       Need to switch to the notifications coming from a notifier object and not directly from the objects.
@@ -2485,13 +2476,14 @@ impl BambuPrinterObserver for ViewModel {
             term_info!(&"-".repeat(62));
             term_info!("Printer [{}] connected successfully", bambu_printer.printer_number);
             term_info!(&"-".repeat(62));
-            self.ui_weak
-                .unwrap()
-                .global::<crate::app::AppState>()
-                .invoke_printer_connected(bambu_printer.printer_selector_name.to_shared_string());
         } else {
             term_info!("[{}] Printer disconnected", bambu_printer.printer_number);
         }
+
+        let ui_printers = ui.get_available_printers();
+        let mut printer_row = ui_printers.row_data(bambu_printer.printer_index).unwrap();
+        printer_row.connected = status;
+        ui_printers.set_row_data(bambu_printer.printer_index, printer_row);
     }
 
     fn on_request_gcode_analysis(&mut self, printer: &mut BambuPrinter, print_project: &PrintProject) -> i32 {
