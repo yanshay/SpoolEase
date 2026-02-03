@@ -34,7 +34,7 @@ edge-mdns = { git = "https://github.com/yanshay/edge-net", branch = "yanshay_upd
 edge-ws = { git = "https://github.com/yanshay/edge-net", branch = "yanshay_update-to-embassy-time-0.5.0"}
 
 [build-dependencies]
-slint-build = "=1.11.0"
+slint-build = "=1.13.1"
 walkdir = "2.5.0"
 
 [dependencies]
@@ -87,7 +87,7 @@ sequential-storage = { git = "https://github.com/tweedegolf/sequential-storage",
 
 # Display & Touch crates
 mipidsi = { version = "0.8.0" } # # can't upgrade due to mismatch with display-interface-parallel-gpio 0.7.0
-slint = { version = "=1.11.0", default-features = false, features = [ "libm", "unsafe-single-threaded", "compat-1-2", "renderer-software" ] }
+slint = { version = "=1.13.1", default-features = false, features = [ "libm", "unsafe-single-threaded", "compat-1-2", "renderer-software" ] }
 
 # Networking crates
 smoltcp = { version = "0.12.0", default-features = false, features = [ "proto-ipv4", "socket-tcp", "socket-icmp", "socket-udp", "medium-ethernet", "proto-dhcpv4", "socket-raw", "socket-dhcpv4"] }
