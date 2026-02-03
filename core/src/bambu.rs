@@ -2813,6 +2813,10 @@ pub async fn incoming_messages_task(read_packets: Rc<ReadPacketsPubSub>, bambu_p
 
                                 match message {
                                     bambu_api::Message::Print(print) => {
+                                        if log_level < log::Level::Trace && print.print.command.as_deref() == Some("project_file") {
+                                            let cleaned_log = clean_bytes_to_string(payload);
+                                            trace!("[{printer_log_id}] [Q:{}] [SIM] {cleaned_log}", subscriber.len());
+                                        }
                                         let mut skip = false;
                                         if let Some(print_result) = &print.print.result
                                             && print_result == "fail"
