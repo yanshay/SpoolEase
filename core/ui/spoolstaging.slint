@@ -3,7 +3,7 @@ import { AppState, AppConsts, AppBackend, SpoolStagingState, ControlState, Spool
 import { Utils } from "utils.slint"; 
 import { FrameworkState } from "framework/framework.slint";
 
-export component SpoolStaging inherits Window {
+export component SpoolStaging inherits Rectangle {
     callback clicked-ota;
 
     main := VerticalLayout {
@@ -23,7 +23,7 @@ export component SpoolStaging inherits Window {
             }
         }
 
-        Window {
+        Rectangle {
             filament-box := Rectangle {
                 background: (AppState.spool-staging-state != SpoolStagingState.Empty) ? AppState.spool-staging-info.color : AppConsts.no-color;
 

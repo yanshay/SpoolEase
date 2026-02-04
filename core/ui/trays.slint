@@ -4,7 +4,7 @@ import { MyText } from "framework/widgets.slint";
 
 /////////////////////////////////////////////
 
-component AmsButton inherits Window {
+component AmsButton inherits Rectangle {
     in property <int> ams-id;
     in property <bool> active;
     in property <[UiTray]> trays-state;
@@ -187,7 +187,7 @@ component Spool inherits Rectangle {
     }
 }
 
-component Tray inherits Window {
+component Tray inherits Rectangle {
     in-out property <UiTray> tray-state;
     callback clicked();
     // Not clear why, but VerticalLayout (with single item inside?) stretches it to the correct height

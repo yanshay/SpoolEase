@@ -3,7 +3,7 @@ import { MyButton, MyText } from "./framework/widgets.slint";
 import { Utils } from "utils.slint";
 import { AppState } from "app.slint";
 
-export component MessageBox inherits Window {
+export component MessageBox inherits Rectangle {
     callback clicked;
     in property <color> dialog-background: skyblue;
     in property <color> dialog-title-background: beige;

@@ -187,7 +187,7 @@ export component Selector inherits Rectangle {
 
                         y: - mod( viewport-y, option-height);
                         // y: - mod( round(viewport-y/1px)*1px, option-height );
-                        for i in num-items-to-render: Window {
+                        for i in num-items-to-render: Rectangle {
                         // for i in 170: Window { // to test rendering of all items (but not components)
                             height: option-height;
                             if self.y > -self.height && self.y <= list.height && root.options-list[first-item + i].id < 0: Rectangle {
@@ -369,7 +369,7 @@ export component LeftTab inherits Rectangle {
     }
 }
 
-export component HorizontalSelector inherits Window {
+export component HorizontalSelector inherits Rectangle {
     in property <brush> selected-color: lightgreen;
     in property <brush> unselected-color: lightgrey;
     in property <length> buttons-width: self.height;

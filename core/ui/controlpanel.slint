@@ -112,7 +112,7 @@ export component ControlPanelBase inherits HorizontalLayout {
             border-color: black;
             VerticalLayout {
                 alignment: center;
-                for message-text in message-lines: Window {
+                for message-text in message-lines: Rectangle {
                     background: transparent;
                     preferred-height: message-text == "" ? 0px : 30px;
                     if message-text != "": Text {
