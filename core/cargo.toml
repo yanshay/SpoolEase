@@ -26,9 +26,12 @@ opt-level = 3
 
 [patch.crates-io]
 # patching slint due to: https://github.com/slint-ui/slint/issues/10683
-slint = { git = "https://github.com/slint-ui/slint", rev = "854711dd49215d9ef78ecb43bb3ce03576779a69" }
-slint-build = { git = "https://github.com/slint-ui/slint", rev = "854711dd49215d9ef78ecb43bb3ce03576779a69" }
-
+# when upgrading to 15.0 
+# Font will be an issue, need to replace the spool check and rotating with some image
+# Taking screenshot panics on main screen (also 1.13.1 here actually), and also when not then hits the animated vertical scroll of y axis so practically app is not usable even though working
+# Will be warnings on window, probably need to replace with Rect
+# slint = { git = "https://github.com/slint-ui/slint", rev = "854711dd49215d9ef78ecb43bb3ce03576779a69" }
+# slint-build = { git = "https://github.com/slint-ui/slint", rev = "854711dd49215d9ef78ecb43bb3ce03576779a69" }
 # slint = { path = "../../../../../../OpenSourceProj/forked/slint/api/rs/slint/"}
 # slint-build = { path = "../../../../../../OpenSourceProj/forked/slint/api/rs/build/" }
 
@@ -41,7 +44,7 @@ edge-mdns = { git = "https://github.com/yanshay/edge-net", branch = "yanshay_upd
 edge-ws = { git = "https://github.com/yanshay/edge-net", branch = "yanshay_update-to-embassy-time-0.5.0"}
 
 [build-dependencies]
-slint-build = "1.15.0"
+slint-build = "=1.13.1"
 walkdir = "2.5.0"
 
 [dependencies]
@@ -94,7 +97,7 @@ sequential-storage = { git = "https://github.com/tweedegolf/sequential-storage",
 
 # Display & Touch crates
 mipidsi = { version = "0.8.0" } # # can't upgrade due to mismatch with display-interface-parallel-gpio 0.7.0
-slint = { version = "=1.15.0", default-features = false, features = [ "libm", "unsafe-single-threaded", "compat-1-2", "renderer-software" ] }
+slint = { version = "=1.13.1", default-features = false, features = [ "libm", "unsafe-single-threaded", "compat-1-2", "renderer-software"] }
 
 # Networking crates
 smoltcp = { version = "0.12.0", default-features = false, features = [ "proto-ipv4", "socket-tcp", "socket-icmp", "socket-udp", "medium-ethernet", "proto-dhcpv4", "socket-raw", "socket-dhcpv4"] }
