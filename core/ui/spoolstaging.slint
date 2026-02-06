@@ -102,6 +102,7 @@ export component SpoolStaging inherits Rectangle {
         clicked => {
             AppState.staging-selected();
             if AppState.spool-staging-state == SpoolStagingState.Empty {
+                AppState.clear_tag_scanned();
                 AppState.staging-operation-page = StagingOperationsPage.SelectSpoolToLoad;
             }
         }

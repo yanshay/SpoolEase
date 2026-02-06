@@ -733,6 +733,20 @@ export global AppState {
         self.control-state = ControlState.NewTagScan;
     }
 
+    public function clear_tag_scanned() {
+        self.new-tag-scan-definition-type = ""; // Bambu Lab, OpenPrintTag, Creality, etc. - in the future can unite with V1-Tag
+        self.new-tag-scan-tag-type = NewScannedTagType.SimpleTag;
+        self.new-tag-scan-page = NewTagScanPage.OperationSelect;
+        self.new-tag-operation = NewTagOperation.None;
+        self.new-tag-scan-status = "";
+        self.new-tag-scan-spool-id = "";
+        self.new-tag-scan-spool-id-int = 0;
+        self.new-tag-scan-tag-id = "";
+        self.new-tag-scan-definition-info = "";
+        self.new-tag-scan-empty-spool-weight = 0;
+    }
+    
+
     public function import-definition-tag-to-inventory-status(status: string, spool-id: string) {
       // This one is called both from link_tag and from v1_tag add new tag flows
       // string empty ok, content is error message
