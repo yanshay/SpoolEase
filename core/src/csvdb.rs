@@ -163,7 +163,8 @@ where
             nread = nread + line.len() + 1;
         }
 
-        if backup {
+        // Don't copy in case records are empty (so not destroy old backup)
+        if backup && !records.is_empty() {
             let db_filename_prefix = db_filename.strip_suffix(".db").ok_or_else(|| CsvDbError::Internal {
                 details: "DB filename doesn't end with '.db.'".to_string(),
             })?;
@@ -173,7 +174,8 @@ where
 
         // Now pack if requested
         // Check items size and not use current size in case of type change and serialize longer than original read data
-        if pack {
+        // Don't pack if empty (in case of some error missed when reading file and no records read)
+        if pack && !records.is_empty() {
             // TODO: use the save_all_records_only_before_use instead this code after see it is ok
             let mut record_buffer = alloc::vec![0u8;self.inner.borrow().max_record_width];
             let mut writer = serde_csv_core::Writer::new();
