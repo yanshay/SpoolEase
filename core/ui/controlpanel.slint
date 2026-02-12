@@ -187,7 +187,7 @@ export component Ready inherits ControlPanelBase {
     message-lines: [
         AppState.spool-staging-state == SpoolStagingState.Empty ? "Scanning for Tagged Spool..." : "Load Spool or Rescan Tag",
         AppState.curr-printer-name(),
-        AppState.curr-printer-connected() ? "" : "- Connecting to Printer(s) -"
+        (AppState.curr-printer-connected() || AppState.no-printers-configured) ? "" : "- Connecting to Printer -"
     ];
     button1-text: (AppState.spool-staging-state != SpoolStagingState.Empty) ? "Clear Staging" : "";
     button1-timeout: (AppState.spool-staging-state != SpoolStagingState.Empty) ? 99 : 0;

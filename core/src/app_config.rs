@@ -60,6 +60,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_false() -> bool {
+    false
+}
+
 // These struct is first and foremost for persistent configuration
 // Changing it should be well dealt with including upgrade
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone, Derivative)]
@@ -71,9 +75,10 @@ pub struct PrinterConfig {
     pub serial: Option<String>,
     pub access_code: Option<String>,
     pub log_filter: Option<log::LevelFilter>,
-    #[derivative(Default(value = "true"))]
-    #[serde(default = "default_true")]
+    #[derivative(Default(value = "false"))]
+    #[serde(default = "default_false")]
     pub auto_restore_k: bool,
+    #[derivative(Default(value = "true"))]
     #[serde(default = "default_true")]
     pub track_print_consume: bool,
     #[serde(default)]
@@ -118,6 +123,11 @@ pub struct AppConfig {
 impl AppConfig {
     #[allow(dead_code)]
     pub fn missing_configs(&self, log: bool) -> bool {
+        if self.configured_printers.printers.is_empty() {
+            term_info!("No printers configured");
+            return false;
+        }
+
         let mut missing = true;
         let mut partial_missing = false;
         for printer in &self.configured_printers.printers {
@@ -272,9 +282,9 @@ impl AppConfig {
         }
 
         // If after all, no printer configured, fill in an empty printer config
-        if self.configured_printers.printers.is_empty() {
-            self.configured_printers.printers.push(PrinterConfig::default());
-        }
+        // if self.configured_printers.printers.is_empty() {
+        //     self.configured_printers.printers.push(PrinterConfig::default());
+        // }
 
         self.config_processed_ok = Some(true);
         Ok(())

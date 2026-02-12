@@ -131,7 +131,9 @@ impl AppWithStateBuilder for NestedAppBuilder {
             .get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
                 ready({
                     let borrowed_app_config = state.0.app_config.borrow(); // notice the borrow, can't async here
-                    let printers = &borrowed_app_config.configured_printers;
+                    let empty_printers_config = PrintersConfig { printers: alloc::vec![PrinterConfig::default()] };
+                    let no_configured_printers = borrowed_app_config.configured_printers.printers.is_empty();
+                    let printers = if no_configured_printers { &empty_printers_config } else {&borrowed_app_config.configured_printers};
                     let default_printer = &borrowed_app_config.configured_default_printer;
                     let mut printers_config = PrintersConfigDTO::from(printers);
                     printers_config.default_printer_serial = default_printer.serial.clone();

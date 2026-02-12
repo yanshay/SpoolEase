@@ -459,6 +459,10 @@ impl BambuPrinter {
         // }
     }
 
+    pub fn dummy_printer(&self) -> bool {
+        self.printer_serial == "000000000000000"
+    }
+
     pub async fn load_printer_state(
         framework: &Rc<RefCell<Framework>>,
         printer: &Rc<RefCell<BambuPrinter>>,
@@ -475,7 +479,9 @@ impl BambuPrinter {
         Timer::after_millis(250).await;
 
         let mut err_str = String::new();
-
+        if printer.borrow().dummy_printer() {
+            return Ok(())
+        }
         for trial in 1..=3 {
             // in separate section for file_store to be release for later load
             let file_store = framework.borrow().file_store();

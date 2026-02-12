@@ -38,7 +38,7 @@ use framework::{
 };
 
 use crate::app::{UiSlotDisplay, UiSpoolRecord, UiSpoolRecordDisplay};
-use crate::app_config::{BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS};
+use crate::app_config::{BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig};
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
 use crate::bambu::bambu_print::PrintProject;
 use crate::bambu::{Filament, KExtruder, KInfo, KNozzleDiameter, KNozzleId, KPrinter, SpoolId, Tray, TrayBits};
@@ -228,7 +228,27 @@ impl ViewModel {
         let mut printer_number = 1; // starts from one and incremented for any printer
         let mut printer_index = 0; // starts from zero and incremented only on successful init and adding to array
         let mut available_printers: Vec<crate::app::Printer> = Vec::new();
-        for printer_config in &self.app_config.borrow().configured_printers.printers {
+
+        let dummy_printer_config = PrinterConfig {
+            ip: None,
+            name: Some("No Printer Configured".to_string()),
+            serial: Some("000000000000000".to_string()),
+            access_code: Some("00000000".to_string()),
+            log_filter: None,
+            auto_restore_k: false,
+            track_print_consume: false,
+            fetch_3mf: Fetch3mf::CloudHttp,
+        };
+
+        let no_configured_printers = self.app_config.borrow().configured_printers.printers.is_empty();
+        for printer_config in self
+            .app_config
+            .borrow()
+            .configured_printers
+            .printers
+            .iter()
+            .chain(no_configured_printers.then_some(&dummy_printer_config).into_iter())
+        {
             if printer_number > 4 {
                 term_info!("Printers limit reached - max four printers supported");
                 break;
@@ -277,7 +297,11 @@ impl ViewModel {
         let ui_app_backend = ui.global::<crate::app::AppBackend>();
         let ui_app_state = ui.global::<crate::app::AppState>();
 
-        if !self.bambu_printer_model.printers.is_empty() {
+        if no_configured_printers {
+           ui_app_state.set_no_printers_configured(true); 
+        }
+
+        if !self.bambu_printer_model.printers.is_empty() { // doesn't happen any longer (since added dummy printer) but keeping the code for now
             let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index].borrow().printer_index as i32;
             let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers));
             ui_app_state.invoke_set_printers_info(available_printers, default_printer);

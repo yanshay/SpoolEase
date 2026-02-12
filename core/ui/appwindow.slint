@@ -130,6 +130,7 @@ export component AppWindow inherits Window {
                         }
 
                         slots := Slots {
+                            visible: !AppState.no-printers-configured;
                             width: 480px;
                         }
                     }
