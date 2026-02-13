@@ -1205,7 +1205,8 @@ impl ViewModel {
         } else {
             ""
         };
-        let filament_title = format!("{brand} {material} {color_name}").trim().to_shared_string();
+        // let filament_title = format!("{brand} {material} {color_name}").trim().to_shared_string();
+        let filament_title = format!("{brand} {material}").trim().to_shared_string();
         let available_in_spool = self.weight_left(tray).unwrap_or_default();
 
         let pa = match tray.cali_idx {
