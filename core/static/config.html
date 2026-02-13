@@ -864,7 +864,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
                     <label for="fetch-3mf" style="margin-top: 0px; margin-bottom:0px; padding-left: 2px;">Default Fetch 3MF From</label>
                     <select style="padding-right: 12px; height: 20px; font-size: 1rem; margin-left: 12px;" class="fetch-3mf" type="checkbox" id="fetch-3mf">
                       <option value="printer-ftp">FTP (No Authorization)&nbsp;</option>
-                      <option value="cloud-http">HTTP (Only in Cloud)</option>
+                      <option value="cloud-http" selected>HTTP (Only in Cloud)</option>
                     </select>
                   </div>
                 </div>
@@ -1036,7 +1036,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
 
       function updatePrinterNumbers() {
         const printerForms = document.querySelectorAll(".printer-form");
-        const showRemoveButton = printerForms.length > 1;
+        const showRemoveButton = true; //printerForms.length > 1;
 
         printerForms.forEach((form, index) => {
           const newId = index + 1;

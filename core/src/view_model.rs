@@ -298,21 +298,24 @@ impl ViewModel {
         let ui_app_state = ui.global::<crate::app::AppState>();
 
         if no_configured_printers {
-           ui_app_state.set_no_printers_configured(true); 
-        } else {
-            let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index].borrow().printer_index as i32;
-            let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers));
-            ui_app_state.invoke_set_printers_info(available_printers, default_printer);
-            ui_app_state.invoke_set_curr_printer(default_printer);
-            self.register_printer_related_listeners();
+            ui_app_state.set_no_printers_configured(true);
+        }
 
-            let moved_ui = self.ui_weak.clone();
-            let moved_view_model = self.view_model.as_ref().unwrap().clone();
-            // this select_printer handler CAN'T depend on printer because then it would need to change itself while running
-            ui_app_backend.on_select_printer(move |selected_printer: i32| {
-                // First stored UI for this printer for when we switch back to it
-                Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), selected_printer);
-            });
+        let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index].borrow().printer_index as i32;
+        let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers));
+        ui_app_state.invoke_set_printers_info(available_printers, default_printer);
+        ui_app_state.invoke_set_curr_printer(default_printer);
+        self.register_printer_related_listeners();
+
+        let moved_ui = self.ui_weak.clone();
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        // this select_printer handler CAN'T depend on printer because then it would need to change itself while running
+        ui_app_backend.on_select_printer(move |selected_printer: i32| {
+            // First stored UI for this printer for when we switch back to it
+            Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), selected_printer);
+        });
+
+        if !no_configured_printers { // if only dummy printer, no point in tasks running
             self.framework
                 .borrow()
                 .spawner
@@ -329,6 +332,7 @@ impl ViewModel {
                 .spawn_heap(store_printers_consume(self.view_model.clone().unwrap()))
                 .ok();
         }
+
         let moved_view_model = self.view_model.clone().unwrap();
         ui_app_backend.on_link_tag_to_spool_id(move |tag_id, tag_type, spool_id, final_step| {
             let _ = moved_view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::LinkTagToSpool {

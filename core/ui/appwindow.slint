@@ -1,13 +1,37 @@
-import { ListView, GridBox, VerticalBox, HorizontalBox, Button, ComboBox, SpinBox, ScrollView } from "std-widgets.slint";
+import {
+    ListView,
+    GridBox,
+    VerticalBox,
+    HorizontalBox,
+    Button,
+    ComboBox,
+    SpinBox,
+    ScrollView,
+} from "std-widgets.slint";
 
-import { FrameworkBackend, FrameworkState, OtaState, WebConfigState } from "framework/framework.slint";
+import {
+    FrameworkBackend,
+    FrameworkState,
+    OtaState,
+    WebConfigState,
+} from "framework/framework.slint";
 import { Terminal } from "framework/terminal.slint";
 import { Settings } from "framework/settings.slint";
 import { Title, MyText, MyButton } from "framework/widgets.slint";
 
 import { Utils } from "utils.slint";
 import { Trays } from "trays.slint";
-import { AppBackend, AppState, AppConsts, ControlState, SpoolScaleState, UiTray, UiTrayState, UiFilamentState, StatusType } from "app.slint";
+import {
+    AppBackend,
+    AppState,
+    AppConsts,
+    ControlState,
+    SpoolScaleState,
+    UiTray,
+    UiTrayState,
+    UiFilamentState,
+    StatusType,
+} from "app.slint";
 import { ControlPanel } from "controlpanel.slint";
 import { SelectPrinter } from "select-printer.slint";
 import { AppSettings } from "app-settings.slint";
@@ -129,9 +153,24 @@ export component AppWindow inherits Window {
                             width: 480px;
                         }
 
-                        slots := Slots {
-                            visible: !AppState.no-printers-configured;
-                            width: 480px;
+                        Rectangle {
+                            VerticalLayout { // for some reason VerticalLayout adds the required spacing below
+                                slots := Slots {
+                                    visible: !AppState.no-printers-configured;
+                                    width: 480px;
+                                }
+                            }
+
+                            if AppState.no-printers-configured: VerticalLayout {
+                                Rectangle {
+                                    width: 480px;
+                                    border-width: 1px;
+                                    border-color: black;
+                                    MyText {
+                                        text: "No Printer Configured - Inventory Mode";
+                                    }
+                                }
+                            }
                         }
                     }
 
