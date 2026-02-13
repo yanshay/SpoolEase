@@ -299,9 +299,7 @@ impl ViewModel {
 
         if no_configured_printers {
            ui_app_state.set_no_printers_configured(true); 
-        }
-
-        if !self.bambu_printer_model.printers.is_empty() { // doesn't happen any longer (since added dummy printer) but keeping the code for now
+        } else {
             let default_printer = self.bambu_printer_model.printers[self.bambu_printer_model.index].borrow().printer_index as i32;
             let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers));
             ui_app_state.invoke_set_printers_info(available_printers, default_printer);
