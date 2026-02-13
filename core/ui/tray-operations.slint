@@ -12,7 +12,7 @@ enum TrayDisplayTab {
 
 component TrayDisplayStep inherits Rectangle {
     callback more-clicked();
-    property <TrayDisplayTab> tab;
+    property <TrayDisplayTab> tab: spool-id != "" ? TrayDisplayTab.Spool : TrayDisplayTab.Slot;
     in property <string> spool-id;
     in property <int> tray-index;
     property <UiSpoolRecordDisplay> spool-display: AppBackend.get-spool-record-display(spool-id);
