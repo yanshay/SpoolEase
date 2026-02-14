@@ -89,27 +89,42 @@ export component AppWindow inherits Window {
         height: parent.height;
         handle-swipe-up: current-page < 2 && (!AppState.select-printer);
         handle-swipe-down: current-page > 0 && (!AppState.select-printer);
-        handle-swipe-left: AppState.select-printer == false && top.x == -480px;
-        handle-swipe-right: AppState.select-printer == true && top.x == -480px;
+        handle-swipe-left: current_page_x == 0 || top.x == 0px;
+        handle-swipe-right: current-page_x == 1 || top.x == -480px;
         swiped => {
             if FrameworkState.ota-state != OtaState.Started {
                 if self.handle-swipe-down && self.current-position.y > self.pressed-position.y + (self.height / 8) {
                     // swipe down 
                     current-page -= 1;
                 } else if self.handle-swipe-up && self.current-position.y < self.pressed-position.y - (self.height / 8) {
+                    // swipe up
                     current-page += 1;
-                }
-                if self.handle-swipe-left && self.current-position.x < self.pressed-position.x - (self.width / 5) {
-                    AppState.select-printer = true;
-                    current-page_x = 1;
-                    current-page = current-page; // this looks strange, but to 'cut' the automatic state based vertical positioning tht scrolls on events which is confusing after manual touch
-                } else if self.handle-swipe-right && self.current-position.x > self.pressed-position.x + (self.width / 5) {
-                    AppState.select-printer = false;
-                    current-page_x = 0;
-                } else if current-page_x == 0 && top.x == -480px && self.current-position.x > self.pressed-position.x + (self.width / 5) {
-                    top.x = 0px;
-                } else if current-page_x == 0 && top.x == 0px && self.current-position.x < self.pressed-position.x - (self.width / 5) {
-                    top.x = -480px;
+                } else if current-page == 1 {
+                   // right left swipe available only when current-page is 1
+                    if self.handle-swipe-left && self.current-position.x < self.pressed-position.x - (self.width / 5) {
+                      // swipe left
+                      // if order is important
+                      if top.x == 0px {
+                          // on left top pane showing storage
+                          top.x = -480px;
+                      } else if current-page_x == 0 {
+                         // on main screen
+                         AppState.select-printer = true;
+                         current-page_x = 1;
+                         current-page = current-page; // this looks strange, but to 'cut' the automatic state based vertical positioning tht scrolls on events which is confusing after manual touch
+                      }
+                    } else if self.handle-swipe-right && self.current-position.x > self.pressed-position.x - (self.width / 5) {
+                      // swipe right
+                      // if order is important
+                      if current-page_x == 1 {
+                        // if on select priner page
+                        AppState.select-printer = false;
+                        current-page_x = 0;
+                      } else if top.x == -480px {
+                        // on main display
+                        top.x = 0px;
+                      }
+                    }
                 }
             }
         }
