@@ -390,8 +390,8 @@ impl ViewModel {
                         return false;
                     };
                     spool_rec.encode_time = store_safe_time_now();
-                    let filament_sup_info = view_model_borrow.get_filament_info(&spool_rec.slicer_filament, None);
-                    match spool_rec.to_tag_descriptor_v2(&filament_sup_info) {
+                    let filament_sup_info = view_model_borrow.get_filament_info(&spool_rec.slicer_filament, Some(&spool_rec.material_type));
+                    match spool_rec.to_tag_descriptor_s1(&filament_sup_info) {
                         Some(descriptor) => {
                             let spool_tag_borrow = view_model_borrow.spool_tag_model.borrow();
                             let spool_scale_borrow = view_model_borrow.spool_scale_model.borrow();

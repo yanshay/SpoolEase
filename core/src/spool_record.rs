@@ -164,7 +164,7 @@ const TAG_URL_PREFIX_S1: &str = "https://tag.spoolease.io/S1/"; // starting 0.6.
 // 8. slicner name (SN)
 // 9. DA
 impl SpoolRecord {
-    pub fn to_tag_descriptor_v2(&self, filament_sup_info: &Option<FilamentSupInfo>) -> Option<String> {
+    pub fn to_tag_descriptor_s1(&self, filament_sup_info: &Option<FilamentSupInfo>) -> Option<String> {
         // Note: This function relies on tag_id to be here! (removes the & from the standard function, will panic if no tag_id)
         if self.id.is_empty() || self.tag_id.is_empty() || self.material_type.is_empty() || self.color_code.is_empty() {
             return None;
@@ -186,7 +186,14 @@ impl SpoolRecord {
         let note_part = part_val("N", &self.note);
         let slicer_filament_name = filament_sup_info.as_ref().map_or("", |fsi| &fsi.slicer_name);
         let slicer_filament_name_part = part_val("SN", &slicer_filament_name.to_string());
-        Some(format!("{TAG_URL_PREFIX_S1}?{tag_id_part}{id_part}{encode_time_part}{added_time_part}{material_part}{material_subtype_part}{color_code_part}{color_name_part}{brand_part}{weight_advertised_part}{weight_core_part}{weight_new_part}{slicer_filament_code_part}{slicer_filament_name_part}{note_part}"))
+
+        let nozzle_temp_min = filament_sup_info.as_ref().map(|fsi| fsi.nozzle_temp_low);
+        let nozzle_temp_min_part = part_opt("NN", &nozzle_temp_min);
+
+        let nozzle_temp_max = filament_sup_info.as_ref().map(|fsi| fsi.nozzle_temp_high);
+        let nozzle_temp_max_part = part_opt("NX", &nozzle_temp_max);
+
+        Some(format!("{TAG_URL_PREFIX_S1}?{tag_id_part}{id_part}{encode_time_part}{added_time_part}{material_part}{material_subtype_part}{color_code_part}{color_name_part}{brand_part}{weight_advertised_part}{weight_core_part}{weight_new_part}{slicer_filament_code_part}{slicer_filament_name_part}{nozzle_temp_min_part}{nozzle_temp_max_part}{note_part}"))
     }
     pub fn has_valid_tag_id(&self) -> bool {
         !self.tag_id.is_empty() && !self.tag_id.starts_with('-')
