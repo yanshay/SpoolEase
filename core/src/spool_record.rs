@@ -150,7 +150,8 @@ impl CsvDbId for SpoolRecord {
     }
 }
 
-const TAG_URL_PREFIX_V2: &str = "https://info.filament3d.org/V2/";
+const _TAG_URL_PREFIX_V2: &str = "https://info.filament3d.org/V2/"; // in 0.5.x 
+const TAG_URL_PREFIX_S1: &str = "https://tag.spoolease.io/S1/"; // starting 0.6.0-b.24
 // Some(format!("{FILAMENT_URL_PREFIX}V1?ID={TAG_PLACEHOLDER}{encode_time_part}{material_part}
 // {filament_subtype_part}{color_part}{color_name_part}{brand_part}{advertised_weight_part}{weight_core_part}{weight_new_part}{nozzle_temp_min_part}{nozzle_temp_max_part}{note_part}{tray_info_idx_part}"))
 // TODO:
@@ -185,7 +186,7 @@ impl SpoolRecord {
         let note_part = part_val("N", &self.note);
         let slicer_filament_name = filament_sup_info.as_ref().map_or("", |fsi| &fsi.slicer_name);
         let slicer_filament_name_part = part_val("SN", &slicer_filament_name.to_string());
-        Some(format!("{TAG_URL_PREFIX_V2}?{tag_id_part}{id_part}{encode_time_part}{added_time_part}{material_part}{material_subtype_part}{color_code_part}{color_name_part}{brand_part}{weight_advertised_part}{weight_core_part}{weight_new_part}{slicer_filament_code_part}{slicer_filament_name_part}{note_part}"))
+        Some(format!("{TAG_URL_PREFIX_S1}?{tag_id_part}{id_part}{encode_time_part}{added_time_part}{material_part}{material_subtype_part}{color_code_part}{color_name_part}{brand_part}{weight_advertised_part}{weight_core_part}{weight_new_part}{slicer_filament_code_part}{slicer_filament_name_part}{note_part}"))
     }
     pub fn has_valid_tag_id(&self) -> bool {
         !self.tag_id.is_empty() && !self.tag_id.starts_with('-')
