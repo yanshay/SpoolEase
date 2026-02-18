@@ -1,7 +1,7 @@
 [package]
 name = "SpoolEase"
 homepage = "SpoolEase.io"
-version = "0.6.0-b.26"
+version = "0.6.0-b.27"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.88"
@@ -44,10 +44,10 @@ walkdir = "2.5.0"
 
 [dependencies]
 #TODO: Important - lock to specific tag when released
-# framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.1", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
-# framework_macros = { package = "esp-hal-app-framework-macros", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.1" }
-framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
-framework_macros = { package = "esp-hal-app-framework-macros", path = "../../../esp-hal-app/esp-hal-app-framework-macros/" }
+framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.2", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
+framework_macros = { package = "esp-hal-app-framework-macros", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.2" }
+# framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
+# framework_macros = { package = "esp-hal-app-framework-macros", path = "../../../esp-hal-app/esp-hal-app-framework-macros/" }
 esp32s3 = { version = "0.34.0" }
 
 # Esp-Hal Crates
