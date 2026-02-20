@@ -263,7 +263,7 @@ async fn nfc_task(
     for retry in 0..=retries {
         if retry % 20 == 0 {
             if retry != 0 {
-                term_error!("Challenging PN532 Initialization ({})", retries);
+                term_error!("Challenging PN532 Initialization ({})", retry);
             }
             pn532.wake_up().await.unwrap();
             Timer::after(Duration::from_millis(100)).await
