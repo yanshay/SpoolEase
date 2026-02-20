@@ -11,6 +11,7 @@ use embassy_futures::select::{Either, select};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
 
+use esp_hal::gpio::Input;
 use framework::prelude::*;
 use hashbrown::HashMap;
 use ndef_rs::{NdefMessage, NdefRecord, TNF, payload::UriPayload};
@@ -241,12 +242,14 @@ async fn nfc_task(
         TagOperation,
     >,
 ) {
+    Timer::after_millis(500).await;
+    
     // To switch from using IRQ to not using IRQ:
     //   1. use None::<pn532::spi::NoIRQ> instead of Some(irq)
     //   2. in sam_configuration set use_irq_pin to false (maybe not required)
     let interface = pn532::spi::SPIInterface {
         spi: spi_device,
-        irq: Some(irq),
+        irq: None::<Input<'_>>
         // irq: None::<pn532::spi::NoIRQ>,
     };
 
@@ -259,12 +262,14 @@ async fn nfc_task(
 
     let mut initialization_succeeded = false;
     let mut successful_retry = 0;
-    let retries = 59;
+    let retries = 239;
     for retry in 0..=retries {
-        if retry % 20 == 0 {
+        if retry % 10 == 0 {
             if retry != 0 {
                 term_error!("Challenging PN532 Initialization ({})", retry);
             }
+        }
+        if retry %5 == 0 {
             pn532.wake_up().await.unwrap();
             Timer::after(Duration::from_millis(100)).await
         }
@@ -272,7 +277,7 @@ async fn nfc_task(
             .process(
                 &pn532::Request::sam_configuration(pn532::requests::SAMMode::Normal, true),
                 0,
-                embassy_time::Duration::from_millis(1000),
+                embassy_time::Duration::from_millis(250),
             )
             .await
         {
