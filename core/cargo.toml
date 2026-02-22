@@ -1,7 +1,7 @@
 [package]
 name = "SpoolEase"
 homepage = "SpoolEase.io"
-version = "0.6.0"
+version = "0.6.1-b.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.88"
@@ -155,7 +155,7 @@ hmac = { version = "0.12.1", default-features = false}
 
 # Application specific crates
 mqttrust = { version = "0.6.0" }
-pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_esp-hal-1.0.0-upgrade", default-features = false }
+#pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_esp-hal-1.0.0-upgrade", default-features = false }
 #pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_async_full", default-features = false }
 # pn532 = { path="../../../../../OpenSourceProj/forked/pn532/", default-features = false }
 regex = { version = "1.11.1", default-features = false }

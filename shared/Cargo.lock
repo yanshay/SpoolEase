@@ -4588,7 +4588,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 [[package]]
 name = "pn532"
 version = "0.5.0"
-source = "git+https://github.com/yanshay/pn532?branch=yanshay_esp-hal-1.0.0-upgrade#4a2fb6b96d6ca078ef56598c0524700f6d7d11c0"
+source = "git+https://github.com/yanshay/pn532?branch=yanshay_esp-hal-1.0.0-upgrade#27d42fcc87a5fbf199ca81bb2655e75d30d5062f"
 dependencies = [
  "embassy-time",
  "embedded-hal 1.0.0",
