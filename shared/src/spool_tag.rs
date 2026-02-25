@@ -202,6 +202,7 @@ pub fn init(
         embassy_time::Delay,
     >,
     irq: esp_hal::gpio::Input<'static>,
+    freq_after_init: u32,
     spawner: Spawner,
 ) -> Rc<RefCell<SpoolTag>> {
     let tag_operation = mk_static!(
@@ -220,6 +221,7 @@ pub fn init(
             spi_device,
             irq,
             tag_operation,
+            freq_after_init,
         ))
         .ok();
 
@@ -241,15 +243,16 @@ async fn nfc_task(
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         TagOperation,
     >,
+    freq_after_init: u32,
 ) {
-    Timer::after_millis(500).await;
-    
+    Timer::after_millis(1000).await;
+
     // To switch from using IRQ to not using IRQ:
     //   1. use None::<pn532::spi::NoIRQ> instead of Some(irq)
     //   2. in sam_configuration set use_irq_pin to false (maybe not required)
-    let interface = pn532::spi::SPIInterface {
+    let mut interface = pn532::spi::SPIInterface {
         spi: spi_device,
-        irq: None::<Input<'_>>
+        irq: Some(irq), // : None::<Input<'_>>
         // irq: None::<pn532::spi::NoIRQ>,
     };
 
@@ -258,7 +261,7 @@ async fn nfc_task(
     let mut pn532: pn532::Pn532<_, _, 64> = pn532::Pn532::new(interface, timer);
     // pn532.wake_up().await.unwrap();
 
-    info!("Configuring pn532");
+    term_info!("Initializing Tag Reader");
 
     let mut initialization_succeeded = false;
     let mut successful_retry = 0;
@@ -266,21 +269,25 @@ async fn nfc_task(
     for retry in 0..=retries {
         if retry % 10 == 0 {
             if retry != 0 {
-                term_error!("Challenging PN532 Initialization ({})", retry);
+                term_error!("Still Initializing PN532 ({})", retry);
             }
         }
-        if retry %5 == 0 {
-            pn532.wake_up().await.unwrap();
-            Timer::after(Duration::from_millis(100)).await
-        }
+        // if retry %2 == 0 {
+        Timer::after(Duration::from_millis(50)).await;
+        pn532.wake_up().await.unwrap();
+        Timer::after(Duration::from_millis(200)).await;
+        // }
         if let Err(e) = pn532
             .process(
                 &pn532::Request::sam_configuration(pn532::requests::SAMMode::Normal, true),
                 0,
-                embassy_time::Duration::from_millis(250),
+                embassy_time::Duration::from_millis(50), // longer? shorter?
             )
             .await
         {
+            // if retry < 5 {
+            //     term_error!("Error initializing Tag Reader {:?}", e);
+            // }
             // Error, just wait before retrying
             if retry != retries {
                 Timer::after(Duration::from_millis(100)).await;
@@ -296,14 +303,24 @@ async fn nfc_task(
         }
     }
 
+    // Change frequency to after init frequency
+    let post_init_config = esp_hal::spi::master::Config::default()
+            .with_frequency(esp_hal::time::Rate::from_khz(freq_after_init))
+            .with_mode(esp_hal::spi::Mode::_0)
+            .with_read_bit_order(esp_hal::spi::BitOrder::LsbFirst)
+            .with_write_bit_order(esp_hal::spi::BitOrder::LsbFirst);
+    pn532.interface.spi.bus_mut().apply_config(&post_init_config).unwrap();
+    Timer::after_millis(500).await;
+
     if !initialization_succeeded {
+        term_error!("Failed to initialize Tag Reader");
         spool_tag_rc.borrow().notify_pn532_status(false);
         return;
     } else {
         spool_tag_rc.borrow().notify_pn532_status(true);
     }
 
-    if let Ok(fw) = pn532
+    match pn532
         .process(
             &pn532::Request::GET_FIRMWARE_VERSION,
             4,
@@ -311,16 +328,19 @@ async fn nfc_task(
         )
         .await
     {
-        trace!("PN532 Firmware Version response: {:?}", fw);
-        term_info!(
-            "Established communication with Tag Reader ({})",
-            successful_retry
-        );
-        spool_tag_rc.borrow().notify_pn532_status(true);
-    } else {
-        term_error!("Failed to communicate with Tag Reader");
-        spool_tag_rc.borrow().notify_pn532_status(false);
-        return;
+        Ok(fw) => {
+            trace!("PN532 Firmware Version response: {:?}", fw);
+            term_info!(
+                "Established communication with Tag Reader ({})",
+                successful_retry
+            );
+            spool_tag_rc.borrow().notify_pn532_status(true);
+        }
+        Err(err) => {
+            term_error!("Failed to communicate with Tag Reader : {:?}", err);
+            spool_tag_rc.borrow().notify_pn532_status(false);
+            return;
+        }
     }
 
     info!("Entering wait for tag loop in nfc task");

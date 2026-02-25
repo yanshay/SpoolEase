@@ -145,7 +145,7 @@ impl ViewModel {
         let selected_printer = SelectedPrinter::new(set_of_printers, 0);
 
         // Initialize SpoolTag
-        let spool_tag_model = spool_tag::init(spi_device, irq, spawner);
+        let spool_tag_model = spool_tag::init(spi_device, irq, 1000, spawner);
 
         // Initialize ssdp
         let ssdp_pub_sub = mk_static!(SSDPPubSubChannel, SSDPPubSubChannel::new());
