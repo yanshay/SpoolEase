@@ -42,6 +42,7 @@ dependencies = [
  "esp-hal-app-framework-macros",
  "esp-hal-ota",
  "esp-mbedtls",
+ "esp-mbedtls-sys",
  "esp-partition-table",
  "esp-println",
  "esp-radio",

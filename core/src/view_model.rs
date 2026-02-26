@@ -41,7 +41,12 @@ use crate::app::{UiSlotDisplay, UiSpoolRecord, UiSpoolRecordDisplay};
 use crate::app_config::{BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig};
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
 use crate::bambu::bambu_print::PrintProject;
-use crate::bambu::{Filament, KExtruder, KInfo, KNozzleDiameter, KNozzleId, KPrinter, SpoolId, Tray, TrayBits};
+use crate::bambu::calibration::{KExtruder, KInfo, KNozzleDiameter, KNozzleId, KPrinter};
+use crate::bambu::filament::Filament;
+use crate::bambu::{
+    SpoolId,
+    tray::{Tray, TrayBits, TrayState},
+};
 use crate::color_utils::get_color_name;
 use crate::filament_staging::StagingOrigin;
 use crate::settings::OTA_TOML_FILENAME;
@@ -51,10 +56,11 @@ use crate::ssdp::{SSDPPubSubChannel, ssdp_task};
 use crate::store::{Store, StoreObserver, store_safe_time_now};
 
 use crate::tag_standards::{BAMBULAB_TAG_TYPE, BambuLabTag, OPENPRINTTAG_TAG_TYPE, OpenPrintTagTag};
+use crate::tag_v1::TagInformationV1;
 use crate::types::FilamentSupInfo;
 use crate::{
     app_config::AppConfig,
-    bambu::{self, BambuPrinter, BambuPrinterObserver, TagInformationV1, TrayState},
+    bambu::{self, BambuPrinter, BambuPrinterObserver},
     filament_staging::FilamentStaging,
 };
 use shared::spool_tag::{self, SpoolTagObserver, Status, TAG_PLACEHOLDER};
@@ -315,7 +321,8 @@ impl ViewModel {
             Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), selected_printer);
         });
 
-        if !no_configured_printers { // if only dummy printer, no point in tasks running
+        if !no_configured_printers {
+            // if only dummy printer, no point in tasks running
             self.framework
                 .borrow()
                 .spawner
@@ -1191,7 +1198,7 @@ impl ViewModel {
             (SharedString::new(), 0, 0, "")
         };
 
-        let color_name = if color_code.len() >= 6 {
+        let _color_name = if color_code.len() >= 6 {
             let color = u32::from_str_radix(&color_code[..6], 16).unwrap() + 0xFF000000; // the plus 0xFF at the end is fo add alpha
             let color = slint::Color::from_argb_encoded(color);
             let color_name_info = get_color_name(color.red(), color.green(), color.blue());
@@ -1480,7 +1487,7 @@ impl ViewModel {
             };
             let mut ui_tray = trays_state.row_data(tray_row).unwrap().clone();
             ui_tray.spool_state = crate::app::UiTrayState::from(&curr_tray.state);
-            if let bambu::Filament::Known(filament_info) = &curr_tray.filament {
+            if let Filament::Known(filament_info) = &curr_tray.filament {
                 let color = u32::from_str_radix(&filament_info.tray_color[..6], 16).unwrap() + 0xFF000000; // the plus at the end is fo add alpha
                 ui_tray.filament.color = slint::Color::from_argb_encoded(color);
                 ui_tray.filament.material = slint::SharedString::from(&filament_info.tray_type);

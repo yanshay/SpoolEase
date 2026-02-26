@@ -9,26 +9,25 @@
 
 mod app;
 mod app_config;
+mod app_ota;
 mod bambu;
-mod bambu_api;
 mod color_utils;
 mod csvdb;
 mod filament_staging;
 mod my_mqtt;
 mod settings;
+mod spool_record;
 mod spool_scale;
+mod spools_storage;
 mod ssdp;
 mod store;
+mod tag_standards;
+mod tag_v1;
+mod types;
 mod view_model;
 mod web_app;
-mod spool_record;
-mod types;
-mod app_ota;
-mod tag_standards;
-mod spools_storage;
 
 use alloc::{format, rc::Rc, string::ToString};
-use shared::settings::OTA_TLS_CERTIFICATE;
 use core::{cell::RefCell, marker::PhantomData, net::Ipv4Addr};
 use embassy_futures::yield_now;
 use esp_alloc::{self as _, HeapStats};
@@ -37,6 +36,7 @@ use esp_hal_ota::Ota;
 use esp_mbedtls::Tls;
 use esp_storage::FlashStorage;
 use framework_macros::include_bytes_gz;
+use shared::settings::OTA_TLS_CERTIFICATE;
 use slint::ComponentHandle;
 
 extern crate alloc;
@@ -48,14 +48,23 @@ use embassy_time::{Duration, Timer};
 
 use esp_backtrace as _;
 use esp_hal::{
-    clock::CpuClock, dma::DmaTxBuf, dma_buffers, gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull}, psram::PsramConfig, rng::Rng, rtc_cntl::Rtc, spi::{self, master::Spi}, time::Rate, timer::timg::TimerGroup
+    clock::CpuClock,
+    dma::DmaTxBuf,
+    dma_buffers,
+    gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
+    psram::PsramConfig,
+    rng::Rng,
+    rtc_cntl::Rtc,
+    spi::{self, master::Spi},
+    time::Rate,
+    timer::timg::TimerGroup,
 };
 
 use framework::prelude::*;
 use framework::{
+    RNG,
     framework::FrameworkSettings,
     wt32_sc01_plus::{WT32SC01Plus, WT32SC01PlusDisplayPeripherals, WT32SC01PlusRunner, WT32SC01PlusSDCardPeripherals},
-    RNG,
 };
 
 use app_config::AppConfig;
@@ -152,10 +161,9 @@ async fn main(spawner: Spawner) {
 
     debug!("Setting up Wifi Structs");
 
-    let esp_radio_ctrl = &*mk_static!(esp_radio::Controller<'static> , esp_radio::init().unwrap());
+    let esp_radio_ctrl = &*mk_static!(esp_radio::Controller<'static>, esp_radio::init().unwrap());
 
-    let (controller, interfaces) =
-        esp_radio::wifi::new(esp_radio_ctrl, peripherals.WIFI, Default::default()).unwrap();
+    let (controller, interfaces) = esp_radio::wifi::new(esp_radio_ctrl, peripherals.WIFI, Default::default()).unwrap();
 
     let wifi_ap_device = interfaces.ap;
     let wifi_sta_device = interfaces.sta;
@@ -170,28 +178,19 @@ async fn main(spawner: Spawner) {
     let (sta_stack, sta_runner) = embassy_net::new(
         wifi_sta_device,
         sta_config,
-        mk_static!(
-            StackResources<STA_STACK_RESOURCES>,
-            StackResources::<STA_STACK_RESOURCES>::new()
-        ),
+        mk_static!(StackResources<STA_STACK_RESOURCES>, StackResources::<STA_STACK_RESOURCES>::new()),
         seed,
     );
 
     let ap_config = embassy_net::Config::ipv4_static(StaticConfigV4 {
-        address: Ipv4Cidr::new(
-            Ipv4Addr::new(AP_ADDR.0, AP_ADDR.1, AP_ADDR.2, AP_ADDR.3),
-            24,
-        ),
+        address: Ipv4Cidr::new(Ipv4Addr::new(AP_ADDR.0, AP_ADDR.1, AP_ADDR.2, AP_ADDR.3), 24),
         gateway: Some(Ipv4Addr::new(AP_ADDR.0, AP_ADDR.1, AP_ADDR.2, AP_ADDR.3)),
         dns_servers: Default::default(),
     });
     let (ap_stack, ap_runner) = embassy_net::new(
         wifi_ap_device,
         ap_config,
-        mk_static!(
-            StackResources<AP_STACK_RESOURCES>,
-            StackResources::<AP_STACK_RESOURCES>::new()
-        ),
+        mk_static!(StackResources<AP_STACK_RESOURCES>, StackResources::<AP_STACK_RESOURCES>::new()),
         seed,
     );
 
@@ -338,7 +337,16 @@ async fn main(spawner: Spawner) {
 
     debug!("Setting up Wifi");
 
-    spawner.spawn_heap(framework::wifi::connection_task_inner(controller, sta_stack, ap_stack, rx, tx, framework.clone())).ok();
+    spawner
+        .spawn_heap(framework::wifi::connection_task_inner(
+            controller,
+            sta_stack,
+            ap_stack,
+            rx,
+            tx,
+            framework.clone(),
+        ))
+        .ok();
 
     spawner.spawn(framework::wifi::sta_net_task(sta_runner)).ok();
     spawner.spawn(framework::wifi::ap_net_task(ap_runner)).ok(); // TODO: Maybe move this to run only when needed (in wifi.rs)
@@ -429,7 +437,8 @@ async fn main(spawner: Spawner) {
         start_read_request: Some(Duration::from_secs(3)),
         read_request: Some(Duration::from_secs(1)),
         write: Some(Duration::from_secs(1)),
-    }).keep_connection_alive();
+    })
+    .keep_connection_alive();
 
     let web_server_runner = mk_static!(
         framework::web_server::WebAppRunner<ConsoleAppState, NestedAppBuilder>,
@@ -437,7 +446,6 @@ async fn main(spawner: Spawner) {
     );
 
     for id in 0..WEB_SERVER_NUM_LISTENERS {
-
         spawner.spawn_heap(web_server_task(web_server_runner, id)).unwrap();
     }
 

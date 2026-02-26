@@ -23,9 +23,10 @@ use framework::{
 };
 
 use crate::{
-    bambu::{KInfo, TagInformationV1},
+    bambu::calibration::KInfo,
     csvdb::{CsvDb, CsvDbError},
     spools_storage::{StorageConfig, TagLocationRecord},
+    tag_v1::TagInformationV1,
     view_model::ViewModel,
 };
 

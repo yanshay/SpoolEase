@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::app_config::{AppConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrintersConfig, SPOOLS_CATALOG, ScaleConfig};
-use crate::bambu::KInfo;
+use crate::bambu::calibration::KInfo;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
 use crate::store::{BackupMeta, FileMeta, Store};
@@ -131,9 +131,15 @@ impl AppWithStateBuilder for NestedAppBuilder {
             .get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
                 ready({
                     let borrowed_app_config = state.0.app_config.borrow(); // notice the borrow, can't async here
-                    let empty_printers_config = PrintersConfig { printers: alloc::vec![PrinterConfig::default()] };
+                    let empty_printers_config = PrintersConfig {
+                        printers: alloc::vec![PrinterConfig::default()],
+                    };
                     let no_configured_printers = borrowed_app_config.configured_printers.printers.is_empty();
-                    let printers = if no_configured_printers { &empty_printers_config } else {&borrowed_app_config.configured_printers};
+                    let printers = if no_configured_printers {
+                        &empty_printers_config
+                    } else {
+                        &borrowed_app_config.configured_printers
+                    };
                     let default_printer = &borrowed_app_config.configured_default_printer;
                     let mut printers_config = PrintersConfigDTO::from(printers);
                     printers_config.default_printer_serial = default_printer.serial.clone();

@@ -1,5 +1,8 @@
 use crate::{
-    bambu::{KInfo, KNozzleId, NozzleType},
+    bambu::{
+        NozzleType,
+        calibration::{KInfo, KNozzleId},
+    },
     csvdb::CsvDbId,
     tag_standards::{BambuLabTag, OpenPrintTagTag},
     types::FilamentSupInfo,
@@ -61,10 +64,9 @@ pub struct SpoolRecord {
     pub assigned_location: String,
     #[serde(default)]
     pub actual_location: String,
-    #[serde(default="default_one")]
+    #[serde(default = "default_one")]
     #[serde(deserialize_with = "one_if_empty")]
     pub spools_count: i32,
-
     // !!! Don't Forget to set default for any field!
     // pub update_time
     // pub update_tag_fields_time
@@ -193,14 +195,16 @@ impl SpoolRecord {
         let nozzle_temp_max = filament_sup_info.as_ref().map(|fsi| fsi.nozzle_temp_high);
         let nozzle_temp_max_part = part_opt("NX", &nozzle_temp_max);
 
-        Some(format!("{TAG_URL_PREFIX_S1}?{tag_id_part}{id_part}{encode_time_part}{added_time_part}{material_part}{material_subtype_part}{color_code_part}{color_name_part}{brand_part}{weight_advertised_part}{weight_core_part}{weight_new_part}{slicer_filament_code_part}{slicer_filament_name_part}{nozzle_temp_min_part}{nozzle_temp_max_part}{note_part}"))
+        Some(format!(
+            "{TAG_URL_PREFIX_S1}?{tag_id_part}{id_part}{encode_time_part}{added_time_part}{material_part}{material_subtype_part}{color_code_part}{color_name_part}{brand_part}{weight_advertised_part}{weight_core_part}{weight_new_part}{slicer_filament_code_part}{slicer_filament_name_part}{nozzle_temp_min_part}{nozzle_temp_max_part}{note_part}"
+        ))
     }
     pub fn has_valid_tag_id(&self) -> bool {
         !self.tag_id.is_empty() && !self.tag_id.starts_with('-')
     }
 }
 
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 pub fn part_opt<T: Default + PartialEq + core::fmt::Display>(prefix: &str, opt: &Option<T>) -> String {
     match opt {
         Some(v) => part_val(prefix, v),

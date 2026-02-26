@@ -12,10 +12,7 @@ use shared::{
     gcode_analysis_task::{Fetch3mf, FilamentUsage}, utils::channel_send,
 };
 
-use crate::{
-    bambu::BambuPrinter,
-    bambu_api::{self, AmsMapping2Entry, GcodeState}, view_model::StoreStateRequest,
-};
+use crate::{bambu::{BambuPrinter, bambu_api::{AmsMapping2Entry, GcodeState, PrintData}}, view_model::StoreStateRequest};
 
 const EXTRA_DEBUG: bool = false;
 
@@ -171,7 +168,7 @@ impl PrintProject {
 
 impl BambuPrinter {
     #[allow(non_snake_case)]
-    pub fn process_print_message__project_file(&mut self, print: &bambu_api::PrintData) -> bool {
+    pub fn process_print_message__project_file(&mut self, print: &PrintData) -> bool {
         channel_send(&self.store_state_request_channel, StoreStateRequest::DeletePrintProject { printer_index: self.printer_index });
 
         let mut changed = false;
@@ -242,7 +239,7 @@ impl BambuPrinter {
     }
 
     #[allow(non_snake_case)]
-    pub fn process_print_message__print_project_logic(&mut self, print: &bambu_api::PrintData) -> bool {
+    pub fn process_print_message__print_project_logic(&mut self, print: &PrintData) -> bool {
         let mut changed = false;
         let mut gcode_state_change = false;
         let mut new_gcode_state = self.gcode_state;
@@ -270,23 +267,19 @@ impl BambuPrinter {
                 }
             }
 
-            if gcode_state_change && new_gcode_state == GcodeState::PREPARE {
-                if let Some(subtak_name) = &print.subtask_name {
-                    // This fix special characters (in the prepare the printer notifies of the real file name after special chars fix)
-                    // This is important for FTP access
-                    curr_print_project.subtask_name = subtak_name.clone();
-                }
+            if gcode_state_change && new_gcode_state == GcodeState::PREPARE && let Some(subtak_name) = &print.subtask_name {
+                // This fix special characters (in the prepare the printer notifies of the real file name after special chars fix)
+                // This is important for FTP access
+                curr_print_project.subtask_name = subtak_name.clone();
             }
 
             if let Some(total_layer_num) = print.total_layer_num {
                 curr_print_project.total_layer_num = total_layer_num;
             }
 
-            if let Some(layer_num) = print.layer_num {
-                if layer_num != self.layer_num {
+            if let Some(layer_num) = print.layer_num && layer_num != self.layer_num {
                     layer_num_change = true;
                     new_layer_num = layer_num;
-                }
             }
 
             let curr_tray_active = self.get_tray_active();
@@ -295,6 +288,7 @@ impl BambuPrinter {
                 tray_active_change = true;
             }
 
+            #[allow(clippy::collapsible_if)]
             if let Some(_extruder) = print.device.as_ref().and_then(|d| d.extruder.as_ref()) {
                 // in case of multiextruder consuming on change of tray_tar is too sensitive to exact timing and potential to change in the future
                 // So not doing it for now
@@ -796,6 +790,22 @@ impl BambuPrinter {
         let _ = file_store.delete_file(&print_project_path).await;
     }
     
+    fn get_print_data_tray_active(print: &PrintData, current_tray_active: Option<i32>) -> Option<i32> {
+        // the active tray, usually also printing, convention like tray_xxx fields.
+        // always a single value, also in multi extruder printers
+        if let Some(extruder) = print.device.as_ref().and_then(|d| d.extruder.as_ref()) {
+            let active_extruder = Self::get_active_extruder_from_extruder_state(&extruder.state)?;
+            let extruder_snow = extruder.info[active_extruder].snow;
+            Self::get_common_tray_active(active_extruder, extruder_snow)
+        } else if let Some(tray_now) = &print.ams.as_ref().and_then(|ams| ams.tray_now) {
+            // single tray printer w/o extruder field
+            Self::get_common_tray_active(0, *tray_now)
+        } else {
+            // no change, so return the current
+            current_tray_active
+        }
+    }
+
 }
 
 #[derive(PartialEq)]

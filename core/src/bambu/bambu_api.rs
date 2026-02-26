@@ -146,9 +146,9 @@ pub struct PrintData {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PrintDevice {
     pub extruder: Option<PrintDeviceExtruder>,
-    // ignore failure to parse due to X1C fw 01.08.02.00 (last before authorization) 
+    // ignore failure to parse due to X1C fw 01.08.02.00 (last before authorization)
     // that has nozzle but completely different than H2D and not in use for X1C
-    #[serde(default, deserialize_with = "ignore_errors")] 
+    #[serde(default, deserialize_with = "ignore_errors")]
     pub nozzle: Option<PrintDeviceNozzle>,
 }
 
@@ -170,9 +170,8 @@ pub struct PrintDeviceExtruderInfo {
 pub struct PrintDeviceNozzle {
     pub info: Vec<PrintDeviceNozzleInfo>,
     pub exist: Option<i32>,
-    pub state: Option<i32>
+    pub state: Option<i32>,
 }
-
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PrintDeviceNozzleInfo {
@@ -363,7 +362,7 @@ impl AmsFilamentSettingCommand {
                 nozzle_temp_min,
                 nozzle_temp_max,
                 tray_type: String::from(tray_type),
-                sequence_id: String::from("1"),
+                sequence_id: String::from("10001"),
             },
         }
     }
@@ -521,7 +520,7 @@ impl ExtrusionCaliGetCommand {
                 command: String::from("extrusion_cali_get"),
                 filament_id: String::from(""),
                 nozzle_diameter: String::from(nozzle_diameter),
-                sequence_id: String::from("1"),
+                sequence_id: String::from("10001"),
             },
         }
     }
@@ -564,7 +563,7 @@ impl ExtrusionCaliSelCommand {
                 ams_id,
                 tray_id,
                 slot_id,
-                sequence_id: String::from("1"),
+                sequence_id: String::from("10001"),
             },
         }
     }
@@ -613,7 +612,7 @@ pub struct ExtrusionCaliSet {
 }
 
 impl ExtrusionCaliSetCommand {
-    pub fn new(extruder_id: i32, nozzle_diameter: &str,nozzle_id: &str, filament_id: &str, setting_id: &str, k_value: &str, name: &str) -> Self {
+    pub fn new(extruder_id: i32, nozzle_diameter: &str, nozzle_id: &str, filament_id: &str, setting_id: &str, k_value: &str, name: &str) -> Self {
         let filaments = alloc::vec![ExtrusionCaliSetFilament {
             ams_id: 0,
             extruder_id,
