@@ -61,6 +61,7 @@ impl From<mqttrust::encoding::v4::utils::Error> for MyMqttError {
 }
 
 const INITIAL_MQTT_BUFFER_SIZE: usize = 32768;
+const INITIAL_MQTT_OUT_BUFFER_SIZE: usize = 512;
 const MAX_MQTT_BUFFER_SIZE: usize = 49152;
 const MQTT_BUFFER_SIZE_GROW_STEPS: usize = 8192;
 
@@ -70,6 +71,7 @@ where
 {
     tls: esp_mbedtls::asynch::Session<'a, T>,
     buf: Vec<u8>,
+    out_buf: Vec<u8>,
     message_bytes_in_buf: usize,
     data_bytes_in_buf: usize,
     write_timeout: Duration,
@@ -83,6 +85,7 @@ where
         MyMqtt {
             tls,
             buf: vec![0u8; INITIAL_MQTT_BUFFER_SIZE],
+            out_buf: vec![0u8; INITIAL_MQTT_OUT_BUFFER_SIZE],
             message_bytes_in_buf: 0,
             data_bytes_in_buf: 0,
             write_timeout,
@@ -140,9 +143,12 @@ where
     }
 
     async fn write(&mut self, packet: mqttrust::Packet<'_>) -> Result<(), MyMqttError> {
-        let mut buf = [0u8; 1024];
-        let len = encode_slice(&packet, &mut buf)?;
-        let write_timeout_res = with_timeout(self.write_timeout, self.tls.write_all(&buf[..len])).await;
+        let packet_len = packet.len();
+        if self.out_buf.len() < packet.len() {
+            self.out_buf.resize(packet_len, 0);
+        }
+        let len = encode_slice(&packet, &mut self.out_buf)?;
+        let write_timeout_res = with_timeout(self.write_timeout, self.tls.write_all(&self.out_buf[..len])).await;
         match write_timeout_res {
             Ok(write_res) => match write_res {
                 Ok(_) => {
@@ -579,9 +585,12 @@ pub async fn generic_mqtt_task<
                 // Second: Write Request
                 Either3::Second(packet) => match mqttrust::Packet::try_from(&packet) {
                     Ok(p) => {
-                        if my_mqtt.write(p).await.is_err() {
-                            // any point retrying?
-                            disconnected = true;
+                        match my_mqtt.write(p).await {
+                            Ok(_) => (),
+                            Err(err) => {
+                                error!("Error sending MQTT message: {err:?}");
+                                // disconnected = true
+                            }
                         }
                     }
                     Err(e) => {
@@ -597,6 +606,7 @@ pub async fn generic_mqtt_task<
                 }
             }
             if disconnected {
+                debug!(">>>>>>>>>>>>>>>>>>> Disconnected???");
                 bambu_printer.borrow_mut().report_printer_connectivity(false);
                 continue 'establish_communication;
             }
