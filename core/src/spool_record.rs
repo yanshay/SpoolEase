@@ -1,7 +1,7 @@
 use crate::{
     bambu::{
-        NozzleType,
         calibration::{KInfo, KNozzleId},
+        NozzleType,
     },
     csvdb::CsvDbId,
     tag_standards::{BambuLabTag, OpenPrintTagTag},
@@ -10,8 +10,9 @@ use crate::{
 use alloc::{
     format,
     string::{String, ToString},
+    vec::Vec,
 };
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use shared::utils::{
     deserialize_bool_yn_empty_n, deserialize_f32_base64, deserialize_optional, deserialize_optional_bool_yn, serialize_bool_yn, serialize_f32_base64,
     serialize_optional_bool_yn,
@@ -27,7 +28,8 @@ pub struct FullSpoolRecord {
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
 pub struct SpoolRecord {
     pub id: String,
-    pub tag_id: String,           // 14 (7*2)
+    #[serde(serialize_with = "serialize_string_array", deserialize_with = "deserialize_string_array")]
+    pub tag_id: Vec<String>, // currently primary tag is first item
     pub material_type: String,    // 10
     pub material_subtype: String, // 10
     pub color_name: String,       // 10
@@ -104,6 +106,30 @@ where
         Some(v) => v.parse().map_err(serde::de::Error::custom)?,
     })
 }
+
+fn serialize_string_array<S>(values: &[String], serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    serializer.serialize_str(&values.join(";"))
+}
+
+fn deserialize_string_array<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let serialized: String = Deserialize::deserialize(deserializer)?;
+    if serialized.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    Ok(serialized
+        .split(';')
+        .filter(|tag_id| !tag_id.is_empty())
+        .map(ToString::to_string)
+        .collect())
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum OriginData {
     SpoolEaseV1 { uid: String, url: String },
@@ -152,28 +178,33 @@ impl CsvDbId for SpoolRecord {
     }
 }
 
-const _TAG_URL_PREFIX_V2: &str = "https://info.filament3d.org/V2/"; // in 0.5.x 
+const _TAG_URL_PREFIX_V2: &str = "https://info.filament3d.org/V2/"; // in 0.5.x
 const TAG_URL_PREFIX_S1: &str = "https://tag.spoolease.io/S1/"; // starting 0.6.0-b.24
-// Some(format!("{FILAMENT_URL_PREFIX}V1?ID={TAG_PLACEHOLDER}{encode_time_part}{material_part}
-// {filament_subtype_part}{color_part}{color_name_part}{brand_part}{advertised_weight_part}{weight_core_part}{weight_new_part}{nozzle_temp_min_part}{nozzle_temp_max_part}{note_part}{tray_info_idx_part}"))
-// TODO:
-// 1. Add slicer_filament_name - derive from slicer,mfilament_code or from material_type if slicer not filled in, use get_filament_info for that
-// 2. X Add temperatures - use get_filament_info for that
-// 3. Add note - and fully url encode it
-// 4. ? Add added time
-// 5. {note_part}{tray_info_idx_part}"))
-// 6. note (N)
-// 8. slicner name (SN)
-// 9. DA
+                                                                // Some(format!("{FILAMENT_URL_PREFIX}V1?ID={TAG_PLACEHOLDER}{encode_time_part}{material_part}
+                                                                // {filament_subtype_part}{color_part}{color_name_part}{brand_part}{advertised_weight_part}{weight_core_part}{weight_new_part}{nozzle_temp_min_part}{nozzle_temp_max_part}{note_part}{tray_info_idx_part}"))
+                                                                // TODO:
+                                                                // 1. Add slicer_filament_name - derive from slicer,mfilament_code or from material_type if slicer not filled in, use get_filament_info for that
+                                                                // 2. X Add temperatures - use get_filament_info for that
+                                                                // 3. Add note - and fully url encode it
+                                                                // 4. ? Add added time
+                                                                // 5. {note_part}{tray_info_idx_part}"))
+                                                                // 6. note (N)
+                                                                // 8. slicner name (SN)
+                                                                // 9. DA
 impl SpoolRecord {
+    pub fn primary_tag_id(&self) -> Option<&str> {
+        self.tag_id.first().map(String::as_str)
+    }
+
     pub fn to_tag_descriptor_s1(&self, filament_sup_info: &Option<FilamentSupInfo>) -> Option<String> {
         // Note: This function relies on tag_id to be here! (removes the & from the standard function, will panic if no tag_id)
-        if self.id.is_empty() || self.tag_id.is_empty() || self.material_type.is_empty() || self.color_code.is_empty() {
+        let primary_tag_id = self.primary_tag_id()?;
+        if self.id.is_empty() || self.material_type.is_empty() || self.color_code.is_empty() {
             return None;
         }
         let encode_time_part = part_opt("DE", &self.encode_time);
         let added_time_part = part_opt("DA", &self.added_time);
-        let mut tag_id_part = part_val("TG", &self.tag_id);
+        let mut tag_id_part = part_val("TG", &primary_tag_id);
         tag_id_part.drain(..1); // remove the "&"
         let id_part = part_val("ID", &self.id);
         let material_part = part_val("M", &self.material_type);
@@ -200,11 +231,11 @@ impl SpoolRecord {
         ))
     }
     pub fn has_valid_tag_id(&self) -> bool {
-        !self.tag_id.is_empty() && !self.tag_id.starts_with('-')
+        self.primary_tag_id().is_some_and(|tag_id| !tag_id.is_empty() && !tag_id.starts_with('-'))
     }
 }
 
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 pub fn part_opt<T: Default + PartialEq + core::fmt::Display>(prefix: &str, opt: &Option<T>) -> String {
     match opt {
         Some(v) => part_val(prefix, v),

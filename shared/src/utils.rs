@@ -1,11 +1,11 @@
 use alloc::{format, string::String};
-use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD_NO_PAD};
+use core::{fmt::Display, str::FromStr};
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use framework::error;
-use core::{fmt::Display, str::FromStr};
 use serde::{
-    de::{Error, Unexpected},
     Deserialize, Deserializer, Serializer,
+    de::{Error, Unexpected},
 };
 
 pub fn deserialize_optional<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -184,4 +184,3 @@ pub fn channel_send<T: core::fmt::Debug, M: RawMutex, const N: usize>(
         error!("Error dispatching messge in {t} : {:?}", e);
     }
 }
-

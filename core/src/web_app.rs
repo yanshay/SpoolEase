@@ -5,6 +5,7 @@ use core::net::Ipv4Addr;
 use alloc::format;
 use alloc::rc::Rc;
 use alloc::string::{String, ToString};
+use alloc::vec;
 use alloc::vec::Vec;
 use embedded_sdmmc::asynchronous::LfnBuffer;
 use framework::framework_web_app::{FrameworkState, encrypt, encrypt_bytes};
@@ -321,7 +322,11 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     // this happens on successful split or when a simple add/edit and not split
                     let new_spool = SpoolRecord {
                         id: add_spool.id,
-                        tag_id: add_spool.tag_id,
+                        tag_id: if add_spool.tag_id.is_empty() {
+                            Vec::new()
+                        } else {
+                            vec![add_spool.tag_id]
+                        },
                         material_type: add_spool.material,
                         material_subtype: add_spool.subtype,
                         color_name: add_spool.color_name,

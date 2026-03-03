@@ -8,22 +8,22 @@ use core::cell::RefCell;
 use core::cmp::min;
 use embassy_futures::select::Either;
 use embassy_futures::select::Either3;
+use embassy_net::IpEndpoint;
 use embassy_net::tcp::State;
 use embassy_net::tcp::TcpSocket;
-use embassy_net::IpEndpoint;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::pubsub::PubSubChannel;
-use embassy_time::with_timeout;
 use embassy_time::Duration;
 use embassy_time::Timer;
+use embassy_time::with_timeout;
 use embedded_io_async::Write;
 use esp_mbedtls::TlsError;
 use esp_mbedtls::X509;
 use mqttrust::encoding::v4::decode_slice;
 use mqttrust::{
-    encoding::v4::{encode_slice, Connect, Pid, Protocol},
     MqttError, Packet, Subscribe, SubscribeTopic,
+    encoding::v4::{Connect, Pid, Protocol, encode_slice},
 };
 
 use framework::prelude::*;
@@ -407,7 +407,7 @@ pub async fn generic_mqtt_task<
         let embassy_net::IpAddress::Ipv4(addr) = endpoint.addr else { todo!() }; // Ipv6 should not happen
         let octets = addr.octets();
 
-        if socket_error_count % (15*5) == 0 {
+        if socket_error_count % (15 * 5) == 0 {
             term_info!(
                 "[{}] Connecting to Printer at {}.{}.{}.{}:{}",
                 printer_log_id,
@@ -420,12 +420,7 @@ pub async fn generic_mqtt_task<
         } else if socket_error_count % 15 == 0 {
             info!(
                 "[{}] Connecting to Printer at {}.{}.{}.{}:{}",
-                printer_log_id,
-                octets[0],
-                octets[1],
-                octets[2],
-                octets[3],
-                port
+                printer_log_id, octets[0], octets[1], octets[2], octets[3], port
             );
         }
 
@@ -438,9 +433,9 @@ pub async fn generic_mqtt_task<
                 //     ConnectError::TimedOut => (),
                 //     ConnectError::NoRoute => (),
                 // }
-                if socket_error_count % (15*5) == 0 {
+                if socket_error_count % (15 * 5) == 0 {
                     term_error!("[{}] Error connecting to {remote_endpoint:?}, will retry ({:?})", printer_log_id, e);
-                } else if socket_error_count % 15 == 0{
+                } else if socket_error_count % 15 == 0 {
                     // to log we want every time
                     error!("[{}] Error connecting to {remote_endpoint:?}, will retry ({:?})", printer_log_id, e);
                 }
@@ -507,14 +502,17 @@ pub async fn generic_mqtt_task<
                     term_error!("[{}] Unexpected error during tls handshake {:?}", printer_log_id, e);
                 } else {
                     // P2S and first cert
-                    warn!("[{}] P2S first certificates didn't work, will try the second option on next connect trial", printer_log_id);
+                    warn!(
+                        "[{}] P2S first certificates didn't work, will try the second option on next connect trial",
+                        printer_log_id
+                    );
                 }
                 if printer_model == PrinterModel::P2S {
                     debug!("[{printer_log_id}] P2S - Switching certificates for TLS");
-                    bambu_cert_index = 1-bambu_cert_index;
+                    bambu_cert_index = 1 - bambu_cert_index;
                 }
             } else {
-               term_error!("[{}] Unexpected error during tls handshake {:?}", printer_log_id, e);
+                term_error!("[{}] Unexpected error during tls handshake {:?}", printer_log_id, e);
             }
             Timer::after(Duration::from_millis(500)).await;
             continue;

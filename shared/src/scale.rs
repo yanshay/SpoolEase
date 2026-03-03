@@ -87,5 +87,5 @@ pub enum ConsoleToScale {
     },
     TagsInStore {
         tags: String,
-    }
+    },
 }

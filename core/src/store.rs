@@ -342,7 +342,9 @@ impl Store {
         let deleted_record = if let Some(spools_db) = &self.spools_db.get() {
             let delete_res = spools_db.delete(id).await;
             if let Ok(Some(record)) = &delete_res {
-                self.remove_spool_tag_from_tag_id_index(&record.tag_id);
+                if let Some(tag_id) = record.primary_tag_id() {
+                    self.remove_spool_tag_from_tag_id_index(tag_id);
+                }
             }
             delete_res.context(CsvDbSnafu)?
         } else {
@@ -350,7 +352,7 @@ impl Store {
         };
 
         if let Some(deleted_record) = deleted_record
-            && !deleted_record.tag_id.is_empty()
+            && deleted_record.primary_tag_id().is_some()
             && let Ok(spool_rec_ext_file_path) = spool_rec_ext_file_path(&deleted_record.id)
         {
             let file_store = self.framework.borrow().file_store();
@@ -390,16 +392,18 @@ impl Store {
             spool_rec.id = new_spool_id.to_string();
             spool_rec.added_time = store_safe_time_now();
             spool_rec.ext_has_k = spool_rec_ext.k_info.is_some();
-            let tag_id = spool_rec.tag_id.clone();
+            let tag_id = spool_rec.primary_tag_id().map(ToString::to_string);
             let id = spool_rec.id.clone();
             match spools_db.insert(spool_rec).await.context(CsvDbSnafu)? {
                 true => {
                     *self.last_spool_id.borrow_mut() = new_spool_id;
                     // deal with tag_id
-                    let tag_id_update_res = if !tag_id.is_empty() {
+                    let tag_id_update_res = if let Some(tag_id) = tag_id {
                         // check if tag_id was with some other record, if so remove that mapping and 'strikeout' that spool_record
                         let update_res = if let Some(mut existing_spool_rec_with_tag_id) = self.get_spool_by_hex_tag(&tag_id) {
-                            existing_spool_rec_with_tag_id.tag_id = format!("-{}", existing_spool_rec_with_tag_id.tag_id);
+                            if let Some(existing_tag_id) = existing_spool_rec_with_tag_id.tag_id.first_mut() {
+                                *existing_tag_id = format!("-{existing_tag_id}");
+                            }
                             self.update_spool(existing_spool_rec_with_tag_id, None).await.map(|_| ())
                         } else {
                             Ok(())
@@ -427,12 +431,13 @@ impl Store {
     pub async fn edit_spool_from_web(&self, spool_record: SpoolRecord, k_info: Option<KInfo>) -> Result<(), StoreError> {
         if let Some(spools_db) = &self.spools_db.get() {
             let current_tag_id;
+            let new_has_primary_tag = spool_record.primary_tag_id().is_some();
             let updated_record = {
                 let spools_db_borrow = spools_db.records.borrow(); // Important: Note this borrow, dropped when context ends, but if changing need to make sure it is dropped
                 if let Some(current_record) = spools_db_borrow.get(&spool_record.id) {
                     // Taking this approach with extra clones, so if future fields are added, this won't be missed
                     let current_record = &current_record.data;
-                    current_tag_id = current_record.tag_id.clone();
+                    current_tag_id = current_record.primary_tag_id().map(ToString::to_string);
                     SpoolRecord {
                         id: spool_record.id.clone(),
                         tag_id: spool_record.tag_id.clone(),
@@ -466,7 +471,9 @@ impl Store {
 
             spools_db.insert(updated_record).await.context(CsvDbSnafu)?;
 
-            if !current_tag_id.is_empty() && spool_record.tag_id.is_empty() {
+            if let Some(current_tag_id) = current_tag_id
+                && !new_has_primary_tag
+            {
                 self.remove_spool_tag_from_tag_id_index(&current_tag_id);
             }
 
@@ -478,7 +485,7 @@ impl Store {
                 }
             };
             spool_rec_ext.k_info = k_info;
-            if spool_rec_ext.tag.is_some() && spool_record.tag_id.is_empty() {
+            if spool_rec_ext.tag.is_some() && !new_has_primary_tag {
                 spool_rec_ext.tag = None;
             }
             self.store_spool_rec_ext(&spool_record.id, &spool_rec_ext).await?;
@@ -579,17 +586,21 @@ impl Store {
                         self.store_spool_rec_ext(&spool_record.id, &spool_rec_ext).await?;
                         ret_spool_rec_ext = Some(spool_rec_ext);
                     }
-                    let tag_id = spool_record.tag_id.clone();
+                    let tag_id = spool_record.primary_tag_id().map(ToString::to_string);
                     let id = spool_record.id.clone();
                     // TODO: ? theoretically need transaction mechanism here (so lock db and then do the index operation as well)
                     spools_db.insert(spool_record).await.context(CsvDbSnafu)?;
-                    if !tag_id.is_empty() && !tag_id.starts_with("-") {
+                    if let Some(tag_id) = tag_id
+                        && !tag_id.starts_with("-")
+                    {
                         // not sure needed, may be 3.5 related
                         // first search if this tag_id is in use already and strike it out before adding this tag to index
                         if let Some(mut existing_spool_rec_with_tag_id) = self.get_spool_by_hex_tag(&tag_id)
                             && existing_spool_rec_with_tag_id.id != id
                         {
-                            existing_spool_rec_with_tag_id.tag_id = format!("-{}", existing_spool_rec_with_tag_id.tag_id);
+                            if let Some(existing_tag_id) = existing_spool_rec_with_tag_id.tag_id.first_mut() {
+                                *existing_tag_id = format!("-{existing_tag_id}");
+                            }
                             spools_db.insert(existing_spool_rec_with_tag_id).await.context(CsvDbSnafu)?;
                         }
                         self.insert_spool_tag_to_tag_id_index(tag_id, id);
@@ -679,7 +690,7 @@ impl Store {
                     }
                     Err(err) => {
                         // TODO: remove this from log/issues - this is completely normal for all untagged spools
-                        if !(spools_db.records.borrow().get(spool_id.as_str()).unwrap().data.tag_id.is_empty()) {
+                        if spools_db.records.borrow().get(spool_id.as_str()).unwrap().data.primary_tag_id().is_some() {
                             error!("Error reading extra data for tagged spool {}, ignoring : {err:?}", spool_id);
                             spool_issues.push_str(&format!("Error reading extra data for tagged spool {}, ignoring : {err:?}\n", spool_id));
                         }
@@ -989,11 +1000,10 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
         let records = spools_db.records.borrow();
         for record in records.iter() {
             if let Ok(id) = record.1.data.id.parse::<i32>() {
-                if !record.1.data.tag_id.is_empty() && record.1.data.tag_id.as_bytes()[0] != b'-' {
-                    store
-                        .spool_tag_id_index
-                        .borrow_mut()
-                        .insert(record.1.data.tag_id.clone(), record.1.data.id.clone());
+                if let Some(tag_id) = record.1.data.primary_tag_id()
+                    && !tag_id.starts_with('-')
+                {
+                    store.spool_tag_id_index.borrow_mut().insert(tag_id.to_string(), record.1.data.id.clone());
                 }
                 if id > largest_spool_id {
                     largest_spool_id = id;

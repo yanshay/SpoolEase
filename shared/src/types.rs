@@ -7,4 +7,3 @@ pub enum AppOtaTrain {
     Unstable,
     Debug,
 }
-

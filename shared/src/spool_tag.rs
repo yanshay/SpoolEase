@@ -253,7 +253,7 @@ async fn nfc_task(
     let mut interface = pn532::spi::SPIInterface {
         spi: spi_device,
         irq: Some(irq), // : None::<Input<'_>>
-        // irq: None::<pn532::spi::NoIRQ>,
+                        // irq: None::<pn532::spi::NoIRQ>,
     };
 
     let timer = crate::pn532_ext::Esp32TimerAsync::new();
@@ -305,11 +305,16 @@ async fn nfc_task(
 
     // Change frequency to after init frequency
     let post_init_config = esp_hal::spi::master::Config::default()
-            .with_frequency(esp_hal::time::Rate::from_khz(freq_after_init))
-            .with_mode(esp_hal::spi::Mode::_0)
-            .with_read_bit_order(esp_hal::spi::BitOrder::LsbFirst)
-            .with_write_bit_order(esp_hal::spi::BitOrder::LsbFirst);
-    pn532.interface.spi.bus_mut().apply_config(&post_init_config).unwrap();
+        .with_frequency(esp_hal::time::Rate::from_khz(freq_after_init))
+        .with_mode(esp_hal::spi::Mode::_0)
+        .with_read_bit_order(esp_hal::spi::BitOrder::LsbFirst)
+        .with_write_bit_order(esp_hal::spi::BitOrder::LsbFirst);
+    pn532
+        .interface
+        .spi
+        .bus_mut()
+        .apply_config(&post_init_config)
+        .unwrap();
     Timer::after_millis(500).await;
 
     if !initialization_succeeded {

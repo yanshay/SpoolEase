@@ -8,6 +8,7 @@ use alloc::{
     format,
     rc::{Rc, Weak},
     string::ToString,
+    vec,
     vec::Vec,
 };
 use embassy_net::Stack;
@@ -374,7 +375,7 @@ impl ViewModel {
             let store = moved_view_model.borrow().store.clone();
             if let Some(spool_id) = &moved_view_model.borrow().recently_added_spool_id
                 && let Some(spool_rec) = store.get_spool_by_id(spool_id)
-                && spool_rec.tag_id.is_empty()
+                && spool_rec.primary_tag_id().is_none()
             {
                 return spool_id.to_shared_string();
             }
@@ -404,11 +405,13 @@ impl ViewModel {
                             let spool_tag_borrow = view_model_borrow.spool_tag_model.borrow();
                             let spool_scale_borrow = view_model_borrow.spool_scale_model.borrow();
                             let encode_cookie = SpoolEncodeCookie {
-                                spool_rec_id: spool_rec.id,
+                                spool_rec_id: spool_rec.id.clone(),
                                 encode_time: spool_rec.encode_time,
                             };
                             let encode_cookie_str = serde_json::to_string(&encode_cookie).unwrap();
-                            if let Ok(uid) = hex::decode(spool_rec.tag_id) {
+                            if let Some(tag_id) = spool_rec.primary_tag_id()
+                                && let Ok(uid) = hex::decode(tag_id)
+                            {
                                 spool_tag_borrow.write_tag(&descriptor, Some(uid.clone()), encode_cookie_str.clone());
                                 let _ = spool_scale_borrow.write_tag(&descriptor, Some(uid), encode_cookie_str);
                                 true
@@ -1111,8 +1114,9 @@ impl ViewModel {
     fn ui_erase_tag_by_spool_id(&self, spool_id: &str) -> bool {
         if let Some(spool_rec) = self.store.get_spool_by_id(spool_id)
             && spool_rec.has_valid_tag_id()
+            && let Some(tag_id) = spool_rec.primary_tag_id()
         {
-            self.ui_erase_tag(&spool_rec.tag_id);
+            self.ui_erase_tag(tag_id);
             return true;
         }
         error!("Received to erase spool's tag with invalid tag id");
@@ -1159,7 +1163,7 @@ impl ViewModel {
     fn ui_can_link_spool_to_tag(&self, id: &str) -> SharedString {
         if let Some(spool_rec) = self.store.get_spool_by_id(id) {
             if spool_rec.spools_count <= 1 {
-                if spool_rec.tag_id.is_empty() || spool_rec.tag_id.starts_with("-") {
+                if spool_rec.primary_tag_id().is_none_or(|tag_id| tag_id.starts_with('-')) {
                     SharedString::new()
                 } else {
                     SharedString::from("Spool Is Tagged")
@@ -1349,6 +1353,7 @@ impl ViewModel {
             slint::format!("{}g", weight_left)
         };
 
+        let spool_tag_id = spool_rec.primary_tag_id().unwrap_or_default().to_string();
         let record = UiSpoolRecord {
             added_full: spool_rec.added_full.unwrap_or_default(),
             // added_time: todo!(),
@@ -1364,7 +1369,7 @@ impl ViewModel {
             material_subtype: spool_rec.material_subtype.into(),
             note: spool_rec.note.into(),
             slicer_filament: spool_rec.slicer_filament.into(),
-            tag_id: spool_rec.tag_id.into(),
+            tag_id: spool_tag_id.into(),
             weight_advertised: spool_rec.weight_advertised.unwrap_or_default(),
             weight_core: spool_rec.weight_core.unwrap_or_default(),
             weight_current: spool_rec.weight_current.unwrap_or_default(),
@@ -1896,7 +1901,7 @@ impl ViewModel {
                 } else {
                     // spool_rec not available, meaning a new record to add
                     let mut new_spool_rec = tag_info.to_spool_rec();
-                    new_spool_rec.tag_id = hex::encode_upper(tag_id); // replace the tag_id with the real tag uid
+                    new_spool_rec.tag_id = vec![hex::encode_upper(tag_id)]; // replace the tag_id with the real tag uid
                     new_spool_rec.ext_has_k = tag_k_info.is_some();
                     let new_spool_rec_ext = SpoolRecordExt {
                         tag: Some(tag.clone()),
@@ -2042,7 +2047,7 @@ impl ViewModel {
     async fn link_tag_to_spool_id_async(view_model: Rc<RefCell<ViewModel>>, tag_id: String, tag_type: String, spool_id: String, final_step: bool) {
         let store = view_model.borrow().store.clone();
         if let Some(mut spool_rec) = store.get_spool_by_id(&spool_id) {
-            spool_rec.tag_id = tag_id.clone();
+            spool_rec.tag_id = if tag_id.is_empty() { Vec::new() } else { vec![tag_id.clone()] };
             spool_rec.tag_type = tag_type.clone();
             let store_res = store.update_spool(spool_rec.clone(), None).await;
             let ui = view_model.borrow().ui_weak.unwrap();
@@ -2075,7 +2080,8 @@ impl ViewModel {
     async fn unlink_spool_from_tag_async(view_model: Rc<RefCell<ViewModel>>, spool_id: String) {
         let store = view_model.borrow().store.clone();
         if let Some(mut spool_rec) = store.get_spool_by_id(&spool_id) {
-            let unlinked_tag_id = core::mem::take(&mut spool_rec.tag_id);
+            let unlinked_tag_id = spool_rec.primary_tag_id().unwrap_or_default().to_string();
+            spool_rec.tag_id.clear();
             spool_rec.tag_type = "".to_string();
             spool_rec.encode_time = None;
             let store_res = store.update_spool(spool_rec.clone(), None).await;

@@ -2,13 +2,13 @@ use alloc::vec::Vec;
 use embassy_time::{Duration, Instant};
 use hashbrown::HashMap;
 use ndef_rs::{
+    NdefMessage, NdefRecord, TNF,
     error::NdefError,
     payload::UriPayload,
     tag::{NFT2Tag, TlvValue},
-    NdefMessage, NdefRecord, TNF,
 };
 
-use crate::pn532_ext::{self, ensure_tag_formatted, process_ntag_write_long, Esp32TimerAsync};
+use crate::pn532_ext::{self, Esp32TimerAsync, ensure_tag_formatted, process_ntag_write_long};
 
 #[derive(Debug)]
 pub enum Error<E: core::fmt::Debug> {
@@ -97,15 +97,18 @@ where
             end_time,
             &[],
         )
-        .await {
+        .await
+        {
             Ok(bytes_read) => {
                 if bytes_read != 16 {
-                    return Err(Error::MifareIncompleteBlock(block_number))
+                    return Err(Error::MifareIncompleteBlock(block_number));
                 }
                 res_map.insert(block_number as i32, res_vec);
             }
-            Err(pn532_ext::Error::AuthenticationError) => { return Err(Error::NotBambulabTag); }
-            Err(err) => return Err(err.into())
+            Err(pn532_ext::Error::AuthenticationError) => {
+                return Err(Error::NotBambulabTag);
+            }
+            Err(err) => return Err(err.into()),
         }
     }
     Ok(res_map)

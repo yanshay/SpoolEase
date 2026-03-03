@@ -2,13 +2,13 @@ use alloc::format;
 use alloc::string::String;
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use embassy_time::with_deadline;
 use embassy_time::Duration;
 use embassy_time::Instant;
 use embassy_time::Timer;
+use embassy_time::with_deadline;
+use ndef_rs::NdefMessage;
 use ndef_rs::tag::NFT2Tag;
 use ndef_rs::tag::TlvValue;
-use ndef_rs::NdefMessage;
 
 use core::cmp::min;
 use core::future::Future;
@@ -254,7 +254,9 @@ where
                             end_time - Instant::now(),
                         )
                         .await;
-                    debug!("Inner inlist, required after read failure when testing tag, result {res:?}");
+                    debug!(
+                        "Inner inlist, required after read failure when testing tag, result {res:?}"
+                    );
 
                     break;
                 }
@@ -422,7 +424,9 @@ where
                     if sent_entire_ndef {
                         return Ok(true);
                     } else {
-                        return Err(format!("Received error status 0x{status:x} in tgGetData response before sending entire NDEF"));
+                        return Err(format!(
+                            "Received error status 0x{status:x} in tgGetData response before sending entire NDEF"
+                        ));
                     }
                 }
                 let recv_buf = &v[1..];

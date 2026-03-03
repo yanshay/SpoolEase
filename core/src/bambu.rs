@@ -8,10 +8,10 @@ pub mod bambu_ssdp;
 pub mod calibration;
 pub mod filament;
 pub mod mqtt;
-pub mod protocol;
 pub mod outgoing;
 pub mod printer_state;
 pub mod process_incoming;
+pub mod protocol;
 pub mod tray;
 
 use crate::bambu::bambu_api::{GcodeState, PrintDeviceNozzleInfo};
@@ -610,7 +610,6 @@ pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
     BambuPrinter::init_protocol(&bambu_printer).await;
 
     BambuPrinter::request_version_info_async(&bambu_printer).await;
-
 
     // fetch first setting for all nozzles, need that in advance before getting filaments
     let nozzle_diameters = ["0.2", "0.6", "0.8", "0.4"];

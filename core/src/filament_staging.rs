@@ -1,8 +1,8 @@
 use alloc::rc::Rc;
 use framework::error;
 
+use crate::spool_record::{FullSpoolRecord, SpoolRecord, SpoolRecordExt};
 use crate::store::Store;
-use crate::spool_record::{SpoolRecord, SpoolRecordExt, FullSpoolRecord};
 
 pub struct FilamentStaging {
     // tag_info: Option<TagInformation>,
@@ -10,7 +10,7 @@ pub struct FilamentStaging {
     // spool_record: Option<SpoolRecord>,
     // spool_record_ext: Option<SpoolRecordExt>,
     origin: StagingOrigin,
-    _store: Rc<Store>
+    _store: Rc<Store>,
 }
 
 #[derive(PartialEq)]
@@ -23,7 +23,11 @@ pub enum StagingOrigin {
 
 impl FilamentStaging {
     pub fn new(store: Rc<Store>) -> Self {
-        Self { full_spool_rec: None, origin: StagingOrigin::Empty, _store: store.clone() }
+        Self {
+            full_spool_rec: None,
+            origin: StagingOrigin::Empty,
+            _store: store.clone(),
+        }
     }
 
     #[allow(dead_code)]
@@ -60,7 +64,7 @@ impl FilamentStaging {
         // }
         self.full_spool_rec = Some(FullSpoolRecord {
             spool_rec,
-            spool_rec_ext: SpoolRecordExt::default()
+            spool_rec_ext: SpoolRecordExt::default(),
         });
         self.origin = origin;
     }
@@ -94,5 +98,4 @@ impl FilamentStaging {
     pub fn origin(&self) -> &StagingOrigin {
         &self.origin
     }
-    
 }

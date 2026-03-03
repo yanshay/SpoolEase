@@ -2,17 +2,27 @@
 use core::cell::RefCell;
 
 use alloc::{
-    format, rc::Rc, string::{String, ToString}, vec::Vec
+    format,
+    rc::Rc,
+    string::{String, ToString},
+    vec::Vec,
 };
 use embassy_time::Instant;
 use framework::{debug, error, info, prelude::Framework, warn};
 use serde::{Deserialize, Serialize};
 use shared::{
     gcode_analysis::FilamentUsageEntry,
-    gcode_analysis_task::{Fetch3mf, FilamentUsage}, utils::channel_send,
+    gcode_analysis_task::{Fetch3mf, FilamentUsage},
+    utils::channel_send,
 };
 
-use crate::{bambu::{BambuPrinter, bambu_api::{AmsMapping2Entry, GcodeState, PrintData}}, view_model::StoreStateRequest};
+use crate::{
+    bambu::{
+        BambuPrinter,
+        bambu_api::{AmsMapping2Entry, GcodeState, PrintData},
+    },
+    view_model::StoreStateRequest,
+};
 
 const EXTRA_DEBUG: bool = false;
 
@@ -26,15 +36,19 @@ macro_rules! debugex {
 
 mod instant_serde {
     use super::*;
-    use serde::{Serializer, Deserializer};
+    use serde::{Deserializer, Serializer};
 
     pub fn serialize<S>(v: &Instant, s: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         s.serialize_u64(v.as_ticks())
     }
 
     pub fn deserialize<'de, D>(d: D) -> Result<Instant, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let ticks = u64::deserialize(d)?;
         Ok(Instant::from_ticks(ticks))
     }
@@ -44,19 +58,19 @@ mod instant_serde {
 pub enum GcodeAnalysis {
     #[default]
     WaitingForPrinter,
-    Requested { 
+    Requested {
         #[serde(with = "instant_serde")]
-        at: Instant, 
-        job_number: i32 },
-    Received { 
+        at: Instant,
+        job_number: i32,
+    },
+    Received {
         #[serde(with = "instant_serde")]
-        at: Instant, 
-        job_number: i32, 
+        at: Instant,
+        job_number: i32,
         #[serde(skip)]
-        usage: FilamentUsage },
+        usage: FilamentUsage,
+    },
 }
-
-
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ConsumeIndexState {
@@ -65,18 +79,15 @@ pub struct ConsumeIndexState {
 }
 impl Default for ConsumeIndexState {
     fn default() -> Self {
-        Self {
-            rev: -1,
-            value: -1,
-        }
+        Self { rev: -1, value: -1 }
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PrintProject {
-    pub project_id:  String, 
+    pub project_id: String,
     pub subtask_name: String,
-    pub threemf_url: String, // url field
+    pub threemf_url: String,           // url field
     pub gcode_filename_in_3mf: String, // param field, the gcode file inside the 3mf
     pub(super) ams_mapping: Vec<i32>,
     pub(super) ams_mapping2: Option<Vec<AmsMapping2Entry>>,
@@ -91,7 +102,6 @@ pub struct PrintProject {
     pub(super) inner_consume_index: i32,
     pub(super) consume_store_counter: i32,
 }
-
 
 impl PrintProject {
     pub(super) fn new(
@@ -123,7 +133,13 @@ impl PrintProject {
     }
     pub(super) fn store_consume_index(&mut self, printer: &BambuPrinter) {
         self.consume_store_counter += 1;
-        channel_send(&printer.store_state_request_channel, StoreStateRequest::StoreConsumeIndex { printer_index: printer.printer_index, consume_store_counter: self.consume_store_counter });
+        channel_send(
+            &printer.store_state_request_channel,
+            StoreStateRequest::StoreConsumeIndex {
+                printer_index: printer.printer_index,
+                consume_store_counter: self.consume_store_counter,
+            },
+        );
     }
     pub(super) fn consume_index(&self) -> i32 {
         self.inner_consume_index
@@ -169,7 +185,12 @@ impl PrintProject {
 impl BambuPrinter {
     #[allow(non_snake_case)]
     pub fn process_print_message__project_file(&mut self, print: &PrintData) -> bool {
-        channel_send(&self.store_state_request_channel, StoreStateRequest::DeletePrintProject { printer_index: self.printer_index });
+        channel_send(
+            &self.store_state_request_channel,
+            StoreStateRequest::DeletePrintProject {
+                printer_index: self.printer_index,
+            },
+        );
 
         let mut changed = false;
         let printer_log_id = self.printer_number;
@@ -182,7 +203,7 @@ impl BambuPrinter {
             let ams_mapping2 = print.ams_mapping2.clone();
             let use_ams = print.use_ams;
             let project_id = if let Some(project_id) = &print.project_id {
-               project_id.to_string()
+                project_id.to_string()
             } else {
                 format!("display_print_{:?}", print.sequence_id)
             };
@@ -206,7 +227,6 @@ impl BambuPrinter {
             changed = true;
 
             self.curr_print_project = Some(curr_print_project);
-            
         }
 
         changed
@@ -214,7 +234,7 @@ impl BambuPrinter {
 
     pub fn update_trays_from_print_job(&mut self, print: &PrintProject) {
         // set trays used in print, but first clear all
-        for tray_id in (0..self.ams_trays().len()).chain([254, 255])  {
+        for tray_id in (0..self.ams_trays().len()).chain([254, 255]) {
             self.update_any_tray(tray_id, |tray| tray.meta_info.used_in_print = false);
         }
 
@@ -230,7 +250,7 @@ impl BambuPrinter {
                     self.update_virt_tray(0, |tray| tray.meta_info.used_in_print = true);
                 } else if ams2_info.ams_id == 254 && ams2_info.slot_id == 0 {
                     self.update_virt_tray(1, |tray| tray.meta_info.used_in_print = true);
-                } 
+                }
                 // TODO: not filling standard trays from ams_mapping2, maybe should for future removal of ams_mapping?
             }
         } else if print.use_ams == Some(false) {
@@ -267,7 +287,10 @@ impl BambuPrinter {
                 }
             }
 
-            if gcode_state_change && new_gcode_state == GcodeState::PREPARE && let Some(subtak_name) = &print.subtask_name {
+            if gcode_state_change
+                && new_gcode_state == GcodeState::PREPARE
+                && let Some(subtak_name) = &print.subtask_name
+            {
                 // This fix special characters (in the prepare the printer notifies of the real file name after special chars fix)
                 // This is important for FTP access
                 curr_print_project.subtask_name = subtak_name.clone();
@@ -277,9 +300,11 @@ impl BambuPrinter {
                 curr_print_project.total_layer_num = total_layer_num;
             }
 
-            if let Some(layer_num) = print.layer_num && layer_num != self.layer_num {
-                    layer_num_change = true;
-                    new_layer_num = layer_num;
+            if let Some(layer_num) = print.layer_num
+                && layer_num != self.layer_num
+            {
+                layer_num_change = true;
+                new_layer_num = layer_num;
             }
 
             let curr_tray_active = self.get_tray_active();
@@ -296,7 +321,6 @@ impl BambuPrinter {
                 //     // if any extrudeer tray_tar changed, it means tray_tar for our purpose of consume changed
                 //     tray_tar_change_from_tray_now = true;
                 // }
-
             } else if let Some(ams) = &print.ams {
                 if let Some(update_tray_tar) = ams.tray_tar {
                     if update_tray_tar != self.tray_tar[0] && update_tray_tar != self.tray_now[0] {
@@ -355,7 +379,11 @@ impl BambuPrinter {
                 info!("[{printer_log_id}] Print project finished successfuly");
                 if let GcodeAnalysis::Received { at: _, job_number: _, usage } = &curr_print_project.gcode_analysis {
                     if curr_print_project.consume_index() != usage.data.len() as i32 {
-                        error!("[{printer_log_id}] Print project filament consumption tracking didn't finish well, reached index {} (0 based), while usage data contain {} records", curr_print_project.consume_index(), usage.data.iter().len());
+                        error!(
+                            "[{printer_log_id}] Print project filament consumption tracking didn't finish well, reached index {} (0 based), while usage data contain {} records",
+                            curr_print_project.consume_index(),
+                            usage.data.iter().len()
+                        );
                     } else {
                         info!("[{printer_log_id}] All consumption entries used as expected");
                     }
@@ -427,9 +455,14 @@ impl BambuPrinter {
         // need to do it here because above we used 'take()' to get curr_print_project and only in here in previous line we gave it back
         if gcode_state_change && [GcodeState::FAILED, GcodeState::FINISH].contains(&new_gcode_state) {
             self.curr_print_project = None;
-            channel_send(&self.store_state_request_channel, StoreStateRequest::DeletePrintProject { printer_index: self.printer_index });
+            channel_send(
+                &self.store_state_request_channel,
+                StoreStateRequest::DeletePrintProject {
+                    printer_index: self.printer_index,
+                },
+            );
 
-            for tray_id in (0..self.ams_trays().len()).chain([254,255])  {
+            for tray_id in (0..self.ams_trays().len()).chain([254, 255]) {
                 self.update_any_tray(tray_id, |tray| tray.meta_info.used_in_print = false);
             }
         }
@@ -475,7 +508,7 @@ impl BambuPrinter {
                                     usage_entry.gcode_filament_id
                                 );
                             }
-                            print_project.set_not_store_consume_index(print_project.consume_index()+1);
+                            print_project.set_not_store_consume_index(print_project.consume_index() + 1);
                             consumed = true;
                         } else {
                             break;
@@ -505,7 +538,7 @@ impl BambuPrinter {
                                         print_project.consume_index(), usage_entry.weight_g, usage_entry_tray_id, ams_tray.meta_info.consumed_since_load
                                     );
                                 });
-                            print_project.set_not_store_consume_index(print_project.consume_index()+1);
+                            print_project.set_not_store_consume_index(print_project.consume_index() + 1);
                             consumed = true;
                             print_project.need_consume = false;
                         } else {
@@ -520,8 +553,12 @@ impl BambuPrinter {
             }
         }
         if print_project.consume_index() != consume_index_at_start {
-            info!("[{printer_log_id}] Consumed indexes {} to {}", consume_index_at_start, print_project.consume_index());
-            print_project.store_consume_index(self);                    
+            info!(
+                "[{printer_log_id}] Consumed indexes {} to {}",
+                consume_index_at_start,
+                print_project.consume_index()
+            );
+            print_project.store_consume_index(self);
         }
         consumed
     }
@@ -554,82 +591,79 @@ impl BambuPrinter {
         job_number
     }
 
-    pub fn set_gcode_analysis(&mut self,  job_number: i32, filament_usage: FilamentUsage) {
-            let printer_log_id = self.printer_number;
-            info!("[{}] Setting gcode analysis with {} entries", printer_log_id, filament_usage.data.len());
-            if let Some(curr_print_project) = &mut self.curr_print_project {
-                // TODO: turn to a function on print_project or on printer
-                match &curr_print_project.gcode_analysis {
-                    GcodeAnalysis::WaitingForPrinter => {
-                        warn!("[{}>] Print monitoring awaiting printer, ignoring gcode analysis", printer_log_id);
+    pub fn set_gcode_analysis(&mut self, job_number: i32, filament_usage: FilamentUsage) {
+        let printer_log_id = self.printer_number;
+        info!("[{}] Setting gcode analysis with {} entries", printer_log_id, filament_usage.data.len());
+        if let Some(curr_print_project) = &mut self.curr_print_project {
+            // TODO: turn to a function on print_project or on printer
+            match &curr_print_project.gcode_analysis {
+                GcodeAnalysis::WaitingForPrinter => {
+                    warn!("[{}>] Print monitoring awaiting printer, ignoring gcode analysis", printer_log_id);
+                    return;
+                }
+                GcodeAnalysis::Requested {
+                    at: _,
+                    job_number: awaited_job_number,
+                }
+                | GcodeAnalysis::Received {
+                    at: _,
+                    job_number: awaited_job_number,
+                    usage: _,
+                } => {
+                    if *awaited_job_number != job_number {
+                        warn!(
+                            "[{}] Print monitoring awaiting job number {}, received a different job number {}, ignoring gcode analysis",
+                            printer_log_id, awaited_job_number, job_number
+                        );
                         return;
                     }
-                    GcodeAnalysis::Requested {
-                        at: _,
-                        job_number: awaited_job_number,
-                    }
-                    | GcodeAnalysis::Received {
-                        at: _,
-                        job_number: awaited_job_number,
-                        usage: _,
-                    } => {
-                        if *awaited_job_number != job_number {
-                            warn!(
-                                "[{}] Print monitoring awaiting job number {}, received a different job number {}, ignoring gcode analysis",
-                                printer_log_id, awaited_job_number, job_number
-                            );
-                            return;
-                        }
-                    }
                 }
-                curr_print_project.gcode_analysis = GcodeAnalysis::Received {
-                    at: Instant::now(),
-                    job_number,
-                    usage: filament_usage,
-                };
-                if curr_print_project.consume_index() == -1 {
-                    curr_print_project.set_not_store_consume_index(0);
-                }
-                channel_send(&self.store_state_request_channel, StoreStateRequest::StorePrintProject { printer_index: self.printer_index });
-            } else {
-                error!("Internal Error setting gcode analysis to printer index {}", self.printer_index);
             }
-
+            curr_print_project.gcode_analysis = GcodeAnalysis::Received {
+                at: Instant::now(),
+                job_number,
+                usage: filament_usage,
+            };
+            if curr_print_project.consume_index() == -1 {
+                curr_print_project.set_not_store_consume_index(0);
+            }
+            channel_send(
+                &self.store_state_request_channel,
+                StoreStateRequest::StorePrintProject {
+                    printer_index: self.printer_index,
+                },
+            );
+        } else {
+            error!("Internal Error setting gcode analysis to printer index {}", self.printer_index);
+        }
     }
 
-    pub async fn load_print_project_state (
-        framework: &Rc<RefCell<Framework>>,
-        printer: &Rc<RefCell<BambuPrinter>>,
-    ) -> Result<bool, String> {
+    pub async fn load_print_project_state(framework: &Rc<RefCell<Framework>>, printer: &Rc<RefCell<BambuPrinter>>) -> Result<bool, String> {
         let printer_log_id = printer.borrow().printer_number;
         let print_project_path = printer.borrow().printer_state_path_for_file("print.jsn");
         let filament_usage_path = printer.borrow().printer_state_path_for_file("print.csv");
         let file_store = framework.borrow().file_store();
         let mut file_store = file_store.lock().await;
         let filament_usage = match file_store.read_file_str(&filament_usage_path).await {
-            Ok(filament_usage_str) => {
-                match FilamentUsage::from_csv(&filament_usage_str) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        let err_str = format!("[{printer_log_id}] Error Parsing Filament Usage File");
-                        error!("{err_str} : {err}");
-                        return Err(err_str);
-                    }
+            Ok(filament_usage_str) => match FilamentUsage::from_csv(&filament_usage_str) {
+                Ok(v) => v,
+                Err(err) => {
+                    let err_str = format!("[{printer_log_id}] Error Parsing Filament Usage File");
+                    error!("{err_str} : {err}");
+                    return Err(err_str);
                 }
             },
             Err(_) => return Ok(false),
         };
         let mut print_project = match file_store.read_file_str(&print_project_path).await {
-            Ok(print_project_str) => {
-                match serde_json::from_str::<PrintProject>(&print_project_str) {
-                    Ok(print_project) => print_project,
-                    Err(err) => {
-                        let err_str = format!("[{printer_log_id}] Error Parsing Print Project File");
-                        error!("{err_str} : {err}");
-                        return Err(err_str);
-                    }
+            Ok(print_project_str) => match serde_json::from_str::<PrintProject>(&print_project_str) {
+                Ok(print_project) => print_project,
+                Err(err) => {
+                    let err_str = format!("[{printer_log_id}] Error Parsing Print Project File");
+                    error!("{err_str} : {err}");
+                    return Err(err_str);
                 }
-            }
+            },
             Err(err) => {
                 let err_str = format!("[{printer_log_id}] Missing/Partial Print Project State (1)");
                 error!("{err_str} : {err}");
@@ -655,12 +689,15 @@ impl BambuPrinter {
                                 }
                             }
                             Err(err) => {
-                                error!("Error parsing consume index file {consume_index_path}{}, error : {err}", if i == 0 {", will try second one"} else {""});
+                                error!(
+                                    "Error parsing consume index file {consume_index_path}{}, error : {err}",
+                                    if i == 0 { ", will try second one" } else { "" }
+                                );
                                 error!("File {consume_index_path} contains '{consume_index_str}'");
                             }
                         }
                     }
-                    Err(_) => ()
+                    Err(_) => (),
                 }
             }
             if !at_least_one_loaded {
@@ -676,7 +713,7 @@ impl BambuPrinter {
             (consume_index_state.value, consume_index_state.rev)
         };
 
-        if let GcodeAnalysis::Received { ref mut usage, ..} = print_project.gcode_analysis {
+        if let GcodeAnalysis::Received { ref mut usage, .. } = print_project.gcode_analysis {
             *usage = filament_usage;
         } else {
             let err_str = format!("[{printer_log_id}] Internal: Print Project Stored With Wrong GCodeAnalysis State");
@@ -693,23 +730,34 @@ impl BambuPrinter {
     }
 
     // TODO: make error handling consistent, should not issue messages, only view_mnodel should
-    pub async fn store_print_project_state(
-        framework: &Rc<RefCell<Framework>>,
-        printer: &Rc<RefCell<BambuPrinter>>,
-    ) ->  Result<(),  String> {
+    pub async fn store_print_project_state(framework: &Rc<RefCell<Framework>>, printer: &Rc<RefCell<BambuPrinter>>) -> Result<(), String> {
         BambuPrinter::delete_print_project_state(framework, printer).await;
         let printer_log_id = printer.borrow().printer_number;
         info!("[{}] Storing print project resume state", printer.borrow().printer_number);
         let (curr_print_project_str, filament_usage_csv, consume_index_str, consume_store_counter) = {
             let printer_borrow = printer.borrow();
             if let Some(curr_print_project) = &printer_borrow.curr_print_project {
-                if let GcodeAnalysis::Received { at:_, job_number:_, usage: filament_uage } = &curr_print_project.gcode_analysis {
+                if let GcodeAnalysis::Received {
+                    at: _,
+                    job_number: _,
+                    usage: filament_uage,
+                } = &curr_print_project.gcode_analysis
+                {
                     let inner_curr_print_project_str = serde_json::to_string(curr_print_project).unwrap();
                     let inner_filament_usage_csv = filament_uage.to_csv().unwrap();
-                    let consume_index_str = serde_json::to_string(&ConsumeIndexState { rev: curr_print_project.consume_store_counter, value: curr_print_project.consume_index() }).unwrap();
-                    (inner_curr_print_project_str, inner_filament_usage_csv, consume_index_str, curr_print_project.consume_store_counter)
+                    let consume_index_str = serde_json::to_string(&ConsumeIndexState {
+                        rev: curr_print_project.consume_store_counter,
+                        value: curr_print_project.consume_index(),
+                    })
+                    .unwrap();
+                    (
+                        inner_curr_print_project_str,
+                        inner_filament_usage_csv,
+                        consume_index_str,
+                        curr_print_project.consume_store_counter,
+                    )
                 } else {
-                    let err_str = format!("[{printer_log_id}] Internal Error: store_print_project_state called at wrong state") ;
+                    let err_str = format!("[{printer_log_id}] Internal Error: store_print_project_state called at wrong state");
                     error!("{err_str}");
                     return Err(err_str);
                 }
@@ -723,9 +771,11 @@ impl BambuPrinter {
         let mut file_store = file_store.lock().await;
         let print_project_path = printer.borrow().printer_state_path_for_file("print.jsn");
         let filament_usage_path = printer.borrow().printer_state_path_for_file("print.csv");
-        let consume_index_path = printer.borrow().printer_state_path_for_file(&format!("print.ci{}", consume_store_counter % 2));
-        if let Err(err) =  file_store.create_write_file_str(&print_project_path, &curr_print_project_str).await {
-            let err_str = format!("[{printer_log_id}] Error Writing Print Project File"); 
+        let consume_index_path = printer
+            .borrow()
+            .printer_state_path_for_file(&format!("print.ci{}", consume_store_counter % 2));
+        if let Err(err) = file_store.create_write_file_str(&print_project_path, &curr_print_project_str).await {
+            let err_str = format!("[{printer_log_id}] Error Writing Print Project File");
             error!("{err_str} : {err:?}");
             return Err(err_str);
             // view_model.borrow().message_box("Print Tracking Notice", &err_str, "Spoolease Will Not be Able to Resume Tracking if Restarted", crate::app::StatusType::Error, 0);
@@ -750,11 +800,19 @@ impl BambuPrinter {
         framework: &Rc<RefCell<Framework>>,
         printer: &Rc<RefCell<BambuPrinter>>,
         consume_store_counter: i32,
-    ) ->  Result<(), String> {
-        info!("[{}] Storing consume index resume state print.ci{}", printer.borrow().printer_number, consume_store_counter%2);
+    ) -> Result<(), String> {
+        info!(
+            "[{}] Storing consume index resume state print.ci{}",
+            printer.borrow().printer_number,
+            consume_store_counter % 2
+        );
         let printer_log_id = printer.borrow().printer_number;
         let consume_index_state_str = if let Some(curr_print_project) = &printer.borrow().curr_print_project {
-                serde_json::to_string(&ConsumeIndexState { rev: consume_store_counter, value: curr_print_project.consume_index() }).unwrap()
+            serde_json::to_string(&ConsumeIndexState {
+                rev: consume_store_counter,
+                value: curr_print_project.consume_index(),
+            })
+            .unwrap()
         } else {
             // project ended by now
             // let err_str = format!("[{printer_log_id}] Internal Error: store_consume_index_state called without curr_print_project");
@@ -762,7 +820,9 @@ impl BambuPrinter {
             return Ok(());
         };
 
-        let consume_index_path = printer.borrow().printer_state_path_for_file(&format!("print.ci{}", consume_store_counter%2));
+        let consume_index_path = printer
+            .borrow()
+            .printer_state_path_for_file(&format!("print.ci{}", consume_store_counter % 2));
         let file_store = framework.borrow().file_store();
         let mut file_store = file_store.lock().await;
         if let Err(err) = file_store.create_write_file_str(&consume_index_path, &consume_index_state_str).await {
@@ -770,14 +830,14 @@ impl BambuPrinter {
             error!("{err_str} : {err:?}");
             return Err(err_str);
         }
-       Ok(()) 
+        Ok(())
     }
 
-    pub async fn delete_print_project_state(
-        framework: &Rc<RefCell<Framework>>,
-        printer: &Rc<RefCell<BambuPrinter>>,
-    ) {
-        info!("[{}] Erasing stored print project resume state (if exists)", printer.borrow().printer_number);
+    pub async fn delete_print_project_state(framework: &Rc<RefCell<Framework>>, printer: &Rc<RefCell<BambuPrinter>>) {
+        info!(
+            "[{}] Erasing stored print project resume state (if exists)",
+            printer.borrow().printer_number
+        );
         let print_project_path = printer.borrow().printer_state_path_for_file("print.jsn");
         let filament_usage_path = printer.borrow().printer_state_path_for_file("print.csv");
         let consume_index_path0 = printer.borrow().printer_state_path_for_file("print.ci0");
@@ -789,7 +849,7 @@ impl BambuPrinter {
         let _ = file_store.delete_file(&filament_usage_path).await;
         let _ = file_store.delete_file(&print_project_path).await;
     }
-    
+
     fn get_print_data_tray_active(print: &PrintData, current_tray_active: Option<i32>) -> Option<i32> {
         // the active tray, usually also printing, convention like tray_xxx fields.
         // always a single value, also in multi extruder printers
@@ -805,7 +865,6 @@ impl BambuPrinter {
             current_tray_active
         }
     }
-
 }
 
 #[derive(PartialEq)]

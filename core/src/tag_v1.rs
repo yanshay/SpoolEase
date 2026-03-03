@@ -1,6 +1,7 @@
 use alloc::{
     format,
     string::{String, ToString},
+    vec,
     vec::Vec,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -96,11 +97,7 @@ impl TagInformationV1 {
         };
         Self {
             id: Some(v.id.clone()),
-            tag_id: if v.tag_id.is_empty() {
-                None
-            } else {
-                hex::decode(v.tag_id.as_bytes()).ok()
-            },
+            tag_id: v.primary_tag_id().and_then(|tag_id| hex::decode(tag_id.as_bytes()).ok()),
             filament: Some(filament_info),
             weight_advertised: v.weight_advertised,
             weight_core: v.weight_core,
@@ -129,7 +126,7 @@ impl TagInformationV1 {
         };
         SpoolRecord {
             id: self.id.as_ref().unwrap_or(empty).clone(),
-            tag_id: self.tag_id.as_ref().map(hex::encode_upper).unwrap_or_default(),
+            tag_id: self.tag_id.as_ref().map(hex::encode_upper).map(|tag_id| vec![tag_id]).unwrap_or_default(),
             material_type: self.filament.as_ref().map(|f| f.tray_type.clone()).unwrap_or_default(),
             material_subtype: self.filament_subtype.as_ref().unwrap_or(empty).clone(),
             color_name: self.color_name.as_ref().unwrap_or(empty).clone(),

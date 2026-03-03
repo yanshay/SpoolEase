@@ -1,7 +1,12 @@
-use core::mem;
 use core::error::Error;
+use core::mem;
 
-use alloc::{boxed::Box, format, string::{String, ToString}, vec::Vec};
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
 use miniz_oxide::{
     MZFlush, MZStatus, StreamResult,
     inflate::{self, stream::InflateState},
@@ -42,7 +47,7 @@ impl ThreemfExtractor {
             ..Default::default()
         }
     }
-    pub fn feed_data<F: FnMut(&[u8]) -> Result<bool, Box<dyn Error>>> (
+    pub fn feed_data<F: FnMut(&[u8]) -> Result<bool, Box<dyn Error>>>(
         &mut self,
         buf: &[u8],
         mut process_output: F,
@@ -152,7 +157,9 @@ impl ThreemfExtractor {
                                     break;
                                 }
                                 MZStatus::NeedDict => {
-                                    return Err("Deflate unexpected status 'NeedDict'".to_string().into());
+                                    return Err("Deflate unexpected status 'NeedDict'"
+                                        .to_string()
+                                        .into());
                                 }
                             },
                             Err(err) => {

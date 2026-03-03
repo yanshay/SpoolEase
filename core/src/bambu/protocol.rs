@@ -4,20 +4,18 @@ use core::cell::RefCell;
 
 use alloc::{borrow::Cow, rc::Rc, string::String};
 use framework::debug;
-use serde::Serialize;
 use once_cell::sync::Lazy;
+use serde::Serialize;
 
 use crate::bambu::BambuPrinter;
 
-pub (super) struct ProtocolState {
+pub(super) struct ProtocolState {
     sequence_id: u32,
 }
 
 impl ProtocolState {
     pub fn new() -> Self {
-        Self {
-            sequence_id: 1,
-        }
+        Self { sequence_id: 1 }
     }
 }
 
@@ -36,11 +34,11 @@ pub fn clean_message_bytes_to_log(input: &[u8]) -> String {
 
 #[allow(dead_code)]
 impl BambuPrinter {
-    pub (crate) async fn init_protocol(bambu_printer: &Rc<RefCell<BambuPrinter>>) {
-        bambu_printer.borrow_mut().protocol_state.sequence_id = 10000; 
+    pub(crate) async fn init_protocol(bambu_printer: &Rc<RefCell<BambuPrinter>>) {
+        bambu_printer.borrow_mut().protocol_state.sequence_id = 10000;
     }
 
-    pub (crate) fn printer_message<T: Serialize>(&self, value: &T) -> String {
+    pub(crate) fn printer_message<T: Serialize>(&self, value: &T) -> String {
         // take care for increasing sequential id later on, need to probably add trait on the T to set sequence_id
         serde_json::to_string(value).unwrap()
     }

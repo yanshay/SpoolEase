@@ -15,8 +15,8 @@ use crate::{
         bambu_api::{GcodeState, Message, PrintAms, PrintData, PrintTray},
         calibration::{Calibration, fix_k_on_restart},
         fetch_initial_info,
+        protocol::clean_message_bytes_to_log,
         tray::{Tray, TrayBits, TrayMetaInfo, TrayState},
-        protocol::clean_message_bytes_to_log
     },
     settings::MAX_NUM_PRINTERS,
     view_model,
