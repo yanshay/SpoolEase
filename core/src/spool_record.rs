@@ -193,7 +193,11 @@ const TAG_URL_PREFIX_S1: &str = "https://tag.spoolease.io/S1/"; // starting 0.6.
                                                                 // 9. DA
 impl SpoolRecord {
     pub fn primary_tag_id(&self) -> Option<&str> {
-        self.tag_id.first().map(String::as_str)
+        self.tag_id.iter().map(String::as_str).find(|tag_id| !tag_id.is_empty())
+    }
+
+    pub fn linked_tag_ids(&self) -> impl Iterator<Item = &str> {
+        self.tag_id.iter().map(String::as_str).filter(|tag_id| !tag_id.is_empty())
     }
 
     pub fn to_tag_descriptor_s1(&self, filament_sup_info: &Option<FilamentSupInfo>) -> Option<String> {
@@ -231,7 +235,7 @@ impl SpoolRecord {
         ))
     }
     pub fn has_valid_tag_id(&self) -> bool {
-        self.primary_tag_id().is_some_and(|tag_id| !tag_id.is_empty() && !tag_id.starts_with('-'))
+        self.primary_tag_id().is_some()
     }
 }
 

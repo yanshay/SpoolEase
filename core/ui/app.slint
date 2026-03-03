@@ -152,14 +152,16 @@ export global AppBackend {
     pure callback get-connected-scale-info() -> string;
     pure callback get-available-scales-info() -> [string];
     callback import-definition-tag-to-inventory(tag-definition-type: string, tag-definition-info: string, empty-spool-weight: int);
-    callback link_tag_to_spool_id(tag_id: string, tag_type: string, spool-id: string, final-step: bool);
+    callback link-tag-to-untagged-spool-id(tag_id: string, tag_type: string, spool-id: string, final-step: bool);
+    callback link-tag-to-tagged-spool-id(tag_id: string, tag_type: string, spool-id: string, final-step: bool);
     callback unlink-spool-from-tag(spool-id: string);
     callback set-spool-weight(spool-id: string, weight_current: int, weight_new: int, final-step: bool);
     pure callback recently_added_spool_id_if_untagged() -> string;
     pure callback get-spool-record-display(spool-id: string) -> UiSpoolRecordDisplay;
     pure callback get-spool-tag-definition-display(tag-definition-type: string, tag-definition-info: string, empty-spool-weight: int) -> UiSpoolRecordDisplay;
     pure callback get-slot-display(tray-id: int) -> UiSlotDisplay;
-    callback can-link-spool-to-tag(id: string) -> string; // empty if untagged, error text if not
+    callback can-link-untagged-spool-to-tag(id: string) -> string; // empty if untagged, error text if not
+    callback can-link-tagged-spool-to-tag(id: string) -> string; // empty if tagged, error text if not
     callback add-v1-tag-to-inventory(tag_id: string, tag_descriptor: string, final-step: bool);
     callback erase-tag(tag_id: string) -> bool;
     callback erase-tag-by-spool-id(id: string) -> bool;
@@ -195,6 +197,7 @@ export enum NewTagScanPage {
 export enum NewTagOperation {
   None,
   LinkTagToSpoolId,
+  LinkAnotherTagToTaggedSpool,
   LinkTagToRecentlyAddedSpool,
   AddV1TagToInventory, // V1
   EraseV1Tag, // V1

@@ -215,6 +215,16 @@ component OperationSelectionStep inherits Rectangle {
                     }
                 }
 
+                if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag: b1b := MyButton {
+                    type: ButtonType.RadioButton;
+                    pushed: AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool;
+                    height: 56px;
+                    text: "Link Another Tag to a Tagged Spool";
+                    pressed => {
+                        pressed(NewTagOperation.LinkAnotherTagToTaggedSpool);
+                    }
+                }
+
                 b2 := MyButton {
                     visible: AppBackend.recently_added_spool_id_if_untagged() != "";
                     pushed: AppState.new-tag-operation == NewTagOperation.LinkTagToRecentlyAddedSpool;
@@ -232,7 +242,7 @@ component OperationSelectionStep inherits Rectangle {
             next-enabled: AppState.new-tag-operation != NewTagOperation.None;
             next-clicked => {
                 // AppState.new-tag-operation = selected-operation;
-              if AppState.new-tag-operation == NewTagOperation.LinkTagToSpoolId {
+              if AppState.new-tag-operation == NewTagOperation.LinkTagToSpoolId || AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool {
                     AppState.new-tag-scan-page = NewTagScanPage.SpoolSelect;
                 } else {
                     AppState.new-tag-scan-spool-id = AppBackend.recently_added_spool_id_if_untagged();
@@ -240,7 +250,7 @@ component OperationSelectionStep inherits Rectangle {
                         AppState.new-tag-scan-page = NewTagScanPage.SpoolDisplay;
                     } else { // DefinitionTag
                       // skip display since we saw it already
-                        AppBackend.link_tag_to_spool_id(AppState.new-tag-scan-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, !AppState.is-scale-usable-now());
+                        AppBackend.link-tag-to-untagged-spool-id(AppState.new-tag-scan-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, !AppState.is-scale-usable-now());
                     }
                 }
             }
@@ -257,7 +267,7 @@ component SpoolSelectStep inherits Rectangle {
     in-out property <int> spool-id: num-pad.number;
     VerticalLayout {
         Title {
-            text: "Enter Spool Id to Link";
+            text: AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool ? "Enter Tagged Spool Id" : "Enter Untagged Spool Id";
         }
 
         Rectangle {
@@ -278,7 +288,9 @@ component SpoolSelectStep inherits Rectangle {
                 AppState.control-state = ControlState.Ready;
             }
             next-clicked => {
-                num-pad.display-error = AppBackend.can-link-spool-to-tag(num-pad.number);
+                num-pad.display-error = AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool
+                    ? AppBackend.can-link-tagged-spool-to-tag(num-pad.number)
+                    : AppBackend.can-link-untagged-spool-to-tag(num-pad.number);
                 if num-pad.display-error == "" {
                     AppState.new-tag-scan-spool-id = num-pad.number;
                     AppState.new-tag-scan-spool-id-int = num-pad.number;
@@ -391,7 +403,16 @@ component SpoolDisplayStep inherits Rectangle {
                 cancel-text = "Close";
                 // perform action
                 if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag {
-                    AppBackend.link_tag_to_spool_id(AppState.new-tag-scan-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, last-step);
+                    if AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool {
+                        AppBackend.link-tag-to-tagged-spool-id(
+                            AppState.new-tag-scan-tag-id,
+                            AppState.new-tag-scan-definition-type,
+                            AppState.new-tag-scan-spool-id,
+                            last-step,
+                        );
+                    } else {
+                        AppBackend.link-tag-to-untagged-spool-id(AppState.new-tag-scan-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, last-step);
+                    }
                 } else {
                   // TODO: Add call to AppBackend to add spool record, which will 
                   // (1) import the tag to the inventory & set it as recently added spool
