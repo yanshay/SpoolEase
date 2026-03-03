@@ -1,4 +1,4 @@
-pub const SCALE_STABLE_OTA_PATH: &str = "/bins/0.5/scale/ota/";
+pub const SCALE_STABLE_OTA_PATH: &str = "/bins/0.6/scale/ota/";
 pub const SCALE_UNSTABLE_OTA_PATH: &str = "/bins/0.6/scale/ota-unstable/";
 pub const SCALE_DEBUG_OTA_PATH: &str = "/bins/0.6/scale/debug/";
 pub const OTA_DOMAIN_STABLE: &str = "bin.spoolease.io";
