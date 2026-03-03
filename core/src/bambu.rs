@@ -115,6 +115,7 @@ pub struct BambuPrinter {
     pub auto_restore_k: bool,
     pub track_print_consume: bool,
     pub fetch_3mf: Fetch3mf,
+    pub ignore_certificates: bool,
     pub printer_ip: Ipv4Address,
     pub printer_uuid_to_encode: String,
     pub printer_connectivity_ok: Option<bool>,
@@ -279,6 +280,7 @@ impl BambuPrinter {
         auto_restore_k: bool,
         track_print_consume: bool,
         fetch_3mf: Fetch3mf,
+        ignore_certificates: bool,
         write_packets: Rc<WritePacketsChannel>,
         app_config: Rc<RefCell<AppConfig>>,
         restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
@@ -295,6 +297,7 @@ impl BambuPrinter {
             auto_restore_k,
             track_print_consume,
             fetch_3mf,
+            ignore_certificates,
             write_packets,
             app_config,
             restart_printer,
@@ -316,6 +319,7 @@ impl BambuPrinter {
         auto_restore_k: bool,
         track_print_consume: bool,
         fetch_3mf: Fetch3mf,
+        ignore_certificates: bool,
         write_packets: Rc<WritePacketsChannel>,
         app_config: Rc<RefCell<AppConfig>>,
         restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
@@ -349,6 +353,7 @@ impl BambuPrinter {
             auto_restore_k,
             track_print_consume,
             fetch_3mf,
+            ignore_certificates,
             printer_ip: printer_ip.unwrap_or(Ipv4Address::new(0, 0, 0, 0)),
             printer_uuid_to_encode,
             printer_connectivity_ok: None,
@@ -441,6 +446,7 @@ impl BambuPrinter {
             self.auto_restore_k,
             self.track_print_consume,
             self.fetch_3mf,
+            self.ignore_certificates,
             self.write_packets.clone(),
             self.app_config.clone(),
             self.restart_printer.clone(),
@@ -545,6 +551,7 @@ pub fn init(
     let auto_restore_k = printer_config.auto_restore_k;
     let track_print_consume = printer_config.track_print_consume;
     let fetch_3mf = printer_config.fetch_3mf;
+    let ignore_certificates = printer_config.ignore_certificates;
 
     // == Setup MQTT ==================================================================
     let write_packets = Rc::new(WritePacketsChannel::new());
@@ -563,6 +570,7 @@ pub fn init(
         auto_restore_k,
         track_print_consume,
         fetch_3mf,
+        ignore_certificates,
         write_packets.clone(),
         app_config.clone(),
         restart_printer.clone(),

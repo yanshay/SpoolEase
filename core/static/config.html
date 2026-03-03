@@ -778,6 +778,11 @@ ProtoPasta 500g - Cardboard - 84g,84"
         return params.get(key) ?? null;
       }
 
+      function hasHashFlag(key) {
+        const params = new URLSearchParams(location.hash.slice(1));
+        return params.has(key);
+      }
+
       function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
         const section = document.getElementById(sectionId);
         const applyButton = document.getElementById(buttonId);
@@ -807,6 +812,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
       // ==========================================
       // Template for the printer form
       function createPrinterTemplate(id, isRemovable = true) {
+        const advancedMode = hasHashFlag("advanced");
         const template = document.createElement("div");
         template.className = "printer-form";
         template.dataset.id = id;
@@ -882,6 +888,15 @@ ProtoPasta 500g - Cardboard - 84g,84"
                   </div>
                   <span >Only check if necessary; this will slow down the system!</span>
                 </div>
+                <div class="form-row printer-advanced-section" style="display: ${advancedMode ? "block" : "none"};">
+                  <fieldset style="border: 1px solid #d0d0d0; border-radius: 6px; padding: 8px 12px; margin: 0;">
+                    <legend style="padding: 0 6px;">Advanced</legend>
+                    <div class="ignore-certificates-row" style="display: flex; flex-direction: row; gap: 6px; align-items: center;">
+                      <input class="ignore-certificates" type="checkbox" id="ignore-certificates">
+                      <label for="ignore-certificates" style="margin-top: 0px; margin-bottom: 0px;">Don't validate certificates (insecure)</label>
+                    </div>
+                  </fieldset>
+                </div>
 
                 <div style="display: flex; align-items: center;">
                   <button class="default-btn" type="button" onclick="setAsDefault(${id})">Set as Default</button>
@@ -944,6 +959,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           newPrinterForm.querySelector(".auto-restore-k").checked = printer.auto_restore_k;
           newPrinterForm.querySelector(".track-print-consume").checked = printer.track_print_consume;
           newPrinterForm.querySelector(".fetch-3mf").value = printer.fetch_3mf;
+          newPrinterForm.querySelector(".ignore-certificates").checked = !!printer.ignore_certificates;
         });
 
         // Setup IP fields for all printers
@@ -1160,6 +1176,8 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const autoRestoreK = form.querySelector(".auto-restore-k").checked;
           const trackPrintConsume = form.querySelector(".track-print-consume").checked;
           const fetch3mf = form.querySelector(".fetch-3mf").value;
+          const ignoreCertificates =
+            form.querySelector(".ignore-certificates")?.checked || false;
 
           const ipParts = Array.from(form.querySelectorAll(".ip-part"));
           const ipValid = ipParts.every((part) => part.value.trim() !== "");
@@ -1191,6 +1209,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           printer.auto_restore_k = autoRestoreK;
           printer.track_print_consume = trackPrintConsume;
           printer.fetch_3mf = fetch3mf;
+          printer.ignore_certificates = ignoreCertificates;
 
           printers.push(printer);
 

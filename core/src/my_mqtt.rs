@@ -360,6 +360,7 @@ pub async fn generic_mqtt_task<
     let printer_name = bambu_printer.borrow().printer_name().clone();
     let printer_model = bambu_printer.borrow().model();
     let debug = bambu_printer.borrow().printer_selector_name.to_lowercase() == "simulator";
+    let ignore_certificates = bambu_printer.borrow().ignore_certificates;
 
     if debug {
         warn!("[{printer_log_id}] !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
@@ -458,7 +459,16 @@ pub async fn generic_mqtt_task<
             CString::new(printer_serial).unwrap()
         };
 
-        let certificates = if debug {
+        if ignore_certificates {
+            warn!("[{printer_log_id}] TLS certificate validation disabled for this printer");
+        }
+
+        let certificates = if ignore_certificates {
+            esp_mbedtls::Certificates {
+                ca_chain: None,
+                ..Default::default()
+            }
+        } else if debug {
             esp_mbedtls::Certificates {
                 ca_chain: X509::pem(concat!(include_str!("./certs/simulator.pem"), "\0").as_bytes()).ok(),
                 ..Default::default()

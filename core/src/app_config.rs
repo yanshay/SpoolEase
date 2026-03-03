@@ -83,6 +83,9 @@ pub struct PrinterConfig {
     pub track_print_consume: bool,
     #[serde(default)]
     pub fetch_3mf: Fetch3mf,
+    #[derivative(Default(value = "false"))]
+    #[serde(default = "default_false")]
+    pub ignore_certificates: bool,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]

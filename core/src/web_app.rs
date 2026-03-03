@@ -829,6 +829,8 @@ struct PrinterConfigDTO {
     auto_restore_k: bool,
     track_print_consume: bool,
     fetch_3mf: Option<String>,
+    #[serde(default)]
+    ignore_certificates: bool,
 }
 encrypted_input!(PrinterConfigDTO);
 impl From<PrinterConfigDTO> for PrinterConfig {
@@ -846,6 +848,7 @@ impl From<PrinterConfigDTO> for PrinterConfig {
             } else {
                 Fetch3mf::CloudHttp
             },
+            ignore_certificates: v.ignore_certificates,
         }
     }
 }
@@ -863,6 +866,7 @@ impl From<&PrinterConfig> for PrinterConfigDTO {
                 Fetch3mf::PrinterFtp => Some("printer-ftp".to_string()),
                 Fetch3mf::CloudHttp => Some("cloud-http".to_string()),
             },
+            ignore_certificates: v.ignore_certificates,
         }
     }
 }

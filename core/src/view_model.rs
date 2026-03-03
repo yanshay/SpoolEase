@@ -244,6 +244,7 @@ impl ViewModel {
             auto_restore_k: false,
             track_print_consume: false,
             fetch_3mf: Fetch3mf::CloudHttp,
+            ignore_certificates: false,
         };
 
         let no_configured_printers = self.app_config.borrow().configured_printers.printers.is_empty();
