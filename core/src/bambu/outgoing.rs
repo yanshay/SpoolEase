@@ -146,7 +146,7 @@ impl BambuPrinter {
         let mut filament = FilamentInfo {
             tray_info_idx: full_spool_rec.spool_rec.slicer_filament.clone(),
             tray_type: full_spool_rec.spool_rec.material_type.clone(),
-            tray_color: full_spool_rec.spool_rec.color_code.clone(),
+            tray_color: full_spool_rec.spool_rec.primary_color_code().unwrap_or_default().to_string(),
             nozzle_temp_min: temp_min,
             nozzle_temp_max: temp_max,
         };

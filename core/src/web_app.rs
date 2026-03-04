@@ -330,7 +330,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         material_type: add_spool.material,
                         material_subtype: add_spool.subtype,
                         color_name: add_spool.color_name,
-                        color_code: add_spool.rgba,
+                        color_code: if add_spool.rgba.is_empty() { Vec::new() } else { vec![add_spool.rgba] },
                         note: add_spool.note,
                         brand: add_spool.brand,
                         weight_advertised: if add_spool.label_weight == 0 {

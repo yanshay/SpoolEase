@@ -4,7 +4,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use framework::error;
 use hashbrown::HashMap;
 use regex::Regex;
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     bambu::{
-        calibration::{Calibration, formatted_k_value},
+        calibration::{formatted_k_value, Calibration},
         filament::FilamentInfo,
     },
     spool_record::SpoolRecord,
@@ -90,7 +90,7 @@ impl TagInformationV1 {
             FilamentInfo {
                 tray_info_idx: v.slicer_filament.clone(),
                 tray_type: v.material_type.clone(),
-                tray_color: v.color_code.clone(),
+                tray_color: v.primary_color_code().unwrap_or_default().to_string(),
                 nozzle_temp_max: min_max_temp.1,
                 nozzle_temp_min: min_max_temp.0,
             }
@@ -130,7 +130,7 @@ impl TagInformationV1 {
             material_type: self.filament.as_ref().map(|f| f.tray_type.clone()).unwrap_or_default(),
             material_subtype: self.filament_subtype.as_ref().unwrap_or(empty).clone(),
             color_name: self.color_name.as_ref().unwrap_or(empty).clone(),
-            color_code: self.filament.as_ref().map(|f| f.tray_color.clone()).unwrap_or_default(),
+            color_code: self.filament.as_ref().map(|f| vec![f.tray_color.clone()]).unwrap_or_default(),
             note: self.note.as_ref().unwrap_or(empty).clone(),
             brand: self.brand.as_ref().unwrap_or(empty).clone(),
             weight_advertised: self.weight_advertised,

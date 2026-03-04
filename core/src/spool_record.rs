@@ -34,7 +34,8 @@ pub struct SpoolRecord {
     pub material_type: String,    // 10
     pub material_subtype: String, // 10
     pub color_name: String,       // 10
-    pub color_code: String,       // 8
+    #[serde(serialize_with = "serialize_string_array", deserialize_with = "deserialize_string_array")]
+    pub color_code: Vec<String>, // 8
     pub note: String,             // 40
     pub brand: String,            // 30
     #[serde(deserialize_with = "deserialize_optional")]
@@ -197,12 +198,17 @@ impl SpoolRecord {
         self.tag_id.iter().map(String::as_str).find(|tag_id| !tag_id.is_empty())
     }
 
+    pub fn primary_color_code(&self) -> Option<&str> {
+        self.color_code.iter().map(String::as_str).find(|color_code| !color_code.is_empty())
+    }
+
     pub fn linked_tag_ids(&self) -> impl Iterator<Item = &str> {
         self.tag_id.iter().map(String::as_str).filter(|tag_id| !tag_id.is_empty())
     }
 
     pub fn to_tag_descriptor_s1(&self, filament_sup_info: &Option<FilamentSupInfo>) -> Option<String> {
-        if self.id.is_empty() || self.material_type.is_empty() || self.color_code.is_empty() {
+        let color_code = self.primary_color_code()?;
+        if self.id.is_empty() || self.material_type.is_empty() {
             return None;
         }
         let encode_time_part = part_opt("DE", &self.encode_time);
@@ -212,7 +218,7 @@ impl SpoolRecord {
         let material_part = part_val("M", &self.material_type);
         let material_subtype_part = part_val("MS", &self.material_subtype);
         let brand_part = part_val("B", &self.brand);
-        let color_code_part = part_val("CC", &self.color_code);
+        let color_code_part = part_val("CC", &color_code);
         let color_name_part = part_val("CN", &self.color_name);
         let weight_advertised_part = part_opt("WL", &self.weight_advertised);
         let weight_core_part = part_opt("WE", &self.weight_core);

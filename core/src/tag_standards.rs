@@ -1,6 +1,7 @@
 use alloc::{
     format,
     string::{String, ToString},
+    vec,
     vec::Vec,
 };
 use hashbrown::HashMap;
@@ -165,7 +166,7 @@ impl BambuLabTag {
             material_type,
             material_subtype,
             color_name,
-            color_code: color_rgba,
+            color_code: if color_rgba.is_empty() { Vec::new() } else { vec![color_rgba] },
             brand: "Bambu".to_string(),
             weight_advertised: if spool_weight != 0 { Some(spool_weight) } else { None },
             weight_core: None,
@@ -290,7 +291,7 @@ impl OpenPrintTagTag {
                             material_type: material_type_str,
                             material_subtype: String::new(),
                             color_name,
-                            color_code,
+                            color_code: if color_code.is_empty() { Vec::new() } else { vec![color_code] },
                             note,
                             brand,
                             weight_advertised,
