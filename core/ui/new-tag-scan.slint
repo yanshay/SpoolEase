@@ -1,6 +1,21 @@
-import { MyText, MyButton, ButtonType, WizardButtons, Title } from "framework/widgets.slint";
+import {
+    MyText,
+    MyButton,
+    ButtonType,
+    WizardButtons,
+    Title,
+} from "framework/widgets.slint";
 import { NumPad } from "numpad.slint";
-import { AppBackend, AppState, ControlState, NewTagScanPage, NewTagOperation, SpoolScaleState, UiSpoolRecordDisplay, NewScannedTagType } from "app.slint";
+import {
+    AppBackend,
+    AppState,
+    ControlState,
+    NewTagScanPage,
+    NewTagOperation,
+    SpoolScaleState,
+    UiSpoolRecordDisplay,
+    NewScannedTagType,
+} from "app.slint";
 import { Utils } from "utils.slint";
 import { ScaleWeightDisplay } from "app-widgets.slint";
 import { SpoolDisplay, SpoolDisplayMode } from "spool-display.slint";
@@ -172,7 +187,19 @@ component BambulabSpoolTypePage inherits Rectangle {
 }
 
 component OperationSelectionStep inherits Rectangle {
+    width: 480px;
+    height: 320px;
     background: white;
+
+    pure function staged-spool-id() -> string {
+        return AppState.spool-staging-info.spool-record.id;
+    }
+
+    pure function staged-spool-tagged() -> bool {
+        let staged-id = staged-spool-id();
+        return staged-id != "" && AppBackend.spool-tag-count(staged-id) > 0;
+    }
+
     function pressed(operation: NewTagOperation) {
         AppState.new-tag-operation = AppState.new-tag-operation == operation ? NewTagOperation.None : operation;
     }
@@ -184,9 +211,8 @@ component OperationSelectionStep inherits Rectangle {
 
         VerticalLayout {
             alignment: start;
-            padding: 5px;
-            padding-top: 10px;
-            spacing: 8px;
+            padding-top: 4px;
+            spacing: 4px;
             if AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag: Rectangle {
                 MyText {
                     width: parent.width;
@@ -195,20 +221,13 @@ component OperationSelectionStep inherits Rectangle {
                     color: black;
                 }
             }
-            Rectangle {
-                MyText {
-                    width: parent.width;
-                    wrap: word-wrap;
-                    text: (AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag) ? "Please choose an action:" : "Please choose how to proceed:";
-                    color: black;
-                }
-            }
 
             VerticalLayout {
+                spacing: 4px;
                 if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag: b1 := MyButton {
                     type: ButtonType.RadioButton;
                     pushed: AppState.new-tag-operation == NewTagOperation.LinkTagToSpoolId;
-                    height: 56px;
+                    height: 51px;
                     text: "Link Tag to an Untagged Spool";
                     pressed => {
                         pressed(NewTagOperation.LinkTagToSpoolId);
@@ -218,21 +237,42 @@ component OperationSelectionStep inherits Rectangle {
                 if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag: b1b := MyButton {
                     type: ButtonType.RadioButton;
                     pushed: AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool;
-                    height: 56px;
+                    height: 51px;
                     text: "Link Another Tag to a Tagged Spool";
                     pressed => {
                         pressed(NewTagOperation.LinkAnotherTagToTaggedSpool);
                     }
                 }
 
-                b2 := MyButton {
-                    visible: AppBackend.recently_added_spool_id_if_untagged() != "";
+                if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag && staged-spool-id() != "": b1c := MyButton {
+                    type: ButtonType.RadioButton;
+                    pushed: AppState.new-tag-operation == NewTagOperation.LinkTagToStagedSpool;
+                    height: 51px;
+                    text: staged-spool-tagged() ? "Link Another Tag to Staged Spool (\{staged-spool-id()})" : "Link Tag to Staged Spool (\{staged-spool-id()})";
+                    pressed => {
+                        pressed(NewTagOperation.LinkTagToStagedSpool);
+                    }
+                }
+
+                // this should be displayed both for simple tag and definition tag
+                if AppBackend.recently_added_spool_id_if_untagged() != "": MyButton {
                     pushed: AppState.new-tag-operation == NewTagOperation.LinkTagToRecentlyAddedSpool;
                     type: ButtonType.RadioButton;
-                    height: 56px;
+                    height: 51px;
                     text: (AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag) ? "Link tag to recently added spool ID: \{AppBackend.recently_added_spool_id_if_untagged()}" : "Link tag to the imported spool ID: \{AppBackend.recently_added_spool_id_if_untagged()}";
                     pressed => {
                         pressed(NewTagOperation.LinkTagToRecentlyAddedSpool);
+                    }
+                }
+
+                 if AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag && AppState.new-tag-scan-definition-type == "Bambu Lab": 
+                VerticalLayout {
+                    padding-top: 12px;
+                    MyText {
+                        width: parent.width;
+                        wrap: word-wrap;
+                        text: "IMPORTANT : Bambu Lab spools have a tag on each side. To link both, right after linking this tag, scan the other side and link (DON'T IMPORT, ONLY LINK) it to the newly staged spool (or later by selecting its ID).";
+                        color: black;
                     }
                 }
             }
@@ -242,7 +282,10 @@ component OperationSelectionStep inherits Rectangle {
             next-enabled: AppState.new-tag-operation != NewTagOperation.None;
             next-clicked => {
                 // AppState.new-tag-operation = selected-operation;
-              if AppState.new-tag-operation == NewTagOperation.LinkTagToSpoolId || AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool {
+              if AppState.new-tag-operation == NewTagOperation.LinkTagToStagedSpool {
+                    AppState.new-tag-scan-spool-id = staged-spool-id();
+                    AppState.new-tag-scan-page = NewTagScanPage.SpoolDisplay;
+                } else if AppState.new-tag-operation == NewTagOperation.LinkTagToSpoolId || AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool {
                     AppState.new-tag-scan-page = NewTagScanPage.SpoolSelect;
                 } else {
                     AppState.new-tag-scan-spool-id = AppBackend.recently_added_spool_id_if_untagged();
@@ -288,9 +331,7 @@ component SpoolSelectStep inherits Rectangle {
                 AppState.control-state = ControlState.Ready;
             }
             next-clicked => {
-                num-pad.display-error = AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool
-                    ? AppBackend.can-link-tagged-spool-to-tag(num-pad.number)
-                    : AppBackend.can-link-untagged-spool-to-tag(num-pad.number);
+                num-pad.display-error = AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool ? AppBackend.can-link-tagged-spool-to-tag(num-pad.number) : AppBackend.can-link-untagged-spool-to-tag(num-pad.number);
                 if num-pad.display-error == "" {
                     AppState.new-tag-scan-spool-id = num-pad.number;
                     AppState.new-tag-scan-spool-id-int = num-pad.number;
@@ -403,7 +444,18 @@ component SpoolDisplayStep inherits Rectangle {
                 cancel-text = "Close";
                 // perform action
                 if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag {
-                    if AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool {
+                    if AppState.new-tag-operation == NewTagOperation.LinkTagToStagedSpool {
+                        if AppBackend.spool-tag-count(AppState.new-tag-scan-spool-id) > 0 {
+                            AppBackend.link-tag-to-tagged-spool-id(
+                                AppState.new-tag-scan-tag-id,
+                                AppState.new-tag-scan-definition-type,
+                                AppState.new-tag-scan-spool-id,
+                                last-step,
+                            );
+                        } else {
+                            AppBackend.link-tag-to-untagged-spool-id(AppState.new-tag-scan-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, last-step);
+                        }
+                    } else if AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool {
                         AppBackend.link-tag-to-tagged-spool-id(
                             AppState.new-tag-scan-tag-id,
                             AppState.new-tag-scan-definition-type,
@@ -435,29 +487,30 @@ component ImportDefinitionNoticePage inherits Rectangle {
         Title {
             text: "\{AppState.new-tag-scan-definition-type} Tag Information Imported";
         }
+
         Rectangle {
-          background: white;
+            background: white;
 
-          VerticalLayout {
-              alignment: space-around;
-              padding: 20px;
-              spacing: 5px;
-              MyText {
-                  horizontal-alignment: center;
-                  text: "Tag Information Imported to Spool \{AppState.new-tag-scan-spool-id}";
-              }
-              MyText {
-                  text: "Imported data may still be incomplete or inaccurate, and some features might not work as expected.";
-                  wrap: word-wrap;
-              }
-              MyText {
-                  text: "Please review the spool record in the inventory app and complete or correct the missing details.";
-                  wrap: word-wrap;
-              }
-          }
+            VerticalLayout {
+                alignment: space-around;
+                padding: 20px;
+                spacing: 5px;
+                MyText {
+                    horizontal-alignment: center;
+                    text: "Tag Information Imported to Spool \{AppState.new-tag-scan-spool-id}";
+                }
 
+                MyText {
+                    text: "Imported data may still be incomplete or inaccurate, and some features might not work as expected.";
+                    wrap: word-wrap;
+                }
+
+                MyText {
+                    text: "Please review the spool record in the inventory app and complete or correct the missing details.";
+                    wrap: word-wrap;
+                }
+            }
         }
-
 
         WizardButtons {
             back-enabled: false;
