@@ -1,4 +1,4 @@
-use alloc::rc::Rc;
+use alloc::{rc::Rc, string::String};
 use framework::error;
 
 use crate::spool_record::{FullSpoolRecord, SpoolRecord, SpoolRecordExt};
@@ -7,6 +7,7 @@ use crate::store::Store;
 pub struct FilamentStaging {
     // tag_info: Option<TagInformation>,
     full_spool_rec: Option<FullSpoolRecord>,
+    scanned_tag_id: Option<String>,
     // spool_record: Option<SpoolRecord>,
     // spool_record_ext: Option<SpoolRecordExt>,
     origin: StagingOrigin,
@@ -25,6 +26,7 @@ impl FilamentStaging {
     pub fn new(store: Rc<Store>) -> Self {
         Self {
             full_spool_rec: None,
+            scanned_tag_id: None,
             origin: StagingOrigin::Empty,
             _store: store.clone(),
         }
@@ -37,6 +39,7 @@ impl FilamentStaging {
 
     pub fn clear(&mut self) {
         self.full_spool_rec = None;
+        self.scanned_tag_id = None;
         self.origin = StagingOrigin::Empty;
     }
     // pub fn tag_info(&self) -> &Option<TagInformation> {
@@ -66,7 +69,16 @@ impl FilamentStaging {
             spool_rec,
             spool_rec_ext: SpoolRecordExt::default(),
         });
+        self.scanned_tag_id = None;
         self.origin = origin;
+    }
+
+    pub fn set_scanned_tag_id(&mut self, scanned_tag_id: Option<String>) {
+        self.scanned_tag_id = scanned_tag_id;
+    }
+
+    pub fn scanned_tag_id(&self) -> Option<&str> {
+        self.scanned_tag_id.as_deref()
     }
     pub fn update_spool_rec_keep_rest(&mut self, spool_rec: SpoolRecord) {
         if let Some(full_spool_rec) = &mut self.full_spool_rec {

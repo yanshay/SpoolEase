@@ -154,12 +154,15 @@ export global AppBackend {
     callback import-definition-tag-to-inventory(tag-definition-type: string, tag-definition-info: string, empty-spool-weight: int);
     callback link-tag-to-untagged-spool-id(tag_id: string, tag_type: string, spool-id: string, final-step: bool);
     callback link-tag-to-tagged-spool-id(tag_id: string, tag_type: string, spool-id: string, final-step: bool);
-    callback unlink-spool-from-tag(spool-id: string);
+    callback unlink-spool-from-all-tags(spool-id: string);
+    callback unlink-scanned-tag-from-spool(spool-id: string);
     callback set-spool-weight(spool-id: string, weight_current: int, weight_new: int, final-step: bool);
     pure callback recently_added_spool_id_if_untagged() -> string;
     pure callback get-spool-record-display(spool-id: string) -> UiSpoolRecordDisplay;
     pure callback get-spool-tag-definition-display(tag-definition-type: string, tag-definition-info: string, empty-spool-weight: int) -> UiSpoolRecordDisplay;
     pure callback get-slot-display(tray-id: int) -> UiSlotDisplay;
+    pure callback spool-tag-count(spool-id: string) -> int;
+    pure callback staging-scanned-tag-id() -> string;
     callback can-link-untagged-spool-to-tag(id: string) -> string; // empty if untagged, error text if not
     callback can-link-tagged-spool-to-tag(id: string) -> string; // empty if tagged, error text if not
     callback add-v1-tag-to-inventory(tag_id: string, tag_descriptor: string, final-step: bool);
@@ -206,6 +209,7 @@ export enum NewTagOperation {
 export enum StagingOperationsPage {
   SpoolDisplay,
   OperationSelection,
+  UnlinkSelection,
   UpdateWeight,
   PlaceSpoolInAssignedLocation,
   PickSpoolFromActualLocation,
@@ -797,15 +801,14 @@ export global AppState {
         }
     }
 
-    public function unlink-spool-id-from-tag-status(spool-id: string, status: string) {
-      // string empty ok, content is error message
-      if status == "" {
-            self.show-message-box("Unlink Notice", "Spool \{spool-id} Unlinked From Tag", "", StatusType.Success, 10);
+    public function unlink-spool-id-tags-status(spool-id: string, success: bool, message: string) {
+      if success {
+            self.show-message-box("Unlink Notice", message, "", StatusType.Success, 10);
             if self.control-state == ControlState.StagingSelected {
                 self.control-state = ControlState.Ready
             }
         } else {
-            self.show-message-box("Unlink Notice", "Failed to Unlink Spool \{spool-id} From Tag", status, StatusType.Error, 10);
+            self.show-message-box("Unlink Notice", message, "", StatusType.Error, 10);
         }
     }
 

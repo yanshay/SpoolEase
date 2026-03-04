@@ -7,6 +7,12 @@ import { UpdateWeightPage } from "common-operations.slint";
 import { LocationDisplay } from "location-display.slint";
 import { NumPad } from "numpad.slint";
 
+enum UnlinkSelection {
+  None,
+  ScannedTag,
+  AllTags,
+}
+
 component SpoolDisplayStep inherits Rectangle {
     callback more-clicked();
     in property <UiSpoolRecordDisplay> spool-display;
@@ -52,6 +58,24 @@ component SpoolDisplayStep inherits Rectangle {
 
 component OperationSelectionStep inherits Rectangle {
     background: white;
+    pure function linked-tag-count() -> int {
+        return AppBackend.spool-tag-count(AppState.spool-staging-info.spool-record.id);
+    }
+
+    pure function unlink-button-text() -> string {
+        if linked-tag-count() <= 1 {
+            return "Unlink Tag";
+        }
+        if AppBackend.staging-scanned-tag-id() != "" {
+            return "Unlink Tag/s";
+        }
+        return "Unlink Tags";
+    }
+
+    pure function should-show-unlink-selection() -> bool {
+        return linked-tag-count() > 1 && AppBackend.staging-scanned-tag-id() != "";
+    }
+
     VerticalLayout {
         Title {
             text: "Please Select Staging Operation";
@@ -95,9 +119,13 @@ component OperationSelectionStep inherits Rectangle {
                 }
 
                 MyButton {
-                    text: "Unlink Tag";
+                    text: unlink-button-text();
                     clicked => {
-                        AppBackend.unlink-spool-from-tag(AppState.spool-staging-info.spool-record.id)
+                        if should-show-unlink-selection() {
+                            AppState.staging-operation-page = StagingOperationsPage.UnlinkSelection;
+                        } else {
+                            AppBackend.unlink-spool-from-all-tags(AppState.spool-staging-info.spool-record.id);
+                        }
                     }
                 }
 
@@ -146,6 +174,65 @@ component OperationSelectionStep inherits Rectangle {
                 clicked => {
                     AppState.control-state = ControlState.Ready;
                 }
+            }
+        }
+    }
+}
+
+component UnlinkSelectionStep inherits Rectangle {
+    background: white;
+    property <UnlinkSelection> unlink-selection: UnlinkSelection.None;
+
+    function pressed(selection: UnlinkSelection) {
+        unlink-selection = selection;
+    }
+
+    VerticalLayout {
+        Title {
+            text: "Select Unlink Operation";
+        }
+
+        VerticalLayout {
+            alignment: start;
+            padding: 5px;
+            spacing: 8px;
+
+            MyButton {
+                type: ButtonType.RadioButton;
+                pushed: unlink-selection == UnlinkSelection.ScannedTag;
+                height: 56px;
+                text: "Unlink Scanned Tag";
+                pressed => {
+                    pressed(UnlinkSelection.ScannedTag);
+                }
+            }
+
+            MyButton {
+                type: ButtonType.RadioButton;
+                pushed: unlink-selection == UnlinkSelection.AllTags;
+                height: 56px;
+                text: "Unlink All Linked Tags";
+                pressed => {
+                    pressed(UnlinkSelection.AllTags);
+                }
+            }
+        }
+
+        WizardButtons {
+            next-enabled: unlink-selection != UnlinkSelection.None;
+            back-enabled: true;
+            next-clicked => {
+                if unlink-selection == UnlinkSelection.ScannedTag {
+                    AppBackend.unlink-scanned-tag-from-spool(AppState.spool-staging-info.spool-record.id);
+                } else {
+                    AppBackend.unlink-spool-from-all-tags(AppState.spool-staging-info.spool-record.id);
+                }
+            }
+            back-clicked => {
+                AppState.staging-operation-page = StagingOperationsPage.OperationSelection;
+            }
+            cancel-clicked => {
+                AppState.control-state = ControlState.Ready;
             }
         }
     }
@@ -252,6 +339,7 @@ export component StagingOperations {
         spool-display: spool-display;
     }
     if AppState.staging-operation-page == StagingOperationsPage.OperationSelection: OperationSelectionStep { }
+    if AppState.staging-operation-page == StagingOperationsPage.UnlinkSelection: UnlinkSelectionStep { }
     if AppState.staging-operation-page == StagingOperationsPage.UpdateWeight: UpdateWeightPage {
         title: "Update Spool \{spool-display.spool-record.id} Weight";
         user-prompt: "Please place the spool on the scale:";
