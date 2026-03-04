@@ -434,14 +434,16 @@ impl ViewModel {
                                 encode_time: spool_rec.encode_time,
                             };
                             let encode_cookie_str = serde_json::to_string(&encode_cookie).unwrap();
-                            if let Some(tag_id) = spool_rec.primary_tag_id()
-                                && let Ok(uid) = hex::decode(tag_id)
-                            {
-                                spool_tag_borrow.write_tag(&descriptor, Some(uid.clone()), encode_cookie_str.clone());
-                                let _ = spool_scale_borrow.write_tag(&descriptor, Some(uid), encode_cookie_str);
+                            let allowed_uids: Vec<Vec<u8>> = spool_rec
+                                .linked_tag_ids()
+                                .filter_map(|tag_id| hex::decode(tag_id).ok())
+                                .collect();
+                            if !allowed_uids.is_empty() {
+                                spool_tag_borrow.write_tag(&descriptor, Some(allowed_uids.clone()), encode_cookie_str.clone());
+                                let _ = spool_scale_borrow.write_tag(&descriptor, Some(allowed_uids), encode_cookie_str);
                                 true
                             } else {
-                                ui.invoke_encoding_failure("Spool Tag Id isn't valid".to_shared_string());
+                                ui.invoke_encoding_failure("Spool has no valid linked tag IDs".to_shared_string());
                                 false
                             }
                         }

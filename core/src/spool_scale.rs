@@ -105,7 +105,7 @@ impl SpoolScale {
         }
     }
 
-    pub fn write_tag(&self, text: &str, check_uid: Option<Vec<u8>>, cookie: String) -> Result<(), String> {
+    pub fn write_tag(&self, text: &str, check_uid: Option<Vec<Vec<u8>>>, cookie: String) -> Result<(), String> {
         if let Err(err) = self.console_to_scale.try_send(ConsoleToScale::WriteTag {
             text: text.to_string(),
             check_uid,

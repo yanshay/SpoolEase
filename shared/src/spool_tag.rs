@@ -48,7 +48,7 @@ impl SpoolTag {
             }));
     }
 
-    pub fn write_tag(&self, text: &str, check_uid: Option<Vec<u8>>, cookie: String) {
+    pub fn write_tag(&self, text: &str, check_uid: Option<Vec<Vec<u8>>>, cookie: String) {
         self.tag_operation
             .signal(TagOperation::WriteTag(WriteTagRequest {
                 text: String::from(text),
@@ -107,7 +107,7 @@ impl SpoolTag {
 #[derive(Debug, Clone)]
 struct WriteTagRequest {
     text: String,
-    check_uid: Option<Vec<u8>>,
+    check_uid: Option<Vec<Vec<u8>>>,
     cookie: String,
 }
 
@@ -522,8 +522,8 @@ async fn nfc_task(
                                 .borrow()
                                 .notify_tag_status(Status::FoundTagNowWriting);
                             let found_uid = last_seen_tag.as_ref().unwrap().uid();
-                            if let Some(check_uid) = &write_tag_reuest.check_uid
-                                && check_uid.as_slice() != found_uid
+                            if let Some(check_uids) = &write_tag_reuest.check_uid
+                                && !check_uids.iter().any(|check_uid| check_uid.as_slice() == found_uid)
                             {
                                 spool_tag_rc.borrow().notify_tag_status(Status::Failure(
                                     Failure::TagWriteFailure(

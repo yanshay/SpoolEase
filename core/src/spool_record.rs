@@ -13,6 +13,7 @@ use alloc::{
     vec::Vec,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use shared::spool_tag::TAG_PLACEHOLDER;
 use shared::utils::{
     deserialize_bool_yn_empty_n, deserialize_f32_base64, deserialize_optional, deserialize_optional_bool_yn, serialize_bool_yn, serialize_f32_base64,
     serialize_optional_bool_yn,
@@ -201,15 +202,12 @@ impl SpoolRecord {
     }
 
     pub fn to_tag_descriptor_s1(&self, filament_sup_info: &Option<FilamentSupInfo>) -> Option<String> {
-        // Note: This function relies on tag_id to be here! (removes the & from the standard function, will panic if no tag_id)
-        let primary_tag_id = self.primary_tag_id()?;
         if self.id.is_empty() || self.material_type.is_empty() || self.color_code.is_empty() {
             return None;
         }
         let encode_time_part = part_opt("DE", &self.encode_time);
         let added_time_part = part_opt("DA", &self.added_time);
-        let mut tag_id_part = part_val("TG", &primary_tag_id);
-        tag_id_part.drain(..1); // remove the "&"
+        let tag_id_part = format!("TG={TAG_PLACEHOLDER}");
         let id_part = part_val("ID", &self.id);
         let material_part = part_val("M", &self.material_type);
         let material_subtype_part = part_val("MS", &self.material_subtype);

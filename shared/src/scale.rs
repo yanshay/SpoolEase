@@ -69,7 +69,7 @@ pub enum ConsoleToScale {
     ReadTag,
     WriteTag {
         text: String,
-        check_uid: Option<Vec<u8>>,
+        check_uid: Option<Vec<Vec<u8>>>,
         cookie: String,
     },
     EraseTag {
