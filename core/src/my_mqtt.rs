@@ -381,6 +381,10 @@ pub async fn generic_mqtt_task<
     ];
     let mut bambu_cert_index = 0;
 
+    if printer_model == PrinterModel::P2S {
+        bambu_cert_index = 1;
+    }
+
     if printer_model == PrinterModel::H2C {
         bambu_cert_index = 2;
     }
@@ -492,25 +496,18 @@ pub async fn generic_mqtt_task<
             }
         };
 
-        term_info!("[{}] Establishing TLS connection with Printer {:?}", printer_log_id, servername);
         info!("[{printer_log_id}] Printer model is {printer_model:?}");
+        term_info!(
+            "[{}] Establishing TLS connection with Printer {:?} using {bambu_cert_index}",
+            printer_log_id,
+            servername
+        );
 
         if let Err(e) = session.connect().await {
             if matches!(e, TlsError::MbedTlsError(-9984)) {
-                if printer_model != PrinterModel::P2S || (printer_model == PrinterModel::P2S && bambu_cert_index == 1) {
-                    // in case of P2S report error only after trying both certs
-                    term_error!("[{}] Unexpected error during tls handshake {:?}", printer_log_id, e);
-                } else {
-                    // P2S and first cert
-                    warn!(
-                        "[{}] P2S first certificates didn't work, will try the second option on next connect trial",
-                        printer_log_id
-                    );
-                }
-                if printer_model == PrinterModel::P2S {
-                    debug!("[{printer_log_id}] P2S - Switching certificates for TLS");
-                    bambu_cert_index = 1 - bambu_cert_index;
-                }
+                // certificate error
+                term_error!("[{}] Certificate {bambu_cert_index} rejected {:?}", printer_log_id, e);
+                bambu_cert_index = (bambu_cert_index + 1) % bambu_certs.len();
             } else {
                 term_error!("[{}] Unexpected error during tls handshake {:?}", printer_log_id, e);
             }
