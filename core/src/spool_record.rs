@@ -1,7 +1,7 @@
 use crate::{
     bambu::{
-        calibration::{KInfo, KNozzleId},
         NozzleType,
+        calibration::{KInfo, KNozzleId},
     },
     csvdb::CsvDbId,
     tag_standards::{BambuLabTag, OpenPrintTagTag},
@@ -182,17 +182,17 @@ impl CsvDbId for SpoolRecord {
 
 const _TAG_URL_PREFIX_V2: &str = "https://info.filament3d.org/V2/"; // in 0.5.x
 const TAG_URL_PREFIX_S1: &str = "https://tag.spoolease.io/S1/"; // starting 0.6.0-b.24
-                                                                // Some(format!("{FILAMENT_URL_PREFIX}V1?ID={TAG_PLACEHOLDER}{encode_time_part}{material_part}
-                                                                // {filament_subtype_part}{color_part}{color_name_part}{brand_part}{advertised_weight_part}{weight_core_part}{weight_new_part}{nozzle_temp_min_part}{nozzle_temp_max_part}{note_part}{tray_info_idx_part}"))
-                                                                // TODO:
-                                                                // 1. Add slicer_filament_name - derive from slicer,mfilament_code or from material_type if slicer not filled in, use get_filament_info for that
-                                                                // 2. X Add temperatures - use get_filament_info for that
-                                                                // 3. Add note - and fully url encode it
-                                                                // 4. ? Add added time
-                                                                // 5. {note_part}{tray_info_idx_part}"))
-                                                                // 6. note (N)
-                                                                // 8. slicner name (SN)
-                                                                // 9. DA
+// Some(format!("{FILAMENT_URL_PREFIX}V1?ID={TAG_PLACEHOLDER}{encode_time_part}{material_part}
+// {filament_subtype_part}{color_part}{color_name_part}{brand_part}{advertised_weight_part}{weight_core_part}{weight_new_part}{nozzle_temp_min_part}{nozzle_temp_max_part}{note_part}{tray_info_idx_part}"))
+// TODO:
+// 1. Add slicer_filament_name - derive from slicer,mfilament_code or from material_type if slicer not filled in, use get_filament_info for that
+// 2. X Add temperatures - use get_filament_info for that
+// 3. Add note - and fully url encode it
+// 4. ? Add added time
+// 5. {note_part}{tray_info_idx_part}"))
+// 6. note (N)
+// 8. slicner name (SN)
+// 9. DA
 impl SpoolRecord {
     pub fn primary_tag_id(&self) -> Option<&str> {
         self.tag_id.iter().map(String::as_str).find(|tag_id| !tag_id.is_empty())
@@ -207,7 +207,16 @@ impl SpoolRecord {
     }
 
     pub fn to_tag_descriptor_s1(&self, filament_sup_info: &Option<FilamentSupInfo>) -> Option<String> {
-        let color_code = self.primary_color_code()?;
+        let color_code = self
+            .color_code
+            .iter()
+            .map(String::as_str)
+            .filter(|color_code| !color_code.is_empty())
+            .collect::<Vec<_>>()
+            .join(";");
+        if color_code.is_empty() {
+            return None;
+        }
         if self.id.is_empty() || self.material_type.is_empty() {
             return None;
         }
@@ -243,7 +252,7 @@ impl SpoolRecord {
     }
 }
 
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 pub fn part_opt<T: Default + PartialEq + core::fmt::Display>(prefix: &str, opt: &Option<T>) -> String {
     match opt {
         Some(v) => part_val(prefix, v),
@@ -251,10 +260,12 @@ pub fn part_opt<T: Default + PartialEq + core::fmt::Display>(prefix: &str, opt: 
     }
 }
 
+const ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC.remove(b';');
+
 pub fn part_val<T: Default + PartialEq + core::fmt::Display>(prefix: &str, val: &T) -> String {
     if *val != T::default() {
         let value = val.to_string();
-        let url_encoded_value = utf8_percent_encode(&value, NON_ALPHANUMERIC).to_string();
+        let url_encoded_value = utf8_percent_encode(&value, ENCODE_SET).to_string();
         format!("&{prefix}={url_encoded_value}")
     } else {
         "".to_string()

@@ -4,7 +4,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use framework::error;
 use hashbrown::HashMap;
 use regex::Regex;
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     bambu::{
-        calibration::{formatted_k_value, Calibration},
+        calibration::{Calibration, formatted_k_value},
         filament::FilamentInfo,
     },
     spool_record::SpoolRecord,

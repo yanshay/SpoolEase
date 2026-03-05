@@ -523,7 +523,9 @@ async fn nfc_task(
                                 .notify_tag_status(Status::FoundTagNowWriting);
                             let found_uid = last_seen_tag.as_ref().unwrap().uid();
                             if let Some(check_uids) = &write_tag_reuest.check_uid
-                                && !check_uids.iter().any(|check_uid| check_uid.as_slice() == found_uid)
+                                && !check_uids
+                                    .iter()
+                                    .any(|check_uid| check_uid.as_slice() == found_uid)
                             {
                                 spool_tag_rc.borrow().notify_tag_status(Status::Failure(
                                     Failure::TagWriteFailure(

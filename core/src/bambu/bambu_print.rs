@@ -496,7 +496,7 @@ impl BambuPrinter {
                             if let Some(usage_entry_tray_id) = print_project.get_ams_mapping_tray_id(usage_entry.gcode_filament_id) {
                                 self.update_any_tray(usage_entry_tray_id as usize, |ams_tray| {
                                     ams_tray.meta_info.consumed_since_load += usage_entry.weight_g;
-                                    ams_tray.meta_info.consumed_since_weight += usage_entry.weight_g; 
+                                    ams_tray.meta_info.consumed_since_weight += usage_entry.weight_g;
                                     debug!(
                                         "[{printer_log_id}] Print project consumed entry {} on layer change : {:.2}g, from filament at slot {} to a session total of {:.2}g",
                                         print_project.consume_index(), usage_entry.weight_g, usage_entry_tray_id, ams_tray.meta_info.consumed_since_load

@@ -366,22 +366,18 @@ impl ViewModel {
 
         let moved_view_model = self.view_model.clone().unwrap();
         ui_app_backend.on_unlink_spool_from_all_tags(move |spool_id| {
-            let _ = moved_view_model
-                .borrow()
-                .dispatch_async_task(AppAsyncTaskRequest::UnLinkSpoolTags {
-                    spool_id: spool_id.into(),
-                    mode: UnlinkTagMode::AllTags,
-                });
+            let _ = moved_view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::UnLinkSpoolTags {
+                spool_id: spool_id.into(),
+                mode: UnlinkTagMode::AllTags,
+            });
         });
 
         let moved_view_model = self.view_model.clone().unwrap();
         ui_app_backend.on_unlink_scanned_tag_from_spool(move |spool_id| {
-            let _ = moved_view_model
-                .borrow()
-                .dispatch_async_task(AppAsyncTaskRequest::UnLinkSpoolTags {
-                    spool_id: spool_id.into(),
-                    mode: UnlinkTagMode::ScannedTag,
-                });
+            let _ = moved_view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::UnLinkSpoolTags {
+                spool_id: spool_id.into(),
+                mode: UnlinkTagMode::ScannedTag,
+            });
         });
 
         let moved_view_model = self.view_model.clone().unwrap();
@@ -434,10 +430,7 @@ impl ViewModel {
                                 encode_time: spool_rec.encode_time,
                             };
                             let encode_cookie_str = serde_json::to_string(&encode_cookie).unwrap();
-                            let allowed_uids: Vec<Vec<u8>> = spool_rec
-                                .linked_tag_ids()
-                                .filter_map(|tag_id| hex::decode(tag_id).ok())
-                                .collect();
+                            let allowed_uids: Vec<Vec<u8>> = spool_rec.linked_tag_ids().filter_map(|tag_id| hex::decode(tag_id).ok()).collect();
                             if !allowed_uids.is_empty() {
                                 spool_tag_borrow.write_tag(&descriptor, Some(allowed_uids.clone()), encode_cookie_str.clone());
                                 let _ = spool_scale_borrow.write_tag(&descriptor, Some(allowed_uids), encode_cookie_str);
@@ -1246,11 +1239,7 @@ impl ViewModel {
     }
 
     fn ui_staging_scanned_tag_id(&self) -> SharedString {
-        self.filament_staging
-            .borrow()
-            .scanned_tag_id()
-            .unwrap_or_default()
-            .to_shared_string()
+        self.filament_staging.borrow().scanned_tag_id().unwrap_or_default().to_shared_string()
     }
 
     fn ui_get_slot_display(&self, tray_id: i32) -> UiSlotDisplay {
@@ -1904,9 +1893,7 @@ impl ViewModel {
                         0,
                     );
                     self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Scanned);
-                    self.filament_staging
-                        .borrow_mut()
-                        .set_scanned_tag_id(Some(hex::encode_upper(tag_uid)));
+                    self.filament_staging.borrow_mut().set_scanned_tag_id(Some(hex::encode_upper(tag_uid)));
                     self.display_filament_staging(true);
                 } else {
                     ui.unwrap()
@@ -2170,9 +2157,7 @@ impl ViewModel {
             if let Some(existing_spool) = store.get_spool_by_hex_tag(&tag_id)
                 && existing_spool.id != spool_id
             {
-                ui_app_state.invoke_link_tag_to_spool_id_status(
-                    format!("Tag Already Linked to Spool {}", existing_spool.id).to_shared_string(),
-                );
+                ui_app_state.invoke_link_tag_to_spool_id_status(format!("Tag Already Linked to Spool {}", existing_spool.id).to_shared_string());
                 return;
             }
 
@@ -2194,11 +2179,7 @@ impl ViewModel {
                         .filament_staging
                         .borrow_mut()
                         .set_spool_record(spool_rec, StagingOrigin::Scanned);
-                    view_model
-                        .borrow()
-                        .filament_staging
-                        .borrow_mut()
-                        .set_scanned_tag_id(Some(tag_id.clone()));
+                    view_model.borrow().filament_staging.borrow_mut().set_scanned_tag_id(Some(tag_id.clone()));
                     view_model.borrow().display_filament_staging(final_step);
                     Self::set_staging_rec_ext_async(view_model.clone()).await;
                 }
@@ -2220,11 +2201,7 @@ impl ViewModel {
             let view_model_borrow = view_model.borrow();
             (
                 view_model_borrow.store.clone(),
-                view_model_borrow
-                    .filament_staging
-                    .borrow()
-                    .scanned_tag_id()
-                    .map(ToString::to_string),
+                view_model_borrow.filament_staging.borrow().scanned_tag_id().map(ToString::to_string),
                 view_model_borrow.ui_weak.unwrap(),
             )
         };
@@ -2303,11 +2280,7 @@ impl ViewModel {
             }
         } else {
             error!("Failed to unlink tags for spool_id {spool_id} ({mode:?}): Spool Id not found");
-            ui_app_state.invoke_unlink_spool_id_tags_status(
-                spool_id.to_shared_string(),
-                false,
-                format!("Spool Id {spool_id} Not Found").into(),
-            );
+            ui_app_state.invoke_unlink_spool_id_tags_status(spool_id.to_shared_string(), false, format!("Spool Id {spool_id} Not Found").into());
         }
     }
     async fn set_staging_rec_ext_async(view_model: Rc<RefCell<ViewModel>>) {
@@ -3686,9 +3659,7 @@ pub async fn app_async_task(view_model: Rc<RefCell<ViewModel>>) {
                 mode,
                 final_step,
             } => ViewModel::link_tag_to_spool_id_async(view_model.clone(), tag_id, tag_type, spool_id, mode, final_step).await,
-            AppAsyncTaskRequest::UnLinkSpoolTags { spool_id, mode } => {
-                ViewModel::unlink_spool_tags_async(view_model.clone(), spool_id, mode).await
-            }
+            AppAsyncTaskRequest::UnLinkSpoolTags { spool_id, mode } => ViewModel::unlink_spool_tags_async(view_model.clone(), spool_id, mode).await,
             AppAsyncTaskRequest::SetStagingRecExt {} => ViewModel::set_staging_rec_ext_async(view_model.clone()).await,
             AppAsyncTaskRequest::SetSpoolWeight {
                 spool_id,

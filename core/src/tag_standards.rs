@@ -1,7 +1,8 @@
+use core::cmp::{max, min};
+
 use alloc::{
     format,
     string::{String, ToString},
-    vec,
     vec::Vec,
 };
 use hashbrown::HashMap;
@@ -54,29 +55,24 @@ impl BambuLabTag {
         // PLA Basic (Block 4, all)
         self.get_block_cstr(4, 0, 16)
     }
-    pub fn color_rgba(&self) -> String {
+    pub fn colors_rgba(&self) -> Vec<String> {
+        let mut colors = Vec::<String>::new();
         // (Block 5, index 0..=3)
         if let Some(block) = self.blocks.get(&5) {
             let rgba = &block.as_slice()[0..=3];
-            hex::encode_upper(rgba)
-        } else {
-            String::new()
-        }
-    }
-    pub fn color_rgba2(&self) -> String {
+            colors.push(hex::encode_upper(rgba));
+        };
         // (Block 16, index 4, reversed), Block 16, index 2 two bytes show how many colors
         if let Some(block) = self.blocks.get(&16) {
             let block = block.as_slice();
-            let num_colors = i16::from_le_bytes([block[2], block[3]]) as i32;
-            if num_colors > 1 {
-                let rgba2 = [block[7], block[6], block[5], block[4]];
-                hex::encode_upper(rgba2)
-            } else {
-                String::new()
+            let num_colors = max(i16::from_le_bytes([block[2], block[3]]) as usize - 1, 0);
+            for i in 0..min(num_colors, 3) {
+                let offset = i * 4;
+                let rgba = [block[7 + offset], block[6 + offset], block[5 + offset], block[4 + offset]];
+                colors.push(hex::encode_upper(rgba));
             }
-        } else {
-            String::new()
         }
+        colors
     }
     pub fn spool_weight(&self) -> i32 {
         // 250g  (Block 5, index 4..=5)
@@ -108,8 +104,7 @@ impl BambuLabTag {
 
     pub fn to_spool_rec(&self) -> SpoolRecord {
         let material_id = self.material_id();
-        let color_rgba = self.color_rgba();
-        let color_rgba2 = self.color_rgba2();
+        let colors_rgba = self.colors_rgba();
 
         let (full_material, material_type) = BASE_FILAMENTS
             .lines()
@@ -137,14 +132,17 @@ impl BambuLabTag {
                 }
 
                 let colors = s.next()?;
-                let mut cs = colors.split('/');
-                let c1 = cs.next()?;
-                if c1 != color_rgba {
-                    return None;
-                }
+                // make sure lists are exactly the same (except for order)
+                let mut color_name_colors: Vec<&str> = colors.split('/').collect();
+                color_name_colors.sort();
 
-                let c2 = cs.next().unwrap_or("");
-                if c2 != color_rgba2 {
+                let mut colors_rgba_for_compare = colors_rgba.clone();
+                colors_rgba_for_compare.sort();
+                let colors_rgba_for_compare: Vec<&str> = colors_rgba_for_compare.iter().map(|s| s.as_str()).collect();
+
+                let full_match = colors_rgba_for_compare == color_name_colors;
+
+                if !full_match {
                     return None;
                 }
 
@@ -166,7 +164,7 @@ impl BambuLabTag {
             material_type,
             material_subtype,
             color_name,
-            color_code: if color_rgba.is_empty() { Vec::new() } else { vec![color_rgba] },
+            color_code: colors_rgba,
             brand: "Bambu".to_string(),
             weight_advertised: if spool_weight != 0 { Some(spool_weight) } else { None },
             weight_core: None,
@@ -220,7 +218,7 @@ impl OpenPrintTagTag {
                     if let Ok(info) = main {
                         let mut material_type_str = String::new();
                         let mut color_name = String::new();
-                        let mut color_code = String::new();
+                        let mut color_code = Vec::<String>::new();
                         let mut note = String::new();
                         let mut brand = String::new();
 
@@ -241,14 +239,13 @@ impl OpenPrintTagTag {
                                 }
                             })
                             .unwrap_or(String::new());
-
-                        if let Some(primary_color) = info.primary_color {
-                            color_code = match primary_color.len() {
-                                3 => format!("{}FF", hex::encode_upper(&primary_color)),
-                                4 => hex::encode_upper(&primary_color),
-                                _ => String::new(),
-                            };
-                        }
+                        
+                        add_color(&mut color_code, &info.primary_color);
+                        add_color(&mut color_code, &info.secondary_color_0);
+                        add_color(&mut color_code, &info.secondary_color_1);
+                        add_color(&mut color_code, &info.secondary_color_2);
+                        add_color(&mut color_code, &info.secondary_color_3);
+                        add_color(&mut color_code, &info.secondary_color_4);
 
                         let weight_advertised = info.nominal_netto_full_weight.map(|v| v as i32);
 
@@ -291,7 +288,7 @@ impl OpenPrintTagTag {
                             material_type: material_type_str,
                             material_subtype: String::new(),
                             color_name,
-                            color_code: if color_code.is_empty() { Vec::new() } else { vec![color_code] },
+                            color_code,
                             note,
                             brand,
                             weight_advertised,
@@ -307,6 +304,19 @@ impl OpenPrintTagTag {
         }
 
         Err("Failed to parse tag".to_string())
+    }
+}
+
+fn add_color(color_codes: &mut Vec<String>, color: &Option<Vec<u8>>) {
+    if let Some(color_bytes) = color {
+        let color_code = match color_bytes.len() {
+            3 => format!("{}FF", hex::encode_upper(color_bytes)),
+            4 => hex::encode_upper(color_bytes),
+            _ => String::new(),
+        };
+        if !color_code.is_empty() {
+            color_codes.push(color_code);
+        }
     }
 }
 
