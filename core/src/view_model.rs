@@ -126,6 +126,28 @@ struct LocationEncodeCookie {
 }
 
 impl ViewModel {
+    fn rgba_hex_to_slint_color(hex: &str) -> Option<slint::Color> {
+        let hex = hex.trim();
+        if hex.len() < 8 {
+            return None;
+        }
+        let rgba = u32::from_str_radix(&hex[..8], 16).ok()?;
+        let r = (rgba >> 24) & 0xFF;
+        let g = (rgba >> 16) & 0xFF;
+        let b = (rgba >> 8) & 0xFF;
+        let a = rgba & 0xFF;
+        let argb = (a << 24) | (r << 16) | (g << 8) | b;
+        Some(slint::Color::from_argb_encoded(argb))
+    }
+
+    fn ui_colors_from_color_codes(color_codes: &[String]) -> Vec<slint::Color> {
+        color_codes
+            .iter()
+            .flat_map(|color_code| color_code.split(';'))
+            .filter_map(Self::rgba_hex_to_slint_color)
+            .collect()
+    }
+
     pub fn new(
         // Framework
         stack: Stack<'static>,
@@ -1384,12 +1406,9 @@ impl ViewModel {
             Default::default()
         };
 
-        let color = if record.color_code.len() >= 6 {
-            let color = u32::from_str_radix(&record.color_code[..6], 16).unwrap() + 0xFF000000; // the plus 0xFF at the end is fo add alpha
-            slint::Color::from_argb_encoded(color)
-        } else {
-            slint::Color::default()
-        };
+        let parsed_colors = Self::ui_colors_from_color_codes(&spool_rec.color_code);
+        let color = parsed_colors.first().copied().unwrap_or_default();
+        let colors = slint::ModelRc::from(Rc::new(slint::VecModel::from(parsed_colors)));
 
         UiSpoolRecordDisplay {
             slicer_filament_name,
@@ -1397,6 +1416,7 @@ impl ViewModel {
             temp_min,
             temp_max,
             color,
+            colors,
             ..Default::default()
         }
     }
@@ -1462,12 +1482,9 @@ impl ViewModel {
                 Default::default()
             };
 
-        let color = if record.color_code.len() >= 6 {
-            let color = u32::from_str_radix(&record.color_code[..6], 16).unwrap() + 0xFF000000; // the plus 0xFF at the end is fo add alpha
-            slint::Color::from_argb_encoded(color)
-        } else {
-            slint::Color::default()
-        };
+        let parsed_colors = Self::ui_colors_from_color_codes(&spool_rec.color_code);
+        let color = parsed_colors.first().copied().unwrap_or_default();
+        let colors = slint::ModelRc::from(Rc::new(slint::VecModel::from(parsed_colors)));
 
         let assigned_location;
         if let Some(location_str) = spool_rec.assigned_location.strip_prefix("#R:") {
@@ -1495,6 +1512,7 @@ impl ViewModel {
             temp_min,
             temp_max,
             color,
+            colors,
             weight_left,
             assigned_location,
         }

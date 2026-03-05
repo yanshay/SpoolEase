@@ -1,5 +1,5 @@
 import { Title, MyText, MyButton } from "./framework/widgets.slint";
-import { AppBackend, AppState, ControlState, UiTray, UiSpoolRecord, UiSpoolRecordDisplay } from "app.slint";
+import { AppBackend, AppConsts, AppState, ControlState, UiTray, UiSpoolRecord, UiSpoolRecordDisplay } from "app.slint";
 import { Utils } from "utils.slint";
 import { FrameworkState, Log } from "framework/framework.slint";
 import { LabeledText, TitledText } from "app-widgets.slint";
@@ -22,6 +22,51 @@ export component ViewButtons inherits HorizontalLayout {
         clicked => {
             AppState.control-state = ControlState.Ready;
         }
+    }
+}
+
+component MultiColorTitle inherits Rectangle {
+    in property <string> text;
+    in property <[color]> colors;
+    in property <color> fallback-color: green.brighter(1.0);
+    in property <TextHorizontalAlignment> horizontal-alignment: center;
+    height: 40px;
+    border-color: black;
+    border-width: 1px;
+    property <int> color-count: colors.length;
+    property <int> representative-index: color-count > 0 ? (color-count - 1) / 2 : 0;
+    property <color> representative-color: color-count > 0 ? colors[representative-index] : fallback-color;
+
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: AppConsts.no-color;
+    }
+
+    if color-count > 0: HorizontalLayout {
+        width: parent.width;
+        height: parent.height;
+        spacing: 0px;
+        for stripe-color in colors: Rectangle {
+            horizontal-stretch: 1;
+            background: stripe-color;
+        }
+    }
+
+    if color-count == 0: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: fallback-color;
+    }
+
+    Text {
+        width: root.width;
+        height: root.height;
+        vertical-alignment: center;
+        horizontal-alignment: root.horizontal-alignment;
+        text: root.text;
+        color: Utils.contrasting_color(root.representative-color);
+        font-size: 20px;
     }
 }
 
@@ -84,11 +129,11 @@ export component SpoolDisplay inherits Rectangle {
 
     VerticalLayout {
         alignment: stretch;
-        if show-title: Title {
+        if show-title: MultiColorTitle {
             vertical-stretch: 0;
-            background: spool-display.color;
-            text-color: Utils.contrasting_color(self.background);
             text: title == "" ? "Spool \{spool-display.spool-record.id} Information" : title;
+            colors: spool-display.colors;
+            fallback-color: spool-display.color;
         }
 
         VerticalLayout {

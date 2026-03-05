@@ -319,6 +319,14 @@ impl AppWithStateBuilder for NestedAppBuilder {
                             split_spool = Some(splitted_spool);
                         }
                     }
+                    let color_code = add_spool
+                        .rgba
+                        .split(';')
+                        .map(str::trim)
+                        .filter(|c| !c.is_empty())
+                        .map(|c| c.to_string())
+                        .collect::<Vec<_>>();
+
                     // this happens on successful split or when a simple add/edit and not split
                     let new_spool = SpoolRecord {
                         id: add_spool.id,
@@ -330,7 +338,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         material_type: add_spool.material,
                         material_subtype: add_spool.subtype,
                         color_name: add_spool.color_name,
-                        color_code: if add_spool.rgba.is_empty() { Vec::new() } else { vec![add_spool.rgba] },
+                        color_code,
                         note: add_spool.note,
                         brand: add_spool.brand,
                         weight_advertised: if add_spool.label_weight == 0 {
