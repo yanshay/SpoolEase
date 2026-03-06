@@ -1,6 +1,6 @@
 import { MyText, MyButton, ButtonType, WizardButtons, Title } from "framework/widgets.slint";
 import { AppBackend, AppState, ControlState, SpoolStagingState, SpoolScaleState, UiFilamentState, UiSpoolRecordDisplay, UiTray } from "app.slint";
-import { SpoolDisplay } from "spool-display.slint";
+import { SpoolDisplay, MultiColorTitle } from "spool-display.slint";
 import { SlotDisplay } from "slot-display.slint";
 import { Utils } from "utils.slint";
 
@@ -13,7 +13,7 @@ enum TrayDisplayTab {
 component TrayDisplayStep inherits Rectangle {
     callback more-clicked();
     property <TrayDisplayTab> tab: spool-id != "" ? TrayDisplayTab.Spool : TrayDisplayTab.Slot;
-    in property <string> spool-id;
+    in property <string> spool-id: "1";
     in property <int> tray-index;
     property <UiSpoolRecordDisplay> spool-display: AppBackend.get-spool-record-display(spool-id);
     VerticalLayout {
@@ -21,8 +21,9 @@ component TrayDisplayStep inherits Rectangle {
             vertical-stretch: 0;
             height: 40px;
             MyButton {
+                width: 240px; // must force width with MultiColorTitle
                 type: ButtonType.RadioButton;
-                text: "Slot Information";
+                text: "Slot \{AppState.trays-state[tray-index].name} Information";
                 pushed-background: AppState.trays-state[tray-index].filament.color;
                 text-color: Utils.contrasting_color(self.background);
                 pushed: root.tab == TrayDisplayTab.Slot;
@@ -31,12 +32,12 @@ component TrayDisplayStep inherits Rectangle {
                 }
             }
 
-            if spool-id != "": MyButton {
-                type: ButtonType.RadioButton;
+            if spool-id != "": MultiColorTitle {
+                width:240px; // must force width with MultiColorTitle
+                push-button: true; 
                 text: "Spool \{spool-id} Information";
                 pushed: tab == TrayDisplayTab.Spool;
-                pushed-background: root.spool-display.color;
-                text-color: Utils.contrasting_color(self.background);
+                colors: root.spool-display.colors;
                 pressed => {
                     root.tab = TrayDisplayTab.Spool
                 }

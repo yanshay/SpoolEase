@@ -16,6 +16,7 @@ export global Utils {
     function contrast_black(c:color) -> float {
       return contrast_ratio(luminance(c), luminance(#000000));
     }
+
     function contrast_white(c:color) -> float {
       return contrast_ratio(luminance(c), luminance(#ffffff));
     }
@@ -23,4 +24,42 @@ export global Utils {
     public pure function contrasting_color(c: color) -> color {
         return contrast_white(c) >= 4.5 ? #ffffff : #000000;
     }
+
+    function contrast_ratio_with_black(l: float) -> float {
+        return contrast_ratio(l, luminance(#000000));
+    }
+
+    function contrast_ratio_with_white(l: float) -> float {
+        return contrast_ratio(l, luminance(#ffffff));
+    }
+
+    function luminance_from_channels(r: float, g: float, b: float) -> float {
+        return (0.2126 * norm_c(r) + 0.7152 * norm_c(g) + 0.0722 * norm_c(b));
+    }
+
+    function composited_luminance(fg: color, bg: color) -> float {
+        let a = fg.alpha / 255.0;
+        let r = fg.red * a + bg.red * (1.0 - a);
+        let g = fg.green * a + bg.green * (1.0 - a);
+        let b = fg.blue * a + bg.blue * (1.0 - a);
+        return luminance_from_channels(r, g, b);
+    }
+
+    public pure function contrasting_color_on_checker(c: color, checker-light: color, checker-dark: color) -> color {
+        if c.alpha >= 225 {
+            return contrast_white(c) >= 4.5 ? #ffffff : #000000;
+        }
+        if c.alpha <= 30 {
+            return #000000;
+        }
+
+        let lum_on_light = composited_luminance(c, checker-light);
+        let lum_on_dark = composited_luminance(c, checker-dark);
+
+        let white_worst = Math.min(contrast_ratio_with_white(lum_on_light), contrast_ratio_with_white(lum_on_dark));
+        let black_worst = Math.min(contrast_ratio_with_black(lum_on_light), contrast_ratio_with_black(lum_on_dark));
+
+        return black_worst >= white_worst ? #000000 : #ffffff;
+    }
+
 }

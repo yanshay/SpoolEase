@@ -37,12 +37,18 @@ export component SpoolStaging inherits Rectangle {
                 property <int> staging-color-count: AppState.spool-staging-info.colors.length;
                 property <color> representative-color: staging-color-count > 0 ? AppState.spool-staging-info.colors[representative-color-index(staging-color-count)] : AppState.spool-staging-info.color;
                 property <color> staging-text-color: Utils.contrasting_color(representative-color);
+                property <length> staging-stripe-width: staging-color-count > 0 ? self.width / staging-color-count : self.width;
                 background: AppState.spool-staging-state == SpoolStagingState.Empty ? AppConsts.no-color : #00000000;
 
-                if AppState.spool-staging-state != SpoolStagingState.Empty: Image {
+                if AppState.spool-staging-state != SpoolStagingState.Empty
+                    && ((staging-color-count == 0 && AppState.spool-staging-info.color.alpha < 255)
+                        || (staging-color-count > 0 && AppState.spool-staging-info.colors-has-alpha)): Image {
+                    image-fit: preserve;
+                    horizontal-alignment: left;
+                    vertical-alignment: top;
                     width: parent.width;
                     height: parent.height;
-                    source: AppState.staging-checkerboard-bg;
+                    source: AppState.color-checkerboard-bg;
                 }
 
                 if AppState.spool-staging-state != SpoolStagingState.Empty && staging-color-count > 0: HorizontalLayout {
@@ -61,22 +67,68 @@ export component SpoolStaging inherits Rectangle {
                     background: AppState.spool-staging-info.color;
                 }
 
-                if AppState.spool-staging-state != SpoolStagingState.Empty: 
-                VerticalLayout {
-                    property <bool> show-weight: AppState.spool-staging-info.spool-record.weight-core > 0;
+                if AppState.spool-staging-state != SpoolStagingState.Empty && staging-color-count > 0: HorizontalLayout {
+                    width: parent.width;
+                    height: parent.height;
+                    spacing: 0px;
+
+                    for stripe-color[idx] in AppState.spool-staging-info.colors: Rectangle {
+                        horizontal-stretch: 1;
+                        background: transparent;
+                        clip: filament-box.staging-color-count > 1;
+
+                        VerticalLayout {
+                            x: -idx * filament-box.staging-stripe-width;
+                            width: filament-box.width;
+                            height: filament-box.height;
+                            alignment: space-around;
+                            padding-top: 8px;
+                            padding-bottom: 8px;
+
+                            if AppState.spool-staging-info.spool-record.id != "": Text {
+                                horizontal-alignment: center;
+                                font-size: 20px;
+                                text: AppState.spool-staging-info.spool-record.id != "" ? "ID: \{AppState.spool-staging-info.spool-record.id}" : "";
+                                color: Utils.contrasting_color(stripe-color);
+                            }
+
+                            Text {
+                                horizontal-alignment: center;
+                                font-size: 20px;
+                                text: AppState.spool-staging-info.spool-record.material-type;
+                                color: Utils.contrasting_color(stripe-color);
+                            }
+
+                            if AppState.spool-staging-info.weight-left != "": Text {
+                                horizontal-alignment: center;
+                                font-size: 20px;
+                                text: AppState.spool-staging-info.weight-left;
+                                color: Utils.contrasting_color(stripe-color);
+                            }
+
+                            if AppState.spool-staging-info.weight-left == "": Text {
+                                horizontal-alignment: center;
+                                font-size: 20px;
+                                text: "K: " + (AppState.spool-staging-info.spool-record.ext-has-k ? "✔" : "-");
+                                color: Utils.contrasting_color(stripe-color);
+                            }
+                        }
+                    }
+                }
+
+                if AppState.spool-staging-state != SpoolStagingState.Empty && staging-color-count == 0: VerticalLayout {
                     alignment: space-around;
                     padding-top: 8px;
                     padding-bottom: 8px;
 
-                  // inventory-id
-                  if AppState.spool-staging-info.spool-record.id != "": inventory-id := Text {
+                    if AppState.spool-staging-info.spool-record.id != "": Text {
                         horizontal-alignment: center;
                         font-size: 20px;
                         text: AppState.spool-staging-info.spool-record.id != "" ? "ID: \{AppState.spool-staging-info.spool-record.id}" : "";
                         color: filament-box.staging-text-color;
                     }
 
-                    material := Text {
+                    Text {
                         horizontal-alignment: center;
                         font-size: 20px;
                         text: AppState.spool-staging-info.spool-record.material-type;
@@ -90,8 +142,7 @@ export component SpoolStaging inherits Rectangle {
                         color: filament-box.staging-text-color;
                     }
 
-                  // K Value (show only if no ID, otherwiser no room)
-                  if AppState.spool-staging-info.weight-left == "": k-value := Text {
+                    if AppState.spool-staging-info.weight-left == "": Text {
                         horizontal-alignment: center;
                         font-size: 20px;
                         text: "K: " + (AppState.spool-staging-info.spool-record.ext-has-k ? "✔" : "-");

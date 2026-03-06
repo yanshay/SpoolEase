@@ -25,7 +25,11 @@ export component ViewButtons inherits HorizontalLayout {
     }
 }
 
-component MultiColorTitle inherits Rectangle {
+export component MultiColorTitle inherits Rectangle {
+    callback pressed;
+    callback released;
+    in property <bool> push-button: false;
+    in-out property <bool> pushed: false;
     in property <string> text;
     in property <[color]> colors;
     in property <color> fallback-color: green.brighter(1.0);
@@ -42,7 +46,7 @@ component MultiColorTitle inherits Rectangle {
         source: AppState.title-checkerboard-bg;
     }
 
-    if color-count > 0: HorizontalLayout {
+    if ((push-button && pushed) || !push-button) && color-count > 0: HorizontalLayout {
         width: parent.width;
         height: parent.height;
         spacing: 0px;
@@ -64,7 +68,7 @@ component MultiColorTitle inherits Rectangle {
         }
     }
 
-    if color-count == 0: Rectangle {
+    if ((push-button && pushed) || !push-button) && (color-count == 0): Rectangle {
         width: parent.width;
         height: parent.height;
         background: fallback-color;
@@ -76,6 +80,35 @@ component MultiColorTitle inherits Rectangle {
             text: root.text;
             color: Utils.contrasting_color(parent.background);
             font-size: 20px;
+        }
+    }
+    // border and (white background if not selected)
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: (push-button && !pushed) ? white : transparent;
+        border-color: black;
+        border-width: 1px + ((push-button && area.pressed) || (push-button && pushed) ? 2px : 0px);
+        if (push-button && !pushed): Text {
+            width: parent.width;
+            height: parent.height;
+            vertical-alignment: center;
+            horizontal-alignment: root.horizontal-alignment;
+            text: root.text;
+            color: black;
+            font-size: 20px;
+        }
+    }
+
+    area := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        changed pressed => {
+            if self.pressed == true {
+                root.pressed();
+            } else {
+                root.released();
+            }
         }
     }
 }

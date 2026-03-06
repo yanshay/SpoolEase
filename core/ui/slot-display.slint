@@ -1,6 +1,12 @@
 import { MyText } from "framework/widgets.slint";
 import { LabeledText } from "app-widgets.slint";
-import { UiTray, UiTrayState, AppState, AppBackend, UiSlotDisplay } from "app.slint";
+import {
+    UiTray,
+    UiTrayState,
+    AppState,
+    AppBackend,
+    UiSlotDisplay,
+} from "app.slint";
 
 component LabeledInfo inherits LabeledText {
     label-width: 90px;
@@ -37,33 +43,34 @@ export component SlotDisplay inherits Rectangle {
             text: display.slicer-name;
         }
 
+        LabeledInfo {
+            vertical-stretch: 1;
+            horizontal-stretch: 1;
+            label: "Color:";
+            text: display.color-code;
+        }
+
         HorizontalLayout {
             vertical-stretch: 1;
             alignment: space-between;
             LabeledInfo {
-                horizontal-stretch: 1;
-                label: "Color:";
-                text: display.color-code;
+                vertical-stretch: 1;
+                label: "PA(K):";
+                text: display.pa;
             }
 
             LabeledInfo {
                 label: "Temps: ";
+                label-width: 70px;
                 text: "\{display.temp-min}°C - \{display.temp-max}°C";
             }
         }
 
         LabeledInfo {
             vertical-stretch: 1;
-            label: "PA(K):";
-            text: display.pa;
-        }
-
-        LabeledInfo {
-            vertical-stretch: 1;
             label-width: 240px;
             label: "Consumed Since Loaded:";
-            text: display.consumed-since-loaded != 0 ? "\{Math.round(display.consumed-since-loaded*10)/10}g" : "–";
+            text: display.consumed-since-loaded != 0 ? "\{Math.round(display.consumed-since-loaded * 10) / 10}g" : "–";
         }
-
     }
 }

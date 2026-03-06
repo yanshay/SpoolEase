@@ -24,9 +24,13 @@ export struct UiFilament {
 
 export struct UiTray {
   id: int,
+  name: string,
   external: bool,
   spool-state: UiTrayState,
   filament: UiFilament,
+  tray-has-alpha: bool,
+  spool-has-alpha: bool,
+  spool-colors: [color],
   k: string,
   tagged: bool,
   weight-display: string,
@@ -63,6 +67,7 @@ export struct UiSpoolRecordDisplay {
   slicer-filament-name: string,
   color: color,
   colors: [color],
+  colors-has-alpha: bool,
   temp-min: int,
   temp-max: int,
   pa-line1: string,
@@ -94,7 +99,7 @@ export struct Location {
 // Consts
 
 export global AppConsts {
-    out property <length> trays-spacing: 4px;
+    out property <length> trays-spacing: 5px;
     out property <length> external-tray-separator: 2px;
     out property <brush> no-color: @linear-gradient(45deg, #fff 0%, #333 100%);
     out property <brush> title-gradient: @linear-gradient(135deg, #09009B 0%, #001dff 100%);
@@ -179,6 +184,7 @@ export global AppBackend {
     callback unload-slot-tag(tray-id: int, spool-id: string);
     pure callback location-str-to-location(location-str: string) -> Location;
     callback load-staging(spool-id: string) -> string; // returns error if not found
+    callback ensure-circle-checkerboard(diameter: int, offset-x: int, offset-y: int);
 }
 
 export enum NewScannedTagType {
@@ -259,7 +265,12 @@ export global AppState {
     in-out property <StatusType> message-box-type;
     in-out property <int> message-box-timeout;
     in-out property <image> title-checkerboard-bg;
-    in-out property <image> staging-checkerboard-bg;
+    in-out property <image> color-checkerboard-bg;
+    in-out property <image> ams-color-checkerboard-bg;
+    in-out property <image> circle-checkerboard-bg;
+    in-out property <int> circle-checkerboard-diameter: 0;
+    in-out property <int> circle-checkerboard-offset-x: 0;
+    in-out property <int> circle-checkerboard-offset-y: 0;
 
     in-out property <[UiTray]> trays-state: self.empty-trays-state();
     in-out property <bool> select-printer: false;
@@ -836,6 +847,7 @@ export global AppState {
   // External (Right)
             {
                 id: 255,
+                name: "Ext-R",
                 external: true,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -843,6 +855,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -853,6 +868,7 @@ export global AppState {
   // External (Right)
             {
                 id: 254,
+                name: "Ext-L",
                 external: true,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -860,6 +876,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -870,6 +889,7 @@ export global AppState {
   // AMS: 0
             {
                 id: 0,
+                name: "A1",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -877,6 +897,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -885,6 +908,7 @@ export global AppState {
             },
             {
                 id: 1,
+                name: "A2",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -892,6 +916,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -900,6 +927,7 @@ export global AppState {
             },
             {
                 id: 2,
+                name: "A3",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -907,6 +935,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -915,6 +946,7 @@ export global AppState {
             },
             {
                 id: 3,
+                name: "A4",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -922,6 +954,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -932,6 +967,7 @@ export global AppState {
   // AMS 1
             {
                 id: 4,
+                name: "B1",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -939,6 +975,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -947,6 +986,7 @@ export global AppState {
             },
             {
                 id: 5,
+                name: "B2",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -954,6 +994,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -962,6 +1005,7 @@ export global AppState {
             },
             {
                 id: 6,
+                name: "B3",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -969,6 +1013,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -977,6 +1024,7 @@ export global AppState {
             },
             {
                 id: 7,
+                name: "B4",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -984,6 +1032,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -993,6 +1044,7 @@ export global AppState {
   // AMS 2
             {
                 id: 8,
+                name: "C1",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1000,6 +1052,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1008,6 +1063,7 @@ export global AppState {
             },
             {
                 id: 9,
+                name: "C2",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1015,6 +1071,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1023,6 +1082,7 @@ export global AppState {
             },
             {
                 id: 10,
+                name: "C3",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1030,6 +1090,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1038,6 +1101,7 @@ export global AppState {
             },
             {
                 id: 11,
+                name: "C4",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1045,6 +1109,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1054,6 +1121,7 @@ export global AppState {
   // AMS 3
             {
                 id: 12,
+                name: "D1",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1061,6 +1129,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1069,6 +1140,7 @@ export global AppState {
             },
             {
                 id: 13,
+                name: "D2",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1076,6 +1148,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1084,6 +1159,7 @@ export global AppState {
             },
             {
                 id: 14,
+                name: "D3",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1091,6 +1167,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1099,6 +1178,7 @@ export global AppState {
             },
             {
                 id: 15,
+                name: "D4",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1106,6 +1186,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1115,6 +1198,7 @@ export global AppState {
   // AMS-HT: 4
             {
                 id: 16,
+                name: "HT-1",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1122,6 +1206,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1131,6 +1218,7 @@ export global AppState {
   // AMS-HT: 5
             {
                 id: 17,
+                name: "HT-2",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1138,6 +1226,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1147,6 +1238,7 @@ export global AppState {
   // AMS-HT: 6
             {
                 id: 18,
+                name: "HT-3",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1154,6 +1246,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1163,6 +1258,7 @@ export global AppState {
   // AMS-HT: 7
             {
                 id: 19,
+                name: "HT-4",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1170,6 +1266,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1180,6 +1279,7 @@ export global AppState {
   // AMS-HT: 8
         {
                 id: 20,
+                name: "HT-5",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1187,6 +1287,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1196,6 +1299,7 @@ export global AppState {
   // AMS-HT: 9
             {
                 id: 21,
+                name: "HT-6",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1203,6 +1307,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1212,6 +1319,7 @@ export global AppState {
   // AMS-HT: 10 
             {
                 id: 22,
+                name: "HT-7",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1219,6 +1327,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",
@@ -1228,6 +1339,7 @@ export global AppState {
   // AMS-HT: 11 
             {
                 id: 23,
+                name: "HT-8",
                 external: false,
                 spool-state: UiTrayState.Unknown,
                 filament: {
@@ -1235,6 +1347,9 @@ export global AppState {
                     color: #000,
                     material: "???",
                 },
+                tray-has-alpha: false,
+                spool-has-alpha: false,
+                spool-colors: [],
                 k: -1.0,
                 tagged: false,
                 spool_rec_id: "",

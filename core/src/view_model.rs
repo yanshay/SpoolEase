@@ -73,10 +73,14 @@ const TITLE_CHECKERBOARD_WIDTH: u32 = 480;
 const TITLE_CHECKERBOARD_HEIGHT: u32 = 40;
 const TITLE_CHECKER_CELL_W: u32 = 8;
 const TITLE_CHECKER_CELL_H: u32 = 8;
-const STAGING_CHECKERBOARD_WIDTH: u32 = 96;
-const STAGING_CHECKERBOARD_HEIGHT: u32 = 120;
-const STAGING_CHECKER_CELL_W: u32 = 8;
-const STAGING_CHECKER_CELL_H: u32 = 8;
+const COLOR_CHECKERBOARD_WIDTH: u32 = 92;
+const COLOR_CHECKERBOARD_HEIGHT: u32 = 160;
+const COLOR_CHECKER_CELL_W: u32 = 6;
+const COLOR_CHECKER_CELL_H: u32 = 6;
+const AMS_COLOR_CHECKERBOARD_WIDTH: u32 = 92;
+const AMS_COLOR_CHECKERBOARD_HEIGHT: u32 = 40;
+const AMS_COLOR_CHECKER_CELL_W: u32 = 6;
+const AMS_COLOR_CHECKER_CELL_H: u32 = 6;
 const TITLE_CHECKER_LIGHT: (u8, u8, u8, u8) = (255, 255, 255, 255);
 const TITLE_CHECKER_DARK: (u8, u8, u8, u8) = (204, 204, 204, 255);
 
@@ -137,6 +141,10 @@ struct LocationEncodeCookie {
 }
 
 impl ViewModel {
+    fn normalize_hex_color(hex: &str) -> &str {
+        hex.trim().trim_start_matches('#')
+    }
+
     fn create_checkerboard_image(width: u32, height: u32, cell_w: u32, cell_h: u32) -> slint::Image {
         let width_usize = width as usize;
         let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(width, height);
@@ -168,17 +176,72 @@ impl ViewModel {
         )
     }
 
-    fn create_staging_checkerboard_image() -> slint::Image {
+    fn create_color_checkerboard_image() -> slint::Image {
         Self::create_checkerboard_image(
-            STAGING_CHECKERBOARD_WIDTH,
-            STAGING_CHECKERBOARD_HEIGHT,
-            STAGING_CHECKER_CELL_W,
-            STAGING_CHECKER_CELL_H,
+            COLOR_CHECKERBOARD_WIDTH,
+            COLOR_CHECKERBOARD_HEIGHT,
+            COLOR_CHECKER_CELL_W,
+            COLOR_CHECKER_CELL_H,
         )
     }
 
+    fn create_ams_color_checkerboard_image() -> slint::Image {
+        Self::create_checkerboard_image(
+            AMS_COLOR_CHECKERBOARD_WIDTH,
+            AMS_COLOR_CHECKERBOARD_HEIGHT,
+            AMS_COLOR_CHECKER_CELL_W,
+            AMS_COLOR_CHECKER_CELL_H,
+        )
+    }
+
+    fn create_circular_checkerboard_image(diameter: u32, offset_x: i32, offset_y: i32) -> slint::Image {
+        let width_usize = diameter as usize;
+        let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(diameter, diameter);
+        let pixels = buffer.make_mut_slice();
+
+        let radius = diameter as f32 / 2.0;
+        let center = radius;
+        let checker_cell_w = COLOR_CHECKER_CELL_W as i32;
+        let checker_cell_h = COLOR_CHECKER_CELL_H as i32;
+
+        for y in 0..diameter as usize {
+            for x in 0..diameter as usize {
+                let fx = x as f32 + 0.5;
+                let fy = y as f32 + 0.5;
+                let dx = fx - center;
+                let dy = fy - center;
+                let inside_circle = (dx * dx + dy * dy) <= (radius * radius);
+
+                let pixel = if inside_circle {
+                    let global_x = offset_x + x as i32;
+                    let global_y = offset_y + y as i32;
+                    let x_block = global_x.div_euclid(checker_cell_w);
+                    let y_block = global_y.div_euclid(checker_cell_h);
+                    let use_light = ((x_block + y_block) % 2) == 0;
+                    let (r, g, b, a) = if use_light {
+                        TITLE_CHECKER_LIGHT
+                    } else {
+                        TITLE_CHECKER_DARK
+                    };
+                    slint::Rgba8Pixel { r, g, b, a }
+                } else {
+                    slint::Rgba8Pixel {
+                        r: 0,
+                        g: 0,
+                        b: 0,
+                        a: 0,
+                    }
+                };
+
+                pixels[y * width_usize + x] = pixel;
+            }
+        }
+
+        slint::Image::from_rgba8(buffer)
+    }
+
     fn rgba_hex_to_slint_color(hex: &str) -> Option<slint::Color> {
-        let hex = hex.trim();
+        let hex = Self::normalize_hex_color(hex);
         if hex.len() < 8 {
             return None;
         }
@@ -197,6 +260,33 @@ impl ViewModel {
             .flat_map(|color_code| color_code.split(';'))
             .filter_map(Self::rgba_hex_to_slint_color)
             .collect()
+    }
+
+    fn rgb_or_rgba_hex_to_slint_color(hex: &str) -> Option<slint::Color> {
+        let hex = Self::normalize_hex_color(hex);
+        if hex.len() >= 8 {
+            return Self::rgba_hex_to_slint_color(hex);
+        }
+        if hex.len() >= 6 {
+            let rgb = u32::from_str_radix(&hex[..6], 16).ok()?;
+            return Some(slint::Color::from_argb_encoded(0xFF000000 | rgb));
+        }
+        None
+    }
+
+    fn rgba_hex_has_alpha(hex: &str) -> bool {
+        let hex = Self::normalize_hex_color(hex);
+        if hex.len() < 8 {
+            return false;
+        }
+        !hex[6..8].eq_ignore_ascii_case("FF")
+    }
+
+    fn color_codes_have_alpha(color_codes: &[String]) -> bool {
+        color_codes
+            .iter()
+            .flat_map(|color_code| color_code.split(';'))
+            .any(Self::rgba_hex_has_alpha)
     }
 
     pub fn new(
@@ -379,7 +469,8 @@ impl ViewModel {
         let ui_app_state = ui.global::<crate::app::AppState>();
 
         ui_app_state.set_title_checkerboard_bg(Self::create_title_checkerboard_image());
-        ui_app_state.set_staging_checkerboard_bg(Self::create_staging_checkerboard_image());
+        ui_app_state.set_color_checkerboard_bg(Self::create_color_checkerboard_image());
+        ui_app_state.set_ams_color_checkerboard_bg(Self::create_ams_color_checkerboard_image());
 
         if no_configured_printers {
             ui_app_state.set_no_printers_configured(true);
@@ -627,6 +718,59 @@ impl ViewModel {
         let ui = self.ui_weak.unwrap();
         let ui_app_backend = ui.global::<crate::app::AppBackend>();
         let ui_app_state = ui.global::<crate::app::AppState>();
+
+        let moved_ui = self.ui_weak.clone();
+        let moved_circle_checker_cache = Rc::new(RefCell::new(HashMap::<(i32, i32, i32), slint::Image>::new()));
+        let moved_expected_circle_checker_key = Rc::new(RefCell::new(None::<(i32, i32, i32)>));
+        let ensure_circle_checkerboard: Rc<dyn Fn(i32, i32, i32)> = Rc::new(move |diameter, offset_x, offset_y| {
+            if diameter <= 0 {
+                return;
+            }
+            let request_key = (diameter, offset_x, offset_y);
+            {
+                let mut expected_key = moved_expected_circle_checker_key.borrow_mut();
+                if expected_key.is_none() {
+                    *expected_key = Some(request_key);
+                }
+                expected_key
+                    .as_ref()
+                    .filter(|key| **key == request_key)
+                    .expect(
+                        "Circle checkerboard geometry changed after first request. This is unexpected for now; update cache/flow before allowing multiple sizes/offsets.",
+                    );
+            }
+            let maybe_cached = moved_circle_checker_cache.borrow().get(&request_key).cloned();
+            let checker_image = if let Some(image) = maybe_cached {
+                image
+            } else {
+                let diameter_u32 = diameter as u32;
+                let checker_image = Self::create_circular_checkerboard_image(
+                    diameter_u32,
+                    offset_x,
+                    offset_y,
+                );
+                moved_circle_checker_cache
+                    .borrow_mut()
+                    .insert(request_key, checker_image.clone());
+                checker_image
+            };
+            moved_ui
+                .unwrap()
+                .global::<crate::app::AppState>()
+                .set_circle_checkerboard_bg(checker_image);
+        });
+        let ensure_circle_checkerboard_for_callback = ensure_circle_checkerboard.clone();
+        ui_app_backend.on_ensure_circle_checkerboard(move |diameter, offset_x, offset_y| {
+            ensure_circle_checkerboard_for_callback(diameter, offset_x, offset_y);
+        });
+
+        // Catch up in case UI computed diameter before callback registration finished.
+        let initial_circle_diameter = ui_app_state.get_circle_checkerboard_diameter();
+        let initial_circle_offset_x = ui_app_state.get_circle_checkerboard_offset_x();
+        let initial_circle_offset_y = ui_app_state.get_circle_checkerboard_offset_y();
+        if initial_circle_diameter > 0 {
+            ensure_circle_checkerboard(initial_circle_diameter, initial_circle_offset_x, initial_circle_offset_y);
+        }
 
         // Register to UI(Slint) app UI events
         let moved_filament_staging = self.filament_staging.clone();
@@ -1468,6 +1612,7 @@ impl ViewModel {
 
         let parsed_colors = Self::ui_colors_from_color_codes(&spool_rec.color_code);
         let color = parsed_colors.first().copied().unwrap_or_default();
+        let colors_has_alpha = parsed_colors.iter().any(|color| color.alpha() < 255);
         let colors = slint::ModelRc::from(Rc::new(slint::VecModel::from(parsed_colors)));
 
         UiSpoolRecordDisplay {
@@ -1477,6 +1622,7 @@ impl ViewModel {
             temp_max,
             color,
             colors,
+            colors_has_alpha,
             ..Default::default()
         }
     }
@@ -1550,6 +1696,7 @@ impl ViewModel {
 
         let parsed_colors = Self::ui_colors_from_color_codes(&spool_rec.color_code);
         let color = parsed_colors.first().copied().unwrap_or_default();
+        let colors_has_alpha = parsed_colors.iter().any(|color| color.alpha() < 255);
         let colors = slint::ModelRc::from(Rc::new(slint::VecModel::from(parsed_colors)));
 
         let assigned_location;
@@ -1579,6 +1726,7 @@ impl ViewModel {
             temp_max,
             color,
             colors,
+            colors_has_alpha,
             weight_left,
             assigned_location,
         }
@@ -1646,19 +1794,36 @@ impl ViewModel {
             let mut ui_tray = trays_state.row_data(tray_row).unwrap().clone();
             ui_tray.spool_state = crate::app::UiTrayState::from(&curr_tray.state);
             if let Filament::Known(filament_info) = &curr_tray.filament {
-                let color = u32::from_str_radix(&filament_info.tray_color[..6], 16).unwrap() + 0xFF000000; // the plus at the end is fo add alpha
-                ui_tray.filament.color = slint::Color::from_argb_encoded(color);
+                if let Some(color) = Self::rgb_or_rgba_hex_to_slint_color(&filament_info.tray_color) {
+                    ui_tray.filament.color = color;
+                }
+                ui_tray.tray_has_alpha = Self::rgba_hex_has_alpha(&filament_info.tray_color);
                 ui_tray.filament.material = slint::SharedString::from(&filament_info.tray_type);
                 ui_tray.filament.state = crate::app::UiFilamentState::Known;
             } else {
                 ui_tray.filament.state = crate::app::UiFilamentState::Unknown;
+                ui_tray.tray_has_alpha = false;
             }
             if let Some(spool_id) = &curr_tray.meta_info.spool_id {
                 ui_tray.tagged = true;
                 ui_tray.spool_rec_id = spool_id.into();
+                let (spool_colors, spool_has_alpha) = self
+                    .store
+                    .get_spool_by_id(spool_id)
+                    .map(|spool| {
+                        (
+                            Self::ui_colors_from_color_codes(&spool.color_code),
+                            Self::color_codes_have_alpha(&spool.color_code),
+                        )
+                    })
+                    .unwrap_or_default();
+                ui_tray.spool_colors = slint::ModelRc::from(Rc::new(slint::VecModel::from(spool_colors)));
+                ui_tray.spool_has_alpha = spool_has_alpha;
             } else {
                 ui_tray.tagged = false;
                 ui_tray.spool_rec_id = SharedString::new();
+                ui_tray.spool_colors = slint::ModelRc::from(Rc::new(slint::VecModel::from(Vec::<slint::Color>::new())));
+                ui_tray.spool_has_alpha = false;
             }
             // let k_value_unformatted = curr_tray.k.as_ref().unwrap_or(&"(0.020)".to_string()).clone();
             let k_value_unformatted = bambu_printer.get_tray_resolved_k_value(curr_tray, ui_tray_id);
