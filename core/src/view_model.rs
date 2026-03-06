@@ -69,6 +69,13 @@ use shared::spool_tag::{self, SpoolTagObserver, Status, TAG_PLACEHOLDER};
 #[allow(dead_code)]
 const EXTRA_DEBUG: bool = false;
 
+const TITLE_CHECKERBOARD_WIDTH: u32 = 480;
+const TITLE_CHECKERBOARD_HEIGHT: u32 = 40;
+const TITLE_CHECKER_CELL_W: u32 = 8;
+const TITLE_CHECKER_CELL_H: u32 = 8;
+const TITLE_CHECKER_LIGHT: (u8, u8, u8, u8) = (255, 255, 255, 255);
+const TITLE_CHECKER_DARK: (u8, u8, u8, u8) = (204, 204, 204, 255);
+
 #[allow(unused_macros)]
 macro_rules! debugex {
     ($($t:tt)*) => {
@@ -126,6 +133,30 @@ struct LocationEncodeCookie {
 }
 
 impl ViewModel {
+    fn create_title_checkerboard_image() -> slint::Image {
+        let width = TITLE_CHECKERBOARD_WIDTH;
+        let height = TITLE_CHECKERBOARD_HEIGHT;
+        let width_usize = width as usize;
+        let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(width, height);
+        let pixels = buffer.make_mut_slice();
+
+        for y in 0..height as usize {
+            for x in 0..width as usize {
+                let x_block = x / TITLE_CHECKER_CELL_W as usize;
+                let y_block = y / TITLE_CHECKER_CELL_H as usize;
+                let use_light = ((x_block + y_block) % 2) == 0;
+                let (r, g, b, a) = if use_light {
+                    TITLE_CHECKER_LIGHT
+                } else {
+                    TITLE_CHECKER_DARK
+                };
+                pixels[y * width_usize + x] = slint::Rgba8Pixel { r, g, b, a };
+            }
+        }
+
+        slint::Image::from_rgba8(buffer)
+    }
+
     fn rgba_hex_to_slint_color(hex: &str) -> Option<slint::Color> {
         let hex = hex.trim();
         if hex.len() < 8 {
@@ -326,6 +357,8 @@ impl ViewModel {
         let ui = self.ui_weak.unwrap();
         let ui_app_backend = ui.global::<crate::app::AppBackend>();
         let ui_app_state = ui.global::<crate::app::AppState>();
+
+        ui_app_state.set_title_checkerboard_bg(Self::create_title_checkerboard_image());
 
         if no_configured_printers {
             ui_app_state.set_no_printers_configured(true);

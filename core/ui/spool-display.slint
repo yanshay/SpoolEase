@@ -1,5 +1,5 @@
 import { Title, MyText, MyButton } from "./framework/widgets.slint";
-import { AppBackend, AppConsts, AppState, ControlState, UiTray, UiSpoolRecord, UiSpoolRecordDisplay } from "app.slint";
+import { AppBackend, AppState, ControlState, UiTray, UiSpoolRecord, UiSpoolRecordDisplay } from "app.slint";
 import { Utils } from "utils.slint";
 import { FrameworkState, Log } from "framework/framework.slint";
 import { LabeledText, TitledText } from "app-widgets.slint";
@@ -36,10 +36,10 @@ component MultiColorTitle inherits Rectangle {
     property <int> color-count: colors.length;
     property <length> stripe-width: color-count > 0 ? root.width / color-count : 0px;
 
-    Rectangle {
+    Image {
         width: parent.width;
         height: parent.height;
-        background: AppConsts.no-color;
+        source: AppState.title-checkerboard-bg;
     }
 
     if color-count > 0: HorizontalLayout {
