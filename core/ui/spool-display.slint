@@ -181,17 +181,21 @@ export component SpoolDisplay inherits Rectangle {
                     label: "Color:";
                     text: "\{spool-display.spool-record.color-code}";
                 }
-
-                if mode != SpoolDisplayMode.ImportTagDefinition: LabeledInfo {
-                    label: "Temps: ";
-                    text: "\{spool-display.temp-min}°C - \{spool-display.temp-max}°C";
-                }
             }
 
-            if mode != SpoolDisplayMode.ImportTagDefinition: LabeledInfo {
+            if mode != SpoolDisplayMode.ImportTagDefinition: HorizontalLayout {
                 vertical-stretch: 1;
-                label: "PA(K):";
-                text: spool-display.pa-line1;
+                alignment: space-between;
+                LabeledInfo {
+                    horizontal-stretch: 1;
+                    label: "PA(K):";
+                    text: spool-display.pa-line1;
+                }
+                LabeledInfo {
+                    label: "Temps: ";
+                    label-width: 70px;
+                    text: "\{spool-display.temp-min}°C - \{spool-display.temp-max}°C";
+                }
             }
 
             if mode != SpoolDisplayMode.ImportTagDefinition: LabeledInfo {

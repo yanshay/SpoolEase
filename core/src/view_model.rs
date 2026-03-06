@@ -1411,10 +1411,16 @@ impl ViewModel {
             spool_rec.weight_core = Some(empty_spool_weight);
         }
 
-        let primary_color_code = spool_rec.primary_color_code().unwrap_or_default().to_string();
+        let color_code = spool_rec
+            .color_code
+            .iter()
+            .map(String::as_str)
+            .filter(|color| !color.is_empty())
+            .collect::<Vec<_>>()
+            .join(";");
         let record = UiSpoolRecord {
             brand: spool_rec.brand.into(),
-            color_code: primary_color_code.into(),
+            color_code: color_code.into(),
             color_name: spool_rec.color_name.into(),
             material_type: spool_rec.material_type.into(),
             material_subtype: spool_rec.material_subtype.into(),
@@ -1474,12 +1480,18 @@ impl ViewModel {
         };
 
         let spool_tag_id = spool_rec.primary_tag_id().unwrap_or_default().to_string();
-        let primary_color_code = spool_rec.primary_color_code().unwrap_or_default().to_string();
+        let color_code = spool_rec
+            .color_code
+            .iter()
+            .map(String::as_str)
+            .filter(|color| !color.is_empty())
+            .collect::<Vec<_>>()
+            .join(";");
         let record = UiSpoolRecord {
             added_full: spool_rec.added_full.unwrap_or_default(),
             // added_time: todo!(),
             brand: spool_rec.brand.into(),
-            color_code: primary_color_code.into(),
+            color_code: color_code.into(),
             color_name: spool_rec.color_name.into(),
             consumed_since_add: spool_rec.consumed_since_add,
             consumed_since_weight: spool_rec.consumed_since_weight,
