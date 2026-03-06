@@ -34,8 +34,7 @@ component MultiColorTitle inherits Rectangle {
     border-color: black;
     border-width: 1px;
     property <int> color-count: colors.length;
-    property <int> representative-index: color-count > 0 ? (color-count - 1) / 2 : 0;
-    property <color> representative-color: color-count > 0 ? colors[representative-index] : fallback-color;
+    property <length> stripe-width: color-count > 0 ? root.width / color-count : 0px;
 
     Rectangle {
         width: parent.width;
@@ -47,9 +46,21 @@ component MultiColorTitle inherits Rectangle {
         width: parent.width;
         height: parent.height;
         spacing: 0px;
-        for stripe-color in colors: Rectangle {
+        for stripe-color[index] in colors: Rectangle {
             horizontal-stretch: 1;
             background: stripe-color;
+            clip: true;
+
+            Text {
+                x: -index * root.stripe-width;
+                width: root.width;
+                height: root.height;
+                vertical-alignment: center;
+                horizontal-alignment: root.horizontal-alignment;
+                text: root.text;
+                color: Utils.contrasting_color(stripe-color);
+                font-size: 20px;
+            }
         }
     }
 
@@ -57,16 +68,15 @@ component MultiColorTitle inherits Rectangle {
         width: parent.width;
         height: parent.height;
         background: fallback-color;
-    }
-
-    Text {
-        width: root.width;
-        height: root.height;
-        vertical-alignment: center;
-        horizontal-alignment: root.horizontal-alignment;
-        text: root.text;
-        color: Utils.contrasting_color(root.representative-color);
-        font-size: 20px;
+        Text {
+            width: parent.width;
+            height: parent.height;
+            vertical-alignment: center;
+            horizontal-alignment: root.horizontal-alignment;
+            text: root.text;
+            color: Utils.contrasting_color(parent.background);
+            font-size: 20px;
+        }
     }
 }
 
