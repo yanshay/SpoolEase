@@ -73,6 +73,10 @@ const TITLE_CHECKERBOARD_WIDTH: u32 = 480;
 const TITLE_CHECKERBOARD_HEIGHT: u32 = 40;
 const TITLE_CHECKER_CELL_W: u32 = 8;
 const TITLE_CHECKER_CELL_H: u32 = 8;
+const STAGING_CHECKERBOARD_WIDTH: u32 = 96;
+const STAGING_CHECKERBOARD_HEIGHT: u32 = 120;
+const STAGING_CHECKER_CELL_W: u32 = 8;
+const STAGING_CHECKER_CELL_H: u32 = 8;
 const TITLE_CHECKER_LIGHT: (u8, u8, u8, u8) = (255, 255, 255, 255);
 const TITLE_CHECKER_DARK: (u8, u8, u8, u8) = (204, 204, 204, 255);
 
@@ -133,17 +137,15 @@ struct LocationEncodeCookie {
 }
 
 impl ViewModel {
-    fn create_title_checkerboard_image() -> slint::Image {
-        let width = TITLE_CHECKERBOARD_WIDTH;
-        let height = TITLE_CHECKERBOARD_HEIGHT;
+    fn create_checkerboard_image(width: u32, height: u32, cell_w: u32, cell_h: u32) -> slint::Image {
         let width_usize = width as usize;
         let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(width, height);
         let pixels = buffer.make_mut_slice();
 
         for y in 0..height as usize {
             for x in 0..width as usize {
-                let x_block = x / TITLE_CHECKER_CELL_W as usize;
-                let y_block = y / TITLE_CHECKER_CELL_H as usize;
+                let x_block = x / cell_w as usize;
+                let y_block = y / cell_h as usize;
                 let use_light = ((x_block + y_block) % 2) == 0;
                 let (r, g, b, a) = if use_light {
                     TITLE_CHECKER_LIGHT
@@ -155,6 +157,24 @@ impl ViewModel {
         }
 
         slint::Image::from_rgba8(buffer)
+    }
+
+    fn create_title_checkerboard_image() -> slint::Image {
+        Self::create_checkerboard_image(
+            TITLE_CHECKERBOARD_WIDTH,
+            TITLE_CHECKERBOARD_HEIGHT,
+            TITLE_CHECKER_CELL_W,
+            TITLE_CHECKER_CELL_H,
+        )
+    }
+
+    fn create_staging_checkerboard_image() -> slint::Image {
+        Self::create_checkerboard_image(
+            STAGING_CHECKERBOARD_WIDTH,
+            STAGING_CHECKERBOARD_HEIGHT,
+            STAGING_CHECKER_CELL_W,
+            STAGING_CHECKER_CELL_H,
+        )
     }
 
     fn rgba_hex_to_slint_color(hex: &str) -> Option<slint::Color> {
@@ -359,6 +379,7 @@ impl ViewModel {
         let ui_app_state = ui.global::<crate::app::AppState>();
 
         ui_app_state.set_title_checkerboard_bg(Self::create_title_checkerboard_image());
+        ui_app_state.set_staging_checkerboard_bg(Self::create_staging_checkerboard_image());
 
         if no_configured_printers {
             ui_app_state.set_no_printers_configured(true);

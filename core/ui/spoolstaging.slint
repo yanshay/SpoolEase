@@ -25,7 +25,41 @@ export component SpoolStaging inherits Rectangle {
 
         Rectangle {
             filament-box := Rectangle {
-                background: (AppState.spool-staging-state != SpoolStagingState.Empty) ? AppState.spool-staging-info.color : AppConsts.no-color;
+                pure function representative-color-index(color-count: int) -> int {
+                    if color-count <= 1 {
+                        return 0;
+                    }
+                    if color-count == 2 {
+                        return 1;
+                    }
+                    return (color-count - 1) / 2;
+                }
+                property <int> staging-color-count: AppState.spool-staging-info.colors.length;
+                property <color> representative-color: staging-color-count > 0 ? AppState.spool-staging-info.colors[representative-color-index(staging-color-count)] : AppState.spool-staging-info.color;
+                property <color> staging-text-color: Utils.contrasting_color(representative-color);
+                background: AppState.spool-staging-state == SpoolStagingState.Empty ? AppConsts.no-color : #00000000;
+
+                if AppState.spool-staging-state != SpoolStagingState.Empty: Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: AppState.staging-checkerboard-bg;
+                }
+
+                if AppState.spool-staging-state != SpoolStagingState.Empty && staging-color-count > 0: HorizontalLayout {
+                    width: parent.width;
+                    height: parent.height;
+                    spacing: 0px;
+                    for stripe-color in AppState.spool-staging-info.colors: Rectangle {
+                        horizontal-stretch: 1;
+                        background: stripe-color;
+                    }
+                }
+
+                if AppState.spool-staging-state != SpoolStagingState.Empty && staging-color-count == 0: Rectangle {
+                    width: parent.width;
+                    height: parent.height;
+                    background: AppState.spool-staging-info.color;
+                }
 
                 if AppState.spool-staging-state != SpoolStagingState.Empty: 
                 VerticalLayout {
@@ -39,21 +73,21 @@ export component SpoolStaging inherits Rectangle {
                         horizontal-alignment: center;
                         font-size: 20px;
                         text: AppState.spool-staging-info.spool-record.id != "" ? "ID: \{AppState.spool-staging-info.spool-record.id}" : "";
-                        color: Utils.contrasting_color(filament-box.background);
+                        color: filament-box.staging-text-color;
                     }
 
                     material := Text {
                         horizontal-alignment: center;
                         font-size: 20px;
                         text: AppState.spool-staging-info.spool-record.material-type;
-                        color: Utils.contrasting_color(filament-box.background);
+                        color: filament-box.staging-text-color;
                     }
 
                     if AppState.spool-staging-info.weight-left != "": Text {
                         horizontal-alignment: center;
                         font-size: 20px;
                         text: AppState.spool-staging-info.weight-left;
-                        color: Utils.contrasting_color(filament-box.background);
+                        color: filament-box.staging-text-color;
                     }
 
                   // K Value (show only if no ID, otherwiser no room)
@@ -61,7 +95,7 @@ export component SpoolStaging inherits Rectangle {
                         horizontal-alignment: center;
                         font-size: 20px;
                         text: "K: " + (AppState.spool-staging-info.spool-record.ext-has-k ? "✔" : "-");
-                        color: Utils.contrasting_color(filament-box.background);
+                        color: filament-box.staging-text-color;
                     }
                 }
             }
@@ -93,7 +127,7 @@ export component SpoolStaging inherits Rectangle {
         width: parent.width;
         height: parent.height;
         border-width: 4px;
-        border-color: Utils.contrasting_color(filament-box.background);
+        border-color: AppState.spool-staging-state == SpoolStagingState.Empty ? black : Utils.contrasting_color(filament-box.representative-color);
     }
 
     area := TouchArea {
