@@ -56,6 +56,10 @@ export component AppWindow inherits Window {
     height: 320px;
     default-font-family: "Arial";
 
+    function full-screen-dialog-open() -> bool {
+      return AppState.control-state == ControlState.NewTagScan || AppState.control-state == ControlState.StagingSelected || AppState.control-state == ControlState.TraySelected;
+    }
+
     property <int> current-page: (FrameworkState.web-config-state == WebConfigState.Started-AP || FrameworkState.web-config-state == WebConfigState.Started-STA-Displayed) ? 2 : (AppState.control-state == ControlState.Booting || /*AppState.control-state == ControlState.ConnectingToPrinter ||*/ AppState.control-state == ControlState.BootFailed) ? 0 : 1;
     changed current-page => {
         if current-page != 0 && terminal.is-scrolled() { // if maybe moved away from terminal 
@@ -87,10 +91,11 @@ export component AppWindow inherits Window {
     sgr := SwipeGestureHandler {
         width: parent.width;
         height: parent.height;
-        handle-swipe-up: current-page < 2 && (!AppState.select-printer);
-        handle-swipe-down: current-page > 0 && (!AppState.select-printer);
-        handle-swipe-left: current_page_x == 0 || top.x == 0px;
-        handle-swipe-right: current-page_x == 1 || top.x == -480px;
+        property <length> topx: -480px;
+        handle-swipe-up: current-page < 2 && (!AppState.select-printer) && !full-screen-dialog-open();
+        handle-swipe-down: current-page > 0 && (!AppState.select-printer) && !full-screen-dialog-open();
+        handle-swipe-left: (current_page_x == 0 || topx == 0px) && !full-screen-dialog-open();
+        handle-swipe-right: (current-page_x == 1 || topx == -480px) && !full-screen-dialog-open();
         swiped => {
             if FrameworkState.ota-state != OtaState.Started {
                 if self.handle-swipe-down && self.current-position.y > self.pressed-position.y + (self.height / 8) {
@@ -104,9 +109,9 @@ export component AppWindow inherits Window {
                     if self.handle-swipe-left && self.current-position.x < self.pressed-position.x - (self.width / 5) {
                       // swipe left
                       // if order is important
-                      if top.x == 0px {
+                      if topx == 0px {
                           // on left top pane showing storage
-                          top.x = -480px;
+                          topx = -480px;
                       } else if current-page_x == 0 {
                          // on main screen
                          AppState.select-printer = true;
@@ -120,9 +125,9 @@ export component AppWindow inherits Window {
                         // if on select priner page
                         AppState.select-printer = false;
                         current-page_x = 0;
-                      } else if top.x == -480px {
+                      } else if topx == -480px {
                         // on main display
-                        top.x = 0px;
+                        topx = 0px;
                       }
                     }
                 }
@@ -150,7 +155,7 @@ export component AppWindow inherits Window {
             }
 
             // Page 1 :  App Window - ControlPanel at the bottom and Storage <-> Slots at the top (swipable left/right)
-            page1 := Rectangle {
+            if !full-screen-dialog-open(): page1 := Rectangle {
                 background: white;
                 height: parent.height;
                 width: parent.width;
@@ -159,7 +164,7 @@ export component AppWindow inherits Window {
                     width: parent.width;
                     alignment: stretch;
                     top := HorizontalLayout {
-                        x: -480px;
+                        x: topx;
                         animate x {
                             duration: 1000ms;
                             easing: ease-in-out;
@@ -196,13 +201,13 @@ export component AppWindow inherits Window {
                             FrameworkState.ota-state = OtaState.Checking;
                             AppBackend.ota-check-firmwares();
                         }
-                        staging-section-width: slots.slot-width;
-                        button-width: slots.slot-width;
+                        staging-section-width: (root.width - 4*AppConsts.trays-spacing)/5; //slots.slot-width;
+                        button-width: self.staging-section-width;
                     }
                 }
             }
 
-            page3 := AppSettings {
+            if !full-screen-dialog-open(): page3 := AppSettings {
                 width: root.width;
                 height: root.height;
                 done => { // not used, but if we want to in the future
@@ -216,7 +221,7 @@ export component AppWindow inherits Window {
             }
         }
 
-        SelectPrinter {
+        if !full-screen-dialog-open(): SelectPrinter {
             selected => {
                 AppState.select-printer = false;
                 current-page-x = 0;

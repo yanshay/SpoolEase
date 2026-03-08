@@ -6,7 +6,7 @@ export component Slots inherits HorizontalLayout {
     spacing: AppConsts.trays-spacing;
                             // Separating the external tray from the ams trays so can scroll the ams trays in case of several ams's
                             if AppState.ams-exists.length > 0: 
-                              ams := Trays {
+    ams := Trays {
         is_ams: true;
         title: "AMS - " + (AppState.curr-ams-id + 1);
         include-paging-left: false;

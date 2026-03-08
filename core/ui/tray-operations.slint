@@ -21,7 +21,7 @@ component TrayDisplayStep inherits Rectangle {
             vertical-stretch: 0;
             height: 40px;
             MyButton {
-                width: 240px; // must force width with MultiColorTitle
+                width: spool-id != "" ? 240px : 480px; // must force width with MultiColorTitle
                 type: ButtonType.RadioButton;
                 text: "Slot \{AppState.trays-state[tray-index].name} Information";
                 pushed-background: AppState.trays-state[tray-index].filament.color;
@@ -161,7 +161,8 @@ enum TrayOperationsPage {
 
 export component TrayOperations inherits Rectangle {
     background: white;
-    property <TrayOperationsPage> page: AppState.trays-state[AppState.tray-selected-tray-index].filament.state == UiFilamentState.Known ? TrayOperationsPage.SpoolDisplay : TrayOperationsPage.OperationSelection;
+    property <UiTray> ui-tray: AppState.trays-state[AppState.tray-selected-tray-index];
+    property <TrayOperationsPage> page: ui-tray.filament.state == UiFilamentState.Known || ui-tray.spool-rec-id != "" ? TrayOperationsPage.SpoolDisplay : TrayOperationsPage.OperationSelection;
     if page == TrayOperationsPage.SpoolDisplay: TrayDisplayStep {
         spool-id: AppState.trays-state[AppState.tray-selected-tray-index].spool_rec_id;
         tray-index: AppState.tray-selected-tray-index;
