@@ -11,18 +11,18 @@ codegen-units = 1
 debug = 2
 debug-assertions = false
 incremental = false
-opt-level = 's'
+opt-level = 'z' 
 lto = 'fat'
 overflow-checks = false
 
-[profile.release.package.esp-wifi]
-opt-level = 3
+# [profile.release.package.esp-radio]
+# opt-level = 3
 
 [profile.dev]
 lto = false
 
-[profile.dev.package.esp-wifi]
-opt-level = 3
+# [profile.dev.package.esp-radio]
+# opt-level = 3
 
 [patch.crates-io]
 # slint = { git = "https://github.com/slint-ui/slint", rev = "854711dd49215d9ef78ecb43bb3ce03576779a69" }
