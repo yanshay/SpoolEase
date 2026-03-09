@@ -155,11 +155,7 @@ impl ViewModel {
                 let x_block = x / cell_w as usize;
                 let y_block = y / cell_h as usize;
                 let use_light = ((x_block + y_block) % 2) == 0;
-                let (r, g, b, a) = if use_light {
-                    TITLE_CHECKER_LIGHT
-                } else {
-                    TITLE_CHECKER_DARK
-                };
+                let (r, g, b, a) = if use_light { TITLE_CHECKER_LIGHT } else { TITLE_CHECKER_DARK };
                 pixels[y * width_usize + x] = slint::Rgba8Pixel { r, g, b, a };
             }
         }
@@ -218,19 +214,10 @@ impl ViewModel {
                     let x_block = global_x.div_euclid(checker_cell_w);
                     let y_block = global_y.div_euclid(checker_cell_h);
                     let use_light = ((x_block + y_block) % 2) == 0;
-                    let (r, g, b, a) = if use_light {
-                        TITLE_CHECKER_LIGHT
-                    } else {
-                        TITLE_CHECKER_DARK
-                    };
+                    let (r, g, b, a) = if use_light { TITLE_CHECKER_LIGHT } else { TITLE_CHECKER_DARK };
                     slint::Rgba8Pixel { r, g, b, a }
                 } else {
-                    slint::Rgba8Pixel {
-                        r: 0,
-                        g: 0,
-                        b: 0,
-                        a: 0,
-                    }
+                    slint::Rgba8Pixel { r: 0, g: 0, b: 0, a: 0 }
                 };
 
                 pixels[y * width_usize + x] = pixel;
@@ -744,14 +731,8 @@ impl ViewModel {
                 image
             } else {
                 let diameter_u32 = diameter as u32;
-                let checker_image = Self::create_circular_checkerboard_image(
-                    diameter_u32,
-                    offset_x,
-                    offset_y,
-                );
-                moved_circle_checker_cache
-                    .borrow_mut()
-                    .insert(request_key, checker_image.clone());
+                let checker_image = Self::create_circular_checkerboard_image(diameter_u32, offset_x, offset_y);
+                moved_circle_checker_cache.borrow_mut().insert(request_key, checker_image.clone());
                 checker_image
             };
             moved_ui

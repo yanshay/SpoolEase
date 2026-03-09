@@ -239,7 +239,7 @@ impl OpenPrintTagTag {
                                 }
                             })
                             .unwrap_or(String::new());
-                        
+
                         add_color(&mut color_code, &info.primary_color);
                         add_color(&mut color_code, &info.secondary_color_0);
                         add_color(&mut color_code, &info.secondary_color_1);
