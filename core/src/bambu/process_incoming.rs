@@ -72,7 +72,7 @@ impl BambuPrinter {
                 Filament::Known(FilamentInfo {
                     tray_info_idx,
                     tray_type: print.tray_type.as_ref().cloned().unwrap_or_default(),
-                    tray_color: print.tray_color.as_ref().cloned().unwrap_or_default(),
+                    tray_color: alloc::vec![print.tray_color.as_ref().cloned().unwrap_or_default()],
                     nozzle_temp_max: print.nozzle_temp_max.unwrap_or(250),
                     nozzle_temp_min: print.nozzle_temp_min.unwrap_or(190),
                 })

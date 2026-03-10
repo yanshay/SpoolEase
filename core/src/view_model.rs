@@ -39,7 +39,7 @@ use framework::{
 };
 
 use crate::app::{UiSlotDisplay, UiSpoolRecord, UiSpoolRecordDisplay};
-use crate::app_config::{BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig};
+use crate::app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig};
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
 use crate::bambu::bambu_print::PrintProject;
 use crate::bambu::calibration::{KExtruder, KInfo, KNozzleDiameter, KNozzleId, KPrinter};
@@ -1447,7 +1447,7 @@ impl ViewModel {
         let printer_borrow = self.bambu_printer_model.borrow();
         let tray = printer_borrow.get_any_tray(tray_id as usize);
         let color_code = if let Filament::Known(filament) = &tray.filament {
-            filament.tray_color.to_shared_string()
+            SharedString::from(filament.tray_color.join(";"))
         } else {
             SharedString::new()
         };
@@ -1484,8 +1484,46 @@ impl ViewModel {
         } else {
             ""
         };
-        // let filament_title = format!("{brand} {material} {color_name}").trim().to_shared_string();
-        let filament_title = format!("{brand} {material}").trim().to_shared_string();
+
+        let color_name = {
+            if brand == "Bambu"
+                && let Filament::Known(filament) = &tray.filament
+            {
+                let mut colors_rgba_for_compare = filament.tray_color.clone();
+                colors_rgba_for_compare.sort();
+                let colors_rgba_for_compare: Vec<&str> = colors_rgba_for_compare.iter().map(|s| s.as_str()).collect();
+                BAMBU_COLOR_NAMES
+                    .lines()
+                    .find_map(|line| {
+                        let mut s = line.split(',');
+                        let id = s.next()?;
+                        if id != filament.tray_info_idx {
+                            return None;
+                        }
+
+                        let colors = s.next()?;
+                        // make sure lists are exactly the same (except for order)
+                        let mut color_name_colors: Vec<&str> = colors.split('/').collect();
+                        color_name_colors.sort();
+
+                        let full_match = colors_rgba_for_compare == color_name_colors;
+
+                        if !full_match {
+                            return None;
+                        }
+
+                        let name = s.next()?;
+                        let code = s.next()?;
+                        Some(format!(" {name} ({code})"))
+                    })
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            }
+        };
+
+        let filament_title = format!("{brand} {material}{color_name}").trim().to_shared_string();
+        // let filament_title = format!("{brand} {material}").trim().to_shared_string();
         let available_in_spool = self.weight_left(tray).unwrap_or_default();
 
         let pa = match tray.cali_idx {
@@ -1775,10 +1813,14 @@ impl ViewModel {
             let mut ui_tray = trays_state.row_data(tray_row).unwrap().clone();
             ui_tray.spool_state = crate::app::UiTrayState::from(&curr_tray.state);
             if let Filament::Known(filament_info) = &curr_tray.filament {
-                if let Some(color) = Self::rgb_or_rgba_hex_to_slint_color(&filament_info.tray_color) {
-                    ui_tray.filament.color = color;
-                }
-                ui_tray.tray_has_alpha = Self::rgba_hex_has_alpha(&filament_info.tray_color);
+                ui_tray.filament.colors = slint::ModelRc::new(slint::VecModel::from(
+                    filament_info
+                        .tray_color
+                        .iter()
+                        .filter_map(|c| Self::rgb_or_rgba_hex_to_slint_color(c))
+                        .collect::<Vec<_>>(),
+                ));
+                ui_tray.tray_has_alpha = filament_info.tray_color.iter().any(|c| Self::rgba_hex_has_alpha(c));
                 ui_tray.filament.material = slint::SharedString::from(&filament_info.tray_type);
                 ui_tray.filament.state = crate::app::UiFilamentState::Known;
             } else {

@@ -20,12 +20,11 @@ component TrayDisplayStep inherits Rectangle {
         HorizontalLayout {
             vertical-stretch: 0;
             height: 40px;
-            MyButton {
+            MultiColorTitle {
                 width: spool-id != "" ? 240px : 480px; // must force width with MultiColorTitle
-                type: ButtonType.RadioButton;
+                push-button: true;
                 text: "Slot \{AppState.trays-state[tray-index].name} Information";
-                pushed-background: AppState.trays-state[tray-index].filament.color;
-                text-color: Utils.contrasting_color(self.background);
+                colors: AppState.trays-state[tray-index].filament.colors;
                 pushed: root.tab == TrayDisplayTab.Slot;
                 pressed => {
                     root.tab = TrayDisplayTab.Slot

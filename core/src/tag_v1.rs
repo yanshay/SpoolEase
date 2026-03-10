@@ -84,38 +84,6 @@ pub struct TagInformationV1 {
 }
 
 impl TagInformationV1 {
-    pub fn _from(v: &SpoolRecord, min_max_temp: (u32, u32)) -> Self {
-        // TODO: need to deal with case of no data or partial data for filament_info?
-        let filament_info = {
-            FilamentInfo {
-                tray_info_idx: v.slicer_filament.clone(),
-                tray_type: v.material_type.clone(),
-                tray_color: v.primary_color_code().unwrap_or_default().to_string(),
-                nozzle_temp_max: min_max_temp.1,
-                nozzle_temp_min: min_max_temp.0,
-            }
-        };
-        Self {
-            id: Some(v.id.clone()),
-            tag_id: v.primary_tag_id().and_then(|tag_id| hex::decode(tag_id.as_bytes()).ok()),
-            filament: Some(filament_info),
-            weight_advertised: v.weight_advertised,
-            weight_core: v.weight_core,
-            weight_new: v.weight_new,
-            brand: if v.brand.is_empty() { None } else { Some(v.brand.clone()) },
-            filament_subtype: if v.material_subtype.is_empty() {
-                None
-            } else {
-                Some(v.material_subtype.clone())
-            },
-            color_name: if v.color_name.is_empty() { None } else { Some(v.color_name.clone()) },
-            note: if v.note.is_empty() { None } else { Some(v.note.clone()) },
-            encode_time: v.encode_time,
-            calibrations: HashMap::new(),
-            calibrations_printer_name: String::new(),
-            calibrations_printer_uuid: String::new(),
-        }
-    }
     pub fn to_spool_rec(&self) -> SpoolRecord {
         let empty = &String::new();
         // let empty_filament = &FilamentInfo::default(),
@@ -130,7 +98,7 @@ impl TagInformationV1 {
             material_type: self.filament.as_ref().map(|f| f.tray_type.clone()).unwrap_or_default(),
             material_subtype: self.filament_subtype.as_ref().unwrap_or(empty).clone(),
             color_name: self.color_name.as_ref().unwrap_or(empty).clone(),
-            color_code: self.filament.as_ref().map(|f| vec![f.tray_color.clone()]).unwrap_or_default(),
+            color_code: self.filament.as_ref().map(|f| f.tray_color.clone()).unwrap_or_default(),
             note: self.note.as_ref().unwrap_or(empty).clone(),
             brand: self.brand.as_ref().unwrap_or(empty).clone(),
             weight_advertised: self.weight_advertised,
@@ -266,7 +234,7 @@ impl TagInformationV1 {
                     }
                     // Color / Tray Color
                     "C" => {
-                        filament_info_result.tray_color = String::from(param_value);
+                        filament_info_result.tray_color = vec![String::from(param_value)];
                         c = true;
                     }
                     // Nozzle miN Temp

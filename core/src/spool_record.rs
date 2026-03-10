@@ -12,12 +12,13 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use shared::spool_tag::TAG_PLACEHOLDER;
 use shared::utils::{
     deserialize_bool_yn_empty_n, deserialize_f32_base64, deserialize_optional, deserialize_optional_bool_yn, serialize_bool_yn, serialize_f32_base64,
     serialize_optional_bool_yn,
 };
+use crate::utils::{deserialize_string_array, serialize_string_array};
 
 // TODO: think if to change it to get the spoolRecord from store (and it will hold Rc to store)
 #[derive(Debug, Clone, Default)]
@@ -109,29 +110,6 @@ where
     })
 }
 
-fn serialize_string_array<S>(values: &[String], serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(&values.join(";"))
-}
-
-fn deserialize_string_array<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let serialized: String = Deserialize::deserialize(deserializer)?;
-    if serialized.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    Ok(serialized
-        .split(';')
-        .filter(|tag_id| !tag_id.is_empty())
-        .map(ToString::to_string)
-        .collect())
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum OriginData {
     SpoolEaseV1 { uid: String, url: String },
@@ -198,7 +176,7 @@ impl SpoolRecord {
         self.tag_id.iter().map(String::as_str).find(|tag_id| !tag_id.is_empty())
     }
 
-    pub fn primary_color_code(&self) -> Option<&str> {
+    pub fn _primary_color_code(&self) -> Option<&str> {
         self.color_code.iter().map(String::as_str).find(|color_code| !color_code.is_empty())
     }
 

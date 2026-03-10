@@ -18,7 +18,7 @@ export struct Printer {
 
 export struct UiFilament {
   state: UiFilamentState,
-  color: color,
+  colors: [color],
   material: string,
 }
 
@@ -404,7 +404,7 @@ export global AppState {
         AppState.highlight-staging = false;
     }
 
-// Functions called locally fom Rust
+    // Functions called locally fom Rust
 
     // timeout -1 is default as coded here, 0 is no timeout (stays on until ok), positive number - timeout in seconds
     public function show-message-box(title: string, text: string, text2: string, type: StatusType, timeout: int) {
@@ -768,7 +768,6 @@ export global AppState {
         self.new-tag-scan-definition-info = "";
         self.new-tag-scan-empty-spool-weight = 0;
     }
-    
 
     public function import-definition-tag-to-inventory-status(status: string, spool-id: string) {
       // This one is called both from link_tag and from v1_tag add new tag flows
@@ -817,7 +816,7 @@ export global AppState {
     }
 
     public function unlink-spool-id-tags-status(spool-id: string, success: bool, message: string) {
-      if success {
+        if success {
             self.show-message-box("Unlink Notice", message, "", StatusType.Success, 10);
             if self.control-state == ControlState.StagingSelected {
                 self.control-state = ControlState.Ready
@@ -852,7 +851,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -873,7 +872,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -894,7 +893,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -913,7 +912,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -932,7 +931,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -951,7 +950,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -972,7 +971,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -991,7 +990,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1010,7 +1009,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1029,7 +1028,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1049,7 +1048,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1068,7 +1067,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1087,7 +1086,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1106,7 +1105,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1126,7 +1125,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1145,7 +1144,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1164,7 +1163,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1183,7 +1182,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1203,7 +1202,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1223,7 +1222,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1243,7 +1242,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1263,7 +1262,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1284,7 +1283,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1304,7 +1303,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1324,7 +1323,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,
@@ -1344,7 +1343,7 @@ export global AppState {
                 spool-state: UiTrayState.Unknown,
                 filament: {
                     state: UiFilamentState.Unknown,
-                    color: #000,
+                    colors: [#000],
                     material: "???",
                 },
                 tray-has-alpha: false,

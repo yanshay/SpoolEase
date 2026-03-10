@@ -1,10 +1,12 @@
-use alloc::string::{String, ToString};
+use alloc::{string::{String, ToString}, vec::Vec};
 use serde::{Deserialize, Serialize};
+use crate::utils::{deserialize_string_array, serialize_string_array};
 
 use crate::{
     app_config::MATERIALS,
     bambu::{BambuPrinter, bambu_api},
 };
+
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub enum Filament {
@@ -17,7 +19,8 @@ pub enum Filament {
 pub struct FilamentInfo {
     pub tray_info_idx: String, // e.g. "GFL99"
     pub tray_type: String,     // e.g. "PLA"
-    pub tray_color: String,    // e.g. "2323F7FF"
+    #[serde(serialize_with = "serialize_string_array", deserialize_with = "deserialize_string_array")]
+    pub tray_color: Vec<String>,    // e.g. "2323F7FF"
     pub nozzle_temp_max: u32,  // e.g. 250
     pub nozzle_temp_min: u32,  // w.g. 190
 }
@@ -27,19 +30,22 @@ impl FilamentInfo {
         Self {
             tray_info_idx: String::from(""),
             tray_type: String::from(""),
-            tray_color: String::from(""),
+            tray_color: alloc::vec![String::from("")],
             nozzle_temp_max: 0,
             nozzle_temp_min: 0,
         }
+    }
+    pub fn primary_color(&self) -> String {
+        self.tray_color.first().cloned().unwrap_or_default()
     }
 }
 
 impl From<bambu_api::PrintTray> for FilamentInfo {
     fn from(v: bambu_api::PrintTray) -> Self {
         Self {
+            tray_color: v.tray_colors(),
             tray_info_idx: v.tray_info_idx.unwrap_or_default(),
             tray_type: v.tray_type.unwrap_or_default(),
-            tray_color: v.tray_color.unwrap_or_default(),
             nozzle_temp_max: v.nozzle_temp_max.unwrap_or(250),
             nozzle_temp_min: v.nozzle_temp_min.unwrap_or(190),
         }
@@ -49,9 +55,9 @@ impl From<bambu_api::PrintTray> for FilamentInfo {
 impl From<&bambu_api::PrintTray> for FilamentInfo {
     fn from(v: &bambu_api::PrintTray) -> Self {
         Self {
+            tray_color: v.tray_colors(),
             tray_info_idx: v.tray_info_idx.as_ref().cloned().unwrap_or_default(),
             tray_type: v.tray_type.as_ref().cloned().unwrap_or_default(),
-            tray_color: v.tray_color.as_ref().cloned().unwrap_or_default(),
             nozzle_temp_max: v.nozzle_temp_max.unwrap_or(250),
             nozzle_temp_min: v.nozzle_temp_min.unwrap_or(190),
         }

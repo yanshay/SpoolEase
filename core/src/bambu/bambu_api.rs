@@ -231,6 +231,8 @@ pub struct PrintTray {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tray_color: Option<String>, // e.g. "2323F7FF"
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub cols: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default, serialize_with = "option_u32_as_str_se", deserialize_with = "option_u32_as_str_de")]
     pub nozzle_temp_max: Option<u32>, // e.g. 250
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -250,6 +252,21 @@ pub struct PrintTray {
                                       // pub xcam_info: Option<String>,
                                       // pub tray_uuid: Option<String>,
 }
+
+impl PrintTray {
+    pub fn tray_colors(&self) -> Vec<String> {
+        if let Some(cols) = &self.cols {
+            if !cols.is_empty() {
+                cols.clone()
+            } else {
+                self.tray_color.clone().map(|c| alloc::vec![c]).unwrap_or_else(|| alloc::vec![String::new()])
+            }
+        } else {
+            self.tray_color.clone().map(|c| alloc::vec![c]).unwrap_or_else(|| alloc::vec![String::new()])
+        }
+    }
+}
+
 // TODO: check if can consolidate the two types of trays to a single one(only difference is optional items for serde?)
 // External Tray - One per printer
 // #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

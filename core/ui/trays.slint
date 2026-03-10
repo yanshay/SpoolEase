@@ -14,6 +14,19 @@ import { Log } from "framework/framework.slint";
 
 /////////////////////////////////////////////
 
+
+global Helper {
+    public pure function representative-color-index(color-count: int) -> int {
+        if color-count <= 1 {
+            return 0;
+        }
+        if color-count == 2 {
+            return 1;
+        }
+        return (color-count - 1) / 2;
+    }
+}
+
 component AmsButton inherits Rectangle {
     in property <int> ams-id;
     in property <bool> active;
@@ -25,15 +38,6 @@ component AmsButton inherits Rectangle {
     }
     function slot-with-known-color(tray: UiTray) -> bool {
         return tray.filament.state != UiFilamentState.Unknown;
-    }
-    pure function representative-color-index(color-count: int) -> int {
-        if color-count <= 1 {
-            return 0;
-        }
-        if color-count == 2 {
-            return 1;
-        }
-        return (color-count - 1) / 2;
     }
 
     if ams-id != -1: ams-selector := Rectangle {
@@ -57,9 +61,10 @@ component AmsButton inherits Rectangle {
                 property <bool> slot-is-loaded: ui-tray.spool-state == UiTrayState.Loaded;
                 property <bool> has-spool-id: ui-tray.spool-rec-id != "";
                 property <int> spool-color-count: ui-tray.spool-colors.length;
+                property <int> slot-color-count: ui-tray.filament.colors.length;
                 property <bool> use-spool-colors: slot-is-with-known-color && has-spool-id && spool-color-count > 0;
                 property <bool> shown-color-has-alpha: use-spool-colors ? ui-tray.spool-has-alpha : ui-tray.tray-has-alpha;
-                property <color> shown-color: use-spool-colors ? ui-tray.spool-colors[representative-color-index(spool-color-count)] : ui-tray.filament.color;
+                property <color> representative-color: use-spool-colors ? ui-tray.spool-colors[Helper.representative-color-index(spool-color-count)] : ui-tray.filament.colors[Helper.representative-color-index(slot-color-count)];
                 height: parent.height - parent.padding-top - parent.padding-bottom - 3px * 2;
                 background: slot-is-with-known-color ? #00000000 : AppConsts.no-color;
 
@@ -72,17 +77,17 @@ component AmsButton inherits Rectangle {
                     source: AppState.ams-color-checkerboard-bg;
                 }
 
-                if slot-is-with-known-color && !use-spool-colors: Rectangle {
-                    width: parent.width;
-                    height: parent.height;
-                    background: ui-tray.filament.color;
-                }
+                // if slot-is-with-known-color && !use-spool-colors: Rectangle {
+                //     width: parent.width;
+                //     height: parent.height;
+                //     background: ui-tray.filament.color;
+                // }
 
-                if slot-is-with-known-color && use-spool-colors: HorizontalLayout {
+                if slot-is-with-known-color: HorizontalLayout { // otherwise parent background will show (no-color gradient)
                     width: parent.width;
                     height: parent.height;
                     spacing: 0px;
-                    for stripe-color in ui-tray.spool-colors: Rectangle {
+                    for stripe-color in use-spool-colors ? ui-tray.spool-colors : ui-tray.filament.colors: Rectangle {
                         horizontal-stretch: 1;
                         background: stripe-color;
                     }
@@ -109,7 +114,7 @@ component AmsButton inherits Rectangle {
                         // only thing I didn't try to fix that with empty or space is centering the text which already looks centered
                         // and so the "✓" won't show, use transparent color
                         text: !slot-is-with-spool ? "−" : !slot-is-with-known-color ? "?" : "✓";
-                        color: self.text == "✓" ? #00000000 : !slot-is-with-spool ? black : slot-is-with-known-color ? Utils.contrasting_color(shown-color) : white;
+                        color: self.text == "✓" ? #00000000 : !slot-is-with-spool ? black : slot-is-with-known-color ? Utils.contrasting_color(representative-color) : white;
                     }
                 }
 
@@ -126,7 +131,7 @@ component AmsButton inherits Rectangle {
                 // ams button nozzle
                 if slot-is-loaded: Image {
                     source: @image-url("./img/extruder.png");
-                    colorize: Utils.contrasting_color(shown-color);
+                    colorize: Utils.contrasting_color(representative-color);
                 }
             }
         }
@@ -234,21 +239,21 @@ component Spool inherits Rectangle {
     property <bool> inner-show-color: (has-known-color || has-spool-id) && ui-tray.spool-state != UiTrayState.Unknown && ui-tray.spool-state != UiTrayState.Empty && ui-tray.spool-state != UiTrayState.Spool && ui-tray.spool-state != UiTrayState.Reading;
     property <bool> outer-color-has-alpha: ui-tray.tray-has-alpha;
     property <bool> inner-color-has-alpha: use-spool-colors ? ui-tray.spool-has-alpha : ui-tray.tray-has-alpha;
-    property <color> outer-display-color: ui-tray.filament.color;
+    property <[color]> outer-display-color: ui-tray.filament.colors;
 
     property <string> circle-default-big-text: ui-tray.spool-state == UiTrayState.Unknown ? "?" : ui-tray.spool-state == UiTrayState.Empty ? "−" : ui-tray.spool-state == UiTrayState.Spool ? "↺" : ui-tray.spool-state == UiTrayState.Reading ? "↻" : "✓";
     property <bool> circle-display-weight: circle-default-big-text == "✓" && ui-tray.weight-display != "";
-    property <color> circle-border-color: Utils.contrasting_color(outer-display-color);
+    property <color> circle-border-color: Utils.contrasting_color(outer-display-color[Helper.representative-color-index(outer-display-color.length)]);
     property <string> circle-weight-display: ui-tray.weight-display;
     property <bool> circle-spool-state-loaded: ui-tray.spool-state == UiTrayState.Loaded;
     property <bool> circle-show-checkerboard-bg: inner-show-color && inner-color-has-alpha;
-    property <[color]> circle-colors: inner-show-color ? (has-spool-id ? ui-tray.spool-colors : [ui-tray.filament.color]) : [#fff];
-    property <brush> outer-color: has-known-color ? (outer-color-has-alpha ? #00000000 : ui-tray.filament.color) : AppConsts.no-color; 
+    property <[color]> circle-colors: inner-show-color ? (has-spool-id ? ui-tray.spool-colors : ui-tray.filament.colors) : [#fff];
+    property <[color]> outer-color: has-known-color ? (outer-color-has-alpha ? [#00000000] : ui-tray.filament.colors) : [AppConsts.no-color];
 
     // this is optimization to see if can use the outer color because it is the same
-    property <bool> need-draw-inner-color: !(circle-colors.length == 1 && circle-colors[0] == outer-color);
+    property <bool> need-draw-inner-color: circle-colors != outer-color;
 
-    background: outer-color;
+    background: has-known-color ? transparent : AppConsts.no-color; // outer-color[0]; // TODO: ?? need to fix?  Fix to multiple colors ? or maybe remove and use the below rectangle that comes after the checkers to avoid two in case of 
     // in case of alpha, don't use a original rect background (which is no transparent for maybe rendering efficiency) but rather checkerboard and on top colored rectangle
     if has-known-color && outer-color-has-alpha: Image {
         image-fit: preserve;
@@ -259,11 +264,20 @@ component Spool inherits Rectangle {
         source: AppState.color-checkerboard-bg;
     }
 
-    if has-known-color && outer-color-has-alpha: Rectangle {
+    if has-known-color: HorizontalLayout { // otherwise parent background will show (no-color gradient)
         width: parent.width;
         height: parent.height;
-        background: outer-display-color;
+        spacing: 0px;
+        for stripe-color in ui-tray.filament.colors: Rectangle {
+            horizontal-stretch: 1;
+            background: stripe-color;
+        }
     }
+    // if has-known-color: Rectangle { // otherwise will show the parent background of no-color gradient
+    //     width: parent.width;
+    //     height: parent.height;
+    //     background: outer-display-color[0]; // TODO: Fix to multiple colors
+    // }
 
     VerticalLayout {
         property <length> circle-diameter: self.width - 8px;
@@ -307,7 +321,7 @@ component Spool inherits Rectangle {
             horizontal-alignment: center;
             font-size: 20px;
             text: ui-tray.filament.state == UiFilamentState.Unknown ? "???" : ui-tray.filament.material;
-            color: has-known-color ? Utils.contrasting_color(root.outer-display-color) : Utils.contrasting_color(root.background);
+            color: has-known-color ? Utils.contrasting_color(root.outer-display-color[0]) : Utils.contrasting_color(root.background); // TODO: fix to multi color
         }
 
         k-value := Text {
@@ -315,14 +329,14 @@ component Spool inherits Rectangle {
             horizontal-alignment: center;
             font-size: 20px;
             text: ui-tray.filament.state == UiFilamentState.Unknown ? "" : "K " + ui-tray.k;
-            color: has-known-color ? Utils.contrasting_color(root.outer-display-color) : Utils.contrasting_color(root.background);
+            color: has-known-color ? Utils.contrasting_color(root.outer-display-color[0]) : Utils.contrasting_color(root.background); // TODO: fix to multi color
         }
     }
 
     tray-border := Rectangle {
         // when to set border thick
         border-width: area.pressed || (AppState.control-state == ControlState.TraySelect) || (AppState.highlight-tray == ui-tray.id && AppState.highlight-tray-flash) ? 4px : 1px;
-        border-color: AppState.control-state == ControlState.TraySelect ? (AppState.highlight-trays ? black : white) : self.border-width == 1px ? black : Utils.contrasting_color(has-known-color ? root.outer-display-color : root.background);
+        border-color: AppState.control-state == ControlState.TraySelect ? (AppState.highlight-trays ? black : white) : self.border-width == 1px ? black : Utils.contrasting_color(has-known-color ? root.outer-display-color[0] : root.background); // TODO: fix to multi color
     }
 
     if ui-tray.tagged: tag := Rectangle {
