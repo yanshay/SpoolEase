@@ -7,12 +7,14 @@ use alloc::rc::Rc;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use embedded_sdmmc::asynchronous::LfnBuffer;
 use framework::framework_web_app::{FrameworkState, encrypt, encrypt_bytes};
 use hashbrown::HashMap;
 use picoserve::response::StatusCode;
 use picoserve::response::chunked::{ChunkWriter, ChunkedResponse, ChunksWritten};
-use picoserve::routing::{get, get_service};
+use picoserve::routing::{get, get_service, post_service};
 use picoserve::{
     AppWithStateBuilder,
     extract::{FromRequest, State},
@@ -30,6 +32,7 @@ use framework::{
 };
 use framework_macros::include_bytes_gz;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::app_config::{AppConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrintersConfig, SPOOLS_CATALOG, ScaleConfig};
@@ -548,6 +551,24 @@ impl AppWithStateBuilder for NestedAppBuilder {
             }),
         );
 
+        let router = router.route("/api/store-restore-upload", post_service(StoreRestoreUploadService));
+
+        let router = router.route(
+            "/api/store-restore-delete",
+            post(
+                async move |State(Encryption(key)): State<Encryption>,
+                            State(FrameworkState(framework)): State<FrameworkState>,
+                            RestoreDeleteDTO {}| {
+                    cleanup_restore_upload_temp(&framework).await;
+                    GenericResponse {
+                        text: "Deleted uploaded backup files".to_string(),
+                        error: None,
+                    }
+                    .encrypt(&key.borrow())
+                },
+            ),
+        );
+
         #[derive(serde::Deserialize)]
         struct ScreenshotQueryParams {
             key: String,
@@ -715,6 +736,220 @@ impl AppWithStateBuilder for NestedAppBuilder {
         );
 
         router
+    }
+}
+
+struct StoreRestoreUploadService;
+
+async fn cleanup_restore_upload_temp(framework: &Rc<RefCell<Framework>>) {
+    let file_store = framework.borrow().file_store();
+    let mut file_store = file_store.lock().await;
+    let _ = file_store.delete_file("/store.bak").await;
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    let digest = hasher.finalize();
+
+    let mut out = String::with_capacity(64);
+    for byte in digest {
+        let hi = (byte >> 4) & 0x0f;
+        let lo = byte & 0x0f;
+        out.push((if hi < 10 { b'0' + hi } else { b'a' + (hi - 10) }) as char);
+        out.push((if lo < 10 { b'0' + lo } else { b'a' + (lo - 10) }) as char);
+    }
+    out
+}
+
+fn parse_sha256_header(mut raw_sha: String) -> Result<String, String> {
+    raw_sha = raw_sha.trim().to_ascii_lowercase();
+    if raw_sha.len() != 64 {
+        return Err("Invalid x-file-sha256 header length".to_string());
+    }
+    if !raw_sha.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err("Invalid x-file-sha256 header characters".to_string());
+    }
+    Ok(raw_sha)
+}
+
+fn append_restore_frame(data: &mut Vec<u8>, key: &'static RefCell<Vec<u8>>, encrypted_frame: &[u8], expected_size: usize) -> Result<(), String> {
+    if encrypted_frame.is_empty() {
+        return Ok(());
+    }
+
+    let decrypted = decrypt(&key.borrow(), encrypted_frame).map_err(|e| format!("Failed decrypting frame: {e}"))?;
+    let frame_bytes = BASE64_STANDARD
+        .decode(decrypted.as_bytes())
+        .map_err(|e| format!("Failed base64 decoding frame: {e}"))?;
+
+    if data.len() + frame_bytes.len() > expected_size {
+        return Err("Uploaded data exceeds x-file-size".to_string());
+    }
+    data.extend_from_slice(&frame_bytes);
+
+    Ok(())
+}
+
+impl picoserve::routing::RequestHandlerService<WebAppState<ConsoleAppState>> for StoreRestoreUploadService {
+    async fn call_request_handler_service<R: Read, W: picoserve::response::ResponseWriter<Error = R::Error>>(
+        &self,
+        state: &WebAppState<ConsoleAppState>,
+        (): (),
+        mut request: picoserve::request::Request<'_, R>,
+        response_writer: W,
+    ) -> Result<picoserve::ResponseSent, W::Error> {
+        let key = state.encryption.0;
+        let framework = state.framework.0.clone();
+
+        let headers = request.parts.headers();
+        let expected_size = headers
+            .get("x-file-size")
+            .and_then(|value| value.as_str().ok().map(|text| text.to_string()))
+            .and_then(|value| value.parse::<usize>().ok());
+        let expected_size = match expected_size {
+            Some(size) => size,
+            None => {
+                let connection = request.body_connection.finalize().await?;
+                let resp = GenericResponse {
+                    text: "Backup upload failed".to_string(),
+                    error: Some("Missing or invalid x-file-size header".to_string()),
+                };
+                let payload = resp.encrypt(&key.borrow());
+                return response_writer
+                    .write_response(connection, picoserve::response::Response::new(StatusCode::BAD_REQUEST, payload))
+                    .await;
+            }
+        };
+
+        let expected_sha = headers
+            .get("x-file-sha256")
+            .and_then(|value| value.as_str().ok().map(|text| text.to_string()))
+            .map(parse_sha256_header);
+        let expected_sha = match expected_sha {
+            Some(Ok(sha)) => sha,
+            Some(Err(err)) => {
+                let connection = request.body_connection.finalize().await?;
+                let resp = GenericResponse {
+                    text: "Backup upload failed".to_string(),
+                    error: Some(err),
+                };
+                let payload = resp.encrypt(&key.borrow());
+                return response_writer
+                    .write_response(connection, picoserve::response::Response::new(StatusCode::BAD_REQUEST, payload))
+                    .await;
+            }
+            None => {
+                let connection = request.body_connection.finalize().await?;
+                let resp = GenericResponse {
+                    text: "Backup upload failed".to_string(),
+                    error: Some("Missing x-file-sha256 header".to_string()),
+                };
+                let payload = resp.encrypt(&key.borrow());
+                return response_writer
+                    .write_response(connection, picoserve::response::Response::new(StatusCode::BAD_REQUEST, payload))
+                    .await;
+            }
+        };
+
+        cleanup_restore_upload_temp(&framework).await;
+
+        let mut response = GenericResponse {
+            text: "Backup upload completed to /store.bak".to_string(),
+            error: None,
+        };
+        let mut status_code = StatusCode::OK;
+
+        let upload_result: Result<(), String> = async {
+            let mut reader = request.body_connection.body().reader();
+            let mut read_buffer = vec![0u8; 4096];
+            let mut frame_buffer = Vec::<u8>::with_capacity(8192);
+            let mut file_data = Vec::<u8>::new();
+            file_data
+                .try_reserve_exact(expected_size)
+                .map_err(|_| "Not enough memory for upload".to_string())?;
+            let mut processed_frames = 0usize;
+
+            loop {
+                let read_size = reader
+                    .read(&mut read_buffer[..])
+                    .await
+                    .map_err(|e| format!("Failed reading request body: {e:?}"))?;
+                if read_size == 0 {
+                    break;
+                }
+
+                let chunk = &read_buffer[..read_size];
+                let mut chunk_start = 0usize;
+                while let Some(rel_delimiter_index) = chunk[chunk_start..].iter().position(|&byte| byte == b'|') {
+                    let delimiter_index = chunk_start + rel_delimiter_index;
+                    frame_buffer.extend_from_slice(&chunk[chunk_start..delimiter_index]);
+
+                    if !frame_buffer.is_empty() {
+                        append_restore_frame(&mut file_data, key, &frame_buffer, expected_size)?;
+                        processed_frames += 1;
+                    }
+                    frame_buffer.clear();
+                    chunk_start = delimiter_index + 1;
+                }
+
+                if chunk_start < chunk.len() {
+                    frame_buffer.extend_from_slice(&chunk[chunk_start..]);
+                }
+            }
+
+            if !frame_buffer.is_empty() {
+                append_restore_frame(&mut file_data, key, &frame_buffer, expected_size)?;
+                processed_frames += 1;
+            }
+
+            if processed_frames == 0 {
+                return Err("Upload body is empty".to_string());
+            }
+
+            if file_data.len() != expected_size {
+                return Err(format!(
+                    "Uploaded data size mismatch. expected={} actual={}",
+                    expected_size,
+                    file_data.len()
+                ));
+            }
+
+            let file_store = framework.borrow().file_store();
+            let mut file_store = file_store.lock().await;
+            file_store
+                .create_write_file_bytes("/store.bak", &file_data)
+                .await
+                .map_err(|err| format!("Failed writing /store.bak: {err:?}"))?;
+
+            let verify_data = file_store
+                .read_file_bytes("/store.bak")
+                .await
+                .map_err(|err| format!("Failed reading /store.bak for checksum verification: {err:?}"))?;
+            let actual_sha = sha256_hex(&verify_data);
+            if actual_sha != expected_sha {
+                let _ = file_store.delete_file("/store.bak").await;
+                return Err(format!("Checksum mismatch after save. expected={expected_sha} actual={actual_sha}"));
+            }
+
+            Ok(())
+        }
+        .await;
+
+        if let Err(err) = upload_result {
+            cleanup_restore_upload_temp(&framework).await;
+            response = GenericResponse {
+                text: "Backup upload failed".to_string(),
+                error: Some(err),
+            };
+            status_code = StatusCode::BAD_REQUEST;
+        }
+
+        let connection = request.body_connection.finalize().await?;
+        let payload = response.encrypt(&key.borrow());
+        response_writer
+            .write_response(connection, picoserve::response::Response::new(status_code, payload))
+            .await
     }
 }
 
@@ -1068,6 +1303,10 @@ pub struct GenericResponse {
     error: Option<String>,
 }
 encrypted_input!(GenericResponse);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RestoreDeleteDTO {}
+encrypted_input!(RestoreDeleteDTO);
 
 encrypted_input!(StorageConfig);
 
