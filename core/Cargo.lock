@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "SpoolEase"
-version = "0.6.2-b.4"
+version = "0.6.2-b.5"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -1853,7 +1853,6 @@ dependencies = [
 [[package]]
 name = "embedded-sdmmc"
 version = "0.8.0"
-source = "git+https://github.com/yanshay/embedded-sdmmc-rs?branch=yanshay_bisync#3a9c21a6f9caa33301e24ac8fc51e6c7eaefa6f6"
 dependencies = [
  "bisync",
  "byteorder",
@@ -2153,7 +2152,6 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework"
 version = "0.6.3"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.6.3#4a01137d726c3924149d2034283ad828e4a81249"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2227,7 +2225,6 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework-macros"
 version = "0.1.0"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.6.3#4a01137d726c3924149d2034283ad828e4a81249"
 dependencies = [
  "flate2",
  "proc-macro2",

@@ -1,7 +1,7 @@
 [package]
 name = "SpoolEase"
 homepage = "SpoolEase.io"
-version = "0.6.2-b.4"
+version = "0.6.2-b.5"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.88"
@@ -28,6 +28,9 @@ opt-level = 's'
 # esp-hal-app-framework = { path = "../../../esp-hal-app/esp-hal-app-framework/"}
 # esp-hal-app-framework-macros = { path = "../../../esp-hal-app/esp-hal-app-framework-macros/"}
 
+[patch."https://github.com/yanshay/embedded-sdmmc-rs"]
+embedded-sdmmc = { path = "../../../../../../OpenSourceProj/forked/embedded-sdmmc-rs/"}
+
 [patch.crates-io]
 # slint = { git = "https://github.com/slint-ui/slint", rev = "854711dd49215d9ef78ecb43bb3ce03576779a69" }
 # slint-build = { git = "https://github.com/slint-ui/slint", rev = "854711dd49215d9ef78ecb43bb3ce03576779a69" }
@@ -48,10 +51,10 @@ walkdir = "2.5.0"
 
 [dependencies]
 #TODO: Important - lock to specific tag when released
-framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.3", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
-framework_macros = { package = "esp-hal-app-framework-macros", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.3" }
-# framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
-# framework_macros = { package = "esp-hal-app-framework-macros", path = "../../../esp-hal-app/esp-hal-app-framework-macros/" }
+# framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.3", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
+# framework_macros = { package = "esp-hal-app-framework-macros", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.3" }
+framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
+framework_macros = { package = "esp-hal-app-framework-macros", path = "../../../esp-hal-app/esp-hal-app-framework-macros/" }
 esp32s3 = { version = "0.34.0" }
 
 # Esp-Hal Crates

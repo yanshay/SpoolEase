@@ -201,15 +201,30 @@ impl Store {
 
         // now check if store folder exist
         if store_folder_exist {
-            error!("file '/store.bak' exists but '/STORE' folder also exists");
-            view_model.borrow().message_box(
-                "Restore Inventory Notice",
-                "Found '/store.bak' to Restore But '/STORE' Folder Exists",
-                "Remove '/STORE' Folder Manually to Restore or Remove '/store.bak' to Avoid This Message",
-                crate::app::StatusType::Error,
-                0,
-            );
-            return Ok(());
+            let mut store_copy_id = 1;
+            loop {
+                let store_copy_folder_exist = file_store
+                    .dir_exists(&format!("/STORE.{store_copy_id}"))
+                    .await
+                    .map_err(|e| format!("Error checking if '/STORE.{store_copy_id}' exists : {e}"))?;
+                if !store_copy_folder_exist {
+                    break;
+                }
+                store_copy_id += 1;
+            }
+            if let Err(err) = file_store.rename_entry_in_dir("/", "STORE", &format!("STORE.{store_copy_id}")).await {
+                error!("file '/store.bak' exists, '/STORE' folder also exists and couldn't be renamed : {err:?}");
+                view_model.borrow().message_box(
+                    "Restore Inventory Notice",
+                    "Found '/store.bak' and couldn't rename '/STORE' folder ",
+                    "Remove '/STORE' folder manually to restore or remove '/store.bak' to avoid this message",
+                    crate::app::StatusType::Error,
+                    0,
+                );
+                return Ok(());
+            } else {
+                info!("Renamed '/STORE' folder to '/STORE.{store_copy_id}'");
+            }
         }
 
         let backup_data = match file_store.read_file_bytes("/store.bak").await {
@@ -749,8 +764,15 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
     {
         match store.try_restore_from_backup(view_model.clone()).await {
             Ok(_) => (),
-            Err(_) => {
-                term_error!("Inventory Restore started but failed at a critical point, inventory not available");
+            Err(e) => {
+                term_error!("Inventory Restore started but failed at a critical point, inventory not available : {}", e);
+                view_model.borrow().message_box(
+                    "Store Notice",
+                    "Inventory Restore started but failed\nCheck terminal for more info",
+                    &e.to_string(),
+                    crate::app::StatusType::Error,
+                    0,
+                );
                 loop {
                     Timer::after_secs(60).await;
                 }
@@ -768,7 +790,7 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                         term_info!("Loaded spools storage configuration (storage racks)");
                     }
                     Err(err) => {
-                        term_error!("Error loading Spools Storage Configuration (Storage Racks): {}", err);
+                        term_error!("Error loading Spools Storage configuration (storage racks): {}", err);
                         view_model.borrow().message_box(
                             "Store Notice",
                             "Error Loading Storage Configuration",
