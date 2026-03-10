@@ -629,7 +629,7 @@ impl ViewModel {
         let framework = self.framework.clone();
         ui_framework_backend.on_reset_flash_wifi_credentials(move || {
             framework.borrow_mut().erase_stored_wifi_credentials();
-            framework.borrow_mut().reset_device();
+            framework.borrow_mut().reset_device_safer(Some(Duration::from_secs(3)));
         });
 
         let framework = self.framework.clone();
@@ -650,7 +650,7 @@ impl ViewModel {
 
         let framework = self.framework.clone();
         ui_framework_backend.on_reset_device(move || {
-            framework.borrow().reset_device();
+            framework.borrow_mut().reset_device_safer(Some(Duration::from_secs(3)));
         });
 
         // not the OTA used any longer
