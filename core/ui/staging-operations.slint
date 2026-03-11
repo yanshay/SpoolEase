@@ -132,7 +132,7 @@ component OperationSelectionStep inherits Rectangle {
                 MyButton {
                     text: "Erase Tag";
                     clicked => {
-                        AppState.erase-tag-by-spool-id-start(AppState.spool-staging-info.spool-record.id)
+                        AppState.erase-staging-tag();
                     }
                 }
             }

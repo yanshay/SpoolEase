@@ -1,12 +1,14 @@
-use alloc::{string::{String, ToString}, vec::Vec};
-use serde::{Deserialize, Serialize};
 use crate::utils::{deserialize_string_array, serialize_string_array};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     app_config::MATERIALS,
     bambu::{BambuPrinter, bambu_api},
 };
-
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub enum Filament {
@@ -20,7 +22,7 @@ pub struct FilamentInfo {
     pub tray_info_idx: String, // e.g. "GFL99"
     pub tray_type: String,     // e.g. "PLA"
     #[serde(serialize_with = "serialize_string_array", deserialize_with = "deserialize_string_array")]
-    pub tray_color: Vec<String>,    // e.g. "2323F7FF"
+    pub tray_color: Vec<String>, // e.g. "2323F7FF"
     pub nozzle_temp_max: u32,  // e.g. 250
     pub nozzle_temp_min: u32,  // w.g. 190
 }

@@ -1,3 +1,4 @@
+use crate::utils::{deserialize_string_array, serialize_string_array};
 use crate::{
     bambu::{
         NozzleType,
@@ -18,7 +19,6 @@ use shared::utils::{
     deserialize_bool_yn_empty_n, deserialize_f32_base64, deserialize_optional, deserialize_optional_bool_yn, serialize_bool_yn, serialize_f32_base64,
     serialize_optional_bool_yn,
 };
-use crate::utils::{deserialize_string_array, serialize_string_array};
 
 // TODO: think if to change it to get the spoolRecord from store (and it will hold Rc to store)
 #[derive(Debug, Clone, Default)]
@@ -172,14 +172,6 @@ const TAG_URL_PREFIX_S1: &str = "https://tag.spoolease.io/S1/"; // starting 0.6.
 // 8. slicner name (SN)
 // 9. DA
 impl SpoolRecord {
-    pub fn primary_tag_id(&self) -> Option<&str> {
-        self.tag_id.iter().map(String::as_str).find(|tag_id| !tag_id.is_empty())
-    }
-
-    pub fn _primary_color_code(&self) -> Option<&str> {
-        self.color_code.iter().map(String::as_str).find(|color_code| !color_code.is_empty())
-    }
-
     pub fn linked_tag_ids(&self) -> impl Iterator<Item = &str> {
         self.tag_id.iter().map(String::as_str).filter(|tag_id| !tag_id.is_empty())
     }
@@ -226,7 +218,7 @@ impl SpoolRecord {
         ))
     }
     pub fn has_valid_tag_id(&self) -> bool {
-        self.primary_tag_id().is_some()
+        !self.tag_id.is_empty()
     }
 }
 

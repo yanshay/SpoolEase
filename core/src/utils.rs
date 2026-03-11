@@ -1,6 +1,8 @@
-use alloc::{string::{String, ToString}, vec::Vec};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use serde::{Deserialize, Deserializer, Serializer};
-
 
 pub fn serialize_string_array<S>(values: &[String], serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -24,4 +26,3 @@ where
         .map(ToString::to_string)
         .collect())
 }
-

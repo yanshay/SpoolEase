@@ -49,7 +49,7 @@ use crate::bambu::{
     tray::{Tray, TrayBits, TrayState},
 };
 use crate::color_utils::get_color_name;
-use crate::filament_staging::StagingOrigin;
+use crate::filament_staging::{self, StagingOrigin};
 use crate::settings::OTA_TOML_FILENAME;
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleWeight, SpoolScaleObserver};
@@ -550,7 +550,7 @@ impl ViewModel {
             let store = moved_view_model.borrow().store.clone();
             if let Some(spool_id) = &moved_view_model.borrow().recently_added_spool_id
                 && let Some(spool_rec) = store.get_spool_by_id(spool_id)
-                && spool_rec.primary_tag_id().is_none()
+                && !spool_rec.has_valid_tag_id()
             {
                 return spool_id.to_shared_string();
             }
@@ -900,7 +900,7 @@ impl ViewModel {
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_erase_tag_by_spool_id(move |spool_id| moved_view_model.borrow().ui_erase_tag_by_spool_id(spool_id.as_str()));
+            .on_erase_staging_tag(move || moved_view_model.borrow().ui_erase_staging_tag());
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         self.ui_weak
@@ -1351,25 +1351,47 @@ impl ViewModel {
         debug!("{}", text);
     }
 
-    fn ui_erase_tag_by_spool_id(&self, spool_id: &str) -> bool {
-        if let Some(spool_rec) = self.store.get_spool_by_id(spool_id)
-            && spool_rec.has_valid_tag_id()
-            && let Some(tag_id) = spool_rec.primary_tag_id()
-        {
-            self.ui_erase_tag(tag_id);
-            return true;
+    fn ui_erase_staging_tag(&self) -> bool {
+        let filament_staging_borrow = self.filament_staging.borrow();
+        if let Some(spool_rec) = filament_staging_borrow.spool_rec() {
+            if !spool_rec.has_valid_tag_id() {
+                // no tags for this spool
+                error!("Received to erase staging tag when spool is not tagged");
+                let ui = self.ui_weak.unwrap();
+                let ui_app_state: crate::app::AppState<'_> = ui.global::<crate::app::AppState>();
+                ui_app_state.invoke_show_message_box(
+                    "Erase Tag Notice".into(),
+                    slint::format!("Spool {} is not linked to a Tag", spool_rec.id),
+                    SharedString::new(),
+                    crate::app::StatusType::Error,
+                    -1,
+                );
+                false
+            } else if spool_rec.tag_id.len() == 1 {
+                self.ui_erase_tag(&spool_rec.tag_id[0]);
+                true
+            } else if let Some(scanned_tag_id) = filament_staging_borrow.scanned_tag_id() {
+                self.ui_erase_tag(scanned_tag_id);
+                true
+            } else {
+                // error case
+                error!("Received to erase staging tag when which tag is not clear");
+                let ui = self.ui_weak.unwrap();
+                let ui_app_state: crate::app::AppState<'_> = ui.global::<crate::app::AppState>();
+                ui_app_state.invoke_show_message_box(
+                    "Erase Tag Notice".into(),
+                    slint::format!("Can't tell which of Spool {} tags to erase", spool_rec.id),
+                    SharedString::new(),
+                    crate::app::StatusType::Error,
+                    -1,
+                );
+                false
+            }
+        } else {
+            // noh spool in staging ??
+            error!("Unexpected error: Arrived to erase staging tag when no spool in staging");
+            false
         }
-        error!("Received to erase spool's tag with invalid tag id");
-        let ui = self.ui_weak.unwrap();
-        let ui_app_state: crate::app::AppState<'_> = ui.global::<crate::app::AppState>();
-        ui_app_state.invoke_show_message_box(
-            "Erase Tag Notice".into(),
-            slint::format!("No Tag-Id for Spool {}", spool_id),
-            SharedString::new(),
-            crate::app::StatusType::Error,
-            -1,
-        );
-        false
     }
 
     fn ui_erase_tag(&self, tag_id: &str) -> bool {
@@ -1665,7 +1687,6 @@ impl ViewModel {
             slint::format!("{}g", weight_left)
         };
 
-        let spool_tag_id = spool_rec.primary_tag_id().unwrap_or_default().to_string();
         let color_code = spool_rec
             .color_code
             .iter()
@@ -1688,7 +1709,6 @@ impl ViewModel {
             material_subtype: spool_rec.material_subtype.into(),
             note: spool_rec.note.into(),
             slicer_filament: spool_rec.slicer_filament.into(),
-            tag_id: spool_tag_id.into(),
             weight_advertised: spool_rec.weight_advertised.unwrap_or_default(),
             weight_core: spool_rec.weight_core.unwrap_or_default(),
             weight_current: spool_rec.weight_current.unwrap_or_default(),
@@ -3105,7 +3125,7 @@ impl SpoolTagObserver for ViewModel {
                         });
                     }
                 } else if let Ok(encode_cookie) = serde_json::from_str::<LocationEncodeCookie>(cookie) {
-                    debug!(">>>> TODO: Store the tag into DB, descriptor: {_encoded_descriptor}");
+                    debug!(">>>> TODO: Store the tag into DB with Tag Id, descriptor: {_encoded_descriptor}");
                 }
                 if let Ok(spool_tag_borrow) = self.spool_tag_model.try_borrow() {
                     spool_tag_borrow.read_tag();

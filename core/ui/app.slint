@@ -40,7 +40,7 @@ export struct UiTray {
 
 export struct UiSpoolRecord {
     id: string,
-    tag_id: string,
+    // tag_id: string,
     material-type: string,
     material-subtype: string,
     color-name: string,
@@ -173,7 +173,7 @@ export global AppBackend {
     callback can-link-tagged-spool-to-tag(id: string) -> string; // empty if tagged, error text if not
     callback add-v1-tag-to-inventory(tag_id: string, tag_descriptor: string, final-step: bool);
     callback erase-tag(tag_id: string) -> bool;
-    callback erase-tag-by-spool-id(id: string) -> bool;
+    callback erase-staging-tag() -> bool;
     callback untag-slot(tray-id: int);
     callback reset-slot(tray-id: int);
     callback configure-slot-with-spool-id(tray-id: int, spool-id: string);
@@ -633,8 +633,8 @@ export global AppState {
         self.control-state = ControlState.Ready;
     }
 
-    public function erase-tag-by-spool-id-start(spool-id: string) {
-        if AppBackend.erase-tag-by-spool-id(spool-id) {
+    public function erase-staging-tag() {
+        if AppBackend.erase-staging-tag() {
             self.erase-timeout = 15;
             self.control-state = ControlState.Erasing;
             user-message = "Place Spool Tag\nto Erase";

@@ -24,9 +24,9 @@ mod store;
 mod tag_standards;
 mod tag_v1;
 mod types;
+mod utils;
 mod view_model;
 mod web_app;
-mod utils;
 
 use alloc::{format, rc::Rc, string::ToString};
 use core::{cell::RefCell, marker::PhantomData, net::Ipv4Addr};

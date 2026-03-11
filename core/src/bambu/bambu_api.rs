@@ -259,10 +259,16 @@ impl PrintTray {
             if !cols.is_empty() {
                 cols.clone()
             } else {
-                self.tray_color.clone().map(|c| alloc::vec![c]).unwrap_or_else(|| alloc::vec![String::new()])
+                self.tray_color
+                    .clone()
+                    .map(|c| alloc::vec![c])
+                    .unwrap_or_else(|| alloc::vec![String::new()])
             }
         } else {
-            self.tray_color.clone().map(|c| alloc::vec![c]).unwrap_or_else(|| alloc::vec![String::new()])
+            self.tray_color
+                .clone()
+                .map(|c| alloc::vec![c])
+                .unwrap_or_else(|| alloc::vec![String::new()])
         }
     }
 }

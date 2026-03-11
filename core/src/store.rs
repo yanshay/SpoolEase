@@ -365,7 +365,6 @@ impl Store {
         };
 
         if let Some(deleted_record) = deleted_record
-            && deleted_record.primary_tag_id().is_some()
             && let Ok(spool_rec_ext_file_path) = spool_rec_ext_file_path(&deleted_record.id)
         {
             let file_store = self.framework.borrow().file_store();
@@ -671,13 +670,7 @@ impl Store {
                             spool_issues.push_str(&format!("No tag descriptor found for spool {spool_id}, ignoring\n"));
                         }
                     }
-                    Err(err) => {
-                        // TODO: remove this from log/issues - this is completely normal for all untagged spools
-                        if spools_db.records.borrow().get(spool_id.as_str()).unwrap().data.primary_tag_id().is_some() {
-                            error!("Error reading extra data for tagged spool {}, ignoring : {err:?}", spool_id);
-                            spool_issues.push_str(&format!("Error reading extra data for tagged spool {}, ignoring : {err:?}\n", spool_id));
-                        }
-                    }
+                    Err(_err) => (),
                 }
                 // Store anyway, since there were issues with old files that needs to be fixed (writing small file on larger file leave extra in file)
                 // and potentially past versions with missing files
@@ -765,7 +758,10 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
         match store.try_restore_from_backup(view_model.clone()).await {
             Ok(_) => (),
             Err(e) => {
-                term_error!("Inventory Restore started but failed at a critical point, inventory not available : {}", e);
+                term_error!(
+                    "Inventory Restore started but failed at a critical point, inventory not available : {}",
+                    e
+                );
                 view_model.borrow().message_box(
                     "Store Notice",
                     "Inventory Restore started but failed\nCheck terminal for more info",
