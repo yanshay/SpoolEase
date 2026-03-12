@@ -774,11 +774,11 @@ impl ViewModel {
         let moved_framework = self.framework.clone();
         let moved_app_config = self.app_config.clone();
         ui_app_backend.on_web_config_web_app(move || {
-            moved_app_config.borrow_mut().set_redirect_web_to_config();
+            // moved_app_config.borrow_mut().set_redirect_web_to_config();
             let borrowed_framework = moved_framework.borrow();
             let web_config_ip_url = &borrowed_framework.web_config_ip_url;
             let web_config_key = &borrowed_framework.web_config_key;
-            let full_web_config_url = format!("{web_config_ip_url}#sk={web_config_key}");
+            let full_web_config_url = format!("{web_config_ip_url}/config#sk={web_config_key}");
             moved_spool_tag.borrow().emulate_tag(&full_web_config_url);
         });
 
@@ -3295,6 +3295,7 @@ impl FrameworkObserver for ViewModel {
         self.ui_weak.unwrap().global::<crate::app::FrameworkState>().invoke_web_config_stopped();
     }
     fn on_wifi_sta_connected(&self) {
+        self.app_config.borrow_mut().set_redirect_web_to_inventory();
         // self.framework.borrow().check_firmware_ota();
         self.ui_ota_check_firmwares();
     }
@@ -3345,9 +3346,9 @@ impl FrameworkObserver for ViewModel {
 
     fn on_webapp_url_update(&self, ip_url: &str, name_url: Option<&str>, ssid: &str) {
         let final_url = if let Some(name_url) = name_url {
-            &format!("{ip_url} / {name_url}")
+            &format!("{ip_url}/config\n{name_url}/config")
         } else {
-            ip_url
+            &format!("{ip_url}/config")
         };
         self.ui_weak
             .unwrap()

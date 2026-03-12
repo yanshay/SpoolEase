@@ -1,5 +1,13 @@
 import { MyButton } from "widgets.slint";
-import { FrameworkState, FrameworkBackend, OtaState, WebConfigState, ResetWifiCredentialsState, ResetFixedSecurityKeyState, RestartDeviceState } from "framework.slint";
+import {
+    FrameworkState,
+    FrameworkBackend,
+    OtaState,
+    WebConfigState,
+    ResetWifiCredentialsState,
+    ResetFixedSecurityKeyState,
+    RestartDeviceState,
+} from "framework.slint";
 import { Title, LeftTab } from "widgets.slint";
 import { AppBackend } from "../app.slint";
 import { StandardListView } from "std-widgets.slint";
@@ -58,7 +66,8 @@ export component ResetFixedKeyButton inherits SettingsButton {
 }
 
 export component OtaButton inherits SettingsButton {
-    text: "Check & Update Firmware Over Network";// + (FrameworkState.ota-info.newer ? " to \{FrameworkState.ota-info.version}" : "");
+    text: "Check & Update Firmware Over Network";
+    // + (FrameworkState.ota-info.newer ? " to \{FrameworkState.ota-info.version}" : "");
     clicked => {
         FrameworkState.ota-state = OtaState.Checking;
         FrameworkState.ota-clear-message();
@@ -154,7 +163,7 @@ export component FrameworkSettingsDetails inherits Rectangle {
         }
     }
 
-// Reset Fixed Security Key
+    // Reset Fixed Security Key
     if FrameworkState.reset-fixed-security-key-state == ResetFixedSecurityKeyState.UserInput: 
         SettingsConfirm {
         title: "Reset Fixed Security Key";
@@ -168,7 +177,7 @@ export component FrameworkSettingsDetails inherits Rectangle {
         }
     }
 
-// Restart Device
+    // Restart Device
     if FrameworkState.restart-device-state == RestartDeviceState.UserInput: 
         SettingsConfirm {
         title: "Restart Device";
@@ -211,14 +220,14 @@ export component FrameworkSettingsDetails inherits Rectangle {
 
         SettingsButton {
             enabled: FrameworkState.ota-state == OtaState.Failed || FrameworkState.ota-state == OtaState.Completed || FrameworkState.ota-allow-close-during-update;
-            text: "Ok" +  (FrameworkState.ota-allow-close-during-update ? " (Update Will Continue)" : "");
+            text: "Ok" + (FrameworkState.ota-allow-close-during-update ? " (Update Will Continue)" : "");
             clicked => {
                 FrameworkState.ota-state = OtaState.NotStarted;
             }
         }
     }
 
-// Web Config
+    // Web Config
 
     if (FrameworkState.web-config-state == WebConfigState.Started-STA-Displayed || FrameworkState.web-config-state == WebConfigState.Started-AP): web-config := VerticalLayout {
         alignment: stretch;
@@ -231,7 +240,7 @@ export component FrameworkSettingsDetails inherits Rectangle {
             border-width: 1px;
             VerticalLayout {
                 padding: 10px;
-                spacing: 10px;
+                spacing: 6px;
                 preferred-height: 500px;
                 MyText {
                     text: "1. Connect to the WiFi network";
@@ -245,8 +254,14 @@ export component FrameworkSettingsDetails inherits Rectangle {
                     text: "2. Browse to URL" + (FrameworkState.web-config-state == WebConfigState.Started-AP ? " (if not shown automatically)" : " (or scan NFC with your phone)");
                 }
 
-                MyText {
-                    text: "    \{FrameworkState.web-config-url}";
+                VerticalLayout {
+                    height: 45px;
+                    padding-left: 22px;
+                    MyText {
+                        height: parent.height;
+                        horizontal-alignment: left;
+                        text: "\{FrameworkState.web-config-url}";
+                    }
                 }
 
                 MyText {

@@ -401,8 +401,12 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn set_redirect_web_to_config(&mut self) {
+    pub fn _set_redirect_web_to_config(&mut self) {
         self.root_redirect = "/config".to_string();
+    }
+
+    pub fn set_redirect_web_to_inventory(&mut self) {
+        self.root_redirect = "/inventory".to_string();
     }
 
     #[allow(dead_code)]
