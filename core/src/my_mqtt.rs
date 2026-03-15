@@ -18,8 +18,8 @@ use embassy_time::Duration;
 use embassy_time::Timer;
 use embassy_time::with_timeout;
 use embedded_io_async::Write;
-use esp_mbedtls::TlsError;
-use esp_mbedtls::X509;
+use esp_mbedtls::sys::MbedtlsError;
+use esp_mbedtls::{AuthMode, Certificate, ClientSessionConfig, SessionConfig, SessionError, X509};
 use mqttrust::encoding::v4::decode_slice;
 use mqttrust::{
     MqttError, Packet, Subscribe, SubscribeTopic,
@@ -36,14 +36,14 @@ use crate::bambu::PrinterModel;
 #[allow(dead_code)]
 pub enum MyMqttError {
     MqttError(MqttError),
-    TlsError(TlsError),
+    TlsError(SessionError),
     EncodingError(mqttrust::encoding::v4::Error),
     WriteTimeoutError,
     RecvMessageTooLarge(usize),
 }
 
-impl From<TlsError> for MyMqttError {
-    fn from(err: TlsError) -> Self {
+impl From<SessionError> for MyMqttError {
+    fn from(err: SessionError) -> Self {
         MyMqttError::TlsError(err)
     }
 }
@@ -69,7 +69,7 @@ pub struct MyMqtt<'a, T>
 where
     T: embedded_io_async::Read + embedded_io_async::Write,
 {
-    tls: esp_mbedtls::asynch::Session<'a, T>,
+    tls: esp_mbedtls::Session<'a, T>,
     buf: Vec<u8>,
     out_buf: Vec<u8>,
     message_bytes_in_buf: usize,
@@ -81,7 +81,7 @@ impl<'a, T> MyMqtt<'a, T>
 where
     T: embedded_io_async::Read + embedded_io_async::Write,
 {
-    pub fn new(tls: esp_mbedtls::asynch::Session<'a, T>, write_timeout: Duration) -> MyMqtt<'a, T> {
+    pub fn new(tls: esp_mbedtls::Session<'a, T>, write_timeout: Duration) -> MyMqtt<'a, T> {
         MyMqtt {
             tls,
             buf: vec![0u8; INITIAL_MQTT_BUFFER_SIZE],
@@ -463,31 +463,32 @@ pub async fn generic_mqtt_task<
         }
 
         let certificates = if ignore_certificates {
-            esp_mbedtls::Certificates {
+            ClientSessionConfig {
                 ca_chain: None,
-                ..Default::default()
+                auth_mode: AuthMode::None,
+                server_name: Some(servername.as_c_str()),
+                ..ClientSessionConfig::new()
             }
         } else if debug {
-            esp_mbedtls::Certificates {
-                ca_chain: X509::pem(concat!(include_str!("./certs/simulator.pem"), "\0").as_bytes()).ok(),
-                ..Default::default()
+            ClientSessionConfig {
+                ca_chain: Some(
+                    Certificate::new(X509::PEM(
+                        core::ffi::CStr::from_bytes_with_nul(concat!(include_str!("./certs/simulator.pem"), "\0").as_bytes()).unwrap(),
+                    ))
+                    .unwrap(),
+                ),
+                server_name: Some(servername.as_c_str()),
+                ..ClientSessionConfig::new()
             }
         } else {
-            esp_mbedtls::Certificates {
-                ca_chain: X509::pem(bambu_certs[bambu_cert_index]).ok(),
-                ..Default::default()
+            ClientSessionConfig {
+                ca_chain: Some(Certificate::new(X509::PEM(core::ffi::CStr::from_bytes_with_nul(bambu_certs[bambu_cert_index]).unwrap())).unwrap()),
+                server_name: Some(servername.as_c_str()),
+                ..ClientSessionConfig::new()
             }
         };
 
-        let mut session = match esp_mbedtls::asynch::Session::new(
-            socket,
-            esp_mbedtls::Mode::Client {
-                servername: servername.as_c_str(),
-            },
-            esp_mbedtls::TlsVersion::Tls1_2,
-            certificates,
-            tls,
-        ) {
+        let mut session = match esp_mbedtls::Session::new(tls, socket, &SessionConfig::Client(certificates)) {
             Ok(tls_starter) => tls_starter,
             Err(e) => {
                 term_error!("[{}] Error establishing TLS Connection {:?}", printer_log_id, e);
@@ -504,12 +505,14 @@ pub async fn generic_mqtt_task<
         );
 
         if let Err(e) = session.connect().await {
-            if matches!(e, TlsError::MbedTlsError(-9984)) {
-                // certificate error
-                term_error!("[{}] Certificate {bambu_cert_index} rejected {:?}", printer_log_id, e);
-                bambu_cert_index = (bambu_cert_index + 1) % bambu_certs.len();
-            } else {
-                term_error!("[{}] Unexpected error during tls handshake {:?}", printer_log_id, e);
+            match e {
+                SessionError::MbedTls(err) if err == MbedtlsError::new(-9984) => {
+                    term_error!("[{}] Certificate {bambu_cert_index} rejected {:?}", printer_log_id, err);
+                    bambu_cert_index = (bambu_cert_index + 1) % bambu_certs.len();
+                }
+                other => {
+                    term_error!("[{}] Unexpected error during tls handshake {:?}", printer_log_id, other);
+                }
             }
             Timer::after(Duration::from_millis(500)).await;
             continue;

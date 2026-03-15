@@ -15,26 +15,17 @@ overflow-checks = false
 # [patch.crates-io]
 # embassy-time = { git = "https://github.com/embassy-rs/embassy", tag = "embassy-time-v0.5.0" }
 
-[patch.crates-io]
-edge-nal-embassy = { git = "https://github.com/yanshay/edge-net", branch = "yanshay_update-to-embassy-time-0.5.0"}
-edge-dhcp = { git = "https://github.com/yanshay/edge-net", branch = "yanshay_update-to-embassy-time-0.5.0"}
-edge-nal = { git = "https://github.com/yanshay/edge-net", branch = "yanshay_update-to-embassy-time-0.5.0"}
-edge-captive = { git = "https://github.com/yanshay/edge-net", branch = "yanshay_update-to-embassy-time-0.5.0"}
-edge-http = { git = "https://github.com/yanshay/edge-net", branch = "yanshay_update-to-embassy-time-0.5.0"}
-edge-mdns = { git = "https://github.com/yanshay/edge-net", branch = "yanshay_update-to-embassy-time-0.5.0"}
-
 [dependencies]
 serde = { version = "1.0.213", default-features = false, features = [ "derive", "alloc", ] }
 serde_json = { version = "1.0.132", default-features = false, features = [ "alloc", ] }
 serde_with = { version = "3.16.0", default-features = false, features = ["alloc", "macros", "base64", "hashbrown_0_16", "hex"]}
 
 
-framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag="0.6.4", default-features = false, features = ["esp32s3"] }
-# framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", default-features = false, features = ["esp32s3"] }
+framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", default-features = false, features = ["esp32s3"] }
 pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_esp-hal-1.0.0-upgrade", default-features = false }
 # pn532 = { path = "../../../../../../OpenSourceProj/forked/pn532/", default-features = false }
 embassy-time = { version = "0.5.0", features = ["generic-queue-8"] }
-embassy-net = { version = "0.7.1", features = [ "raw", "tcp", "udp", "dhcpv4", "medium-ethernet", "multicast" ] }
+embassy-net = { version = "0.8.0", features = [ "raw", "tcp", "udp", "dhcpv4", "dns", "medium-ethernet", "multicast" ] }
 esp-hal = { version = "1.0.0", features = ["unstable"] }
 embassy-sync = { version = "0.7.2" }
 no_std_io = { version = "0.6.0", default-features = false, features = [ "alloc" ] }
@@ -47,16 +38,14 @@ embassy-executor = { version = "0.9.0", features = ["nightly"] }
 getrandom = { version = "0.2.15", features = ["custom"] }
 hashbrown = { version = "0.16.1", features = ["serde"] }
 snafu = { git = "https://github.com/shepmaster/snafu", rev = "aedc9db8c04a437b4c547efd4d73e9337fa43a4a", default-features = false, features = ["rust_1_81", "alloc"]} # , "backtraces-impl-backtrace-crate"]} 
-esp-mbedtls = { git = "https://github.com/yanshay/esp-mbedtls.git", features = [ "async" ], branch="yanshay_esp-hal-1.0.0-with-session-reuse" }
-#esp-mbedtls = { path = "../../../../../../OpenSourceProj/forked/esp-mbedtls/esp-mbedtls/", features = [ "async" ] }
-#esp-mbedtls = { git = "https://github.com/esp-rs/esp-mbedtls.git", features = [ "async", "esp32s3" ], rev = "5eaa316b5d9a364534cbb6dd353a883e1e9c4716" } # https://github.com/esp-rs/esp-mbedtls/pull/96/commits
+esp-mbedtls = { package = "mbedtls-rs", path = "../../../../../../OpenSourceProj/forked/mbedtls-rs/mbedtls-rs", features = [ "log" ] }
 esp-alloc = { version = "0.9.0" }
 miniz_oxide = { version = "0.8.9", default-features = false }
 url = {version = "2.5.4", default-features = false}
-edge-nal-embassy = "0.7.0"
-edge-nal = { version = "0.5.0" }
-edge-http = { version = "0.6.1" }
-embedded-io-async = { version = "0.6.1" }
+edge-nal-embassy = "0.8.1"
+edge-nal = { version = "0.6.0" }
+edge-http = { version = "0.7.0" }
+embedded-io-async = { version = "0.7" }
 serde-csv-core = "0.3.2"
 hex = {version = "0.4.3", default-features = false, features = ["alloc"]}
 

@@ -76,9 +76,10 @@ pub fn init_api_server(framework: Rc<RefCell<Framework>>, spawner: Spawner) -> &
     };
 
     let config = picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(3)),
-        read_request: Some(Duration::from_secs(3)),
-        write: Some(Duration::from_secs(3)),
+        start_read_request: Duration::from_secs(3),
+        persistent_start_read_request: Duration::from_secs(3),
+        read_request: Duration::from_secs(3),
+        write: Duration::from_secs(3),
     })
     .keep_connection_alive();
 

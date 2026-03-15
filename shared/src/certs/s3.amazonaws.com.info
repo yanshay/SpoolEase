@@ -1,3 +1,5 @@
+// Use only CA cert, not leaf certs, amazon switches even faster than dated
+
 Certificate:
     Data:
         Version: 3 (0x2)

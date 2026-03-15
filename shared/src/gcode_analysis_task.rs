@@ -14,7 +14,7 @@ use embassy_net::{IpAddress, Ipv4Address, tcp::TcpSocket};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, pubsub::PubSubChannel};
 use embassy_time::{Duration, Instant};
 use embedded_io_async::Read;
-use esp_mbedtls::{Certificates, TlsVersion, X509};
+use esp_mbedtls::{Certificate, ClientSessionConfig, X509};
 use framework::{debug, error, info, prelude::Framework};
 use serde::{Deserialize, Serialize};
 use url::{Position, Url};
@@ -296,37 +296,45 @@ async fn fetch_gcode_analysis_task_printer_ftp(
     } else if !VSFTPD {
         (ip, 990)
     } else {
-        (Ipv4Address::new(192, 168, 10, 118), 990)
+        (Ipv4Address::new(192, 168, 10, 86), 990)
     };
 
-    let mut ftps = if !VSFTPD {
-        MyFtps::new(
-            control_socket,
-            tls,
-            ftp_endpoint,
-            serial,
-            // vsftpd
-            // "vsftpd".to_string(),
-            esp_mbedtls::Certificates {
-                ca_chain: None, //esp_mbedtls::X509::pem( concat!(include_str!("../../console/src/certs/bambulab.pem"), "\0").as_bytes(),) .ok(),
-                ..Default::default()
-            },
-        )
+    let server_name = if !VSFTPD {
+        CString::new(serial.as_str()).unwrap()
     } else {
-        MyFtps::new(
-            control_socket,
-            tls,
-            ftp_endpoint,
-            "vsftpd".to_string(),
-            esp_mbedtls::Certificates {
-                ca_chain: X509::pem(
+        CString::new("vsftpd").unwrap()
+    };
+
+    let certificates = if !VSFTPD {
+        None
+        // Some(
+        //     Certificate::new(X509::PEM(
+        //         core::ffi::CStr::from_bytes_with_nul(
+        //             concat!(include_str!(../../console/src/certs/bambulab.pem"), "\0").as_bytes(),
+        //         )
+        //         .unwrap(),
+        //     ))
+        //     .unwrap(),
+        // )
+    } else {
+        Some(
+            Certificate::new(X509::PEM(
+                core::ffi::CStr::from_bytes_with_nul(
                     concat!(include_str!("./certs/vmware-vsftpd.pem"), "\0").as_bytes(),
                 )
-                .ok(),
-                ..Default::default()
-            },
+                .unwrap(),
+            ))
+            .unwrap(),
         )
     };
+
+    let mut ftps = MyFtps::new(
+        control_socket,
+        tls,
+        ftp_endpoint,
+        server_name.as_c_str(),
+        certificates,
+    );
 
     info!("[{printer_log_id}] Connecting to printer ftp");
     match ftps.connect().await {
@@ -429,7 +437,11 @@ async fn fetch_gcode_analysis_task_printer_ftp(
         .start_retrieve_first_of(
             threemf_filenames.as_slice(),
             data_socket,
-            gcode_analysis_request.ftp_memory_save,
+            if !VSFTPD {
+                gcode_analysis_request.ftp_memory_save
+            } else {
+                false
+            },
         )
         .await
     {
@@ -619,24 +631,19 @@ async fn fetch_gcode_analysis_task_cloud_http(
 
     info!("[{printer_log_id}] Resolved DNS for {host_name} {:?}", ips);
 
-    let certificates = Certificates {
-        ca_chain: X509::pem(concat!(include_str!("./certs/s3.amazonaws.com.pem"), "\0").as_bytes())
-            .ok(),
-        ..Default::default()
+    let s3_cert = CString::new(include_str!("./certs/s3.amazonaws.com.pem")).unwrap();
+    let servername = CString::new(host_name).unwrap();
+    let certificates = ClientSessionConfig {
+        ca_chain: Some(Certificate::new(X509::PEM(s3_cert.as_c_str())).unwrap()),
+        server_name: Some(servername.as_c_str()),
+        ..ClientSessionConfig::new()
     };
 
     let mut tcp_buffers_boxed = Box::new(TcpBuffers::<1, 1024, 16384>::new());
     let tcp_buffers = &mut *tcp_buffers_boxed;
     let tcp = Tcp::new(stack, tcp_buffers);
 
-    let servername = CString::new(host_name).unwrap();
-    let tls_connector = Box::new(esp_mbedtls::asynch::TlsConnector::new(
-        tcp,
-        &servername,
-        TlsVersion::Tls1_3,
-        certificates,
-        tls,
-    ));
+    let tls_connector = Box::new(esp_mbedtls::TlsConnector::new(tls, tcp, &certificates));
 
     let IpAddress::Ipv4(addr) = ips[0] else {
         error!("Unsupported reply from Dns");

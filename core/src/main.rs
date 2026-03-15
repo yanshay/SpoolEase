@@ -5,7 +5,7 @@
 #![feature(impl_trait_in_assoc_type)]
 #![no_main]
 #![feature(associated_type_defaults)]
-#![recursion_limit = "256"] // due to picoserve complex types & embassy
+#![recursion_limit = "512"] // due to picoserve complex types & embassy
 
 mod api_app;
 mod api_server;
@@ -56,7 +56,7 @@ use esp_hal::{
     dma_buffers,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
     psram::PsramConfig,
-    rng::Rng,
+    rng::{Rng, Trng, TrngSource},
     rtc_cntl::Rtc,
     spi::{self, master::Spi},
     time::Rate,
@@ -130,7 +130,9 @@ async fn main(spawner: Spawner) {
 
     // == Create Tls ==================================================================
 
-    let tls = mk_static!(Tls<'static>, Tls::new(peripherals.SHA).unwrap().with_hardware_rsa(peripherals.RSA));
+    let _trng_source = TrngSource::new(peripherals.RNG, peripherals.ADC1);
+    let tls_rng = mk_static!(Trng, Trng::try_new().unwrap());
+    let tls = mk_static!(Tls<'static>, Tls::new(tls_rng).unwrap());
     tls.set_debug(0);
 
     // == Initialize Embassy ==========================================================
@@ -437,9 +439,10 @@ async fn main(spawner: Spawner) {
     // Especially the write. Sometimes there is a failure to write back, and if the timeout is not set the connection hangs and no longer available
     // After several like that no listeners are available any longer
     let config = picoserve::Config::new(picoserve::Timeouts {
-        start_read_request: Some(Duration::from_secs(3)),
-        read_request: Some(Duration::from_secs(1)),
-        write: Some(Duration::from_secs(1)),
+        start_read_request: Duration::from_secs(3),
+        persistent_start_read_request: Duration::from_secs(3),
+        read_request: Duration::from_secs(1),
+        write: Duration::from_secs(1),
     })
     .keep_connection_alive();
 
@@ -459,8 +462,13 @@ async fn main(spawner: Spawner) {
     yield_now().await;
     yield_now().await;
     yield_now().await;
+
+    let mac: [u8;6] = esp_hal::efuse::Efuse::mac_address();
+    let mac_hex = alloc::format!("{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                      mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     term_info!("Booting from partition {}", boot_partition);
     term_info!("Firmware: {} version {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
+    term_info!("Device {}", mac_hex);
 
     if sdcard_available {
         term_info!("SD Card installed");

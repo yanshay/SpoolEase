@@ -1,13 +1,14 @@
 use core::cmp::min;
 
-use alloc::ffi::CString;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+use core::ffi::CStr;
 use embassy_net::{IpAddress, IpEndpoint, Ipv4Address, tcp::TcpSocket};
 use esp_alloc::HeapStats;
-use esp_mbedtls::asynch::Session;
-use esp_mbedtls::{Certificates, Mode, TlsError, TlsReference, TlsVersion};
+use esp_mbedtls::{
+    AuthMode, Certificate, ClientSessionConfig, Session, SessionConfig, SessionError, TlsReference,
+};
 use framework::{debug, info};
 use snafu::prelude::*;
 
@@ -52,8 +53,8 @@ where
     control_socket: Option<TcpSocket<'a>>,
     tls: TlsReference<'a>,
     ftp_endpoint: T,
-    server_name: String,
-    server_certs: Certificates<'a>,
+    server_name_cstr: &'a CStr,
+    server_ca_chain: Option<Certificate<'a>>,
     control_session: Option<Session<'a, TcpSocket<'a>>>,
     data_session: Option<Session<'a, TcpSocket<'a>>>,
     left_to_retrieve: Option<usize>,
@@ -67,8 +68,8 @@ pub enum Error {
         source: DebugWrap<embassy_net::tcp::ConnectError>,
     },
     Tls {
-        #[snafu(source(from(TlsError, DebugWrap)))]
-        source: DebugWrap<TlsError>,
+        #[snafu(source(from(SessionError, DebugWrap)))]
+        source: DebugWrap<SessionError>,
     },
     Usage {
         reason: String,
@@ -89,8 +90,8 @@ where
         control_socket: TcpSocket<'a>,
         tls: TlsReference<'a>,
         ftp_endpoint: T,
-        server_name: String,
-        server_certs: Certificates<'a>,
+        server_name_cstr: &'a CStr,
+        server_ca_chain: Option<Certificate<'a>>,
     ) -> MyFtps<'a, T>
     where
         T: Into<IpEndpoint> + Clone,
@@ -99,8 +100,8 @@ where
             control_socket: Some(control_socket),
             tls,
             ftp_endpoint,
-            server_name,
-            server_certs,
+            server_name_cstr,
+            server_ca_chain,
             control_session: None,
             data_session: None,
             left_to_retrieve: None,
@@ -117,19 +118,25 @@ where
             .context(ConnectSnafu)?;
 
         info!("Connected to ftp");
-        let server_name = CString::new(self.server_name.clone()).unwrap();
+        let auth_mode = if self.server_ca_chain.is_some() {
+            AuthMode::Required
+        } else {
+            AuthMode::None
+        };
+        let session_config = ClientSessionConfig {
+            ca_chain: self.server_ca_chain.clone(),
+            auth_mode,
+            server_name: Some(self.server_name_cstr),
+            ..ClientSessionConfig::new()
+        };
 
         let control_socket = self.control_socket.take().unwrap();
 
         info!("Establishing TLS connection with ftp...");
         let mut session = Session::new(
-            control_socket,
-            Mode::Client {
-                servername: server_name.as_c_str(),
-            },
-            TlsVersion::Tls1_2,
-            self.server_certs,
             self.tls,
+            control_socket,
+            &SessionConfig::Client(session_config),
         )
         .context(TlsSnafu)?;
 
@@ -204,7 +211,10 @@ where
     where
         'b: 'a,
     {
+        // inject this to test VSFTPD - this file is there not in the root: 
+        // let paths = &[String::from("Cube + Cube.3mf")]; // TODO:  remove !!!!!
         debugex!(">>>> Ftp start_retrieve");
+        debugex!(">>>> memory_save = {}", memory_save);
         if self.control_session.is_none() {
             return Err(Error::Usage {
                 reason: "Can't start_retrieve w/o an open control channel".to_string(),
@@ -278,6 +288,7 @@ where
             .unwrap()
             .get_mbedtls_session()
             .context(TlsSnafu)?; // can unwrap since testing at fn start control_session is available
+        debugex!(">>> Got reused_session");
 
         if memory_save {
             self.close().await?;
@@ -287,15 +298,21 @@ where
         let stats: HeapStats = esp_alloc::HEAP.stats();
         debug!("2. {}", stats);
 
-        let server_name = CString::new(self.server_name.clone()).unwrap();
+        let auth_mode = if self.server_ca_chain.is_some() {
+            AuthMode::Required
+        } else {
+            AuthMode::None
+        };
+        let session_config = ClientSessionConfig {
+            ca_chain: self.server_ca_chain.clone(),
+            auth_mode,
+            server_name: Some(self.server_name_cstr),
+            ..ClientSessionConfig::new()
+        };
         let mut data_session = Session::new(
-            data_socket,
-            Mode::Client {
-                servername: server_name.as_c_str(),
-            },
-            TlsVersion::Tls1_2,
-            self.server_certs,
             self.tls,
+            data_socket,
+            &SessionConfig::Client(session_config),
         )
         .context(TlsSnafu)?;
 
@@ -303,6 +320,8 @@ where
             .connect_reuse(&reused_session)
             .await
             .context(TlsSnafu)?;
+
+        debugex!(">>>> Connected using reused session");
 
         let stats: HeapStats = esp_alloc::HEAP.stats();
         debug!("3. {}", stats);
