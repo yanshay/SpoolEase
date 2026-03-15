@@ -7,6 +7,8 @@
 #![feature(associated_type_defaults)]
 #![recursion_limit = "256"] // due to picoserve complex types & embassy
 
+mod api_app;
+mod api_server;
 mod app;
 mod app_config;
 mod app_ota;
@@ -69,14 +71,14 @@ use framework::{
 };
 
 use app_config::AppConfig;
-use settings::WEB_SERVER_NUM_LISTENERS;
 use settings::{AP_ADDR, MAX_NUM_PRINTERS};
+use settings::{API_SERVER_NUM_LISTENERS, WEB_SERVER_NUM_LISTENERS};
 use settings::{
     OTA_DOMAIN, OTA_PATH, OTA_TOML_FILENAME, WEB_APP_DOMAIN, WEB_APP_KEY_DERIVATION_ITERATIONS, WEB_APP_SALT, WEB_APP_SECURITY_KEY_LENGTH,
     WEB_SERVER_CAPTIVE, WEB_SERVER_HTTPS, WEB_SERVER_PORT, WEB_SERVER_TLS_CERTIFICATE, WEB_SERVER_TLS_PRIVATE_KEY,
 };
 use web_app::{ConsoleAppState, NestedAppBuilder};
-const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + 1 + MAX_NUM_PRINTERS + FRAMEWORK_STA_STACK_RESOURCES; // web-config listeners + USDP + mqtt*num-of-printers + from framework: potentially https captive +  ota + captive dns + ? initial firmware check if doen't complete
+const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + API_SERVER_NUM_LISTENERS + 1 + MAX_NUM_PRINTERS + FRAMEWORK_STA_STACK_RESOURCES; // web-config listeners + api server listeners + USDP + mqtt*num-of-printers + from framework: potentially https captive + ota + captive dns + ? initial firmware check if doen't complete
 const AP_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + FRAMEWORK_AP_STACK_RESOURCES;
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -450,6 +452,8 @@ async fn main(spawner: Spawner) {
         spawner.spawn_heap(web_server_task(web_server_runner, id)).unwrap();
     }
 
+    let api_server = api_server::init_api_server(framework.clone(), spawner);
+
     // yields for term initialization to complete until term is fixed to not require this
     yield_now().await;
     yield_now().await;
@@ -482,6 +486,7 @@ async fn main(spawner: Spawner) {
 
     Framework::wait_for_wifi(&framework).await; // this is mostly to start the web app after all tasks initialized and won't miss this start message
     framework.borrow_mut().start_web_app(sta_stack, framework::framework::WebConfigMode::STA);
+    api_server.start(sta_stack);
 
     loop {
         Timer::after(Duration::from_secs(60)).await;
