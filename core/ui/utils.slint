@@ -1,4 +1,8 @@
 export global Utils {
+    property <float> contrast-threshold: 3.0;
+    property <color> checker-light: #ccccccff;
+    property <color> checker-dark: #ffffffff;
+
     public pure function double(x: int) -> int {
         return x * 2;
     }
@@ -8,7 +12,7 @@ export global Utils {
     }
 
     function luminance (c: color) -> float {
-            return (0.2126*norm_c(c.red)+0.7152*norm_c(c.green)+0.0722*norm_c(c.blue));
+        return (0.2126*norm_c(c.red/255.0)+0.7152*norm_c(c.green/255.0)+0.0722*norm_c(c.blue/255.0));
     }
     function contrast_ratio(l1: float, l2: float) -> float {
       return l2<l1 ? (l1+0.05)/(l2+0.05) : (l2+0.05)/(l1+0.05);
@@ -19,10 +23,6 @@ export global Utils {
 
     function contrast_white(c:color) -> float {
       return contrast_ratio(luminance(c), luminance(#ffffff));
-    }
-
-    public pure function contrasting_color(c: color) -> color {
-        return contrast_white(c) >= 4.5 ? #ffffff : #000000;
     }
 
     function contrast_ratio_with_black(l: float) -> float {
@@ -39,15 +39,15 @@ export global Utils {
 
     function composited_luminance(fg: color, bg: color) -> float {
         let a = fg.alpha / 255.0;
-        let r = fg.red * a + bg.red * (1.0 - a);
-        let g = fg.green * a + bg.green * (1.0 - a);
-        let b = fg.blue * a + bg.blue * (1.0 - a);
+        let r = (fg.red/255.0) * a + (bg.red/255.0) * (1.0 - a);
+        let g = (fg.green/255.0) * a + (bg.green/255.0) * (1.0 - a);
+        let b = (fg.blue/255.0) * a + (bg.blue/255.0) * (1.0 - a);
         return luminance_from_channels(r, g, b);
     }
 
     public pure function contrasting_color_on_checker(c: color, checker-light: color, checker-dark: color) -> color {
         if c.alpha >= 225 {
-            return contrast_white(c) >= 4.5 ? #ffffff : #000000;
+            return contrast_white(c) >= contrast-threshold ? #ffffff : #000000;
         }
         if c.alpha <= 30 {
             return #000000;
@@ -60,6 +60,10 @@ export global Utils {
         let black_worst = Math.min(contrast_ratio_with_black(lum_on_light), contrast_ratio_with_black(lum_on_dark));
 
         return black_worst >= white_worst ? #000000 : #ffffff;
+    }
+
+    public pure function contrasting_color(c: color) -> color {
+        return contrasting_color_on_checker(c, checker-light, checker-dark);
     }
 
 }

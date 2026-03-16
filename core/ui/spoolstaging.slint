@@ -67,7 +67,7 @@ export component SpoolStaging inherits Rectangle {
                     background: AppState.spool-staging-info.color;
                 }
 
-                if AppState.spool-staging-state != SpoolStagingState.Empty && staging-color-count > 0: HorizontalLayout {
+                if AppState.spool-staging-state != SpoolStagingState.Empty && staging-color-count > 1: HorizontalLayout {
                     width: parent.width;
                     height: parent.height;
                     spacing: 0px;
@@ -116,7 +116,7 @@ export component SpoolStaging inherits Rectangle {
                     }
                 }
 
-                if AppState.spool-staging-state != SpoolStagingState.Empty && staging-color-count == 0: VerticalLayout {
+                if AppState.spool-staging-state != SpoolStagingState.Empty && staging-color-count == 1: VerticalLayout {
                     alignment: space-around;
                     padding-top: 8px;
                     padding-bottom: 8px;
