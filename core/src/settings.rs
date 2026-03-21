@@ -31,3 +31,13 @@ pub const OTA_TOML_FILENAME: &str = "ota.toml";
 pub const CONSOLE_STABLE_OTA_PATH: &str = "/bins/0.6/console/ota/";
 pub const CONSOLE_UNSTABLE_OTA_PATH: &str = "/bins/0.6/console/ota-unstable/";
 pub const CONSOLE_DEBUG_OTA_PATH: &str = "/bins/0.6/console/debug/";
+
+#[cfg(feature = "jc8048w550c")]
+pub const DISPLAY_WIDTH_PX: u32 = 800;
+#[cfg(feature = "jc8048w550c")]
+pub const DISPLAY_HEIGHT_PX: u32 = 480;
+
+#[cfg(feature = "wt32-sc01-plus")]
+pub const DISPLAY_WIDTH_PX: u32 = 480;
+#[cfg(feature = "wt32-sc01-plus")]
+pub const DISPLAY_HEIGHT_PX: u32 = 320;

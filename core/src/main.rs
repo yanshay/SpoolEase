@@ -5,6 +5,8 @@
 #![feature(impl_trait_in_assoc_type)]
 #![no_main]
 #![feature(associated_type_defaults)]
+#![feature(generic_const_exprs)]
+#![allow(incomplete_features)]
 #![recursion_limit = "512"] // due to picoserve complex types & embassy
 
 mod api_app;
@@ -30,10 +32,10 @@ mod utils;
 mod view_model;
 mod web_app;
 
-use alloc::{format, rc::Rc, string::ToString};
-use core::{cell::RefCell, marker::PhantomData, net::Ipv4Addr};
+use alloc::{boxed::Box, format, rc::Rc, string::ToString, vec};
+use core::{alloc::Layout, cell::RefCell, marker::PhantomData, net::Ipv4Addr};
 use embassy_futures::yield_now;
-use esp_alloc::{self as _, HeapStats};
+use esp_alloc::{self as _, ExternalMemory, HeapStats};
 use esp_backtrace as _;
 use esp_hal_ota::Ota;
 use esp_mbedtls::Tls;
@@ -55,7 +57,7 @@ use esp_hal::{
     dma::DmaTxBuf,
     dma_buffers,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
-    psram::PsramConfig,
+    psram::{PsramConfig, SpiTimingConfigCoreClock},
     rng::{Rng, Trng, TrngSource},
     rtc_cntl::Rtc,
     spi::{self, master::Spi},
@@ -67,7 +69,17 @@ use framework::prelude::*;
 use framework::{
     RNG,
     framework::FrameworkSettings,
+};
+
+#[cfg(feature = "wt32-sc01-plus")]
+use framework::{
     wt32_sc01_plus::{WT32SC01Plus, WT32SC01PlusDisplayPeripherals, WT32SC01PlusRunner, WT32SC01PlusSDCardPeripherals},
+};
+
+#[cfg(feature = "jc8048w550c")]
+use framework::{
+    gt9x_adapter::Gt9xAdapterConfig,
+    jc8048w550c::{Jc8048w550c, Jc8048w550cDisplayPeripherals, Jc8048w550cFrameBuffers, Jc8048w550cRunner, Jc8048w550cSDCardPeripherals},
 };
 
 use app_config::AppConfig;
@@ -115,11 +127,17 @@ async fn main(spawner: Spawner) {
 
     info!("Using PSRAM start: {start:x?} size: {size}");
 
-    // Second, reserve from 'standard' area, if need additional memory for esp-wifi/esp-mbedtls, need to increase this
-    esp_alloc::heap_allocator!(size: 116 * 1024);
-
     // Last, reserve DRAM2 area (area used by bootloader during boot)
     esp_alloc::heap_allocator!(#[esp_hal::ram(reclaimed)] size: 64*1024); // 72kb in new memory.x ?
+
+    // Second, reserve from 'standard' area, if need additional memory for esp-wifi/esp-mbedtls, need to increase this
+
+    #[cfg(feature = "wt32-sc01-plus")]
+    esp_alloc::heap_allocator!(size: 116 * 1024);
+
+    // rgb-display rows set to 16, so required rouchly 60kb (bounce buffers + descriptors)
+    #[cfg(feature = "jc8048w550c")]
+    esp_alloc::heap_allocator!(size: 60 * 1024);
 
     spawner.spawn_heap(heap_stats_task()).ok();
 
@@ -235,42 +253,125 @@ async fn main(spawner: Spawner) {
 
     // == Setup Display Interface =====================================================
 
-    let display_peripherals = WT32SC01PlusDisplayPeripherals {
-        GPIO47: peripherals.GPIO47,
-        GPIO0: peripherals.GPIO0,
-        GPIO45: peripherals.GPIO45,
-        GPIO4: peripherals.GPIO4,
-        LCD_CAM: peripherals.LCD_CAM,
-        GPIO9: peripherals.GPIO9,
-        GPIO46: peripherals.GPIO46,
-        GPIO3: peripherals.GPIO3,
-        GPIO8: peripherals.GPIO8,
-        GPIO18: peripherals.GPIO18,
-        GPIO17: peripherals.GPIO17,
-        GPIO16: peripherals.GPIO16,
-        GPIO15: peripherals.GPIO15,
-        LEDC: peripherals.LEDC,
-        GPIO5: peripherals.GPIO5,
-        GPIO6: peripherals.GPIO6,
-        GPIO7: peripherals.GPIO7,
-        DMA_CHx: peripherals.DMA_CH0,
-        I2Cx: peripherals.I2C0,
+    #[cfg(feature = "wt32-sc01-plus")]
+    let (display, runner, sdcard_device) = {
+        let display_peripherals = WT32SC01PlusDisplayPeripherals {
+            GPIO47: peripherals.GPIO47,
+            GPIO0: peripherals.GPIO0,
+            GPIO45: peripherals.GPIO45,
+            GPIO4: peripherals.GPIO4,
+            LCD_CAM: peripherals.LCD_CAM,
+            GPIO9: peripherals.GPIO9,
+            GPIO46: peripherals.GPIO46,
+            GPIO3: peripherals.GPIO3,
+            GPIO8: peripherals.GPIO8,
+            GPIO18: peripherals.GPIO18,
+            GPIO17: peripherals.GPIO17,
+            GPIO16: peripherals.GPIO16,
+            GPIO15: peripherals.GPIO15,
+            LEDC: peripherals.LEDC,
+            GPIO5: peripherals.GPIO5,
+            GPIO6: peripherals.GPIO6,
+            GPIO7: peripherals.GPIO7,
+            DMA_CHx: peripherals.DMA_CH0,
+            I2Cx: peripherals.I2C0,
+        };
+
+        let sdcard_peripherals = WT32SC01PlusSDCardPeripherals {
+            // SDCard
+            GPIO38: peripherals.GPIO38,
+            GPIO39: peripherals.GPIO39,
+            GPIO40: peripherals.GPIO40,
+            GPIO41: peripherals.GPIO41,
+            SPIx: peripherals.SPI3,
+            DMA_CHx: peripherals.DMA_CH2,
+        };
+
+        let display_orientation = mipidsi::options::Orientation::new()
+            .rotate(mipidsi::options::Rotation::Deg270)
+            .flip_horizontal();
+
+        WT32SC01Plus::new(display_peripherals, sdcard_peripherals, display_orientation, framework.clone())
     };
 
-    let sdcard_peripherals = WT32SC01PlusSDCardPeripherals {
-        // SDCard
-        GPIO38: peripherals.GPIO38,
-        GPIO39: peripherals.GPIO39,
-        GPIO40: peripherals.GPIO40,
-        GPIO41: peripherals.GPIO41,
-        SPIx: peripherals.SPI3,
-        DMA_CHx: peripherals.DMA_CH2,
+    #[cfg(feature = "jc8048w550c")]
+    let (display, runner, sdcard_device) = {
+        const JC_DISP_FRAME_BYTES: usize = 800 * 480 * 2;
+        let frame_buffer_a: &'static mut [u8] = unsafe {
+            let layout = core::alloc::Layout::from_size_align(JC_DISP_FRAME_BYTES, 128)
+                .expect("Invalid frame buffer layout");
+            let ptr = esp_alloc::HEAP.alloc_caps(esp_alloc::MemoryCapability::External.into(), layout);
+            if ptr.is_null() {
+                panic!("Failed to allocate external PSRAM frame buffer A");
+            }
+            core::slice::from_raw_parts_mut(ptr, JC_DISP_FRAME_BYTES)
+        };
+        let frame_buffer_b: &'static mut [u8] = unsafe {
+            let layout = core::alloc::Layout::from_size_align(JC_DISP_FRAME_BYTES, 128)
+                .expect("Invalid frame buffer layout");
+            let ptr = esp_alloc::HEAP.alloc_caps(esp_alloc::MemoryCapability::External.into(), layout);
+            if ptr.is_null() {
+                panic!("Failed to allocate external PSRAM frame buffer B");
+            }
+            core::slice::from_raw_parts_mut(ptr, JC_DISP_FRAME_BYTES)
+        };
+
+        let display_peripherals = Jc8048w550cDisplayPeripherals {
+            LCD_CAM: peripherals.LCD_CAM,
+            DMA_CH_DPI: peripherals.DMA_CH2,
+            DMA_CH_M2M: peripherals.DMA_CH0,
+            SPI_M2M: peripherals.SPI2,
+            LEDC: peripherals.LEDC,
+            I2Cx: peripherals.I2C0,
+
+            GPIO41: peripherals.GPIO41,
+            GPIO39: peripherals.GPIO39,
+            GPIO40: peripherals.GPIO40,
+            GPIO42: peripherals.GPIO42,
+            GPIO8: peripherals.GPIO8,
+            GPIO3: peripherals.GPIO3,
+            GPIO46: peripherals.GPIO46,
+            GPIO9: peripherals.GPIO9,
+            GPIO1: peripherals.GPIO1,
+            GPIO5: peripherals.GPIO5,
+            GPIO6: peripherals.GPIO6,
+            GPIO7: peripherals.GPIO7,
+            GPIO15: peripherals.GPIO15,
+            GPIO16: peripherals.GPIO16,
+            GPIO4: peripherals.GPIO4,
+            GPIO45: peripherals.GPIO45,
+            GPIO48: peripherals.GPIO48,
+            GPIO47: peripherals.GPIO47,
+            GPIO21: peripherals.GPIO21,
+            GPIO14: peripherals.GPIO14,
+
+            GPIO2: peripherals.GPIO2,
+
+            GPIO19: peripherals.GPIO19,
+            GPIO20: peripherals.GPIO20,
+            GPIO38: peripherals.GPIO38,
+        };
+
+        let sdcard_peripherals = Jc8048w550cSDCardPeripherals {
+            // SDCard
+            GPIO10: peripherals.GPIO10,
+            GPIO11: peripherals.GPIO11,
+            GPIO12: peripherals.GPIO12,
+            GPIO13: peripherals.GPIO13,
+            SPIx: peripherals.SPI3,
+            DMA_CHx: peripherals.DMA_CH1,
+        };
+
+        let touch_config = Gt9xAdapterConfig::default();
+        Jc8048w550c::new(
+            display_peripherals,
+            sdcard_peripherals,
+            Jc8048w550cFrameBuffers::Double(frame_buffer_a, frame_buffer_b),
+            touch_config,
+            framework.clone(),
+        )
     };
 
-    let display_orientation = mipidsi::options::Orientation::new()
-        .rotate(mipidsi::options::Rotation::Deg270)
-        .flip_horizontal();
-    let (display, runner, sdcard_device) = WT32SC01Plus::new(display_peripherals, sdcard_peripherals, display_orientation, framework.clone());
 
     spawner.spawn(display_runner(runner)).ok();
     let _ = display.wait_init_done().await; // important to wait for init stage to complete before moving on
@@ -343,7 +444,7 @@ async fn main(spawner: Spawner) {
     debug!("Setting up Wifi");
 
     spawner
-        .spawn_heap(framework::wifi::connection_task_inner(
+        .spawn(framework::wifi::connection_task(
             controller,
             sta_stack,
             ap_stack,
@@ -364,35 +465,42 @@ async fn main(spawner: Spawner) {
 
     // PN532
 
-    let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(64);
-    let spi_dma_rx_buf = esp_hal::dma::DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
-    let spi_dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
-    let pn532_irq = Input::new(peripherals.GPIO14, InputConfig::default().with_pull(Pull::None));
+    #[cfg(feature = "wt32-sc01-plus")]
+    let (pn532_spi_device, pn532_irq) = {
+        let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(64);
+        let spi_dma_rx_buf = esp_hal::dma::DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
+        let spi_dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
+        let pn532_irq = Input::new(peripherals.GPIO14, InputConfig::default().with_pull(Pull::None));
 
-    let sck = peripherals.GPIO13;
-    let mosi = Output::new(peripherals.GPIO11, Level::High, OutputConfig::default());
-    let miso = peripherals.GPIO12;
-    let cs = Output::new(peripherals.GPIO10, Level::High, OutputConfig::default());
+        let sck = peripherals.GPIO13;
+        let mosi = Output::new(peripherals.GPIO11, Level::High, OutputConfig::default());
+        let miso = peripherals.GPIO12;
+        let cs = Output::new(peripherals.GPIO10, Level::High, OutputConfig::default());
 
-    let spi = Spi::new(
-        peripherals.SPI2,
-        esp_hal::spi::master::Config::default()
-            .with_frequency(Rate::from_khz(200)) // Start with 200Khz, raise later (see in ViewModel spool_tag_model initialization)
-            .with_mode(spi::Mode::_0)
-            .with_read_bit_order(spi::BitOrder::LsbFirst)
-            .with_write_bit_order(spi::BitOrder::LsbFirst),
-    )
-    .unwrap()
-    .with_sck(sck)
-    .with_mosi(mosi)
-    .with_miso(miso)
-    // .with_cs(cs) // cs is handled by the ExclusiveDevice
-    // .with_dma(spi_dma_channel.configure(false, esp_hal::dma::DmaPriority::Priority0))
-    .with_dma(peripherals.DMA_CH1)
-    .with_buffers(spi_dma_rx_buf, spi_dma_tx_buf)
-    .into_async();
+        let spi = Spi::new(
+            peripherals.SPI2,
+            esp_hal::spi::master::Config::default()
+                .with_frequency(Rate::from_khz(200)) // Start with 200Khz, raise later (see in ViewModel spool_tag_model initialization)
+                .with_mode(spi::Mode::_0)
+                .with_read_bit_order(spi::BitOrder::LsbFirst)
+                .with_write_bit_order(spi::BitOrder::LsbFirst),
+        )
+        .unwrap()
+        .with_sck(sck)
+        .with_mosi(mosi)
+        .with_miso(miso)
+        // .with_cs(cs) // cs is handled by the ExclusiveDevice
+        // .with_dma(spi_dma_channel.configure(false, esp_hal::dma::DmaPriority::Priority0))
+        .with_dma(peripherals.DMA_CH1)
+        .with_buffers(spi_dma_rx_buf, spi_dma_tx_buf)
+        .into_async();
 
-    let pn532_spi_device = embedded_hal_bus::spi::ExclusiveDevice::new(spi, cs, embassy_time::Delay).unwrap();
+        let pn532_spi_device = embedded_hal_bus::spi::ExclusiveDevice::new(spi, cs, embassy_time::Delay).unwrap();
+        (Some(pn532_spi_device), Some(pn532_irq))
+    };
+
+    #[cfg(feature = "jc8048w550c")]
+    let (pn532_spi_device, pn532_irq) = (None, None);
 
     // == Configure App ===============================================================
     // This initializes all the applicative stuff, and is provided with all the required hw access
@@ -506,8 +614,22 @@ async fn web_server_task(runner: &'static framework::web_server::WebAppRunner<Co
     runner.run(id).await;
 }
 
+#[cfg(feature = "wt32-sc01-plus")]
 #[embassy_executor::task]
 pub async fn display_runner(mut runner: WT32SC01PlusRunner<esp_hal::peripherals::DMA_CH0<'static>, esp_hal::peripherals::I2C0<'static>>) {
+    runner.run().await;
+}
+
+#[cfg(feature = "jc8048w550c")]
+#[embassy_executor::task]
+pub async fn display_runner(
+    mut runner: Jc8048w550cRunner<
+        esp_hal::peripherals::DMA_CH2<'static>,
+        esp_hal::peripherals::DMA_CH0<'static>,
+        esp_hal::peripherals::SPI2<'static>,
+        esp_hal::peripherals::I2C0<'static>,
+    >,
+) {
     runner.run().await;
 }
 

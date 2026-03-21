@@ -50,7 +50,7 @@ use crate::bambu::{
 };
 use crate::color_utils::get_color_name;
 use crate::filament_staging::{self, StagingOrigin};
-use crate::settings::OTA_TOML_FILENAME;
+use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleWeight, SpoolScaleObserver};
 use crate::ssdp::{SSDPPubSubChannel, ssdp_task};
@@ -69,15 +69,16 @@ use shared::spool_tag::{self, SpoolTagObserver, Status, TAG_PLACEHOLDER};
 #[allow(dead_code)]
 const EXTRA_DEBUG: bool = false;
 
-const TITLE_CHECKERBOARD_WIDTH: u32 = 480;
+const TRAYS_SPACING: u32 = 5; // from app.slint AppConsts
+const TITLE_CHECKERBOARD_WIDTH: u32 = DISPLAY_WIDTH_PX;
 const TITLE_CHECKERBOARD_HEIGHT: u32 = 40;
 const TITLE_CHECKER_CELL_W: u32 = 8;
 const TITLE_CHECKER_CELL_H: u32 = 8;
-const COLOR_CHECKERBOARD_WIDTH: u32 = 92;
-const COLOR_CHECKERBOARD_HEIGHT: u32 = 160;
+const COLOR_CHECKERBOARD_WIDTH: u32 = (DISPLAY_WIDTH_PX - 4 * TRAYS_SPACING)/5;
+const COLOR_CHECKERBOARD_HEIGHT: u32 = if DISPLAY_HEIGHT_PX == 480 { 210 } else { 160 };
 const COLOR_CHECKER_CELL_W: u32 = 6;
 const COLOR_CHECKER_CELL_H: u32 = 6;
-const AMS_COLOR_CHECKERBOARD_WIDTH: u32 = 92;
+const AMS_COLOR_CHECKERBOARD_WIDTH: u32 = (DISPLAY_WIDTH_PX - 4 * TRAYS_SPACING)/5;
 const AMS_COLOR_CHECKERBOARD_HEIGHT: u32 = 40;
 const AMS_COLOR_CHECKER_CELL_W: u32 = 6;
 const AMS_COLOR_CHECKER_CELL_H: u32 = 6;
@@ -284,8 +285,8 @@ impl ViewModel {
         // Application
         app_config: Rc<RefCell<AppConfig>>,
         // bambu_printer_model: Rc<RefCell<bambu::BambuPrinter>>,
-        spi_device: ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
-        irq: esp_hal::gpio::Input<'static>,
+        spi_device: Option<ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>>,
+        irq: Option<esp_hal::gpio::Input<'static>>,
     ) -> Rc<RefCell<ViewModel>> {
         let spawner = framework.borrow().spawner;
         // Setup Terminal
@@ -302,7 +303,11 @@ impl ViewModel {
         let selected_printer = SelectedPrinter::new(set_of_printers, 0);
 
         // Initialize SpoolTag
-        let spool_tag_model = spool_tag::init(spi_device, irq, 1000, spawner);
+        let spool_tag_model = if let (Some(spi_device), Some(irq)) = (spi_device, irq) {
+            spool_tag::init(spi_device, irq, 1000, spawner)
+        } else {
+            spool_tag::init_disabled()
+        };
 
         // Initialize ssdp
         let ssdp_pub_sub = mk_static!(SSDPPubSubChannel, SSDPPubSubChannel::new());
@@ -616,8 +621,11 @@ impl ViewModel {
 
         let ui = self.ui_weak.unwrap();
 
+
         // Initialize UI FrameworkState with framework information
         let ui_framework_state = ui.global::<crate::app::FrameworkState>();
+        ui_framework_state.set_display_width(DISPLAY_WIDTH_PX as f32);
+        ui_framework_state.set_display_height(DISPLAY_HEIGHT_PX as f32);
         ui_framework_state.set_app_info(crate::app::AppInfo {
             name: env!("CARGO_PKG_NAME").into(),
             version: env!("CARGO_PKG_VERSION").into(),

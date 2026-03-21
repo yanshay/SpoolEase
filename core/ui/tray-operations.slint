@@ -1,9 +1,9 @@
+import { FrameworkState } from "framework/framework.slint";
 import { MyText, MyButton, ButtonType, WizardButtons, Title } from "framework/widgets.slint";
-import { AppBackend, AppState, ControlState, SpoolStagingState, SpoolScaleState, UiFilamentState, UiSpoolRecordDisplay, UiTray } from "app.slint";
+import { AppBackend, AppState, ControlState, SpoolStagingState, SpoolScaleState, UiFilamentState, UiSpoolRecordDisplay, UiTray, AppConsts } from "app.slint";
 import { SpoolDisplay, MultiColorTitle } from "spool-display.slint";
 import { SlotDisplay } from "slot-display.slint";
 import { Utils } from "utils.slint";
-
 
 enum TrayDisplayTab {
     Slot,
@@ -21,7 +21,7 @@ component TrayDisplayStep inherits Rectangle {
             vertical-stretch: 0;
             height: 40px;
             MultiColorTitle {
-                width: spool-id != "" ? 240px : 480px; // must force width with MultiColorTitle
+                width: spool-id != "" ? FrameworkState.display-width/2 : FrameworkState.display-width; // must force width with MultiColorTitle
                 push-button: true;
                 text: "Slot \{AppState.trays-state[tray-index].name} Information";
                 colors: AppState.trays-state[tray-index].filament.colors;
@@ -32,7 +32,7 @@ component TrayDisplayStep inherits Rectangle {
             }
 
             if spool-id != "": MultiColorTitle {
-                width:240px; // must force width with MultiColorTitle
+                width:FrameworkState.display-width/2; // must force width with MultiColorTitle
                 push-button: true; 
                 text: "Spool \{spool-id} Information";
                 pushed: tab == TrayDisplayTab.Spool;

@@ -9,7 +9,7 @@ import {
     RestartDeviceState,
 } from "framework.slint";
 import { Title, LeftTab } from "widgets.slint";
-import { AppBackend } from "../app.slint";
+import { AppBackend, AppConsts } from "../app.slint";
 import { StandardListView } from "std-widgets.slint";
 
 export component MyText inherits Text {
@@ -232,7 +232,7 @@ export component FrameworkSettingsDetails inherits Rectangle {
     if (FrameworkState.web-config-state == WebConfigState.Started-STA-Displayed || FrameworkState.web-config-state == WebConfigState.Started-AP): web-config := VerticalLayout {
         alignment: stretch;
         Rectangle {
-            height: 320px - 56px; // TODO: why need to specify height? should be automatic by layout
+            height: FrameworkState.display-height - 56px; // TODO: why need to specify height? should be automatic by layout
             background: white;
             vertical-stretch: 1;
             width: parent.width;

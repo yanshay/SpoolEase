@@ -1,7 +1,7 @@
 [package]
 name = "SpoolEase"
 homepage = "SpoolEase.io"
-version = "0.6.2-b.11"
+version = "0.6.2-b.12"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.88"
@@ -40,7 +40,7 @@ walkdir = "2.5.0"
 
 [dependencies]
 #TODO: Important - lock to specific tag when released
-framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial", "wt32-sc01-plus"] }
+framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial"] }
 framework_macros = { package = "esp-hal-app-framework-macros", path = "../../../esp-hal-app/esp-hal-app-framework-macros/" }
 esp32s3 = { version = "0.34.0" }
 
@@ -48,7 +48,7 @@ esp32s3 = { version = "0.34.0" }
 xtensa-lx-rt = { version = "0.21.0", features = ["float-save-restore"] }
 esp-hal = { version = "1.0.0", features = ["unstable", "psram", "log-04"] }
 esp-backtrace = { version = "0.18.0", features = [ "panic-handler", "println"] }
-esp-println = { version = "0.16.0", default-features = false, features = ["critical-section", "colors", "auto", "log-04"] }
+esp-println = { version = "0.16.0", default-features = false, features = ["colors", "auto", "log-04"] }
 esp-rtos = { version = "0.2.0", features = ["embassy", "esp-alloc", "esp-radio", "alloc"] }
 esp-radio = { version = "0.17.0", features = ["wifi", "esp-alloc"]}
 esp-partition-table = { version = "0.1.3" }
@@ -159,7 +159,14 @@ minicbor = { version = "2.1.3", default-features =false, features = ["alloc", "d
 minicbor-derive = {version = "0.18.3" }
 
 [features]
-default = ["esp32s3"]
+default = ["esp32s3", "wt32-sc01-plus"]
+
+wt32-sc01-plus=["framework/wt32-sc01-plus"]
+jc8048w550c=["framework/jc8048w550c"]
+
+rgb-stats =["framework/rgb-stats"]
+log_none =["framework/log_none"]
+log_info =["framework/log_info"]
 
 esp32s3 = [
   "esp-hal/esp32s3",

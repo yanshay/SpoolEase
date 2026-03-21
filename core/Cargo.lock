@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "SpoolEase"
-version = "0.6.2-b.11"
+version = "0.6.2-b.12"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -634,6 +634,17 @@ name = "bitfield-macros"
 version = "0.19.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f48d6ace212fdf1b45fd6b566bb40808415344642b76c3224c07c8df9da81e97"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
+name = "bitfield-struct"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3ca019570363e800b05ad4fd890734f28ac7b72f563ad8a35079efb793616f8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2265,6 +2276,7 @@ dependencies = [
  "futures",
  "futures-util",
  "getrandom 0.2.16",
+ "gt9x",
  "hashbrown 0.16.1",
  "hmac",
  "log",
@@ -3131,6 +3143,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c4ee00b289aba7a9e5306d57c2d05499b2e5dc427f84ac708bd2c090212cf3e"
 dependencies = [
  "gl_generator",
+]
+
+[[package]]
+name = "gt9x"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47096cddd20e2036169a107985359eb79214a57976a4f8a67e2559067ec82cf5"
+dependencies = [
+ "bitfield-struct",
+ "embedded-hal-async",
+ "heapless 0.9.2",
 ]
 
 [[package]]

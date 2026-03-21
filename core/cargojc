@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -ex
+
+ESP_HAL_CONFIG_PSRAM_MODE="octal" cargo "$@" --no-default-features --features="esp32s3,jc8048w550c" --target-dir "./target/jc8048w550c"

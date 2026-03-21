@@ -298,11 +298,17 @@ impl AppConfig {
     }
 
     pub fn initialization_ok(&self, log: bool) -> Option<bool> {
-        self.pn532_ok?;
+        #[cfg(feature = "wt32-sc01-plus")]
+        {
+            // separate treatment for pn532 for easier board dependency
+            if !self.pn532_ok? {
+                return None;
+            }
+        }
+
         Some(
             self.framework.borrow().initialization_ok()
                 && matches!(self.config_processed_ok, Some(true))
-                && matches!(self.pn532_ok, Some(true))
                 && !self.missing_configs(log),
         )
     }

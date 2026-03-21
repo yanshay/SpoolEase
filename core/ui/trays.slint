@@ -1,4 +1,5 @@
 import { Utils } from "utils.slint";
+import { FrameworkState } from "framework/framework.slint";
 import {
     AppConsts,
     AppState,
@@ -386,7 +387,7 @@ component Tray inherits Rectangle {
             clicked => {
                 root.clicked();
             }
-            width: (480px - 4 * AppConsts.trays-spacing) / 5;
+            width: (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
         }
     }
 }
@@ -443,7 +444,7 @@ export component Trays {
             spacing: AppConsts.trays-spacing;
             padding-left: 0px;
             padding-right: 0px;
-            width: is_ams ? 480px - (480px - 4 * AppConsts.trays-spacing) / 5 - AppConsts.trays-spacing : (480px - 4 * AppConsts.trays-spacing) / 5;
+            width: is_ams ? FrameworkState.display-width - (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5 - AppConsts.trays-spacing : (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
             for index in tray_numbers: Tray {
                 // visible: AppState.selected-tray-index == -1 || AppState.selected-tray-index == index;
                 tray-state: trays-state[index];

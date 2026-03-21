@@ -107,7 +107,7 @@ export component ControlPanelBase inherits HorizontalLayout {
 
         lines-rect := Rectangle {
             background: message-type == StatusType.Success ? green.brighter(1.0) : (message-type == StatusType.Error ? red : white);
-            preferred-width: 480px;
+            preferred-width: FrameworkState.display-width;
             border-width: text-border-width;
             border-color: black;
             VerticalLayout {
@@ -165,6 +165,7 @@ export component BootFailed inherits ControlPanelBase {
 }
 
 export component Ready inherits ControlPanelBase {
+    in property <bool> showing: true;
     color-timer := Timer {
         property <int> x: 100;
         property <float> h: 0;
@@ -172,7 +173,7 @@ export component Ready inherits ControlPanelBase {
         property <float> v: 0;
         property <color> color: #ff0;
         interval: 0.2s;
-        running: true;
+        running: parent.showing;
         triggered() => {
             x = x + 3;
             x = x > 100 ? 27 : x;
@@ -295,6 +296,7 @@ export component PostAction inherits ControlPanelBase {
 }
 
 export component ControlPanel inherits HorizontalLayout {
+    in property <bool> showing: true;
     callback clicked-ota;
     in property <length> staging-section-width;
     in property <length> button-width;
@@ -316,6 +318,7 @@ export component ControlPanel inherits HorizontalLayout {
     }
 
     if AppState.control-state == ControlState.Ready: Ready {
+        showing: root.showing;
         button-width: button-width;
     }
 

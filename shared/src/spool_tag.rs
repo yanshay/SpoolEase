@@ -228,6 +228,18 @@ pub fn init(
     spool_tag_rc
 }
 
+pub fn init_disabled() -> Rc<RefCell<SpoolTag>> {
+    let tag_operation = mk_static!(
+        embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, TagOperation>,
+        embassy_sync::signal::Signal::<embassy_sync::blocking_mutex::raw::NoopRawMutex, TagOperation>::new()
+    );
+
+    Rc::new(RefCell::new(SpoolTag {
+        tag_operation,
+        observers: Vec::new(),
+    }))
+}
+
 // Had to specify the I2C1 because can't have generic tasks in embassy, maybe there's some workaround in the following link
 //https://github.com/embassy-rs/embassy/issues/1837
 // #[embassy_executor::task]

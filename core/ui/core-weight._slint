@@ -307,8 +307,8 @@ enum SpoolCoreWeightState {
     NewSpoolSelect,
 }
 export component SpoolCoreWeight inherits Rectangle {
-    width: 480px;
-    height: 320px;
+    // width: 480px;
+    // height: 320px;
     property <SpoolCoreWeightState> state: SpoolCoreWeightState.EntryTabs;
     property <bool> show-keyboard;
 

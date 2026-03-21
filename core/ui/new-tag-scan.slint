@@ -108,8 +108,8 @@ enum BambulabSpoolTypeSelection {
   Other,
 }
 component BambulabSpoolTypePage inherits Rectangle {
-    width: 480px;
-    height: 320px;
+    // width: 480px;
+    // height: 320px;
     background: white;
     property <BambulabSpoolTypeSelection> spool-selection: None;
 
@@ -187,8 +187,8 @@ component BambulabSpoolTypePage inherits Rectangle {
 }
 
 component OperationSelectionStep inherits Rectangle {
-    width: 480px;
-    height: 320px;
+    // width: 480px;
+    // height: 320px;
     background: white;
 
     pure function staged-spool-id() -> string {
@@ -343,8 +343,8 @@ component SpoolSelectStep inherits Rectangle {
 }
 
 component V1TagPromptStep inherits Rectangle {
-    width: 480px;
-    height: 320px;
+    // width: 480px;
+    // height: 320px;
     property <NewTagOperation> selected-operation: None;
     property <bool> last-step: !AppState.is-scale-usable-now();
     function pressed(operation: NewTagOperation) {
@@ -480,8 +480,8 @@ component SpoolDisplayStep inherits Rectangle {
 }
 
 component ImportDefinitionNoticePage inherits Rectangle {
-    width: 480px;
-    height: 320px;
+    // width: 480px;
+    // height: 320px;
     VerticalLayout {
 
         Title {
@@ -552,8 +552,8 @@ component StatusDisplayPage inherits Rectangle {
 }
 
 export component NewTagScan inherits Rectangle {
-    width: 480px;
-    height: 320px;
+    // width: 480px;
+    // height: 320px;
     property <UiSpoolRecordDisplay> spool-display: AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag || AppState.new-tag-scan-spool-id != "" ? AppBackend.get-spool-record-display(AppState.new-tag-scan-spool-id) : AppBackend.get-spool-tag-definition-display(AppState.new-tag-scan-definition-type, AppState.new-tag-scan-definition-info, AppState.new-tag-scan-empty-spool-weight);
 
     if AppState.new-tag-scan-page == NewTagScanPage.OperationSelect: oper-select := OperationSelectionStep { }

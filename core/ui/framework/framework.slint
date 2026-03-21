@@ -68,6 +68,11 @@ struct OtaInfo {
 }
 
 export global FrameworkState {
+    in-out property <length> display-width: 800px;
+    in-out property <length> display-height: 480px;
+    out property <length> swipe-y-length: display-height == 800px ? 40px : 40px;
+    out property <length> swipe-x-length: display-width == 480px ? 96px : 96px;
+
     in-out property <AppInfo> app-info: { name: "AppName", version: "?.?.?" };
     // in-out property <string> term-text: "Initializing...";
     in-out property <string> term-text;

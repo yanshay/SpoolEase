@@ -52,8 +52,8 @@ export { FrameworkState, FrameworkBackend }
 export { AppState, AppBackend } 
 
 export component AppWindow inherits Window {
-    width: 480px;
-    height: 320px;
+    width: FrameworkState.display-width;
+    height: FrameworkState.display-height;
     default-font-family: "Arial";
 
     function full-screen-dialog-open() -> bool {
@@ -91,41 +91,41 @@ export component AppWindow inherits Window {
     sgr := SwipeGestureHandler {
         width: parent.width;
         height: parent.height;
-        property <length> topx: -480px;
+        property <length> topx: -FrameworkState.display-width;
         handle-swipe-up: current-page < 2 && (!AppState.select-printer) && !full-screen-dialog-open();
         handle-swipe-down: current-page > 0 && (!AppState.select-printer) && !full-screen-dialog-open();
         handle-swipe-left: (current_page_x == 0 || topx == 0px) && !full-screen-dialog-open();
-        handle-swipe-right: (current-page_x == 1 || topx == -480px) && !full-screen-dialog-open();
+        handle-swipe-right: (current-page_x == 1 || topx == -FrameworkState.display-width) && !full-screen-dialog-open();
         swiped => {
             if FrameworkState.ota-state != OtaState.Started {
-                if self.handle-swipe-down && self.current-position.y > self.pressed-position.y + (self.height / 8) {
+                if self.handle-swipe-down && self.current-position.y > self.pressed-position.y + FrameworkState.swipe-y-length {
                     // swipe down 
                     current-page -= 1;
-                } else if self.handle-swipe-up && self.current-position.y < self.pressed-position.y - (self.height / 8) {
+                } else if self.handle-swipe-up && self.current-position.y < self.pressed-position.y - FrameworkState.swipe-y-length {
                     // swipe up
                     current-page += 1;
                 } else if current-page == 1 {
                    // right left swipe available only when current-page is 1
-                    if self.handle-swipe-left && self.current-position.x < self.pressed-position.x - (self.width / 5) {
+                    if self.handle-swipe-left && self.current-position.x < self.pressed-position.x - FrameworkState.swipe-x-length {
                       // swipe left
                       // if order is important
                       if topx == 0px {
                           // on left top pane showing storage
-                          topx = -480px;
+                          topx = -FrameworkState.display-width;
                       } else if current-page_x == 0 {
                          // on main screen
                          AppState.select-printer = true;
                          current-page_x = 1;
                          current-page = current-page; // this looks strange, but to 'cut' the automatic state based vertical positioning tht scrolls on events which is confusing after manual touch
                       }
-                    } else if self.handle-swipe-right && self.current-position.x > self.pressed-position.x - (self.width / 5) {
+                    } else if self.handle-swipe-right && self.current-position.x > self.pressed-position.x - FrameworkState.swipe-x-length {
                       // swipe right
                       // if order is important
                       if current-page_x == 1 {
                         // if on select priner page
                         AppState.select-printer = false;
                         current-page_x = 0;
-                      } else if topx == -480px {
+                       } else if topx == -FrameworkState.display-width {
                         // on main display
                         topx = 0px;
                       }
@@ -135,8 +135,8 @@ export component AppWindow inherits Window {
         }
 
         left-pages := VerticalLayout {
-            x: - current-page_x * 480px;
-            y: - current-page * 320px;
+            x: - current-page_x * FrameworkState.display-width;
+            y: - current-page * FrameworkState.display-height;
             animate y {
                 duration: 1000ms;
                 easing: ease-in-out;
@@ -170,20 +170,20 @@ export component AppWindow inherits Window {
                             easing: ease-in-out;
                         }
                         Storage {
-                            width: 480px;
+                            width: FrameworkState.display-width;
                         }
 
                         Rectangle {
                             VerticalLayout { // for some reason VerticalLayout adds the required spacing below
                                 slots := Slots {
                                     visible: !AppState.no-printers-configured;
-                                    width: 480px;
+                                    width: FrameworkState.display-width;
                                 }
                             }
 
                             if AppState.no-printers-configured: VerticalLayout {
                                 Rectangle {
-                                    width: 480px;
+                                    width: FrameworkState.display-width;
                                     border-width: 1px;
                                     border-color: black;
                                     MyText {
@@ -195,6 +195,7 @@ export component AppWindow inherits Window {
                     }
 
                     bottom := ControlPanel {
+                        showing: current-page == 1 && current-page-x == 0;
                         clicked-ota => {
                             root.current-page = 2;
                             FrameworkState.ota-clear-message();
@@ -226,7 +227,7 @@ export component AppWindow inherits Window {
                 AppState.select-printer = false;
                 current-page-x = 0;
             }
-            x: left-pages.x + 480px;
+            x: left-pages.x + FrameworkState.display-width;
         }
     }
 

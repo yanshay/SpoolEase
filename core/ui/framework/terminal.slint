@@ -53,8 +53,8 @@ export component Terminal inherits Rectangle {
     public function is-scrolled() -> bool {
       return scroll-offset-from-end != 0;
     }
-    width: 480px;
-    height: 320px;
+    // width: 480px;
+    // height: 320px;
     in-out property <string> text: "Hello"; // FrameworkState.new-term-text;
     in-out property <length> scroll-offset-from-end: 0;
     property <length> offset-for-end: Math.max(txt.height - self.height, 0px);

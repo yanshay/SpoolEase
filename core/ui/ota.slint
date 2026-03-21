@@ -19,169 +19,300 @@ component RectText inherits Rectangle {
 }
 
 export component OtaDisplay inherits Rectangle {
-    // width: 480px;
-    VerticalLayout {
-
-        alignment: start;
-
-        HorizontalLayout {
+    GridLayout {
+        Row {
             RectText {
-                background: white;
+                background: skyblue;
+                text: "";
             }
 
             RectText {
                 background: skyblue;
-                width: 190px;
                 text: "Console";
             }
 
             RectText {
                 background: skyblue;
-                width: 190px;
                 text: "Scale";
             }
         }
 
-        Rectangle {
-            background: white;
-            VerticalLayout {
-                HorizontalLayout {
-                    height: 56px;
-                    RectText {
-                        text: "Installed";
-                    }
+        Row {
+            RectText {
+                height: 50px;
+                text: "Installed";
+            }
 
-                    RectText {
-                        width: 190px;
-                        text: AppState.firmwares.console-curr;
-                    }
+            RectText {
+                text: AppState.firmwares.console-curr;
+            }
 
-                    RectText {
-                        width: 190px;
-                        text: AppState.firmwares.scale-curr;
-                    }
+            RectText {
+                text: AppState.firmwares.scale-curr;
+            }
+        }
+
+        Row {
+            RectText {
+                width: 100px;
+                text: "Stable";
+            }
+
+            MyButton {
+                height: 56px;
+                text: (AppState.firmwares.console-stable-newer ? "Update to\n" : "") + AppState.firmwares.console-stable;
+                enabled: AppState.firmwares.console-stable-newer;
+                clicked => {
+                    FrameworkState.ota-state = OtaState.Started;
+                    FrameworkState.ota-allow-close-during-update = false;
+                    AppBackend.ota_update_firmware("console", "stable");
+                }
+            }
+
+            MyButton {
+                height: 56px;
+                text: (AppState.firmwares.scale-stable-newer ? "Update to\n" : "") + AppState.firmwares.scale-stable;
+                enabled: AppState.firmwares.scale-stable-newer;
+                clicked => {
+                    FrameworkState.ota-state = OtaState.Started;
+                    FrameworkState.ota-allow-close-during-update = true;
+                    AppBackend.ota_update_firmware("scale", "stable");
                 }
             }
         }
 
-        Rectangle {
-            background: white;
-            width: parent.width;
-            border-color: black;
-            border-width: 1px;
-            VerticalLayout {
-
-                HorizontalLayout {
-                    RectText {
-                        width: 100px;
-                        text: "Stable";
-                    }
-
-                    MyButton {
-                        width: 190px;
-                        height: 56px;
-                        text: (AppState.firmwares.console-stable-newer ? "Update to\n" : "") + AppState.firmwares.console-stable;
-                        enabled: AppState.firmwares.console-stable-newer;
-                        clicked => {
-                            FrameworkState.ota-state = OtaState.Started;
-                            FrameworkState.ota-allow-close-during-update = false;
-                            AppBackend.ota_update_firmware("console", "stable");
-                        }
-                    }
-
-                    MyButton {
-                        width: 190px;
-                        height: 56px;
-                        text: (AppState.firmwares.scale-stable-newer ? "Update to\n" : "") + AppState.firmwares.scale-stable;
-                        enabled: AppState.firmwares.scale-stable-newer;
-                        clicked => {
-                            FrameworkState.ota-state = OtaState.Started;
-                            FrameworkState.ota-allow-close-during-update = true;
-                            AppBackend.ota_update_firmware("scale", "stable");
-                        }
+        beta-row := Row {
+            in-out property <int> pressed-counter:0;
+            in-out property <bool> debug: Math.mod(pressed-counter,6) >= 3;
+            in-out property <bool> beta: !debug;
+            RectText {
+                width: 100px;
+                text: beta ? "Beta" : "Debug";
+                background: beta ? white : orangered;
+                TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    clicked => {
+                        pressed-counter += 1;
                     }
                 }
+            }
 
-                beta-row := HorizontalLayout {
-                    in-out property <int> pressed-counter:0;
-                    in-out property <bool> debug: Math.mod(pressed-counter,6) >=3;
-                    in-out property <bool> beta: !debug;
-                    RectText {
-                        width: 100px;
-                        text: beta ? "Beta" : "Debug";
-                        background: beta ? white : orangered;
-                        TouchArea {
-                            width: parent.width;
-                            height: parent.height;
-                            clicked => {
-                                pressed-counter += 1;
-                            }
-                        }
-                    }
-// Beta
-                    if beta: MyButton {
-                        width: 190px;
-                        height: 56px;
-                        text: (AppState.firmwares.console-unstable-newer ? "Update to\n" : "") + AppState.firmwares.console-unstable;
-                        enabled: AppState.firmwares.console-unstable-newer;
-                        clicked => {
-                            FrameworkState.ota-state = OtaState.Started;
-                            FrameworkState.ota-allow-close-during-update = false;
-                            AppBackend.ota_update_firmware("console", "unstable");
-                        }
-                    }
+            // Beta
+            if beta: MyButton {
+                height: 56px;
+                text: (AppState.firmwares.console-unstable-newer ? "Update to\n" : "") + AppState.firmwares.console-unstable;
+                enabled: AppState.firmwares.console-unstable-newer;
+                clicked => {
+                    FrameworkState.ota-state = OtaState.Started;
+                    FrameworkState.ota-allow-close-during-update = false;
+                    AppBackend.ota_update_firmware("console", "unstable");
+                }
+            }
 
-                    if beta: MyButton {
-                        width: 190px;
-                        height: 56px;
-                        text: (AppState.firmwares.scale-unstable-newer ? "Update to\n" : "") + AppState.firmwares.scale-unstable;
-                        enabled: AppState.firmwares.scale-unstable-newer;
-                        clicked => {
-                            FrameworkState.ota-state = OtaState.Started;
-                            FrameworkState.ota-allow-close-during-update = true;
-                            AppBackend.ota_update_firmware("scale", "unstable");
-                        }
-                    }
+            if beta: MyButton {
+                height: 56px;
+                text: (AppState.firmwares.scale-unstable-newer ? "Update to\n" : "") + AppState.firmwares.scale-unstable;
+                enabled: AppState.firmwares.scale-unstable-newer;
+                clicked => {
+                    FrameworkState.ota-state = OtaState.Started;
+                    FrameworkState.ota-allow-close-during-update = true;
+                    AppBackend.ota_update_firmware("scale", "unstable");
+                }
+            }
 // Debug
-                    if debug: MyButton {
-                        width: 190px;
-                        height: 56px;
-                        text: (AppState.firmwares.console-debug-newer ? "Update to\n" : "") + AppState.firmwares.console-debug;
-                        enabled: AppState.firmwares.console-debug-newer;
-                        clicked => {
-                            FrameworkState.ota-state = OtaState.Started;
-                            FrameworkState.ota-allow-close-during-update = false;
-                            AppBackend.ota_update_firmware("console", "debug");
-                        }
-                    }
+            if debug: MyButton {
+                height: 56px;
+                text: (AppState.firmwares.console-debug-newer ? "Update to\n" : "") + AppState.firmwares.console-debug;
+                enabled: AppState.firmwares.console-debug-newer;
+                clicked => {
+                    FrameworkState.ota-state = OtaState.Started;
+                    FrameworkState.ota-allow-close-during-update = false;
+                    AppBackend.ota_update_firmware("console", "debug");
+                }
+            }
 
-                    if debug: MyButton {
-                        width: 190px;
-                        height: 56px;
-                        text: (AppState.firmwares.scale-debug-newer ? "Update to\n" : "") + AppState.firmwares.scale-debug;
-                        enabled: AppState.firmwares.scale-debug-newer;
-                        clicked => {
-                            FrameworkState.ota-state = OtaState.Started;
-                            FrameworkState.ota-allow-close-during-update = true;
-                            AppBackend.ota_update_firmware("scale", "debug");
-                        }
-                    }
+            if debug: MyButton {
+                height: 56px;
+                text: (AppState.firmwares.scale-debug-newer ? "Update to\n" : "") + AppState.firmwares.scale-debug;
+                enabled: AppState.firmwares.scale-debug-newer;
+                clicked => {
+                    FrameworkState.ota-state = OtaState.Started;
+                    FrameworkState.ota-allow-close-during-update = true;
+                    AppBackend.ota_update_firmware("scale", "debug");
                 }
             }
         }
     }
 }
 
+// export component OtaDisplay inherits Rectangle {
+//     width: 800px;
+//     VerticalLayout {
+//
+//         alignment: start;
+//
+//         HorizontalLayout {
+//             RectText {
+//                 background: white;
+//             }
+//
+//             RectText {
+//                 background: skyblue;
+//                 width: 190px;
+//                 text: "Console";
+//             }
+//
+//             RectText {
+//                 background: skyblue;
+//                 width: 190px;
+//                 text: "Scale";
+//             }
+//         }
+//
+//         Rectangle {
+//             background: white;
+//             VerticalLayout {
+//                 HorizontalLayout {
+//                     height: 56px;
+//                     RectText {
+//                         text: "Installed";
+//                     }
+//
+//                     RectText {
+//                         width: 190px;
+//                         text: AppState.firmwares.console-curr;
+//                     }
+//
+//                     RectText {
+//                         width: 190px;
+//                         text: AppState.firmwares.scale-curr;
+//                     }
+//                 }
+//             }
+//         }
+//
+//         Rectangle {
+//             background: white;
+//             width: parent.width;
+//             border-color: black;
+//             border-width: 1px;
+//             VerticalLayout {
+//
+//                 HorizontalLayout {
+//                     RectText {
+//                         width: 100px;
+//                         text: "Stable";
+//                     }
+//
+//                     MyButton {
+//                         width: 190px;
+//                         height: 56px;
+//                         text: (AppState.firmwares.console-stable-newer ? "Update to\n" : "") + AppState.firmwares.console-stable;
+//                         enabled: AppState.firmwares.console-stable-newer;
+//                         clicked => {
+//                             FrameworkState.ota-state = OtaState.Started;
+//                             FrameworkState.ota-allow-close-during-update = false;
+//                             AppBackend.ota_update_firmware("console", "stable");
+//                         }
+//                     }
+//
+//                     MyButton {
+//                         width: 190px;
+//                         height: 56px;
+//                         text: (AppState.firmwares.scale-stable-newer ? "Update to\n" : "") + AppState.firmwares.scale-stable;
+//                         enabled: AppState.firmwares.scale-stable-newer;
+//                         clicked => {
+//                             FrameworkState.ota-state = OtaState.Started;
+//                             FrameworkState.ota-allow-close-during-update = true;
+//                             AppBackend.ota_update_firmware("scale", "stable");
+//                         }
+//                     }
+//                 }
+//
+//                 beta-row := HorizontalLayout {
+//                     in-out property <int> pressed-counter:0;
+//                     in-out property <bool> debug: Math.mod(pressed-counter,6) >= 3;
+//                     in-out property <bool> beta: !debug;
+//                     RectText {
+//                         width: 100px;
+//                         text: beta ? "Beta" : "Debug";
+//                         background: beta ? white : orangered;
+//                         TouchArea {
+//                             width: parent.width;
+//                             height: parent.height;
+//                             clicked => {
+//                                 pressed-counter += 1;
+//                             }
+//                         }
+//                     }
+// // Beta
+//                     if beta: MyButton {
+//                         width: 190px;
+//                         height: 56px;
+//                         text: (AppState.firmwares.console-unstable-newer ? "Update to\n" : "") + AppState.firmwares.console-unstable;
+//                         enabled: AppState.firmwares.console-unstable-newer;
+//                         clicked => {
+//                             FrameworkState.ota-state = OtaState.Started;
+//                             FrameworkState.ota-allow-close-during-update = false;
+//                             AppBackend.ota_update_firmware("console", "unstable");
+//                         }
+//                     }
+//
+//                     if beta: MyButton {
+//                         width: 190px;
+//                         height: 56px;
+//                         text: (AppState.firmwares.scale-unstable-newer ? "Update to\n" : "") + AppState.firmwares.scale-unstable;
+//                         enabled: AppState.firmwares.scale-unstable-newer;
+//                         clicked => {
+//                             FrameworkState.ota-state = OtaState.Started;
+//                             FrameworkState.ota-allow-close-during-update = true;
+//                             AppBackend.ota_update_firmware("scale", "unstable");
+//                         }
+//                     }
+// // Debug
+//                     if debug: MyButton {
+//                         width: 190px;
+//                         height: 56px;
+//                         text: (AppState.firmwares.console-debug-newer ? "Update to\n" : "") + AppState.firmwares.console-debug;
+//                         enabled: AppState.firmwares.console-debug-newer;
+//                         clicked => {
+//                             FrameworkState.ota-state = OtaState.Started;
+//                             FrameworkState.ota-allow-close-during-update = false;
+//                             AppBackend.ota_update_firmware("console", "debug");
+//                         }
+//                     }
+//
+//                     if debug: MyButton {
+//                         width: 190px;
+//                         height: 56px;
+//                         text: (AppState.firmwares.scale-debug-newer ? "Update to\n" : "") + AppState.firmwares.scale-debug;
+//                         enabled: AppState.firmwares.scale-debug-newer;
+//                         clicked => {
+//                             FrameworkState.ota-state = OtaState.Started;
+//                             FrameworkState.ota-allow-close-during-update = true;
+//                             AppBackend.ota_update_firmware("scale", "debug");
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
+
 export component AppOtaSelect inherits Rectangle {
     background: white;
-    // height: 320px;
     VerticalLayout {
-        Title {
-            text: "Over the Air Network Software Update";
+        alignment: space-between;
+        VerticalLayout {
+            Title {
+                text: "Over the Air Network Software Update";
+            }
+
+            // if FrameworkState.ota-state == OtaState.Checking: OtaCheck { }
+            if FrameworkState.ota-state == OtaState.UserInput: OtaDisplay { }
         }
 
-        // if FrameworkState.ota-state == OtaState.Checking: OtaCheck { }
-        if FrameworkState.ota-state == OtaState.UserInput: OtaDisplay { }
         if FrameworkState.ota-state != OtaState.Started: MyButton {
             height: 56px;
             text: "Cancel";
