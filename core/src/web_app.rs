@@ -35,7 +35,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use shared::gcode_analysis_task::Fetch3mf;
 
-use crate::app_config::{AppConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrintersConfig, SPOOLS_CATALOG, ScaleConfig};
+use crate::app_config::{
+    AiProviderAvailability, AiProviderId, AppConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrintersConfig, SPOOLS_CATALOG,
+    ScaleConfig,
+};
 use crate::bambu::calibration::KInfo;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
@@ -174,6 +177,74 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     scale_config.encrypt(&key.borrow())
                 })
             }),
+        );
+
+        let router = router.route(
+            "/api/console-info",
+            get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
+                ready({
+                    let borrowed_app_config = state.0.app_config.borrow();
+                    ConsoleInfoResponse {
+                        ai_providers: borrowed_app_config.ai_provider_key_availability(),
+                    }
+                    .encrypt(&key.borrow())
+                })
+            }),
+        );
+
+        let router = router.route(
+            "/api/ai-provider-config/get",
+            post(
+                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, ai_provider_ref: AiProviderRefDTO| {
+                    ready({
+                        let api_key = state.0.app_config.borrow().get_ai_provider_api_key(&ai_provider_ref.provider);
+                        GetAiProviderApiKeyResponse {
+                            provider: ai_provider_ref.provider,
+                            api_key,
+                        }
+                        .encrypt(&key.borrow())
+                    })
+                },
+            ),
+        );
+
+        let router = router.route(
+            "/api/ai-provider-config/set",
+            post(
+                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, set_ai_provider_api_key: SetAiProviderApiKeyDTO| {
+                    ready(
+                        match state
+                            .0
+                            .app_config
+                            .borrow_mut()
+                            .set_ai_provider_api_key(set_ai_provider_api_key.provider, set_ai_provider_api_key.api_key)
+                        {
+                            Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                            Err(e) => SetConfigResponseDTO {
+                                error_text: Some(format!("{e:?}")),
+                            }
+                            .encrypt(&key.borrow()),
+                        },
+                    )
+                },
+            ),
+        );
+
+        let router = router.route(
+            "/api/ai-provider-config/delete",
+            post(
+                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, ai_provider_ref: AiProviderRefDTO| {
+                    ready(
+                        match state.0.app_config.borrow_mut().delete_ai_provider_api_key(ai_provider_ref.provider) {
+                            Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                            Err(e) => SetConfigResponseDTO {
+                                error_text: Some(format!("{e:?}")),
+                            }
+                            .encrypt(&key.borrow()),
+                        },
+                    )
+                },
+            ),
         );
 
         let router = router.route(
@@ -1189,6 +1260,30 @@ impl From<&ScaleConfig> for ScaleConfigDTO {
             key: v.key.clone(),
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AiProviderRefDTO {
+    provider: AiProviderId,
+}
+encrypted_input!(AiProviderRefDTO);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetAiProviderApiKeyDTO {
+    provider: AiProviderId,
+    api_key: String,
+}
+encrypted_input!(SetAiProviderApiKeyDTO);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetAiProviderApiKeyResponse {
+    provider: AiProviderId,
+    api_key: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ConsoleInfoResponse {
+    ai_providers: Vec<AiProviderAvailability>,
 }
 
 // #[derive(serde::Deserialize, serde::Serialize, Default, Debug)]

@@ -26,6 +26,24 @@ const SCALE_CONFIG_KEY: &str = "_scale_"; // for backwards compatibility
 // const PREVIOUSLY_USED_CORES_CONFIG_KEY: &str = "prev_cores";
 const USER_CORES_CONFIG_KEY: &str = "user_cores";
 const CUSTOM_FILAMENTS_CONFIG_KEY: &str = "custom_filaments";
+const AI_PROVIDERS_CONFIG_KEY: &str = "ai_providers";
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+pub enum AiProviderId {
+    OpenAi,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct AiProviderCredential {
+    pub provider: AiProviderId,
+    pub api_key: String,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct AiProvidersConfig {
+    #[serde(default)]
+    pub providers: Vec<AiProviderCredential>,
+}
 
 fn serialize_option_ipv4<S>(ip: &Option<Ipv4Address>, serializer: S) -> Result<S::Ok, S::Error>
 where
@@ -120,6 +138,7 @@ pub struct AppConfig {
     pub user_cores_changed_by_web_config: bool,
     // pub previously_used_cores: Option<String>,
     pub custom_filaments: Option<String>,
+    pub ai_providers_config: AiProvidersConfig,
     pub root_redirect: String,
 }
 
@@ -166,6 +185,7 @@ impl AppConfig {
             user_cores_changed_by_web_config: false,
             // previously_used_cores: None,
             custom_filaments: None,
+            ai_providers_config: AiProvidersConfig::default(),
             root_redirect: "/config".to_string(),
         }
     }
@@ -215,6 +235,13 @@ impl AppConfig {
         let config = self.framework.borrow_mut().fetch(String::from(CUSTOM_FILAMENTS_CONFIG_KEY));
         if let Ok(custom_filaments) = config {
             self.custom_filaments = custom_filaments;
+        }
+
+        let config = self.framework.borrow_mut().fetch(String::from(AI_PROVIDERS_CONFIG_KEY));
+        if let Ok(Some(ai_providers_store)) = config
+            && let Ok(ai_providers_config) = serde_json::from_str::<AiProvidersConfig>(&ai_providers_store)
+        {
+            self.ai_providers_config = ai_providers_config;
         }
 
         let config = self.framework.borrow_mut().fetch(String::from(SCALE_CONFIG_KEY));
@@ -306,11 +333,7 @@ impl AppConfig {
             }
         }
 
-        Some(
-            self.framework.borrow().initialization_ok()
-                && matches!(self.config_processed_ok, Some(true))
-                && !self.missing_configs(log),
-        )
+        Some(self.framework.borrow().initialization_ok() && matches!(self.config_processed_ok, Some(true)) && !self.missing_configs(log))
     }
 
     #[allow(dead_code)]
@@ -407,6 +430,90 @@ impl AppConfig {
         Ok(())
     }
 
+    fn persist_ai_providers_config(
+        &self,
+        ai_providers_config: &AiProvidersConfig,
+    ) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        if ai_providers_config.providers.is_empty() {
+            self.framework.borrow().remove(AI_PROVIDERS_CONFIG_KEY.to_string())?;
+        } else {
+            let ai_providers_store = serde_json::to_string(ai_providers_config).unwrap();
+            self.framework.borrow().store(AI_PROVIDERS_CONFIG_KEY.to_string(), ai_providers_store)?;
+        }
+        Ok(())
+    }
+
+    pub fn set_ai_provider_api_key(
+        &mut self,
+        provider: AiProviderId,
+        api_key: String,
+    ) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        let normalized_api_key = api_key.trim().to_string();
+        if normalized_api_key.is_empty() {
+            return self.delete_ai_provider_api_key(provider);
+        }
+
+        let mut next_ai_providers_config = self.ai_providers_config.clone();
+        if let Some(existing_provider) = self
+            .ai_providers_config
+            .providers
+            .iter()
+            .find(|existing_provider| existing_provider.provider == provider)
+        {
+            if existing_provider.api_key == normalized_api_key {
+                return Ok(());
+            }
+            next_ai_providers_config
+                .providers
+                .iter_mut()
+                .find(|next_provider| next_provider.provider == provider)
+                .unwrap()
+                .api_key = normalized_api_key;
+        } else {
+            next_ai_providers_config.providers.push(AiProviderCredential {
+                provider,
+                api_key: normalized_api_key,
+            });
+        }
+
+        self.persist_ai_providers_config(&next_ai_providers_config)?;
+        self.ai_providers_config = next_ai_providers_config;
+        Ok(())
+    }
+
+    pub fn get_ai_provider_api_key(&self, provider: &AiProviderId) -> Option<String> {
+        self.ai_providers_config
+            .providers
+            .iter()
+            .find(|existing_provider| &existing_provider.provider == provider)
+            .map(|existing_provider| existing_provider.api_key.clone())
+    }
+
+    pub fn delete_ai_provider_api_key(&mut self, provider: AiProviderId) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        let mut next_ai_providers_config = self.ai_providers_config.clone();
+        let orig_num_providers = next_ai_providers_config.providers.len();
+        next_ai_providers_config
+            .providers
+            .retain(|existing_provider| existing_provider.provider != provider);
+        if next_ai_providers_config.providers.len() == orig_num_providers {
+            return Ok(());
+        }
+
+        self.persist_ai_providers_config(&next_ai_providers_config)?;
+        self.ai_providers_config = next_ai_providers_config;
+        Ok(())
+    }
+
+    pub fn ai_provider_key_availability(&self) -> Vec<AiProviderAvailability> {
+        [AiProviderId::OpenAi]
+            .into_iter()
+            .map(|provider| AiProviderAvailability {
+                key_available: self.get_ai_provider_api_key(&provider).is_some(),
+                provider,
+            })
+            .collect()
+    }
+
     pub fn _set_redirect_web_to_config(&mut self) {
         self.root_redirect = "/config".to_string();
     }
@@ -423,4 +530,10 @@ impl AppConfig {
         }
         available
     }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct AiProviderAvailability {
+    pub provider: AiProviderId,
+    pub key_available: bool,
 }
