@@ -549,8 +549,8 @@ async fn main(spawner: Spawner) {
     let config = picoserve::Config::new(picoserve::Timeouts {
         start_read_request: Duration::from_secs(3),
         persistent_start_read_request: Duration::from_secs(3),
-        read_request: Duration::from_secs(1),
-        write: Duration::from_secs(1),
+        read_request: Duration::from_secs(3),
+        write: Duration::from_secs(3),
     })
     .keep_connection_alive();
 
