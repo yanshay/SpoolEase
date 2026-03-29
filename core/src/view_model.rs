@@ -39,7 +39,7 @@ use framework::{
 };
 
 use crate::app::{UiSlotDisplay, UiSpoolRecord, UiSpoolRecordDisplay};
-use crate::app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig};
+use crate::app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig, PrinterMode};
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
 use crate::bambu::bambu_print::PrintProject;
 use crate::bambu::calibration::{KExtruder, KInfo, KNozzleDiameter, KNozzleId, KPrinter};
@@ -401,6 +401,7 @@ impl ViewModel {
             track_print_consume: false,
             fetch_3mf: Fetch3mf::CloudHttp,
             ignore_certificates: false,
+            printer_mode: PrinterMode::Auto,
         };
 
         let no_configured_printers = self.app_config.borrow().configured_printers.printers.is_empty();

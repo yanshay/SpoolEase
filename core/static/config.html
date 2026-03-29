@@ -861,14 +861,22 @@ ProtoPasta 500g - Cardboard - 84g,84"
                     <div class="error-message ip-error">IP requires name to be provided</div>
                 </div>
 
-                <div class = "form-row" >
+                <div class = "form-row" style="display: flex; align-items: center; margin-top: 6px;">
+                  <label style="margin-top: 0px; margin-bottom:0px; padding-left: 2px;">Printer Mode</label>
+                    <select class="printer-mode" style="flex-grow: 1; padding-right: 12px; height: 20px; font-size: 1rem; margin-left: 12px;" class="fetch-3mf" type="checkbox" id="fetch-3mf">
+                    <option value="Auto" selected>Auto Recognize</option>
+                    <option value="DevOrOldFirmware">Dev Mode or Old Firmware</option>
+                    <option value="Cloud">Cloud Mode</option>
+                  </select>
+                </div>
+                <div class = "form-row" style="margin-top: 6px;">
                   <div style="display: flex; align-items: center; margin-bottom: 0px; margin-top: 0px; padding-bottom: 0px;">
                     <input class="track-print-consume" type="checkbox" id="tack-print-consume" checked>
                     <label for="track-print-consume" style="margin-top: 0px; margin-bottom:0px; padding-left: 2px;">Track Prints Filament Consumption</label>
                   </div>
-                  <div style="display: flex; align-items: center; margin-left: 1.2rem; margin-bottom: 0px; margin-top: 6px; padding-bottom: 0px;">
+                  <div style="display: flex; align-items: center; margin-left: 1.5rem; margin-bottom: 0px; margin-top: 6px; padding-bottom: 0px;">
                     <label for="fetch-3mf" style="margin-top: 0px; margin-bottom:0px; padding-left: 2px;">Default Fetch 3MF From</label>
-                    <select style="padding-right: 12px; height: 20px; font-size: 1rem; margin-left: 12px;" class="fetch-3mf" type="checkbox" id="fetch-3mf">
+                    <select style="flex-grow: 1; padding-right: 12px; height: 20px; font-size: 1rem; margin-left: 12px;" class="fetch-3mf" type="checkbox" id="fetch-3mf">
                       <option value="printer-ftp">FTP (No Authorization)&nbsp;</option>
                       <option value="cloud-http" selected>HTTP (Only in Cloud)</option>
                     </select>
@@ -960,6 +968,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           newPrinterForm.querySelector(".track-print-consume").checked = printer.track_print_consume;
           newPrinterForm.querySelector(".fetch-3mf").value = printer.fetch_3mf;
           newPrinterForm.querySelector(".ignore-certificates").checked = !!printer.ignore_certificates;
+          newPrinterForm.querySelector(".printer-mode").value = printer.printer_mode || "Auto";
         });
 
         // Setup IP fields for all printers
@@ -1178,6 +1187,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const fetch3mf = form.querySelector(".fetch-3mf").value;
           const ignoreCertificates =
             form.querySelector(".ignore-certificates")?.checked || false;
+          const printerMode = form.querySelector(".printer-mode").value;
 
           const ipParts = Array.from(form.querySelectorAll(".ip-part"));
           const ipValid = ipParts.every((part) => part.value.trim() !== "");
@@ -1210,6 +1220,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           printer.track_print_consume = trackPrintConsume;
           printer.fetch_3mf = fetch3mf;
           printer.ignore_certificates = ignoreCertificates;
+          printer.printer_mode = printerMode;
 
           printers.push(printer);
 

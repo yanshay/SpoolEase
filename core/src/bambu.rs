@@ -22,7 +22,7 @@ use crate::bambu::process_incoming::incoming_messages_task;
 use crate::bambu::protocol::ProtocolState;
 use crate::bambu::tray::{Tray, TrayBits};
 use crate::view_model::StoreStateRequestChannel;
-use crate::{app_config::PrinterConfig, ssdp::SSDPPubSubChannel};
+use crate::{app_config::{PrinterConfig, PrinterMode}, ssdp::SSDPPubSubChannel};
 use alloc::{
     format,
     rc::Rc,
@@ -116,6 +116,7 @@ pub struct BambuPrinter {
     pub track_print_consume: bool,
     pub fetch_3mf: Fetch3mf,
     pub ignore_certificates: bool,
+    pub printer_mode: PrinterMode,
     pub printer_ip: Ipv4Address,
     pub printer_uuid_to_encode: String,
     pub printer_connectivity_ok: Option<bool>,
@@ -281,6 +282,7 @@ impl BambuPrinter {
         track_print_consume: bool,
         fetch_3mf: Fetch3mf,
         ignore_certificates: bool,
+        printer_mode: PrinterMode,
         write_packets: Rc<WritePacketsChannel>,
         app_config: Rc<RefCell<AppConfig>>,
         restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
@@ -298,6 +300,7 @@ impl BambuPrinter {
             track_print_consume,
             fetch_3mf,
             ignore_certificates,
+            printer_mode,
             write_packets,
             app_config,
             restart_printer,
@@ -320,6 +323,7 @@ impl BambuPrinter {
         track_print_consume: bool,
         fetch_3mf: Fetch3mf,
         ignore_certificates: bool,
+        printer_mode: PrinterMode,
         write_packets: Rc<WritePacketsChannel>,
         app_config: Rc<RefCell<AppConfig>>,
         restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
@@ -354,6 +358,7 @@ impl BambuPrinter {
             track_print_consume,
             fetch_3mf,
             ignore_certificates,
+            printer_mode,
             printer_ip: printer_ip.unwrap_or(Ipv4Address::new(0, 0, 0, 0)),
             printer_uuid_to_encode,
             printer_connectivity_ok: None,
@@ -392,7 +397,11 @@ impl BambuPrinter {
             tray_pre: [255, 255],
             gcode_state: GcodeState::Unknown,
             layer_num: -1,
-            locked_mode: None,
+            locked_mode: match printer_mode {
+                PrinterMode::Auto => None,
+                PrinterMode::DevOrOldFirmware => Some(false),
+                PrinterMode::Cloud => Some(true),
+            },
             store_state_request_channel,
             ams_info: alloc::vec![AmsInfo::default();14], // 0..3: standard ams, 4..11: 128..135 (HT), 12: 254 (external - left?), 13: 255 (external - right?)
         }
@@ -447,6 +456,7 @@ impl BambuPrinter {
             self.track_print_consume,
             self.fetch_3mf,
             self.ignore_certificates,
+            self.printer_mode,
             self.write_packets.clone(),
             self.app_config.clone(),
             self.restart_printer.clone(),
@@ -552,6 +562,7 @@ pub fn init(
     let track_print_consume = printer_config.track_print_consume;
     let fetch_3mf = printer_config.fetch_3mf;
     let ignore_certificates = printer_config.ignore_certificates;
+    let printer_mode = printer_config.printer_mode;
 
     // == Setup MQTT ==================================================================
     let write_packets = Rc::new(WritePacketsChannel::new());
@@ -571,6 +582,7 @@ pub fn init(
         track_print_consume,
         fetch_3mf,
         ignore_certificates,
+        printer_mode,
         write_packets.clone(),
         app_config.clone(),
         restart_printer.clone(),

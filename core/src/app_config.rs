@@ -82,6 +82,16 @@ fn default_false() -> bool {
     false
 }
 
+use serde::Serialize;
+
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy, Default)]
+pub enum PrinterMode {
+    #[default]
+    Auto,
+    DevOrOldFirmware,
+    Cloud,
+}
+
 // These struct is first and foremost for persistent configuration
 // Changing it should be well dealt with including upgrade
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone, Derivative)]
@@ -104,6 +114,9 @@ pub struct PrinterConfig {
     #[derivative(Default(value = "false"))]
     #[serde(default = "default_false")]
     pub ignore_certificates: bool,
+    #[derivative(Default(value = "PrinterMode::Auto"))]
+    #[serde(default)]
+    pub printer_mode: PrinterMode,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]

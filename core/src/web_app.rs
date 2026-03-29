@@ -36,8 +36,8 @@ use sha2::{Digest, Sha256};
 use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::app_config::{
-    AiProviderAvailability, AiProviderId, AppConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrintersConfig, SPOOLS_CATALOG,
-    ScaleConfig,
+    AiProviderAvailability, AiProviderId, AppConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrinterMode, PrintersConfig,
+    SPOOLS_CATALOG, ScaleConfig,
 };
 use crate::bambu::calibration::KInfo;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
@@ -1150,6 +1150,8 @@ struct PrinterConfigDTO {
     fetch_3mf: Option<String>,
     #[serde(default)]
     ignore_certificates: bool,
+    #[serde(default)]
+    printer_mode: PrinterMode,
 }
 encrypted_input!(PrinterConfigDTO);
 impl From<PrinterConfigDTO> for PrinterConfig {
@@ -1168,6 +1170,7 @@ impl From<PrinterConfigDTO> for PrinterConfig {
                 Fetch3mf::CloudHttp
             },
             ignore_certificates: v.ignore_certificates,
+            printer_mode: v.printer_mode,
         }
     }
 }
@@ -1186,6 +1189,7 @@ impl From<&PrinterConfig> for PrinterConfigDTO {
                 Fetch3mf::CloudHttp => Some("cloud-http".to_string()),
             },
             ignore_certificates: v.ignore_certificates,
+            printer_mode: v.printer_mode,
         }
     }
 }
