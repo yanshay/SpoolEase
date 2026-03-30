@@ -216,8 +216,8 @@ impl BambuPrinter {
             self.gcode_file_prepare_percent = print.gcode_file_prepare_percent;
         }
 
-        if print.gcode_file.is_some() {
-            self.gcode_file = print.gcode_file.clone();
+        if print.subtask_name.is_some() {
+            self.subtask_name = print.subtask_name.clone();
         }
 
         if print.stg_cur.is_some() {

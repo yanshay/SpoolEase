@@ -138,10 +138,10 @@ pub struct PrinterInfo {
     remain_secs: Option<i32>,
     print_name: Option<String>,
     layer: Option<i32>,
-    total_layers: Option<i32>,
-    stage_code: Option<i32>, // using code to avoid large texts in binary, if need to use in UI then need to swicth to text
-    print_error_code: Option<i32>,
-    hw_error_codes: Vec<(i32, i32)>,
+    num_layers: Option<i32>,
+    stage: Option<i32>, // using code to avoid large texts in binary, if need to use in UI then need to swicth to text
+    print_error: Option<i32>,
+    hw_errors: Vec<(i32, i32)>,
 }
 
 pub struct ViewModel {
@@ -2953,12 +2953,12 @@ impl ViewModel {
                     _ => None,
                 },
                 remain_secs: printer_borrow.mc_remaining_time.map(|v| v*60),
-                print_name: printer_borrow.gcode_file.clone(),
+                print_name: printer_borrow.subtask_name.clone(),
                 layer: printer_borrow.layer_num,
-                total_layers: printer_borrow.total_layer_num,
-                stage_code: printer_borrow.stg_cur,
-                print_error_code: printer_borrow.print_error,
-                hw_error_codes: printer_borrow
+                num_layers: printer_borrow.total_layer_num,
+                stage: printer_borrow.stg_cur,
+                print_error: printer_borrow.print_error,
+                hw_errors: printer_borrow
                     .hms
                     .as_ref()
                     .map_or(Vec::new(), |vs| vs.iter().map(|v| (v.attr.unwrap_or(0), v.code.unwrap_or(0))).collect()),

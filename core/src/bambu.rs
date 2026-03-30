@@ -163,7 +163,7 @@ pub struct BambuPrinter {
     pub mc_remaining_time: Option<i32>,
     pub print_error: Option<i32>,
     pub gcode_file_prepare_percent: Option<i32>,
-    pub gcode_file: Option<String>,
+    pub subtask_name: Option<String>,
     pub stg_cur: Option<i32>,
     pub hms: Option<Vec<bambu_api::Hms>>,
 }
@@ -417,7 +417,7 @@ impl BambuPrinter {
             mc_remaining_time: None,
             print_error: None,
             gcode_file_prepare_percent: None,
-            gcode_file: None,
+            subtask_name: None,
             stg_cur: None,
             hms: None,
         }
