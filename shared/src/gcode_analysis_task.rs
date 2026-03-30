@@ -291,12 +291,12 @@ async fn fetch_gcode_analysis_task_printer_ftp(
 
     let debug = gcode_analysis_request.printer_selector_name.to_lowercase() == "simulator";
 
-    let ftp_endpoint = if debug {
-        (Ipv4Address::new(192, 168, 10, 78), 990)
-    } else if !VSFTPD {
-        (ip, 990)
-    } else {
+    let ftp_endpoint = if VSFTPD {
         (Ipv4Address::new(192, 168, 10, 86), 990)
+    } else if debug {
+        (Ipv4Address::new(192, 168, 10, 78), 990)
+    } else{
+        (ip, 990)
     };
 
     let server_name = if !VSFTPD {
@@ -305,6 +305,7 @@ async fn fetch_gcode_analysis_task_printer_ftp(
         CString::new("vsftpd").unwrap()
     };
 
+    #[allow(clippy::if_same_then_else)]
     let certificates = if !VSFTPD {
         None
         // Some(
@@ -317,15 +318,16 @@ async fn fetch_gcode_analysis_task_printer_ftp(
         //     .unwrap(),
         // )
     } else {
-        Some(
-            Certificate::new(X509::PEM(
-                core::ffi::CStr::from_bytes_with_nul(
-                    concat!(include_str!("./certs/vmware-vsftpd.pem"), "\0").as_bytes(),
-                )
-                .unwrap(),
-            ))
-            .unwrap(),
-        )
+        None
+        // Some(
+        //     Certificate::new(X509::PEM(
+        //         core::ffi::CStr::from_bytes_with_nul(
+        //             concat!(include_str!("./certs/vmware-vsftpd.pem"), "\0").as_bytes(),
+        //         )
+        //         .unwrap(),
+        //     ))
+        //     .unwrap(),
+        // )
     };
 
     let mut ftps = MyFtps::new(
@@ -386,7 +388,7 @@ async fn fetch_gcode_analysis_task_printer_ftp(
 
     // it looks like in the gcode file name (not in the bbl file name) bambu uses for gcode filename the text until "." in case there is such
 
-    let threemf_filenames = if let Some(filename) = threemf_url.strip_prefix("file:///sdcard") {
+    let mut threemf_filenames = if let Some(filename) = threemf_url.strip_prefix("file:///sdcard") {
         // seen on X1C
         // file:///sdcard/Skadis_Storage_Box_Scale_Small_Plate 1.gcode.3mf
         // file is in the ftp root
@@ -425,6 +427,11 @@ async fn fetch_gcode_analysis_task_printer_ftp(
             format!("/cache/{}.3mf", gcode_analysis_request.threemf_ftp_filename),
         ]
     };
+
+    if VSFTPD {
+        threemf_filenames.clear();
+        threemf_filenames.push("Cube + Cube.3mf".to_string());
+    }
 
     let mut buf = alloc::vec![0;16384];
     let mut gcode_calc = GcodeFilamentCalc::new();

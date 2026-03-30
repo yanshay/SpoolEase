@@ -286,7 +286,7 @@ where
             .control_session
             .as_ref()
             .unwrap()
-            .get_mbedtls_session()
+            .save()
             .context(TlsSnafu)?; // can unwrap since testing at fn start control_session is available
         debugex!(">>> Got reused_session");
 
@@ -317,7 +317,7 @@ where
         .context(TlsSnafu)?;
 
         data_session
-            .connect_reuse(&reused_session)
+            .connect_with_session(&reused_session)
             .await
             .context(TlsSnafu)?;
 
