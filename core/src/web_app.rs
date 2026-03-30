@@ -43,7 +43,7 @@ use crate::bambu::calibration::KInfo;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
 use crate::store::{BackupMeta, FileMeta, Store};
-use crate::view_model::ViewModel;
+use crate::view_model::{PrinterInfo, ViewModel};
 
 #[derive(Clone)]
 pub struct ConsoleAppState {
@@ -186,6 +186,18 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     let borrowed_app_config = state.0.app_config.borrow();
                     ConsoleInfoResponse {
                         ai_providers: borrowed_app_config.ai_provider_key_availability(),
+                    }
+                    .encrypt(&key.borrow())
+                })
+            }),
+        );
+
+        let router = router.route(
+            "/api/printers-status",
+            get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
+                ready({
+                    GetPrintersStatusResponse {
+                        printers: state.0.view_model.borrow().get_printers_status(),
                     }
                     .encrypt(&key.borrow())
                 })
@@ -1288,6 +1300,11 @@ pub struct GetAiProviderApiKeyResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ConsoleInfoResponse {
     ai_providers: Vec<AiProviderAvailability>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GetPrintersStatusResponse {
+    printers: Vec<PrinterInfo>,
 }
 
 // #[derive(serde::Deserialize, serde::Serialize, Default, Debug)]

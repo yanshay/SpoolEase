@@ -131,6 +131,7 @@ impl From<GcodeState> for PrintState {
 pub struct PrinterInfo {
     printer_name: String,
     printer_serial: String,
+    connected: bool,
     num_ams: Option<u32>,
     print_state: PrintState,
     progress_percent: Option<i32>,
@@ -2943,6 +2944,7 @@ impl ViewModel {
             let printer_info = PrinterInfo {
                 printer_name: printer_borrow.printer_name().clone(),
                 printer_serial: printer_borrow.printer_serial.clone(),
+                connected: printer_borrow.printer_connectivity_ok.unwrap_or_default(),
                 num_ams: printer_borrow.ams_exist_bits().map_or(None, |v| Some(v.count_ones())),
                 print_state: printer_borrow.gcode_state.into(),
                 progress_percent: match printer_borrow.gcode_state {
