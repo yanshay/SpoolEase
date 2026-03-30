@@ -153,11 +153,19 @@ pub struct BambuPrinter {
     tray_tar: [i32; 2],
     tray_now: [i32; 2],
     tray_pre: [i32; 2],
-    gcode_state: GcodeState,
-    layer_num: i32,
     pub locked_mode: Option<bool>, // None, unknown, treat as unlocked, false - dev mode, true - locked
     store_state_request_channel: Rc<StoreStateRequestChannel>,
     ams_info: Vec<AmsInfo>,
+    pub gcode_state: GcodeState,
+    pub layer_num: Option<i32>,
+    pub total_layer_num: Option<i32>,
+    pub mc_percent: Option<i32>,
+    pub mc_remaining_time: Option<i32>,
+    pub print_error: Option<i32>,
+    pub gcode_file_prepare_percent: Option<i32>,
+    pub gcode_file: Option<String>,
+    pub stg_cur: Option<i32>,
+    pub hms: Option<Vec<bambu_api::Hms>>,
 }
 
 pub trait BambuPrinterObserver {
@@ -395,8 +403,6 @@ impl BambuPrinter {
             tray_tar: [255, 255],       // format for these fields: 0-16 (regular AMS), 128-135 (AMS-HT), 254 (external), 255 (none)
             tray_now: [255, 255],
             tray_pre: [255, 255],
-            gcode_state: GcodeState::Unknown,
-            layer_num: -1,
             locked_mode: match printer_mode {
                 PrinterMode::Auto => None,
                 PrinterMode::DevOrOldFirmware => Some(false),
@@ -404,6 +410,16 @@ impl BambuPrinter {
             },
             store_state_request_channel,
             ams_info: alloc::vec![AmsInfo::default();14], // 0..3: standard ams, 4..11: 128..135 (HT), 12: 254 (external - left?), 13: 255 (external - right?)
+            gcode_state: GcodeState::Unknown,
+            layer_num: None,
+            total_layer_num: None,
+            mc_percent: None,
+            mc_remaining_time: None,
+            print_error: None,
+            gcode_file_prepare_percent: None,
+            gcode_file: None,
+            stg_cur: None,
+            hms: None,
         }
     }
 

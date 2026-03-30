@@ -192,8 +192,40 @@ impl BambuPrinter {
             self.gcode_state = gcode_state;
         }
 
-        if let Some(layer_num) = print.layer_num {
-            self.layer_num = layer_num;
+        if print.layer_num.is_some() {
+            self.layer_num = print.layer_num;
+        }
+
+        if print.total_layer_num.is_some() {
+            self.total_layer_num = print.total_layer_num;
+        }
+
+        if print.mc_percent.is_some() {
+            self.mc_percent = print.mc_percent;
+        }
+
+        if print.mc_remaining_time.is_some() {
+            self.mc_remaining_time = print.mc_remaining_time;
+        }
+
+        if print.print_error.is_some() {
+            self.print_error = print.print_error;
+        }
+
+        if print.gcode_file_prepare_percent.is_some() {
+            self.gcode_file_prepare_percent = print.gcode_file_prepare_percent;
+        }
+
+        if print.gcode_file.is_some() {
+            self.gcode_file = print.gcode_file.clone();
+        }
+
+        if print.stg_cur.is_some() {
+            self.stg_cur = print.stg_cur;
+        }
+
+        if print.hms.is_some() {
+            self.hms = print.hms.clone();
         }
 
         // Deal with nozzle diameter

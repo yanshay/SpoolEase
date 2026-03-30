@@ -275,7 +275,7 @@ impl BambuPrinter {
             // let mut tray_pre_change_to_tray_now = false; // meaning, starting to pull out filament
 
             let mut layer_num_change = false;
-            let mut new_layer_num = self.layer_num;
+            let mut new_layer_num = self.layer_num.unwrap_or(-1);
 
             // Update print project state
             if let Some(gcode_state) = print.gcode_state {
@@ -301,7 +301,7 @@ impl BambuPrinter {
             }
 
             if let Some(layer_num) = print.layer_num
-                && layer_num != self.layer_num
+                && layer_num != self.layer_num.unwrap_or(-1)
             {
                 layer_num_change = true;
                 new_layer_num = layer_num;
@@ -365,7 +365,7 @@ impl BambuPrinter {
 
             if layer_num_change && new_layer_num != 0 {
                 // important that it comes last
-                debugex!(">>>>> layer_num_change (from {} to {})", self.layer_num, new_layer_num);
+                debugex!(">>>>> layer_num_change (from {:?} to {})", self.layer_num, new_layer_num);
                 changed |= self.try_consume(curr_print_project, ConsumeType::LayerChange(new_layer_num));
                 // do some validations here:
                 //    verify that the new entry is for the next layer
@@ -523,10 +523,10 @@ impl BambuPrinter {
                 if let Some(usage_entry) = print_project.curr_usage_entry() {
                     debugex!(">>>>>> Checking curr usage entry {usage_entry:?}");
                     if let Some(usage_entry_tray_id) = print_project.get_ams_mapping_tray_id(usage_entry.gcode_filament_id) {
-                        debugex!(">>>>> self.layer_num = {}", self.layer_num);
+                        debugex!(">>>>> self.layer_num = {:?}", self.layer_num);
                         debugex!(">>>>> self.get_tray_active() = {:?}", self.get_tray_active());
                         debugex!(">>>>> usage_entry_tray_id = {usage_entry_tray_id}");
-                        if self.layer_num == usage_entry.layer
+                        if self.layer_num.unwrap_or(-1) == usage_entry.layer
                             && self.get_tray_active() == Some(usage_entry_tray_id)
                             && (0..self.ams_trays().len() as i32).contains(&usage_entry_tray_id)
                         {

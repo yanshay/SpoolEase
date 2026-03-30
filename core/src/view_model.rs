@@ -19,6 +19,7 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 use hashbrown::HashMap;
 use ndef_rs::NdefMessage;
 use ndef_rs::payload::UriPayload;
+use num_traits::PrimInt;
 use serde::{Deserialize, Serialize};
 use shared::gcode_analysis_task::{
     Fetch3mf, FilamentUsage, GcodeAnalysisNotification, GcodeAnalysisNotificationChannel, GcodeAnalysisRequest, GcodeAnalysisRequestChannel,
@@ -41,6 +42,7 @@ use framework::{
 use crate::app::{UiSlotDisplay, UiSpoolRecord, UiSpoolRecordDisplay};
 use crate::app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig, PrinterMode};
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
+use crate::bambu::bambu_api::GcodeState;
 use crate::bambu::bambu_print::PrintProject;
 use crate::bambu::calibration::{KExtruder, KInfo, KNozzleDiameter, KNozzleId, KPrinter};
 use crate::bambu::filament::Filament;
@@ -74,11 +76,11 @@ const TITLE_CHECKERBOARD_WIDTH: u32 = DISPLAY_WIDTH_PX;
 const TITLE_CHECKERBOARD_HEIGHT: u32 = 40;
 const TITLE_CHECKER_CELL_W: u32 = 8;
 const TITLE_CHECKER_CELL_H: u32 = 8;
-const COLOR_CHECKERBOARD_WIDTH: u32 = (DISPLAY_WIDTH_PX - 4 * TRAYS_SPACING)/5;
+const COLOR_CHECKERBOARD_WIDTH: u32 = (DISPLAY_WIDTH_PX - 4 * TRAYS_SPACING) / 5;
 const COLOR_CHECKERBOARD_HEIGHT: u32 = if DISPLAY_HEIGHT_PX == 480 { 210 } else { 160 };
 const COLOR_CHECKER_CELL_W: u32 = 6;
 const COLOR_CHECKER_CELL_H: u32 = 6;
-const AMS_COLOR_CHECKERBOARD_WIDTH: u32 = (DISPLAY_WIDTH_PX - 4 * TRAYS_SPACING)/5;
+const AMS_COLOR_CHECKERBOARD_WIDTH: u32 = (DISPLAY_WIDTH_PX - 4 * TRAYS_SPACING) / 5;
 const AMS_COLOR_CHECKERBOARD_HEIGHT: u32 = 40;
 const AMS_COLOR_CHECKER_CELL_W: u32 = 6;
 const AMS_COLOR_CHECKER_CELL_H: u32 = 6;
@@ -97,6 +99,50 @@ macro_rules! debugex {
 struct PrinterUiState {
     curr_ams: Option<i32>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PrintState {
+    Unknown,
+    Idle,
+    Prepare,
+    Slicing,
+    Running,
+    Pause,
+    Finish,
+    Failed,
+}
+impl From<GcodeState> for PrintState {
+    fn from(value: GcodeState) -> Self {
+        match value {
+            GcodeState::Unknown => PrintState::Unknown,
+            GcodeState::IDLE => PrintState::Idle,
+            GcodeState::SLICING => PrintState::Slicing,
+            GcodeState::PREPARE => PrintState::Prepare,
+            GcodeState::RUNNING => PrintState::Running,
+            GcodeState::FINISH => PrintState::Finish,
+            GcodeState::FAILED => PrintState::Failed,
+            GcodeState::PAUSE => PrintState::Pause,
+            GcodeState::Unsupported => PrintState::Unknown,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrinterInfo {
+    printer_name: String,
+    printer_serial: String,
+    num_ams: Option<u32>,
+    print_state: PrintState,
+    progress_percent: Option<i32>,
+    remain_secs: Option<i32>,
+    print_name: Option<String>,
+    layer: Option<i32>,
+    total_layers: Option<i32>,
+    stage_code: Option<i32>, // using code to avoid large texts in binary, if need to use in UI then need to swicth to text
+    print_error_code: Option<i32>,
+    hw_error_codes: Vec<(i32, i32)>,
+}
+
 pub struct ViewModel {
     // Framework
     stack: Stack<'static>,
@@ -285,7 +331,9 @@ impl ViewModel {
         // Application
         app_config: Rc<RefCell<AppConfig>>,
         // bambu_printer_model: Rc<RefCell<bambu::BambuPrinter>>,
-        spi_device: Option<ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>>,
+        spi_device: Option<
+            ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
+        >,
         irq: Option<esp_hal::gpio::Input<'static>>,
     ) -> Rc<RefCell<ViewModel>> {
         let spawner = framework.borrow().spawner;
@@ -621,7 +669,6 @@ impl ViewModel {
         self.framework.borrow_mut().subscribe(trait_for_framework_weak);
 
         let ui = self.ui_weak.unwrap();
-
 
         // Initialize UI FrameworkState with framework information
         let ui_framework_state = ui.global::<crate::app::FrameworkState>();
@@ -2884,6 +2931,39 @@ impl ViewModel {
             scale_debug_newer: scale_debug_info.newer,
         };
         ui_app_state.invoke_notify_available_firmwares(firmwares);
+    }
+    pub fn get_printers_status(&self) -> Vec<PrinterInfo> {
+        let mut printers_info = Vec::new();
+        for printer in &self.bambu_printer_model.printers {
+            let printer_borrow = printer.borrow();
+            if printer_borrow.printer_serial.starts_with("000000") {
+                // dummy printer
+                break;
+            }
+            let printer_info = PrinterInfo {
+                printer_name: printer_borrow.printer_name().clone(),
+                printer_serial: printer_borrow.printer_serial.clone(),
+                num_ams: printer_borrow.ams_exist_bits().map_or(None, |v| Some(v.count_ones())),
+                print_state: printer_borrow.gcode_state.into(),
+                progress_percent: match printer_borrow.gcode_state {
+                    GcodeState::PREPARE => printer_borrow.gcode_file_prepare_percent,
+                    GcodeState::RUNNING | GcodeState::PAUSE => printer_borrow.mc_percent,
+                    _ => None,
+                },
+                remain_secs: printer_borrow.mc_remaining_time.map(|v| v*60),
+                print_name: printer_borrow.gcode_file.clone(),
+                layer: printer_borrow.layer_num,
+                total_layers: printer_borrow.total_layer_num,
+                stage_code: printer_borrow.stg_cur,
+                print_error_code: printer_borrow.print_error,
+                hw_error_codes: printer_borrow
+                    .hms
+                    .as_ref()
+                    .map_or(Vec::new(), |vs| vs.iter().map(|v| (v.attr.unwrap_or(0), v.code.unwrap_or(0))).collect()),
+            };
+            printers_info.push(printer_info);
+        }
+        printers_info
     }
 }
 

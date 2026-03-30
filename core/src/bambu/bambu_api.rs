@@ -65,19 +65,19 @@ pub struct PrintData {
     // pub cooling_fan_speed: Option<String>,
     // pub big_fan1_speed: Option<String>,
     // pub big_fan2_speed: Option<String>,
-    // pub mc_percent: Option<i64>,
-    // pub mc_remaining_time: Option<i64>,
+    pub mc_percent: Option<i32>,
+    pub mc_remaining_time: Option<i32>,
     // pub ams_status: Option<i64>,
     // pub ams_rfid_status: Option<i64>,
     // pub hw_switch_state: Option<i64>,
     // pub spd_mag: Option<i64>,
     // pub spd_lvl: Option<i64>,
-    // pub print_error: Option<i64>,
+    pub print_error: Option<i32>,
     // pub lifecycle: Option<String>,
     // pub wifi_signal: Option<String>,
     pub gcode_state: Option<GcodeState>,
-    #[serde(default, serialize_with = "option_u32_as_str_se", deserialize_with = "option_u32_as_str_de")]
-    pub gcode_file_prepare_percent: Option<u32>,
+    #[serde(default, serialize_with = "option_i32_as_str_se", deserialize_with = "option_i32_as_str_de")]
+    pub gcode_file_prepare_percent: Option<i32>,
     // pub queue_number: Option<i64>,
     // pub queue_total: Option<i64>,
     // pub queue_est: Option<i64>,
@@ -89,9 +89,9 @@ pub struct PrintData {
     pub subtask_name: Option<String>,
     pub ams_mapping: Option<Vec<i32>>,
     pub ams_mapping2: Option<Vec<AmsMapping2Entry>>,
-    // pub gcode_file: Option<String>,
+    pub gcode_file: Option<String>,
     // pub stg: Option<Vec<Value>>,
-    // pub stg_cur: Option<i64>,
+    pub stg_cur: Option<i32>,
     // pub print_type: Option<String>,
     // pub home_flag: Option<i64>,
     // pub mc_print_line_number: Option<String>,
@@ -103,7 +103,7 @@ pub struct PrintData {
     pub total_layer_num: Option<i32>,
     // pub s_obj: Option<Vec<Value>>,
     // pub fan_gear: Option<i64>,
-    // pub hms: Option<Vec<Value>>,
+    pub hms: Option<Vec<Hms>>,
     // pub online: Option<PrintOnline>,
     pub ams: Option<PrintAms>,
     // pub ipcam: Option<PrintIpcam>,
@@ -143,6 +143,11 @@ pub struct PrintData {
     pub device: Option<PrintDevice>,
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Hms {
+    pub attr: Option<i32>,
+    pub code: Option<i32>,
+}
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PrintDevice {
     pub extruder: Option<PrintDeviceExtruder>,
@@ -398,6 +403,13 @@ where
     s.serialize_str(&format!("{}", x))
 }
 
+fn i32_as_str_se<S>(x: &i32, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    s.serialize_str(&format!("{}", x))
+}
+
 #[allow(dead_code)]
 fn u32_as_str_de<'de, D>(deserializer: D) -> Result<u32, D::Error>
 where
@@ -423,6 +435,24 @@ where
 {
     let option: Option<String> = Option::deserialize(deserializer)?;
     option.as_deref().map(|s| s.parse::<u32>().map_err(serde::de::Error::custom)).transpose()
+}
+
+fn option_i32_as_str_se<S>(value: &Option<i32>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match value {
+        Some(v) => i32_as_str_se(v, serializer),
+        None => serializer.serialize_none(),
+    }
+}
+
+fn option_i32_as_str_de<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let option: Option<String> = Option::deserialize(deserializer)?;
+    option.as_deref().map(|s| s.parse::<i32>().map_err(serde::de::Error::custom)).transpose()
 }
 
 fn as_str_se<T, S>(x: &T, s: S) -> Result<S::Ok, S::Error>
