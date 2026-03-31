@@ -39,6 +39,7 @@ use crate::app_config::{
     AiProviderAvailability, AiProviderId, AppConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrinterMode, PrintersConfig,
     SPOOLS_CATALOG, ScaleConfig,
 };
+use crate::bambu::{bambu_api::PrintCommand, BambuPrinter};
 use crate::bambu::calibration::KInfo;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
@@ -201,6 +202,40 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     }
                     .encrypt(&key.borrow())
                 })
+            }),
+        );
+
+        let router = router.route(
+            "/api/printer-command",
+            post(async move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, printer_command: PrinterCommandDTO| {
+                let PrinterCommandDTO { printer_serial, command } = printer_command;
+                let command_name = command.get_command().to_string();
+
+                let printer = {
+                    let borrowed_view_model = state.0.view_model.borrow();
+                    borrowed_view_model
+                        .bambu_printer_model
+                        .printers
+                        .iter()
+                        .find(|printer| printer.borrow().printer_serial == printer_serial.as_str())
+                        .cloned()
+                };
+
+                match printer {
+                    Some(printer) => {
+                        BambuPrinter::request_printer_command_async(&printer, command).await;
+                        GenericResponse {
+                            text: format!("Sent {command_name} command to printer {printer_serial}"),
+                            error: None,
+                        }
+                        .encrypt(&key.borrow())
+                    }
+                    None => GenericResponse {
+                        text: "Printer not found".to_string(),
+                        error: Some(format!("Printer not found: {printer_serial}")),
+                    }
+                    .encrypt(&key.borrow()),
+                }
             }),
         );
 
@@ -1412,6 +1447,13 @@ pub struct AddPressureAdvanceDTO {
     pressure_advance_entry: PressureAdvanceEntry,
 }
 encrypted_input!(AddPressureAdvanceDTO);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PrinterCommandDTO {
+    printer_serial: String,
+    command: PrintCommand,
+}
+encrypted_input!(PrinterCommandDTO);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GenericResponse {
