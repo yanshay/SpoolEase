@@ -141,7 +141,7 @@ pub struct PrinterInfo {
     num_layers: Option<i32>,
     stage: Option<i32>, // using code to avoid large texts in binary, if need to use in UI then need to swicth to text
     print_error: Option<i32>,
-    hw_errors: Vec<(i32, i32)>,
+    hms_errors: Vec<(i32, i32)>,
 }
 
 pub struct ViewModel {
@@ -2958,7 +2958,7 @@ impl ViewModel {
                 num_layers: printer_borrow.total_layer_num,
                 stage: printer_borrow.stg_cur,
                 print_error: printer_borrow.print_error,
-                hw_errors: printer_borrow
+                hms_errors: printer_borrow
                     .hms
                     .as_ref()
                     .map_or(Vec::new(), |vs| vs.iter().map(|v| (v.attr.unwrap_or(0), v.code.unwrap_or(0))).collect()),
