@@ -766,6 +766,48 @@ impl GetVersionCommand {
 //  }
 // }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PrintCommand {
+    Stop,
+    Pause,
+    Resume,
+}
+
+impl PrintCommand {
+    pub fn get_command(&self) -> &str {
+        match self {
+            PrintCommand::Stop => "stop",
+            PrintCommand::Pause => "pause",
+            PrintCommand::Resume => "resume",
+        }
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PrinterCommand {
+    print: Printer,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Printer {
+    pub command: String,     // extrusion_cali_get
+    pub param: String,
+    pub sequence_id: String,
+}
+
+impl PrinterCommand {
+    pub fn new(printer_command: PrintCommand) -> Self {
+        Self {
+            print: Printer {
+                command: printer_command.get_command().to_string(),
+                param: String::from(""),
+                sequence_id: String::from("10001"),
+            },
+        }
+    }
+}
+
+
 //////////////////////////////////////////////////////////////////////////////
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Info {

@@ -12,7 +12,7 @@ use crate::{
     bambu::{
         BambuPrinter, FilamentInfo,
         bambu_api::{
-            AmsFilamentSettingCommand, ExtrusionCaliGetCommand, ExtrusionCaliSelCommand, ExtrusionCaliSetCommand, GetVersionCommand, PushAllCommand,
+            AmsFilamentSettingCommand, ExtrusionCaliGetCommand, ExtrusionCaliSelCommand, ExtrusionCaliSetCommand, GetVersionCommand, PrintCommand, PrinterCommand, PushAllCommand
         },
         tray::TrayMetaInfo,
     },
@@ -77,6 +77,18 @@ impl BambuPrinter {
 
     pub async fn request_full_update_async(bambu_printer: &Rc<RefCell<BambuPrinter>>) {
         let cmd = PushAllCommand::new();
+        let payload = bambu_printer.borrow().printer_message(&cmd);
+        BambuPrinter::publish_payload_async(bambu_printer, payload).await;
+    }
+
+    pub fn request_printer_command_sync(&self, command: PrintCommand) {
+        let cmd = PrinterCommand::new(command);
+        let payload = self.printer_message(&cmd);
+        self.publish_payload(payload);
+    }
+
+    pub async fn request_printer_command_async(bambu_printer: &Rc<RefCell<BambuPrinter>>, command: PrintCommand) {
+        let cmd = PrinterCommand::new(command);
         let payload = bambu_printer.borrow().printer_message(&cmd);
         BambuPrinter::publish_payload_async(bambu_printer, payload).await;
     }
