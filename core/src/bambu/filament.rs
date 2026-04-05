@@ -17,6 +17,21 @@ pub enum Filament {
     Known(FilamentInfo),
 }
 
+impl Filament {
+    pub fn tray_type_str(&self) -> &str {
+        match self {
+            Filament::Known(info) => &info.tray_type,
+            Filament::Unknown => "",
+        }
+    }
+    pub fn tray_color_str(&self) -> String {
+        match self {
+            Filament::Known(info) => info.tray_color.join(";"),
+            Filament::Unknown => String::new(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 pub struct FilamentInfo {
     pub tray_info_idx: String, // e.g. "GFL99"

@@ -155,7 +155,7 @@ pub struct BambuPrinter {
     tray_pre: [i32; 2],
     pub locked_mode: Option<bool>, // None, unknown, treat as unlocked, false - dev mode, true - locked
     store_state_request_channel: Rc<StoreStateRequestChannel>,
-    ams_info: Vec<AmsInfo>,
+    pub ams_info: Vec<AmsInfo>,
     pub gcode_state: GcodeState,
     pub layer_num: Option<i32>,
     pub total_layer_num: Option<i32>,

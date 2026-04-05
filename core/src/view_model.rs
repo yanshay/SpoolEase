@@ -128,6 +128,20 @@ impl From<GcodeState> for PrintState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SpoolsSlotsKind {
+    Ams,
+    Ext,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SlotSet {
+    kind: SpoolsSlotsKind,
+    name: String,
+    extruder: u32,
+    slots: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrinterInfo {
     printer_name: String,
     printer_serial: String,
@@ -142,6 +156,8 @@ pub struct PrinterInfo {
     stage: Option<i32>, // using code to avoid large texts in binary, if need to use in UI then need to swicth to text
     print_error: Option<i32>,
     hms_errors: Vec<(i32, i32)>,
+    num_extruders: u32,
+    slots_sets: Vec<SlotSet>,
 }
 
 pub struct ViewModel {
@@ -1855,17 +1871,7 @@ impl ViewModel {
         // OPT: calculate only when ams_exists change (store in printer struct), here use the value calculated there
         //      don't forget to consider loading the ams_exist from state which will need to recalculate, so add inner_set_ams_exist_bits
         if let Some(mut ams_exist_bits) = *bambu_printer.ams_exist_bits() {
-            let mut ams_exist_vec = Vec::<i32>::new();
-            let mut first_ams = -1;
-            for ams_id in 0..=3 + 8 {
-                if ams_exist_bits & 1 != 0 {
-                    ams_exist_vec.push(ams_id);
-                    if first_ams == -1 {
-                        first_ams = ams_id;
-                    }
-                }
-                ams_exist_bits >>= 1;
-            }
+            let (ams_exist_vec, first_ams) = Self::get_ams_list(ams_exist_bits);
             let ams_exists: Rc<slint::VecModel<i32>> = Rc::new(slint::VecModel::from(ams_exist_vec));
             let ams_exists = slint::ModelRc::from(ams_exists);
             ui.global::<crate::app::AppState>().set_ams_exists(ams_exists);
@@ -2941,6 +2947,51 @@ impl ViewModel {
                 // dummy printer
                 break;
             }
+            let mut slots_sets = Vec::new();
+
+            if let Some(ams_exist_bits) = *printer_borrow.ams_exist_bits() {
+                let (ams_list, _) = Self::get_ams_list(ams_exist_bits);
+                for ams_index in ams_list {
+                    let mut slot_set = SlotSet {
+                        kind: SpoolsSlotsKind::Ams,
+                        name: Self::ams_name(&printer_borrow, ams_index as usize),
+                        extruder: printer_borrow.ams_info[ams_index as usize].extruder,
+                        slots: Vec::new(),
+                    };
+                    let num_of_ams_slots: usize = if ams_index <= 3 { 4 } else { 1 };
+                    let slots_offset: usize = match ams_index {
+                        0..3 => ams_index as usize * 4,
+                        _ => 16 + ams_index as usize,
+                    };
+
+                    for slot_index in slots_offset..slots_offset + num_of_ams_slots {
+                        let slot = &printer_borrow.ams_trays()[slot_index];
+                        //TrayState,material, color,k, spool_id, net_weight,
+                        let slot_str = self.slot_str(&printer_borrow, slot_index, slot);
+                        slot_set.slots.push(slot_str);
+                    }
+                    slots_sets.push(slot_set);
+                }
+                // First external (always available, but name differ if single or dual extruders)
+                let ext_slot_set = SlotSet {
+                    kind: SpoolsSlotsKind::Ext,
+                    name: if printer_borrow.num_extruders() == 2 { "Ext Right".to_string() } else { "Ext".to_string() },
+                    extruder: 0,
+                    slots: alloc::vec![self.slot_str(&printer_borrow, 255, printer_borrow.get_any_tray(255))],
+                };
+                slots_sets.push(ext_slot_set);
+                // Second external
+                if printer_borrow.num_extruders() == 2 {
+                    let ext_slot_set = SlotSet {
+                        kind: SpoolsSlotsKind::Ext,
+                        name: if printer_borrow.num_extruders() == 2 { "Ext Left".to_string() } else { "Ext".to_string() },
+                        extruder: 1,
+                    slots: alloc::vec![self.slot_str(&printer_borrow, 254, printer_borrow.get_any_tray(254))],
+                    };
+                    slots_sets.push(ext_slot_set);
+                }
+            }
+
             let printer_info = PrinterInfo {
                 printer_name: printer_borrow.printer_name().clone(),
                 printer_serial: printer_borrow.printer_serial.clone(),
@@ -2952,7 +3003,7 @@ impl ViewModel {
                     GcodeState::RUNNING | GcodeState::PAUSE => printer_borrow.mc_percent,
                     _ => None,
                 },
-                remain_secs: printer_borrow.mc_remaining_time.map(|v| v*60),
+                remain_secs: printer_borrow.mc_remaining_time.map(|v| v * 60),
                 print_name: printer_borrow.subtask_name.clone(),
                 layer: printer_borrow.layer_num,
                 num_layers: printer_borrow.total_layer_num,
@@ -2962,10 +3013,41 @@ impl ViewModel {
                     .hms
                     .as_ref()
                     .map_or(Vec::new(), |vs| vs.iter().map(|v| (v.attr.unwrap_or(0), v.code.unwrap_or(0))).collect()),
+                num_extruders: printer_borrow.num_extruders(),
+                slots_sets,
             };
             printers_info.push(printer_info);
         }
         printers_info
+    }
+
+    fn slot_str(&self, printer_borrow: &core::cell::Ref<'_, BambuPrinter>, slot_index: usize, slot: &Tray) -> String {
+        // state, material, color, k, spool_id, weight_display
+        let slot_str = format!(
+            "{:?},{},{},{},{},{}",
+            slot.state,
+            slot.filament.tray_type_str(),
+            &slot.filament.tray_color_str(),
+            &printer_borrow.get_tray_resolved_k_value(slot, slot_index as i32),
+            slot.meta_info.spool_id.as_deref().unwrap_or(""),
+            self.weight_display(slot),
+        );
+        slot_str
+    }
+
+    fn get_ams_list(mut ams_exist_bits: u32) -> (Vec<i32>, i32) {
+        let mut ams_exist_vec = Vec::<i32>::new();
+        let mut first_ams = -1;
+        for ams_id in 0..=3 + 8 {
+            if ams_exist_bits & 1 != 0 {
+                ams_exist_vec.push(ams_id);
+                if first_ams == -1 {
+                    first_ams = ams_id;
+                }
+            }
+            ams_exist_bits >>= 1;
+        }
+        (ams_exist_vec, first_ams)
     }
 }
 
