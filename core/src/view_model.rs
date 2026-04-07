@@ -1872,7 +1872,7 @@ impl ViewModel {
         // ----- handle number of ams's and curr_ams -----
         // OPT: calculate only when ams_exists change (store in printer struct), here use the value calculated there
         //      don't forget to consider loading the ams_exist from state which will need to recalculate, so add inner_set_ams_exist_bits
-        if let Some(mut ams_exist_bits) = *bambu_printer.ams_exist_bits() {
+        if let Some(ams_exist_bits) = *bambu_printer.ams_exist_bits() {
             let (ams_exist_vec, first_ams) = Self::get_ams_list(ams_exist_bits);
             let ams_exists: Rc<slint::VecModel<i32>> = Rc::new(slint::VecModel::from(ams_exist_vec));
             let ams_exists = slint::ModelRc::from(ams_exists);
@@ -1881,8 +1881,13 @@ impl ViewModel {
             if first_ams > current_shown_ams {
                 ui.global::<crate::app::AppState>().set_curr_ams_id(first_ams);
             }
+        } else {
+            // default view
+            let ams_exists: Rc<slint::VecModel<i32>> = Rc::new(slint::VecModel::from(alloc::vec![0]));
+            let ams_exists = slint::ModelRc::from(ams_exists);
+            ui.global::<crate::app::AppState>().set_ams_exists(ams_exists);
+            ui.global::<crate::app::AppState>().set_curr_ams_id(0);
         }
-
         // ----- handle trays view update ----
         let trays_state_rc = ui.global::<crate::app::AppState>().get_trays_state();
         // let trays_state_rc = ui.get_trays_state();
@@ -2976,28 +2981,37 @@ impl ViewModel {
                     }
                     slots_sets.push(slot_set);
                 }
-                // First external (always available, but name differ if single or dual extruders)
+            }
+
+            // First external (always available, but name differ if single or dual extruders)
+            let ext_slot_set = SlotSet {
+                kind: SpoolsSlotsKind::Ext,
+                name: if printer_borrow.num_extruders() == 2 {
+                    "Ext Right".to_string()
+                } else {
+                    "Ext".to_string()
+                },
+                extruder: 0,
+                slots: alloc::vec![self.slot_str(&printer_borrow, 255, printer_borrow.get_any_tray(255))],
+                temp: None,
+                humidity: None,
+            };
+            slots_sets.push(ext_slot_set);
+            // Second external
+            if printer_borrow.num_extruders() == 2 {
                 let ext_slot_set = SlotSet {
                     kind: SpoolsSlotsKind::Ext,
-                    name: if printer_borrow.num_extruders() == 2 { "Ext Right".to_string() } else { "Ext".to_string() },
-                    extruder: 0,
-                    slots: alloc::vec![self.slot_str(&printer_borrow, 255, printer_borrow.get_any_tray(255))],
+                    name: if printer_borrow.num_extruders() == 2 {
+                        "Ext Left".to_string()
+                    } else {
+                        "Ext".to_string()
+                    },
+                    extruder: 1,
+                    slots: alloc::vec![self.slot_str(&printer_borrow, 254, printer_borrow.get_any_tray(254))],
                     temp: None,
                     humidity: None,
                 };
                 slots_sets.push(ext_slot_set);
-                // Second external
-                if printer_borrow.num_extruders() == 2 {
-                    let ext_slot_set = SlotSet {
-                        kind: SpoolsSlotsKind::Ext,
-                        name: if printer_borrow.num_extruders() == 2 { "Ext Left".to_string() } else { "Ext".to_string() },
-                        extruder: 1,
-                        slots: alloc::vec![self.slot_str(&printer_borrow, 254, printer_borrow.get_any_tray(254))],
-                        temp: None,
-                        humidity: None,
-                    };
-                    slots_sets.push(ext_slot_set);
-                }
             }
 
             let printer_info = PrinterInfo {
