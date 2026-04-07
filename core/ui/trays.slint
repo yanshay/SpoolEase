@@ -231,8 +231,9 @@ component CircleStripes inherits Rectangle {
 component Spool inherits Rectangle {
     callback clicked;
     in-out property <UiTray> ui-tray;
+    in property <bool> is-in-ams;
 
-    property <bool> has-known-color: ui-tray.filament.state != UiFilamentState.Unknown;
+    property <bool> has-known-color: ui-tray.filament.state != UiFilamentState.Unknown && (!is-in-ams || ui-tray.spool-state != UiTrayState.Empty);
     property <bool> has-spool-id: ui-tray.spool-rec-id != "";
     property <int> spool-color-count: ui-tray.spool-colors.length;
     property <bool> use-spool-colors: has-spool-id && spool-color-count > 0; // use spool color(s) if available, if not then tray-color
@@ -321,7 +322,7 @@ component Spool inherits Rectangle {
             height: 18px;
             horizontal-alignment: center;
             font-size: 20px;
-            text: ui-tray.filament.state == UiFilamentState.Unknown ? "???" : ui-tray.filament.material;
+            text: has-known-color ? ui-tray.filament.material : "??";
             color: has-known-color ? Utils.contrasting_color(root.outer-display-color[0]) : Utils.contrasting_color(root.background); // TODO: fix to multi color
         }
 
@@ -329,7 +330,7 @@ component Spool inherits Rectangle {
             height: 20px;
             horizontal-alignment: center;
             font-size: 20px;
-            text: ui-tray.filament.state == UiFilamentState.Unknown ? "" : "K " + ui-tray.k;
+            text: has-known-color ? "K " + ui-tray.k : "";
             color: has-known-color ? Utils.contrasting_color(root.outer-display-color[0]) : Utils.contrasting_color(root.background); // TODO: fix to multi color
         }
     }
@@ -377,12 +378,14 @@ component Spool inherits Rectangle {
 
 component Tray inherits Rectangle {
     in-out property <UiTray> tray-state;
+    in property <bool> is-in-ams;
     callback clicked();
     // Not clear why, but VerticalLayout (with single item inside?) stretches it to the correct height
     VerticalLayout {
         padding: 0px;
         spacing: 4px;
         Spool {
+            is-in-ams: is-in-ams;
             ui-tray: tray_state;
             clicked => {
                 root.clicked();
@@ -446,6 +449,7 @@ export component Trays {
             padding-right: 0px;
             width: is_ams ? FrameworkState.display-width - (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5 - AppConsts.trays-spacing : (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
             for index in tray_numbers: Tray {
+                is-in-ams: is_ams;
                 // visible: AppState.selected-tray-index == -1 || AppState.selected-tray-index == index;
                 tray-state: trays-state[index];
                 clicked() => { // ? TODO: Think if to move into the tray component
