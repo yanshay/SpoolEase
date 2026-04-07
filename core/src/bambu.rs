@@ -99,6 +99,8 @@ impl Extruder {
 #[derive(Default, Debug, Clone)]
 pub struct AmsInfo {
     pub extruder: u32,
+    pub humidity: Option<i32>,
+    pub temp: Option<f32>,
 }
 
 pub struct BambuPrinter {

@@ -139,6 +139,8 @@ pub struct SlotSet {
     name: String,
     extruder: u32,
     slots: Vec<String>,
+    temp: Option<f32>,
+    humidity: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2957,6 +2959,8 @@ impl ViewModel {
                         name: Self::ams_name(&printer_borrow, ams_index as usize),
                         extruder: printer_borrow.ams_info[ams_index as usize].extruder,
                         slots: Vec::new(),
+                        temp: printer_borrow.ams_info[ams_index as usize].temp,
+                        humidity: printer_borrow.ams_info[ams_index as usize].humidity,
                     };
                     let num_of_ams_slots: usize = if ams_index <= 3 { 4 } else { 1 };
                     let slots_offset: usize = match ams_index {
@@ -2978,6 +2982,8 @@ impl ViewModel {
                     name: if printer_borrow.num_extruders() == 2 { "Ext Right".to_string() } else { "Ext".to_string() },
                     extruder: 0,
                     slots: alloc::vec![self.slot_str(&printer_borrow, 255, printer_borrow.get_any_tray(255))],
+                    temp: None,
+                    humidity: None,
                 };
                 slots_sets.push(ext_slot_set);
                 // Second external
@@ -2986,7 +2992,9 @@ impl ViewModel {
                         kind: SpoolsSlotsKind::Ext,
                         name: if printer_borrow.num_extruders() == 2 { "Ext Left".to_string() } else { "Ext".to_string() },
                         extruder: 1,
-                    slots: alloc::vec![self.slot_str(&printer_borrow, 254, printer_borrow.get_any_tray(254))],
+                        slots: alloc::vec![self.slot_str(&printer_borrow, 254, printer_borrow.get_any_tray(254))],
+                        temp: None,
+                        humidity: None,
                     };
                     slots_sets.push(ext_slot_set);
                 }
@@ -3024,13 +3032,14 @@ impl ViewModel {
     fn slot_str(&self, printer_borrow: &core::cell::Ref<'_, BambuPrinter>, slot_index: usize, slot: &Tray) -> String {
         // state, material, color, k, spool_id, weight_display
         let slot_str = format!(
-            "{:?},{},{},{},{},{}",
+            "{:?},{},{},{},{},{},{}",
             slot.state,
             slot.filament.tray_type_str(),
             &slot.filament.tray_color_str(),
             &printer_borrow.get_tray_resolved_k_value(slot, slot_index as i32),
             slot.meta_info.spool_id.as_deref().unwrap_or(""),
             self.weight_display(slot),
+            i32::from(slot.meta_info.used_in_print),
         );
         slot_str
     }

@@ -212,8 +212,12 @@ pub struct PrintAmsData {
     // A Specific AMS
     #[serde(serialize_with = "u32_as_str_se", deserialize_with = "u32_as_str_de")]
     pub id: u32,
-    pub humidity: String,
-    // pub temp: String,
+    #[serde(default, serialize_with = "option_as_str_se", deserialize_with = "option_as_str_de")]
+    pub humidity: Option<i32>,
+    #[serde(default, serialize_with = "option_as_str_se", deserialize_with = "option_as_str_de")]
+    pub humidity_raw: Option<i32>,
+    #[serde(default, serialize_with = "option_as_str_se", deserialize_with = "option_as_str_de")]
+    pub temp: Option<f32>,
     pub tray: Vec<PrintTray>, // Vector of Trays
     #[serde(default, serialize_with = "option_u32_as_str_hex_se", deserialize_with = "option_u32_as_str_hex_de")]
     pub info: Option<u32>,

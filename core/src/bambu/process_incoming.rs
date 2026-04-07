@@ -405,18 +405,27 @@ impl BambuPrinter {
         // IPORTANT Note: For now doesn't seem relevatnt to change_made, nor for persistent state
         if let Some(ams_units) = &ams.ams {
             for ams in ams_units {
+                let ams_id = ams.id;
+                let ams_index = match ams_id {
+                    0..3 => ams_id,
+                    128..135 => ams_id - 128 + 4,
+                    254 | 255 => ams_id - 254 + 12,
+                    _ => {
+                        error!("[{}] Bad ams_id encountered: {ams_id}", self.printer_number);
+                        continue;
+                    }
+                } as usize;
+                if let Some(humidity) = ams.humidity {
+                    self.ams_info[ams_index].humidity = Some(-humidity);
+                }
+                if let Some(humidity_raw) = ams.humidity_raw {
+                    self.ams_info[ams_index].humidity = Some(humidity_raw);
+                }
+                if let Some(temp) = ams.temp {
+                    self.ams_info[ams_index].temp = Some(temp);
+                }
                 if let Some(ams_info) = ams.info {
                     let extruder = (ams_info >> 8) & 0x0F;
-                    let ams_id = ams.id;
-                    let ams_index = match ams_id {
-                        0..3 => ams_id,
-                        128..135 => ams_id - 128 + 4,
-                        254 | 255 => ams_id - 254 + 12,
-                        _ => {
-                            error!("[{}] Bad ams_id encountered: {ams_id}", self.printer_number);
-                            continue;
-                        }
-                    } as usize;
                     self.ams_info[ams_index].extruder = extruder;
                 }
             }
