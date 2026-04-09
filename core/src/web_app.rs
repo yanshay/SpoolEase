@@ -13,14 +13,16 @@ use embedded_sdmmc::asynchronous::LfnBuffer;
 use framework::framework_web_app::{FrameworkState, encrypt, encrypt_bytes};
 use hashbrown::HashMap;
 use picoserve::response::StatusCode;
+use picoserve::response::ResponseWriter;
 use picoserve::response::chunked::{ChunkWriter, ChunkedResponse, ChunksWritten};
-use picoserve::routing::{get, get_service, post_service};
+use picoserve::routing::{PathRouterService, RequestHandlerService, get, get_service, post_service};
 use picoserve::{
     AppWithStateBuilder,
     extract::{FromRequest, State},
     io::Read,
-    request::{RequestBody, RequestParts},
+    request::{Path, Request, RequestBody, RequestParts},
     routing::post,
+    ResponseSent,
 };
 
 use framework::{
@@ -39,8 +41,8 @@ use crate::app_config::{
     AiProviderAvailability, AiProviderId, AppConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrinterMode, PrintersConfig,
     SPOOLS_CATALOG, ScaleConfig,
 };
-use crate::bambu::{bambu_api::PrintCommand, BambuPrinter};
 use crate::bambu::calibration::KInfo;
+use crate::bambu::{BambuPrinter, bambu_api::PrintCommand};
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
 use crate::store::{BackupMeta, FileMeta, Store};
@@ -207,36 +209,38 @@ impl AppWithStateBuilder for NestedAppBuilder {
 
         let router = router.route(
             "/api/printer-command",
-            post(async move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, printer_command: PrinterCommandDTO| {
-                let PrinterCommandDTO { printer_serial, command } = printer_command;
-                let command_name = command.get_command().to_string();
+            post(
+                async move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, printer_command: PrinterCommandDTO| {
+                    let PrinterCommandDTO { printer_serial, command } = printer_command;
+                    let command_name = command.get_command().to_string();
 
-                let printer = {
-                    let borrowed_view_model = state.0.view_model.borrow();
-                    borrowed_view_model
-                        .bambu_printer_model
-                        .printers
-                        .iter()
-                        .find(|printer| printer.borrow().printer_serial == printer_serial.as_str())
-                        .cloned()
-                };
+                    let printer = {
+                        let borrowed_view_model = state.0.view_model.borrow();
+                        borrowed_view_model
+                            .bambu_printer_model
+                            .printers
+                            .iter()
+                            .find(|printer| printer.borrow().printer_serial == printer_serial.as_str())
+                            .cloned()
+                    };
 
-                match printer {
-                    Some(printer) => {
-                        BambuPrinter::request_printer_command_async(&printer, command).await;
-                        GenericResponse {
-                            text: format!("Sent {command_name} command to printer {printer_serial}"),
-                            error: None,
+                    match printer {
+                        Some(printer) => {
+                            BambuPrinter::request_printer_command_async(&printer, command).await;
+                            GenericResponse {
+                                text: format!("Sent {command_name} command to printer {printer_serial}"),
+                                error: None,
+                            }
+                            .encrypt(&key.borrow())
                         }
-                        .encrypt(&key.borrow())
+                        None => GenericResponse {
+                            text: "Printer not found".to_string(),
+                            error: Some(format!("Printer not found: {printer_serial}")),
+                        }
+                        .encrypt(&key.borrow()),
                     }
-                    None => GenericResponse {
-                        text: "Printer not found".to_string(),
-                        error: Some(format!("Printer not found: {printer_serial}")),
-                    }
-                    .encrypt(&key.borrow()),
-                }
-            }),
+                },
+            ),
         );
 
         let router = router.route(
@@ -633,12 +637,24 @@ impl AppWithStateBuilder for NestedAppBuilder {
 
         let router = router.route(
             "/inventory",
-            get_service(picoserve::response::File::with_content_type_and_headers(
-                "text/html",
-                include_bytes_gz!("static/inventory/index.html"),
-                &[("Content-Encoding", "gzip")],
-            )),
+            get(|| {
+                ready({
+                    let redirect_url = "/app/inventory";
+
+                    let redirect_html = r#"<!doctype html><script>location.replace("/app/inventory"+location.hash)</script>"#.to_string();
+                    HtmlStringResponse::new(redirect_html)
+                })
+            }),
         );
+
+        // captures /app
+        let router = router.route(
+            "/app",
+            get_service(APP_INDEX_HTML_FILE),
+        );
+
+        // captures /app/*
+        let router = router.nest_service("/app", AppIndexHtml);
 
         let router = router.route(
             "/L1/",
@@ -1513,6 +1529,31 @@ pub struct SetSpoolLocationDTO {
 encrypted_input!(SetSpoolLocationDTO);
 
 /////////////////////////////////////////////
+
+const APP_INDEX_HTML_FILE: picoserve::response::File =
+    picoserve::response::File::with_content_type_and_headers(
+        "text/html",
+        include_bytes_gz!("static/app/index.html"),
+        &[("Content-Encoding", "gzip")],
+    );
+
+#[derive(Clone, Copy)]
+struct AppIndexHtml;
+
+impl<State> PathRouterService<State, ()> for AppIndexHtml {
+    async fn call_path_router_service<R: Read, W: ResponseWriter<Error = R::Error>>(
+        &self,
+        state: &State,
+        (): (),
+        _path: Path<'_>,
+        request: Request<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        APP_INDEX_HTML_FILE
+            .call_request_handler_service(state, (), request, response_writer)
+            .await
+    }
+}
 
 struct HtmlStringResponse {
     html: String,
