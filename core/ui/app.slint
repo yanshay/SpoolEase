@@ -157,7 +157,7 @@ export global AppBackend {
     callback calibrate-scale(weight: int);
     pure callback get-connected-scale-info() -> string;
     pure callback get-available-scales-info() -> [string];
-    callback import-definition-tag-to-inventory(tag-definition-type: string, tag-definition-info: string, empty-spool-weight: int);
+    callback import-definition-tag-to-inventory(tag-definition-type: string, tag-definition-info: string, empty-spool-weight: int, spool-is-full: bool);
     callback link-tag-to-untagged-spool-id(tag_id: string, tag_type: string, spool-id: string, final-step: bool);
     callback link-tag-to-tagged-spool-id(tag_id: string, tag_type: string, spool-id: string, final-step: bool);
     callback unlink-spool-from-all-tags(spool-id: string);
@@ -290,6 +290,7 @@ export global AppState {
     in-out property <string> new-tag-scan-definition-info: ""; // The actual data (as understdoon by the view_model)
     in-out property <string> new-tag-scan-definition-type: ""; // Bambu Lab, Creatlity, etc.
     in-out property <int> new-tag-scan-empty-spool-weight: 0; // 0 - not specified, value from Bambu Tag
+    in-out property <bool> new-tag-scan-spool-is-full: true;
 
     in-out property <StagingOperationsPage> staging-operation-page: StagingOperationsPage.OperationSelection;
     in-out property <StagingOperationsPage> prev-staging-operation-page: StagingOperationsPage.OperationSelection;
@@ -728,6 +729,7 @@ export global AppState {
         self.new-tag-scan-tag-id = tag-id;
         self.new-tag-scan-definition-info = "";
         self.new-tag-scan-empty-spool-weight = 0;
+        self.new-tag-scan-spool-is-full = true;
         self.control-state = ControlState.NewTagScan;
     }
     public function new-v1-tag-scanned(tag-id: string, v1-tag: string) {
@@ -740,6 +742,7 @@ export global AppState {
         self.new-tag-scan-tag-id = tag-id;
         self.new-tag-scan-definition-info = v1-tag;
         self.new-tag-scan-empty-spool-weight = 0;
+        self.new-tag-scan-spool-is-full = true;
         self.control-state = ControlState.NewTagScan;
     }
     public function new-definition-tag-scanned(definition-type: string, tag-id: string, definition-info: string) {
@@ -753,6 +756,7 @@ export global AppState {
         self.new-tag-scan-tag-id = tag-id;
         self.new-tag-scan-definition-info = definition-info;
         self.new-tag-scan-empty-spool-weight = 0;
+        self.new-tag-scan-spool-is-full = true;
         self.control-state = ControlState.NewTagScan;
     }
 
@@ -767,6 +771,7 @@ export global AppState {
         self.new-tag-scan-tag-id = "";
         self.new-tag-scan-definition-info = "";
         self.new-tag-scan-empty-spool-weight = 0;
+        self.new-tag-scan-spool-is-full = true;
     }
 
     public function import-definition-tag-to-inventory-status(status: string, spool-id: string) {

@@ -957,11 +957,12 @@ impl ViewModel {
             });
 
         let moved_view_model = self.view_model.clone().unwrap();
-        ui_app_backend.on_import_definition_tag_to_inventory(move |tag_definition_type, tag_definition_info, empty_spool_weight| {
+        ui_app_backend.on_import_definition_tag_to_inventory(move |tag_definition_type, tag_definition_info, empty_spool_weight, spool_is_full| {
             moved_view_model.borrow().ui_import_definition_tag_to_inventory(
                 tag_definition_type.as_str(),
                 tag_definition_info.as_str(),
                 empty_spool_weight,
+                spool_is_full,
             )
         });
 
@@ -1489,11 +1490,12 @@ impl ViewModel {
         });
     }
 
-    fn ui_import_definition_tag_to_inventory(&self, tag_definition_type: &str, tag_definition_info: &str, empty_spool_weight: i32) {
+    fn ui_import_definition_tag_to_inventory(&self, tag_definition_type: &str, tag_definition_info: &str, empty_spool_weight: i32, spool_is_full: bool) {
         let _ = self.dispatch_async_task(AppAsyncTaskRequest::ImportDefinitionTagToInventory {
             tag_definition_type: tag_definition_type.to_string(),
             tag_definition_info: tag_definition_info.to_string(),
             empty_spool_weight,
+            spool_is_full,
         });
     }
 
@@ -2419,11 +2421,14 @@ impl ViewModel {
         tag_definition_type: String,
         tag_definition_info: String,
         empty_spool_weight: i32,
+        spool_is_full: bool,
     ) {
         let (spool_rec, origin_data) = match tag_definition_type.as_str() {
             BAMBULAB_TAG_TYPE => {
                 if let Ok(bambulab_tag) = serde_json::from_str::<BambuLabTag>(&tag_definition_info) {
-                    (Some(bambulab_tag.to_spool_rec()), Some(OriginData::BambuLabTag { bambulab_tag }))
+                    let mut spool_rec = bambulab_tag.to_spool_rec();
+                    spool_rec.added_full = Some(spool_is_full);
+                    (Some(spool_rec), Some(OriginData::BambuLabTag { bambulab_tag }))
                 } else {
                     (None, None)
                 }
@@ -4109,6 +4114,7 @@ enum AppAsyncTaskRequest {
         tag_definition_type: String,
         tag_definition_info: String,
         empty_spool_weight: i32,
+        spool_is_full: bool,
     },
 }
 
@@ -4159,8 +4165,9 @@ pub async fn app_async_task(view_model: Rc<RefCell<ViewModel>>) {
                 tag_definition_type,
                 tag_definition_info,
                 empty_spool_weight,
+                spool_is_full,
             } => {
-                ViewModel::import_definition_tag_to_inventory_async(view_model.clone(), tag_definition_type, tag_definition_info, empty_spool_weight)
+                ViewModel::import_definition_tag_to_inventory_async(view_model.clone(), tag_definition_type, tag_definition_info, empty_spool_weight, spool_is_full)
                     .await
             }
         }

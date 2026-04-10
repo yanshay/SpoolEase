@@ -107,14 +107,25 @@ enum BambulabSpoolTypeSelection {
   HighTemp,
   Other,
 }
+enum NewOrUsedSelection {
+  None,
+  New,
+  Used,
+}
+
 component BambulabSpoolTypePage inherits Rectangle {
     // width: 480px;
     // height: 320px;
     background: white;
     property <BambulabSpoolTypeSelection> spool-selection: None;
+    property <NewOrUsedSelection> spool-new-or-used: None;
 
     function pressed(operation: BambulabSpoolTypeSelection) {
         spool-selection = operation;
+    }
+
+    function new-or-used-pressed(operation: NewOrUsedSelection) {
+        spool-new-or-used = operation;
     }
 
     VerticalLayout {
@@ -125,55 +136,79 @@ component BambulabSpoolTypePage inherits Rectangle {
         VerticalLayout {
             alignment: start;
             padding: 5px;
-            padding-top: 10px;
-            spacing: 8px;
-
-            MyText {
-                width: parent.width;
-                wrap: word-wrap;
-                text: "Available filament est. needs empty-spool weight.";
-                color: black;
-            }
+            padding-top: 5px;
+            spacing: 5px;
 
             MyText {
                 text: "What spool type is used with this tag?";
             }
 
-            lowtemp := MyButton {
-                type: ButtonType.RadioButton;
-                pushed: spool-selection == BambulabSpoolTypeSelection.LowTemp;
-                height: 45px;
-                text: "Low Temp (≤ 70°C) / Light Gray (~250g)"; // 208-212 + 38 (if change, change also below)
+            VerticalLayout {
+                spacing: -1px;
+                lowtemp := MyButton {
+                    type: ButtonType.RadioButton;
+                    pushed: spool-selection == BambulabSpoolTypeSelection.LowTemp;
+                    height: 40px;
+                    text: "Low Temp (≤ 70°C) / Light Gray (~250g)"; // 208-212 + 38 (if change, change also below)
                 pressed => {
-                    pressed(BambulabSpoolTypeSelection.LowTemp);
+                        pressed(BambulabSpoolTypeSelection.LowTemp);
+                    }
+                }
+
+                hightemp := MyButton {
+                    type: ButtonType.RadioButton;
+                    pushed: spool-selection == BambulabSpoolTypeSelection.HighTemp;
+                    height: 40px;
+                    text: "High Temp (≤ 90°C) / Dark Gray (~260g)"; // 223 + 38, (if change, change also below)
+                pressed => {
+                        pressed(BambulabSpoolTypeSelection.HighTemp);
+                    }
+                }
+
+                other := MyButton {
+                    type: ButtonType.RadioButton;
+                    pushed: spool-selection == BambulabSpoolTypeSelection.Other;
+                    height: 40px;
+                    text: "Other (Can be entered manually later)";
+                    pressed => {
+                        pressed(BambulabSpoolTypeSelection.Other);
+                    }
                 }
             }
 
-            hightemp := MyButton {
-                type: ButtonType.RadioButton;
-                pushed: spool-selection == BambulabSpoolTypeSelection.HighTemp;
-                height: 45px;
-                text: "High Temp (≤ 90°C) / Dark Gray (~260g)"; // 223 + 38, (if change, change also below)
-                pressed => {
-                    pressed(BambulabSpoolTypeSelection.HighTemp);
-                }
+            MyText {
+                text: "What's the state of this spool filament?";
             }
 
-            other := MyButton {
-                type: ButtonType.RadioButton;
-                pushed: spool-selection == BambulabSpoolTypeSelection.Other;
-                height: 45px;
-                text: "Other (Can be entered manually later)";
-                pressed => {
-                    pressed(BambulabSpoolTypeSelection.Other);
+            HorizontalLayout {
+                spacing: -1px;
+                MyButton {
+                    type: ButtonType.RadioButton;
+                    pushed: spool-new-or-used == NewOrUsedSelection.New;
+                    height: 40px;
+                    text: "Full Unused"; 
+              pressed => {
+                      new-or-used-pressed(NewOrUsedSelection.New);
+                    }
+                }
+
+                MyButton {
+                    type: ButtonType.RadioButton;
+                    pushed: spool-new-or-used == NewOrUsedSelection.Used;
+                    height: 40px;
+                    text: "Used";
+              pressed => {
+                      new-or-used-pressed(NewOrUsedSelection.Used);
+                    }
                 }
             }
         }
 
         WizardButtons {
-            next-enabled: spool-selection != BambulabSpoolTypeSelection.None;
+            next-enabled: spool-selection != BambulabSpoolTypeSelection.None && spool-new-or-used != NewOrUsedSelection.None;
             next-clicked => {
                 AppState.new-tag-scan-empty-spool-weight = spool-selection == BambulabSpoolTypeSelection.LowTemp ? 250 : spool-selection == BambulabSpoolTypeSelection.HighTemp ? 260 : 0;
+                AppState.new-tag-scan-spool-is-full = spool-new-or-used == NewOrUsedSelection.Used ? false : true;
                 AppState.new-tag-scan-page = NewTagScanPage.SpoolDisplay;
             }
             back-clicked => {
@@ -265,7 +300,7 @@ component OperationSelectionStep inherits Rectangle {
                     }
                 }
 
-                 if AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag && AppState.new-tag-scan-definition-type == "Bambu Lab": 
+                if AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag && AppState.new-tag-scan-definition-type == "Bambu Lab": 
                 VerticalLayout {
                     padding-top: 12px;
                     MyText {
@@ -469,7 +504,7 @@ component SpoolDisplayStep inherits Rectangle {
                   // TODO: Add call to AppBackend to add spool record, which will 
                   // (1) import the tag to the inventory & set it as recently added spool
                   // (2) once completed will trigger move here to next step
-                  AppBackend.import-definition-tag-to-inventory(AppState.new-tag-scan-definition-type, AppState.new-tag-scan-definition-info, AppState.new-tag-scan-empty-spool-weight);
+                  AppBackend.import-definition-tag-to-inventory(AppState.new-tag-scan-definition-type, AppState.new-tag-scan-definition-info, AppState.new-tag-scan-empty-spool-weight, AppState.new-tag-scan-spool-is-full);
                 }
             }
             cancel-clicked => {
