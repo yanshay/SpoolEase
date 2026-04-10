@@ -422,7 +422,9 @@ impl Store {
         let new_spool_id = (*self.last_spool_id.borrow()) + 1;
         if let Some(spools_db) = &self.spools_db.get() {
             spool_rec.id = new_spool_id.to_string();
-            spool_rec.added_time = store_safe_time_now();
+            if spool_rec.added_time.is_none() {
+                spool_rec.added_time = store_safe_time_now();
+            }
             spool_rec.ext_has_k = spool_rec_ext.k_info.is_some();
             let spool_rec_for_index = spool_rec.clone();
             match spools_db.insert(spool_rec).await.context(CsvDbSnafu)? {

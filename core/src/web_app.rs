@@ -453,6 +453,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         .collect::<Vec<_>>();
 
                     // this happens on successful split or when a simple add/edit and not split
+                    let add_spool_operation = add_spool.id.is_empty();
                     let new_spool = SpoolRecord {
                         id: add_spool.id,
                         tag_id: if add_spool.tag_id.is_empty() {
@@ -475,7 +476,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         weight_new: None,
                         weight_current: None,
                         slicer_filament: add_spool.slicer_filament,
-                        added_time: None,  // will be added by store if required
+                        added_time: if add_spool_operation { add_spool.added_time } else { None },  // will be added by store if required
                         encode_time: None, // will be added by store if required
                         added_full: match add_spool.full_unused.to_lowercase().as_str() {
                             "y" => Some(true),
@@ -492,7 +493,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         spools_count: add_spool.spools_count,
                     };
 
-                    let spool_id = if new_spool.id.is_empty() {
+                    let spool_id = if add_spool_operation {
                         match store
                             .add_spool(
                                 new_spool,
@@ -1400,6 +1401,7 @@ pub struct AddSpoolDTO {
     pub actual_location: String,
     pub spools_count: i32,
     pub split: Option<String>,
+    pub added_time: Option<i32>,
 }
 encrypted_input!(AddSpoolDTO);
 
