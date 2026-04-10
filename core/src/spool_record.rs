@@ -13,6 +13,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+use derivative::Derivative;
 use serde::{Deserialize, Deserializer, Serialize};
 use shared::spool_tag::TAG_PLACEHOLDER;
 use shared::utils::{
@@ -27,7 +28,9 @@ pub struct FullSpoolRecord {
     pub spool_rec_ext: SpoolRecordExt,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone, Default)]
+#[derive(Derivative)]
+#[derivative(Default)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SpoolRecord {
     pub id: String,
     #[serde(serialize_with = "serialize_string_array", deserialize_with = "deserialize_string_array")]
@@ -71,6 +74,7 @@ pub struct SpoolRecord {
     pub actual_location: String,
     #[serde(default = "default_one")]
     #[serde(deserialize_with = "one_if_empty")]
+    #[derivative(Default(value = "1"))]
     pub spools_count: i32,
     // !!! Don't Forget to set default for any field!
     // pub update_time
