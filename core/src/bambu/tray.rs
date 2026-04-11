@@ -6,8 +6,7 @@ use framework::error;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    bambu::{BambuPrinter, SpoolId, filament::Filament},
-    tag_v1::TagInformationV1,
+    bambu::{BambuPrinter, SpoolId, filament::Filament}, spool_record::SpoolRecord, tag_v1::TagInformationV1
 };
 
 #[allow(dead_code)]
@@ -21,6 +20,7 @@ pub struct TrayBits {
 #[derive(Serialize, Deserialize, Debug, Clone, Default, Derivative)]
 #[derivative(PartialEq)]
 // IMPORTANT: Don't change names, will hurt persistence
+//            When adding new fields include serde(default)
 pub struct TrayMetaInfo {
     pub spool_id: Option<SpoolId>,
     #[serde(rename = "tag_info", skip_serializing)]
@@ -35,6 +35,8 @@ pub struct TrayMetaInfo {
     pub used_in_print: bool,
     #[serde(default)]
     pub consumed_since_weight: f32,
+    #[serde(default)]
+    pub waiting_for_tag_uid: bool,
 }
 
 #[derive(Derivative)]
@@ -317,4 +319,11 @@ impl BambuPrinter {
         } as usize;
         Ok(ams_id)
     }
+
+    pub(super) fn set_tray_spool_rec(spool_rec: &SpoolRecord, tray: &mut super::tray::Tray) {
+        tray.meta_info = TrayMetaInfo::default();
+        tray.meta_info.spool_id = Some(spool_rec.id.clone());
+        tray.meta_info.consumed_since_weight = spool_rec.consumed_since_weight;
+    }
+
 }

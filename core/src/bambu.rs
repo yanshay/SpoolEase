@@ -181,6 +181,7 @@ pub trait BambuPrinterObserver {
     fn on_printer_connect_status(&self, bambu_printer: &mut BambuPrinter, status: bool);
     fn on_request_gcode_analysis(&mut self, bambu_printer: &mut BambuPrinter, print_project: &PrintProject) -> i32;
     fn on_cancel_gcode_analysis(&mut self, job_number: i32);
+    fn on_tag_scanned(&self, tray_id: i32, tag_id: &str);
 }
 
 // Special access to trays fields for dirty tracking
@@ -518,6 +519,14 @@ impl BambuPrinter {
         for weak_observer in observers.iter_mut() {
             let observer = weak_observer.upgrade().unwrap();
             observer.borrow_mut().on_printer_connect_status(self, status);
+        }
+    }
+
+    pub fn notify_tag_scanned(&self, tray_id: i32, tag_id: &str) {
+        let mut observers = self.observers.clone(); // to avoid two references - can probably optimize in various ways
+        for weak_observer in observers.iter_mut() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_tag_scanned(tray_id, tag_id);
         }
     }
 

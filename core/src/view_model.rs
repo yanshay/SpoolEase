@@ -3290,6 +3290,12 @@ impl BambuPrinterObserver for ViewModel {
             error!("Failed to send gcode analysis cancelation : {err}")
         }
     }
+
+    fn on_tag_scanned(&self, tray_id: i32, tag_id: &str) {
+        if let Some(spool_id) = self.store.get_spool_id_by_tag_id(tag_id) {
+            let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureTrayWithSpool { tray_id, spool_id });
+       } 
+    }
 }
 
 // TODO:

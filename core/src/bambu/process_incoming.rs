@@ -667,9 +667,20 @@ impl BambuPrinter {
 
                     if tray_reading {
                         new_tray.state = TrayState::Reading;
+                        new_tray.meta_info.waiting_for_tag_uid = true;
                     }
                     if tray_read_done {
                         new_tray.state = self.get_tray_detailed_ready_state(tray_id);
+                        if new_tray.meta_info.waiting_for_tag_uid
+                            && let Some(tray_update) = tray_update
+                            && let Some(tag_uid) = &tray_update.tag_uid
+                            && tag_uid.len() >= 8
+                            && !tag_uid.starts_with("00000000")
+                        {
+                            let scanned_tag = &tag_uid[..8];
+                            self.notify_tag_scanned(tray_update.id.unwrap() as i32, scanned_tag);
+                            new_tray.meta_info.waiting_for_tag_uid = false;
+                        }
                     }
                     Some(new_tray)
                 } else {

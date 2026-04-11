@@ -206,9 +206,7 @@ impl BambuPrinter {
             // Deal with meta information - spool_id, consumed_since_weight, etc.
 
             self.update_any_tray(tray_id as usize, |tray| {
-                tray.meta_info = TrayMetaInfo::default();
-                tray.meta_info.spool_id = Some(full_spool_rec.spool_rec.id.clone());
-                tray.meta_info.consumed_since_weight = full_spool_rec.spool_rec.consumed_since_weight;
+                Self::set_tray_spool_rec(&full_spool_rec.spool_rec, tray);
             });
             Ok(())
         } else {

@@ -525,6 +525,9 @@ impl Store {
     pub fn exists_tag_id(&self, tag_id: &[u8]) -> bool {
         self.exists_hex_tag_id(&hex::encode_upper(tag_id))
     }
+    pub fn get_spool_id_by_tag_id(&self, tag_id_hex: &str) -> Option<String> {
+        self.spool_tag_id_index.borrow().get(tag_id_hex).cloned()
+    }
 
     pub fn tags_in_store(&self) -> String {
         let mut tags_in_store = String::with_capacity(self.spool_tag_id_index.borrow().len() * (7 + 1) + 1);

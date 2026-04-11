@@ -247,9 +247,9 @@ pub struct PrintTray {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default, serialize_with = "option_u32_as_str_se", deserialize_with = "option_u32_as_str_de")]
     pub nozzle_temp_min: Option<u32>, // w.g. 190
+    pub tag_uid: Option<String>,
                                       // pub remain: Option<i64>,
                                       // pub n: Option<f64>,
-                                      // pub tag_uid: Option<String>,
                                       // pub tray_id_name: Option<String>,
                                       // pub tray_sub_brands: Option<String>,
                                       // pub tray_weight: Option<String>,
