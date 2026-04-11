@@ -1219,7 +1219,11 @@ impl ViewModel {
         }
     }
 
-    fn ams_name(bambu_printer: &BambuPrinter, ams_id: usize) -> String {
+    fn ams_name(bambu_printer: &BambuPrinter, mut ams_id: usize) -> String {
+        if (4..4+8).contains(&ams_id) {
+            // deal with case of AMS_HT as index in ams list vs. bambu values of 128..
+            ams_id = ams_id - 4 + 128;
+        }
         if ams_id <= 3 {
             format!("AMS-{}", (b'A' + ams_id as u8) as char)
         } else if (128..128 + 8).contains(&ams_id) {
@@ -2975,7 +2979,7 @@ impl ViewModel {
                     let num_of_ams_slots: usize = if ams_index <= 3 { 4 } else { 1 };
                     let slots_offset: usize = match ams_index {
                         0..3 => ams_index as usize * 4,
-                        _ => 16 + ams_index as usize,
+                        _ => 16 + (ams_index-4) as usize,
                     };
 
                     for slot_index in slots_offset..slots_offset + num_of_ams_slots {
