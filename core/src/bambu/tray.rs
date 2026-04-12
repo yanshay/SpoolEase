@@ -6,7 +6,9 @@ use framework::error;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    bambu::{BambuPrinter, SpoolId, filament::Filament}, spool_record::SpoolRecord, tag_v1::TagInformationV1
+    bambu::{BambuPrinter, SpoolId, filament::Filament},
+    spool_record::SpoolRecord,
+    tag_v1::TagInformationV1,
 };
 
 #[allow(dead_code)]
@@ -29,12 +31,16 @@ pub struct TrayMetaInfo {
     pub consumed_since_load: f32,
     #[serde(default)]
     pub consumed_since_load_saved: f32,
-    // fields which are not going to be stored as state should not be considered in partialeq since that's what decides if to save state or not
-    #[serde(skip)]
-    #[derivative(PartialEq = "ignore")]
-    pub used_in_print: bool,
     #[serde(default)]
     pub consumed_since_weight: f32,
+
+    // fields which are not going to be stored as state should not be considered in partialeq since that's what decides if to save state or not
+    #[derivative(PartialEq = "ignore")]
+    #[serde(skip)]
+    #[serde(default)]
+    pub used_in_print: bool,
+    #[derivative(PartialEq = "ignore")]
+    #[serde(skip)]
     #[serde(default)]
     pub waiting_for_tag_uid: bool,
 }
@@ -116,13 +122,14 @@ impl BambuPrinter {
         }
         // Handle other AMS's
         if self.inner_ams_trays[index] != *tray {
-            swap(&mut self.inner_ams_trays[index], tray);
             self.ams_trays_dirty[index] = true;
             // extra test because meta is excluded from partialeq for Tray
             if self.inner_ams_trays[index].meta_info != tray.meta_info {
                 self.ams_trays_dirty[index] = true;
             }
         }
+        // always swap, only dirty is conditional
+        swap(&mut self.inner_ams_trays[index], tray);
         tray
     }
     pub fn update_ams_tray<F>(&mut self, mut index: usize, f: F)
@@ -147,9 +154,10 @@ impl BambuPrinter {
     }
     pub fn set_virt_tray(&mut self, extruder_id: u32, tray: Tray) {
         if tray != self.inner_virt_trays[extruder_id as usize] || tray.meta_info != self.inner_virt_trays[extruder_id as usize].meta_info {
-            self.inner_virt_trays[extruder_id as usize] = tray;
             self.virt_trays_dirty = true;
         }
+        // always set, condition above should be only for dirty test
+        self.inner_virt_trays[extruder_id as usize] = tray;
     }
     pub fn update_virt_tray<F>(&mut self, extruder_id: u32, f: F)
     where
@@ -320,10 +328,42 @@ impl BambuPrinter {
         Ok(ams_id)
     }
 
-    pub(super) fn set_tray_spool_rec(spool_rec: &SpoolRecord, tray: &mut super::tray::Tray) {
-        tray.meta_info = TrayMetaInfo::default();
-        tray.meta_info.spool_id = Some(spool_rec.id.clone());
-        tray.meta_info.consumed_since_weight = spool_rec.consumed_since_weight;
+    pub fn set_tray_spool_rec(&mut self, tray_id: usize, spool_rec: &SpoolRecord) {
+         self.update_any_tray(tray_id as usize, |tray| {
+            tray.meta_info = TrayMetaInfo::default();
+            tray.meta_info.spool_id = Some(spool_rec.id.clone());
+            tray.meta_info.consumed_since_weight = spool_rec.consumed_since_weight;
+         });
     }
 
+    pub fn full_slot_description(&self, tray_id: i32) -> String {
+        let (ams_id, slot_in_ams) = Self::get_ams_and_slot_id(tray_id as usize);
+        if ams_id <= 3 {
+            format!("{} Slot {}", self.ams_name(ams_id), slot_in_ams + 1)
+        } else {
+            self.ams_name(ams_id)
+        }
+    }
+
+    pub fn ams_name(&self, mut ams_id: usize) -> String {
+        if (4..4 + 8).contains(&ams_id) {
+            // deal with case of AMS_HT as index in ams list vs. bambu values of 128..
+            ams_id = ams_id - 4 + 128;
+        }
+        if ams_id <= 3 {
+            format!("AMS-{}", (b'A' + ams_id as u8) as char)
+        } else if (128..128 + 8).contains(&ams_id) {
+            format!("HT-{}", (b'A' + (ams_id - 128) as u8) as char)
+        } else if ams_id == 255 {
+            if self.num_extruders() == 1 {
+                "External Spool".into()
+            } else {
+                "Right External Spool".into()
+            }
+        } else if ams_id == 254 {
+            "Left External Spool".into()
+        } else {
+            format!("AMS-#{ams_id}?")
+        }
+    }
 }

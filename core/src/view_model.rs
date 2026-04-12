@@ -40,7 +40,7 @@ use framework::{
 };
 
 use crate::app::{UiSlotDisplay, UiSpoolRecord, UiSpoolRecordDisplay};
-use crate::app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig, PrinterMode};
+use crate::app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig, PrinterMode, UseAmsScan};
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
 use crate::bambu::bambu_api::GcodeState;
 use crate::bambu::bambu_print::PrintProject;
@@ -469,6 +469,7 @@ impl ViewModel {
             fetch_3mf: Fetch3mf::CloudHttp,
             ignore_certificates: false,
             printer_mode: PrinterMode::Auto,
+            use_ams_scan: UseAmsScan::SpoolIdAndConfigure,
         };
 
         let no_configured_printers = self.app_config.borrow().configured_printers.printers.is_empty();
@@ -1151,8 +1152,23 @@ impl ViewModel {
         None
     }
 
-    fn set_tray_filament(&self, bambu_printer: &mut BambuPrinter, tray_id: i32, full_spool_rec: &FullSpoolRecord, temp_min: u32, temp_max: u32) {
-        if bambu_printer.set_tray_filament(tray_id, full_spool_rec, temp_min, temp_max).is_ok() {
+    fn set_tray_filament(
+        &self,
+        bambu_printer: &mut BambuPrinter,
+        tray_id: i32,
+        full_spool_rec: &FullSpoolRecord,
+        temp_min: u32,
+        temp_max: u32,
+        only_spool_id: bool,
+    ) {
+        let set_tray_ok = match only_spool_id {
+            true => {
+                bambu_printer.set_tray_spool_rec(tray_id as usize, &full_spool_rec.spool_rec);
+                true
+            }
+            false => bambu_printer.set_tray_filament(tray_id, full_spool_rec, temp_min, temp_max).is_ok(),
+        };
+        if set_tray_ok {
             // spool_rec loaded to slot, so remove it from it's actual location
 
             if !full_spool_rec.spool_rec.actual_location.is_empty() {
@@ -1174,7 +1190,7 @@ impl ViewModel {
         tray_id: i32,
     ) {
         let tray_id_for_ui = tray_id;
-        let full_slot_description = Self::full_slot_description(bambu_printer, tray_id);
+        let full_slot_description = bambu_printer.full_slot_description(tray_id);
         let mut filament_staging = filament_staging.borrow_mut();
         if bambu_printer.printer_connectivity_ok != Some(true) {
             ui.unwrap().global::<crate::app::AppState>().invoke_tray_update_failed(
@@ -1192,6 +1208,7 @@ impl ViewModel {
                     full_spool_rec,
                     filament_info.nozzle_temp_low as u32,
                     filament_info.nozzle_temp_high as u32,
+                    false,
                 );
                 filament_staging.clear();
                 ui.unwrap().global::<crate::app::AppState>().invoke_empty_spool_staging();
@@ -1210,36 +1227,36 @@ impl ViewModel {
         }
     }
 
-    fn full_slot_description(bambu_printer: &BambuPrinter, tray_id: i32) -> String {
-        let (ams_id, slot_in_ams) = BambuPrinter::get_ams_and_slot_id(tray_id as usize);
-        if ams_id <= 3 {
-            format!("{} Slot {}", Self::ams_name(bambu_printer, ams_id), slot_in_ams + 1)
-        } else {
-            Self::ams_name(bambu_printer, ams_id)
-        }
-    }
+    // fn full_slot_description(bambu_printer: &BambuPrinter, tray_id: i32) -> String {
+    //     let (ams_id, slot_in_ams) = BambuPrinter::get_ams_and_slot_id(tray_id as usize);
+    //     if ams_id <= 3 {
+    //         format!("{} Slot {}", Self::ams_name(bambu_printer, ams_id), slot_in_ams + 1)
+    //     } else {
+    //         Self::ams_name(bambu_printer, ams_id)
+    //     }
+    // }
 
-    fn ams_name(bambu_printer: &BambuPrinter, mut ams_id: usize) -> String {
-        if (4..4+8).contains(&ams_id) {
-            // deal with case of AMS_HT as index in ams list vs. bambu values of 128..
-            ams_id = ams_id - 4 + 128;
-        }
-        if ams_id <= 3 {
-            format!("AMS-{}", (b'A' + ams_id as u8) as char)
-        } else if (128..128 + 8).contains(&ams_id) {
-            format!("HT-{}", (b'A' + (ams_id - 128) as u8) as char)
-        } else if ams_id == 255 {
-            if bambu_printer.num_extruders() == 1 {
-                "External Spool".into()
-            } else {
-                "Right External Spool".into()
-            }
-        } else if ams_id == 254 {
-            "Left External Spool".into()
-        } else {
-            format!("AMS-#{ams_id}?")
-        }
-    }
+    // fn ams_name(bambu_printer: &BambuPrinter, mut ams_id: usize) -> String {
+    //     if (4..4 + 8).contains(&ams_id) {
+    //         // deal with case of AMS_HT as index in ams list vs. bambu values of 128..
+    //         ams_id = ams_id - 4 + 128;
+    //     }
+    //     if ams_id <= 3 {
+    //         format!("AMS-{}", (b'A' + ams_id as u8) as char)
+    //     } else if (128..128 + 8).contains(&ams_id) {
+    //         format!("HT-{}", (b'A' + (ams_id - 128) as u8) as char)
+    //     } else if ams_id == 255 {
+    //         if bambu_printer.num_extruders() == 1 {
+    //             "External Spool".into()
+    //         } else {
+    //             "Right External Spool".into()
+    //         }
+    //     } else if ams_id == 254 {
+    //         "Left External Spool".into()
+    //     } else {
+    //         format!("AMS-#{ams_id}?")
+    //     }
+    // }
 
     fn set_staging_to_tray(
         view_model: &Rc<RefCell<ViewModel>>,
@@ -1389,8 +1406,10 @@ impl ViewModel {
 
     fn ui_configure_slot_with_spool_id(&self, slot_id: i32, spool_id: &str) {
         let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureTrayWithSpool {
+            printer_index: None,
             tray_id: slot_id,
             spool_id: spool_id.to_string(),
+            only_spool_id: false,
         });
     }
 
@@ -1494,7 +1513,13 @@ impl ViewModel {
         });
     }
 
-    fn ui_import_definition_tag_to_inventory(&self, tag_definition_type: &str, tag_definition_info: &str, empty_spool_weight: i32, spool_is_full: bool) {
+    fn ui_import_definition_tag_to_inventory(
+        &self,
+        tag_definition_type: &str,
+        tag_definition_info: &str,
+        empty_spool_weight: i32,
+        spool_is_full: bool,
+    ) {
         let _ = self.dispatch_async_task(AppAsyncTaskRequest::ImportDefinitionTagToInventory {
             tag_definition_type: tag_definition_type.to_string(),
             tag_definition_info: tag_definition_info.to_string(),
@@ -2771,14 +2796,20 @@ impl ViewModel {
         }
     }
 
-    async fn configure_tray_with_spool_async(view_model: Rc<RefCell<ViewModel>>, tray_id: i32, spool_id: String) {
+    async fn configure_tray_with_spool_async(
+        view_model: Rc<RefCell<ViewModel>>,
+        printer_index: Option<usize>,
+        tray_id: i32,
+        spool_id: String,
+        only_spool_id: bool,
+    ) {
         let store = view_model.borrow().store.clone();
         if let Some(spool_rec) = store.get_spool_by_id(&spool_id) {
             let mut full_spool_rec = FullSpoolRecord {
                 spool_rec,
                 spool_rec_ext: SpoolRecordExt::default(),
             };
-            if full_spool_rec.spool_rec.ext_has_k {
+            if !only_spool_id && full_spool_rec.spool_rec.ext_has_k {
                 match store.get_spool_ext_by_id(&spool_id).await {
                     Ok(spool_rec_ext) => {
                         full_spool_rec.spool_rec_ext = spool_rec_ext;
@@ -2800,9 +2831,10 @@ impl ViewModel {
                 .borrow()
                 .get_filament_info(&full_spool_rec.spool_rec.slicer_filament, Some(&full_spool_rec.spool_rec.material_type));
             if let Some(filament_info) = filament_info {
-                let bambu_printer = {
-                    let view_model_borrow = view_model.borrow();
-                    view_model_borrow.bambu_printer_model.clone()
+                let view_model_borrow = view_model.borrow();
+                let bambu_printer = match printer_index {
+                    None => view_model_borrow.bambu_printer_model.clone(),
+                    Some(printer_index) => view_model_borrow.bambu_printer_model.printers.get(printer_index).unwrap().clone(),
                 };
                 let mut bambu_printer_mut = bambu_printer.borrow_mut();
                 view_model.borrow().set_tray_filament(
@@ -2811,11 +2843,12 @@ impl ViewModel {
                     &full_spool_rec,
                     filament_info.nozzle_temp_low as u32,
                     filament_info.nozzle_temp_high as u32,
+                    only_spool_id,
                 );
 
                 let view_model_borrow = view_model.borrow();
                 let tray_id_for_ui = tray_id;
-                let full_slot_description = Self::full_slot_description(&bambu_printer_mut, tray_id);
+                let full_slot_description = bambu_printer_mut.full_slot_description(tray_id);
                 view_model_borrow
                     .ui_weak
                     .unwrap()
@@ -2970,7 +3003,7 @@ impl ViewModel {
                 for ams_index in ams_list {
                     let mut slot_set = SlotSet {
                         kind: SpoolsSlotsKind::Ams,
-                        name: Self::ams_name(&printer_borrow, ams_index as usize),
+                        name: printer_borrow.ams_name(ams_index as usize),
                         extruder: printer_borrow.ams_info[ams_index as usize].extruder,
                         slots: Vec::new(),
                         temp: printer_borrow.ams_info[ams_index as usize].temp,
@@ -2979,7 +3012,7 @@ impl ViewModel {
                     let num_of_ams_slots: usize = if ams_index <= 3 { 4 } else { 1 };
                     let slots_offset: usize = match ams_index {
                         0..3 => ams_index as usize * 4,
-                        _ => 16 + (ams_index-4) as usize,
+                        _ => 16 + (ams_index - 4) as usize,
                     };
 
                     for slot_index in slots_offset..slots_offset + num_of_ams_slots {
@@ -3151,8 +3184,10 @@ impl BambuPrinterObserver for ViewModel {
                     let tray = &bambu_printer.ams_trays()[only_monitored_tray];
                     if let Some(spool_id) = &tray.meta_info.spool_id {
                         let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureTrayWithSpool {
+                            printer_index: None,
                             tray_id: only_monitored_tray as i32,
                             spool_id: spool_id.clone(),
+                            only_spool_id: false,
                         });
                     }
                 }
@@ -3291,10 +3326,20 @@ impl BambuPrinterObserver for ViewModel {
         }
     }
 
-    fn on_tag_scanned(&self, tray_id: i32, tag_id: &str) {
+    fn on_tag_scanned(&self, printer_index: usize, tray_id: i32, tag_id: &str, only_spool_id: bool) {
         if let Some(spool_id) = self.store.get_spool_id_by_tag_id(tag_id) {
-            let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureTrayWithSpool { tray_id, spool_id });
-       } 
+            info!(
+                "[{}] Tag is registered, setting slot's spool-id{}",
+                printer_index + 1,
+                if only_spool_id { "" } else { " and configuring slot material/color/k" }
+            );
+            let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureTrayWithSpool {
+                printer_index: Some(printer_index),
+                tray_id,
+                spool_id,
+                only_spool_id,
+            });
+        }
     }
 }
 
@@ -4117,8 +4162,10 @@ enum AppAsyncTaskRequest {
         message_box: Option<MessageBox>,
     },
     ConfigureTrayWithSpool {
+        printer_index: Option<usize>,
         tray_id: i32,
         spool_id: String,
+        only_spool_id: bool,
     },
     ImportDefinitionTagToInventory {
         tag_definition_type: String,
@@ -4168,17 +4215,26 @@ pub async fn app_async_task(view_model: Rc<RefCell<ViewModel>>) {
             AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box } => {
                 ViewModel::update_spool_rec_async(view_model.clone(), spool_rec, message_box).await
             }
-            AppAsyncTaskRequest::ConfigureTrayWithSpool { tray_id, spool_id } => {
-                ViewModel::configure_tray_with_spool_async(view_model.clone(), tray_id, spool_id).await
-            }
+            AppAsyncTaskRequest::ConfigureTrayWithSpool {
+                printer_index,
+                tray_id,
+                spool_id,
+                only_spool_id,
+            } => ViewModel::configure_tray_with_spool_async(view_model.clone(), printer_index, tray_id, spool_id, only_spool_id).await,
             AppAsyncTaskRequest::ImportDefinitionTagToInventory {
                 tag_definition_type,
                 tag_definition_info,
                 empty_spool_weight,
                 spool_is_full,
             } => {
-                ViewModel::import_definition_tag_to_inventory_async(view_model.clone(), tag_definition_type, tag_definition_info, empty_spool_weight, spool_is_full)
-                    .await
+                ViewModel::import_definition_tag_to_inventory_async(
+                    view_model.clone(),
+                    tag_definition_type,
+                    tag_definition_info,
+                    empty_spool_weight,
+                    spool_is_full,
+                )
+                .await
             }
         }
     }

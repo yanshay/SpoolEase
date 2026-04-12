@@ -92,6 +92,14 @@ pub enum PrinterMode {
     Cloud,
 }
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy, Default)]
+pub enum UseAmsScan {
+    SpoolIdAndConfigure,
+    SpoolId,
+    #[default]
+    Disabled,
+}
+
 // These struct is first and foremost for persistent configuration
 // Changing it should be well dealt with including upgrade
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone, Derivative)]
@@ -117,6 +125,9 @@ pub struct PrinterConfig {
     #[derivative(Default(value = "PrinterMode::Auto"))]
     #[serde(default)]
     pub printer_mode: PrinterMode,
+    #[derivative(Default(value = "UseAmsScan::Disabled"))]
+    #[serde(default)]
+    pub use_ams_scan: UseAmsScan,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]

@@ -12,7 +12,8 @@ use crate::{
     bambu::{
         BambuPrinter, FilamentInfo,
         bambu_api::{
-            AmsFilamentSettingCommand, ExtrusionCaliGetCommand, ExtrusionCaliSelCommand, ExtrusionCaliSetCommand, GetVersionCommand, PrintCommand, PrinterCommand, PushAllCommand
+            AmsFilamentSettingCommand, ExtrusionCaliGetCommand, ExtrusionCaliSelCommand, ExtrusionCaliSetCommand, GetVersionCommand, PrintCommand,
+            PrinterCommand, PushAllCommand,
         },
         tray::TrayMetaInfo,
     },
@@ -205,9 +206,8 @@ impl BambuPrinter {
 
             // Deal with meta information - spool_id, consumed_since_weight, etc.
 
-            self.update_any_tray(tray_id as usize, |tray| {
-                Self::set_tray_spool_rec(&full_spool_rec.spool_rec, tray);
-            });
+            self.set_tray_spool_rec(tray_id as usize, &full_spool_rec.spool_rec);
+
             Ok(())
         } else {
             error!("Error trying to set slot information due to missing information (material type at least is required)");

@@ -863,10 +863,18 @@ ProtoPasta 500g - Cardboard - 84g,84"
 
                 <div class = "form-row" style="display: flex; align-items: center; margin-top: 6px;">
                   <label style="margin-top: 0px; margin-bottom:0px; padding-left: 2px;">Printer Mode</label>
-                    <select class="printer-mode" style="flex-grow: 1; padding-right: 12px; height: 20px; font-size: 1rem; margin-left: 12px;" class="fetch-3mf" type="checkbox" id="fetch-3mf">
+                    <select class="printer-mode" style="flex-grow: 1; padding-right: 12px; height: 20px; font-size: 1rem; margin-left: 12px;">
                     <option value="Auto" selected>Auto Recognize</option>
                     <option value="DevOrOldFirmware">Dev Mode or Old Firmware</option>
                     <option value="Cloud">Cloud Mode</option>
+                  </select>
+                </div>
+                <div class = "form-row" style="display: flex; align-items: center; margin-top: 6px;">
+                  <label style="margin-top: 0px; margin-bottom:0px; padding-left: 2px;">Use AMS scanned tags</label>
+                    <select class="use-ams-scan" style="flex-grow: 1; padding-right: 12px; height: 20px; font-size: 1rem; margin-left: 12px;">
+                    <option value="SpoolIdAndConfigure">For Spool-Id &amp; Slot Config</option>
+                    <option value="SpoolId">Only for Spool-Id</option>
+                    <option value="Disabled" selected>Disabled</option>
                   </select>
                 </div>
                 <div class = "form-row" style="margin-top: 6px;">
@@ -969,6 +977,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           newPrinterForm.querySelector(".fetch-3mf").value = printer.fetch_3mf;
           newPrinterForm.querySelector(".ignore-certificates").checked = !!printer.ignore_certificates;
           newPrinterForm.querySelector(".printer-mode").value = printer.printer_mode || "Auto";
+          newPrinterForm.querySelector(".use-ams-scan").value = printer.use_ams_scan || "Disabled";
         });
 
         // Setup IP fields for all printers
@@ -1188,6 +1197,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const ignoreCertificates =
             form.querySelector(".ignore-certificates")?.checked || false;
           const printerMode = form.querySelector(".printer-mode").value;
+          const useAmsScan = form.querySelector(".use-ams-scan").value;
 
           const ipParts = Array.from(form.querySelectorAll(".ip-part"));
           const ipValid = ipParts.every((part) => part.value.trim() !== "");
@@ -1221,6 +1231,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           printer.fetch_3mf = fetch3mf;
           printer.ignore_certificates = ignoreCertificates;
           printer.printer_mode = printerMode;
+          printer.use_ams_scan = useAmsScan;
 
           printers.push(printer);
 

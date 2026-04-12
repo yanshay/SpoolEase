@@ -22,7 +22,10 @@ use crate::bambu::process_incoming::incoming_messages_task;
 use crate::bambu::protocol::ProtocolState;
 use crate::bambu::tray::{Tray, TrayBits};
 use crate::view_model::StoreStateRequestChannel;
-use crate::{app_config::{PrinterConfig, PrinterMode}, ssdp::SSDPPubSubChannel};
+use crate::{
+    app_config::{PrinterConfig, PrinterMode, UseAmsScan},
+    ssdp::SSDPPubSubChannel,
+};
 use alloc::{
     format,
     rc::Rc,
@@ -119,6 +122,7 @@ pub struct BambuPrinter {
     pub fetch_3mf: Fetch3mf,
     pub ignore_certificates: bool,
     pub printer_mode: PrinterMode,
+    pub use_ams_scan: UseAmsScan,
     pub printer_ip: Ipv4Address,
     pub printer_uuid_to_encode: String,
     pub printer_connectivity_ok: Option<bool>,
@@ -181,7 +185,7 @@ pub trait BambuPrinterObserver {
     fn on_printer_connect_status(&self, bambu_printer: &mut BambuPrinter, status: bool);
     fn on_request_gcode_analysis(&mut self, bambu_printer: &mut BambuPrinter, print_project: &PrintProject) -> i32;
     fn on_cancel_gcode_analysis(&mut self, job_number: i32);
-    fn on_tag_scanned(&self, tray_id: i32, tag_id: &str);
+    fn on_tag_scanned(&self, printer_index: usize, tray_id: i32, tag_id: &str, only_spool_id: bool);
 }
 
 // Special access to trays fields for dirty tracking
@@ -294,6 +298,7 @@ impl BambuPrinter {
         fetch_3mf: Fetch3mf,
         ignore_certificates: bool,
         printer_mode: PrinterMode,
+        use_ams_scan: UseAmsScan,
         write_packets: Rc<WritePacketsChannel>,
         app_config: Rc<RefCell<AppConfig>>,
         restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
@@ -312,6 +317,7 @@ impl BambuPrinter {
             fetch_3mf,
             ignore_certificates,
             printer_mode,
+            use_ams_scan,
             write_packets,
             app_config,
             restart_printer,
@@ -335,6 +341,7 @@ impl BambuPrinter {
         fetch_3mf: Fetch3mf,
         ignore_certificates: bool,
         printer_mode: PrinterMode,
+        use_ams_scan: UseAmsScan,
         write_packets: Rc<WritePacketsChannel>,
         app_config: Rc<RefCell<AppConfig>>,
         restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
@@ -370,6 +377,7 @@ impl BambuPrinter {
             fetch_3mf,
             ignore_certificates,
             printer_mode,
+            use_ams_scan,
             printer_ip: printer_ip.unwrap_or(Ipv4Address::new(0, 0, 0, 0)),
             printer_uuid_to_encode,
             printer_connectivity_ok: None,
@@ -476,6 +484,7 @@ impl BambuPrinter {
             self.fetch_3mf,
             self.ignore_certificates,
             self.printer_mode,
+            self.use_ams_scan,
             self.write_packets.clone(),
             self.app_config.clone(),
             self.restart_printer.clone(),
@@ -522,11 +531,11 @@ impl BambuPrinter {
         }
     }
 
-    pub fn notify_tag_scanned(&self, tray_id: i32, tag_id: &str) {
+    pub fn notify_tag_scanned(&self, tray_id: i32, tag_id: &str, only_spool_id: bool) {
         let mut observers = self.observers.clone(); // to avoid two references - can probably optimize in various ways
         for weak_observer in observers.iter_mut() {
             let observer = weak_observer.upgrade().unwrap();
-            observer.borrow_mut().on_tag_scanned(tray_id, tag_id);
+            observer.borrow_mut().on_tag_scanned(self.printer_index, tray_id, tag_id, only_spool_id);
         }
     }
 
@@ -590,6 +599,7 @@ pub fn init(
     let fetch_3mf = printer_config.fetch_3mf;
     let ignore_certificates = printer_config.ignore_certificates;
     let printer_mode = printer_config.printer_mode;
+    let use_ams_scan = printer_config.use_ams_scan;
 
     // == Setup MQTT ==================================================================
     let write_packets = Rc::new(WritePacketsChannel::new());
@@ -610,6 +620,7 @@ pub fn init(
         fetch_3mf,
         ignore_certificates,
         printer_mode,
+        use_ams_scan,
         write_packets.clone(),
         app_config.clone(),
         restart_printer.clone(),

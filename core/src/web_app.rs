@@ -12,17 +12,16 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use embedded_sdmmc::asynchronous::LfnBuffer;
 use framework::framework_web_app::{FrameworkState, encrypt, encrypt_bytes};
 use hashbrown::HashMap;
-use picoserve::response::StatusCode;
 use picoserve::response::ResponseWriter;
+use picoserve::response::StatusCode;
 use picoserve::response::chunked::{ChunkWriter, ChunkedResponse, ChunksWritten};
 use picoserve::routing::{PathRouterService, RequestHandlerService, get, get_service, post_service};
 use picoserve::{
-    AppWithStateBuilder,
+    AppWithStateBuilder, ResponseSent,
     extract::{FromRequest, State},
     io::Read,
     request::{Path, Request, RequestBody, RequestParts},
     routing::post,
-    ResponseSent,
 };
 
 use framework::{
@@ -39,7 +38,7 @@ use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::app_config::{
     AiProviderAvailability, AiProviderId, AppConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrinterMode, PrintersConfig,
-    SPOOLS_CATALOG, ScaleConfig,
+    SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
 };
 use crate::bambu::calibration::KInfo;
 use crate::bambu::{BambuPrinter, bambu_api::PrintCommand};
@@ -476,8 +475,8 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         weight_new: None,
                         weight_current: None,
                         slicer_filament: add_spool.slicer_filament,
-                        added_time: if add_spool_operation { add_spool.added_time } else { None },  // will be added by store if required
-                        encode_time: None, // will be added by store if required
+                        added_time: if add_spool_operation { add_spool.added_time } else { None }, // will be added by store if required
+                        encode_time: None,                                                         // will be added by store if required
                         added_full: match add_spool.full_unused.to_lowercase().as_str() {
                             "y" => Some(true),
                             "n" => Some(false),
@@ -649,10 +648,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
         );
 
         // captures /app
-        let router = router.route(
-            "/app",
-            get_service(APP_INDEX_HTML_FILE),
-        );
+        let router = router.route("/app", get_service(APP_INDEX_HTML_FILE));
 
         // captures /app/*
         let router = router.nest_service("/app", AppIndexHtml);
@@ -1216,6 +1212,8 @@ struct PrinterConfigDTO {
     ignore_certificates: bool,
     #[serde(default)]
     printer_mode: PrinterMode,
+    #[serde(default)]
+    use_ams_scan: UseAmsScan,
 }
 encrypted_input!(PrinterConfigDTO);
 impl From<PrinterConfigDTO> for PrinterConfig {
@@ -1235,6 +1233,7 @@ impl From<PrinterConfigDTO> for PrinterConfig {
             },
             ignore_certificates: v.ignore_certificates,
             printer_mode: v.printer_mode,
+            use_ams_scan: v.use_ams_scan,
         }
     }
 }
@@ -1254,6 +1253,7 @@ impl From<&PrinterConfig> for PrinterConfigDTO {
             },
             ignore_certificates: v.ignore_certificates,
             printer_mode: v.printer_mode,
+            use_ams_scan: v.use_ams_scan,
         }
     }
 }
@@ -1532,12 +1532,11 @@ encrypted_input!(SetSpoolLocationDTO);
 
 /////////////////////////////////////////////
 
-const APP_INDEX_HTML_FILE: picoserve::response::File =
-    picoserve::response::File::with_content_type_and_headers(
-        "text/html",
-        include_bytes_gz!("static/app/index.html"),
-        &[("Content-Encoding", "gzip")],
-    );
+const APP_INDEX_HTML_FILE: picoserve::response::File = picoserve::response::File::with_content_type_and_headers(
+    "text/html",
+    include_bytes_gz!("static/app/index.html"),
+    &[("Content-Encoding", "gzip")],
+);
 
 #[derive(Clone, Copy)]
 struct AppIndexHtml;

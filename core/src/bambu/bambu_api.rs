@@ -248,18 +248,18 @@ pub struct PrintTray {
     #[serde(default, serialize_with = "option_u32_as_str_se", deserialize_with = "option_u32_as_str_de")]
     pub nozzle_temp_min: Option<u32>, // w.g. 190
     pub tag_uid: Option<String>,
-                                      // pub remain: Option<i64>,
-                                      // pub n: Option<f64>,
-                                      // pub tray_id_name: Option<String>,
-                                      // pub tray_sub_brands: Option<String>,
-                                      // pub tray_weight: Option<String>,
-                                      // pub tray_diameter: Option<String>,
-                                      // pub tray_temp: Option<String>,
-                                      // pub tray_time: Option<String>,
-                                      // pub bed_temp_type: Option<String>,
-                                      // pub bed_temp: Option<String>,
-                                      // pub xcam_info: Option<String>,
-                                      // pub tray_uuid: Option<String>,
+    // pub remain: Option<i64>,
+    // pub n: Option<f64>,
+    // pub tray_id_name: Option<String>,
+    // pub tray_sub_brands: Option<String>,
+    // pub tray_weight: Option<String>,
+    // pub tray_diameter: Option<String>,
+    // pub tray_temp: Option<String>,
+    // pub tray_time: Option<String>,
+    // pub bed_temp_type: Option<String>,
+    // pub bed_temp: Option<String>,
+    // pub xcam_info: Option<String>,
+    // pub tray_uuid: Option<String>,
 }
 
 impl PrintTray {
@@ -794,7 +794,7 @@ pub struct PrinterCommand {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Printer {
-    pub command: String,     // extrusion_cali_get
+    pub command: String, // extrusion_cali_get
     pub param: String,
     pub sequence_id: String,
 }
@@ -810,7 +810,6 @@ impl PrinterCommand {
         }
     }
 }
-
 
 //////////////////////////////////////////////////////////////////////////////
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
