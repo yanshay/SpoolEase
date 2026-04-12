@@ -40,6 +40,7 @@ pub enum MyMqttError {
     EncodingError(mqttrust::encoding::v4::Error),
     WriteTimeoutError,
     RecvMessageTooLarge(usize),
+    Eof,
 }
 
 impl From<SessionError> for MyMqttError {
@@ -229,7 +230,13 @@ where
             // read data, theoretically if we are stuck waiting for data for some time and datat exists but not valid
             // then probably need to throw it a way, but so far didn't encounter situations to susect this happened
             let read_len = match self.tls.read(&mut self.buf[self.data_bytes_in_buf..]).await {
-                Ok(n) => n,
+                Ok(n) => {
+                    if n == 0 {
+                        let _ = self.tls.close().await;
+                        return Err(MyMqttError::Eof);
+                    }
+                    n
+                },
                 Err(e) => {
                     error!("TLS Error {:?}", e);
                     return Err(MyMqttError::TlsError(e));
@@ -523,11 +530,14 @@ pub async fn generic_mqtt_task<
         term_info!("[{}] Establishing MQTT connection with Printer", printer_log_id);
         let mut my_mqtt = MyMqtt::new(session, write_timeout);
 
-        if let Err(e) = my_mqtt.connect(keep_alive_secs, username, password.as_deref()).await {
-            // any point in retrying mqtt connect ?
-            term_error!("[{}] Unexpected error during mqtt connect {:?}", printer_log_id, e);
-            Timer::after(Duration::from_millis(500)).await;
-            continue;
+        match my_mqtt.connect(keep_alive_secs, username, password.as_deref()).await {
+            Ok(_) => (),
+            Err(e) => {
+                // any point in retrying mqtt connect ?
+                term_error!("[{}] Unexpected error during mqtt connect {:?}", printer_log_id, e);
+                Timer::after(Duration::from_millis(500)).await;
+                continue;
+            }
         }
         term_info!("[{}] MQTT connection with Printer established", printer_log_id);
 
@@ -549,6 +559,10 @@ pub async fn generic_mqtt_task<
             }
             Err(e) => {
                 term_error!("[{}] Unexpected error during mqtt subscribe {:?}", printer_log_id, e);
+                if matches!(e,MyMqttError::Eof) {
+                    term_error!("[{}] Likely wrong access code");
+                    Timer::after(Duration::from_millis(4500)).await; // extra wait in this case
+                }
                 Timer::after(Duration::from_millis(500)).await;
                 continue;
             }
