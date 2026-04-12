@@ -236,7 +236,7 @@ where
                         return Err(MyMqttError::Eof);
                     }
                     n
-                },
+                }
                 Err(e) => {
                     error!("TLS Error {:?}", e);
                     return Err(MyMqttError::TlsError(e));
@@ -420,38 +420,47 @@ pub async fn generic_mqtt_task<
 
         if socket_error_count % (15 * 5) == 0 {
             term_info!(
-                "[{}] Connecting to Printer at {}.{}.{}.{}:{}",
+                "[{}] Connecting to Printer at {}.{}.{}.{}:{}, \"{}\"",
                 printer_log_id,
                 octets[0],
                 octets[1],
                 octets[2],
                 octets[3],
-                port
+                port, 
+                printer_name,
             );
         } else if socket_error_count % 15 == 0 {
             info!(
-                "[{}] Connecting to Printer at {}.{}.{}.{}:{}",
-                printer_log_id, octets[0], octets[1], octets[2], octets[3], port
+                "[{}] Connecting to Printer at {}.{}.{}.{}:{}, \"{}\"",
+                printer_log_id, octets[0], octets[1], octets[2], octets[3], port, printer_name
             );
         }
 
-        match socket.connect(remote_endpoint).await {
-            Ok(()) => (),
-            Err(e) => {
-                // match e {
-                //     ConnectError::InvalidState | ConnectError::ConnectionReset => {
-                //     }
-                //     ConnectError::TimedOut => (),
-                //     ConnectError::NoRoute => (),
-                // }
-                if socket_error_count % (15 * 5) == 0 {
-                    term_error!("[{}] Error connecting to {remote_endpoint:?}, will retry ({:?})", printer_log_id, e);
-                } else if socket_error_count % 15 == 0 {
-                    // to log we want every time
-                    error!("[{}] Error connecting to {remote_endpoint:?}, will retry ({:?})", printer_log_id, e);
+        match with_timeout(Duration::from_secs(10), socket.connect(remote_endpoint)).await {
+            Ok(con_res) => {
+                match con_res {
+                    Ok(()) => (),
+                    Err(e) => {
+                        // match e {
+                        //     ConnectError::InvalidState | ConnectError::ConnectionReset => {
+                        //     }
+                        //     ConnectError::TimedOut => (),
+                        //     ConnectError::NoRoute => (),
+                        // }
+                        if socket_error_count % (15 * 5) == 0 {
+                            term_error!("[{}] Error connecting to {remote_endpoint:?}, will retry ({:?})", printer_log_id, e);
+                        } else if socket_error_count % 15 == 0 {
+                            // to log we want every time
+                            error!("[{}] Error connecting to {remote_endpoint:?}, will retry ({:?})", printer_log_id, e);
+                        }
+                        socket_error_count += 1;
+                        Timer::after(Duration::from_millis(2000)).await;
+                        continue;
+                    }
                 }
-                socket_error_count += 1;
-                Timer::after(Duration::from_millis(2000)).await;
+            }
+            Err(_) => {
+                term_info!("[{}] Opening socket to printer timed out", printer_log_id);
                 continue;
             }
         }
@@ -559,7 +568,7 @@ pub async fn generic_mqtt_task<
             }
             Err(e) => {
                 term_error!("[{}] Unexpected error during mqtt subscribe {:?}", printer_log_id, e);
-                if matches!(e,MyMqttError::Eof) {
+                if matches!(e, MyMqttError::Eof) {
                     term_error!("[{}] Likely wrong access code");
                     Timer::after(Duration::from_millis(4500)).await; // extra wait in this case
                 }
