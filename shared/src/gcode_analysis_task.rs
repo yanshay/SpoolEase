@@ -295,7 +295,7 @@ async fn fetch_gcode_analysis_task_printer_ftp(
         (Ipv4Address::new(192, 168, 10, 86), 990)
     } else if debug {
         (Ipv4Address::new(192, 168, 10, 78), 990)
-    } else{
+    } else {
         (ip, 990)
     };
 

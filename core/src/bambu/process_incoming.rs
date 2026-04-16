@@ -154,17 +154,16 @@ impl BambuPrinter {
         let mut removed_tags = HashMap::<usize, String>::new();
         // let command = print.command.unwrap_or_default();
         let prev_lock_mode = self.locked_mode;
-        if self.printer_mode == PrinterMode::Auto {
-            if let Some(fun) = &print.fun
-                && let Ok(fun) = u64::from_str_radix(fun, 16)
-            {
-                if fun & 0x20000000 != 0 {
-                    // locked mode
-                    self.locked_mode = Some(true)
-                } else {
-                    // dev mode
-                    self.locked_mode = Some(false)
-                }
+        if self.printer_mode == PrinterMode::Auto
+            && let Some(fun) = &print.fun
+            && let Ok(fun) = u64::from_str_radix(fun, 16)
+        {
+            if fun & 0x20000000 != 0 {
+                // locked mode
+                self.locked_mode = Some(true)
+            } else {
+                // dev mode
+                self.locked_mode = Some(false)
             }
         }
         if self.locked_mode != prev_lock_mode {

@@ -32,10 +32,10 @@ mod utils;
 mod view_model;
 mod web_app;
 
-use alloc::{boxed::Box, format, rc::Rc, string::ToString, vec};
-use core::{alloc::Layout, cell::RefCell, marker::PhantomData, net::Ipv4Addr};
+use alloc::{format, rc::Rc, string::ToString};
+use core::{cell::RefCell, marker::PhantomData, net::Ipv4Addr};
 use embassy_futures::yield_now;
-use esp_alloc::{self as _, ExternalMemory, HeapStats};
+use esp_alloc::HeapStats;
 use esp_backtrace as _;
 use esp_hal_ota::Ota;
 use esp_mbedtls::Tls;
@@ -57,7 +57,7 @@ use esp_hal::{
     dma::DmaTxBuf,
     dma_buffers,
     gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull},
-    psram::{PsramConfig, SpiTimingConfigCoreClock},
+    psram::PsramConfig,
     rng::{Rng, Trng, TrngSource},
     rtc_cntl::Rtc,
     spi::{self, master::Spi},

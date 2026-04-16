@@ -5,13 +5,11 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use embassy_executor::Spawner;
 use embassy_futures::select::{Either, select};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
 
-use esp_hal::gpio::Input;
 use framework::prelude::*;
 use hashbrown::HashMap;
 use ndef_rs::{NdefMessage, NdefRecord, TNF, payload::UriPayload};
@@ -262,7 +260,7 @@ async fn nfc_task(
     // To switch from using IRQ to not using IRQ:
     //   1. use None::<pn532::spi::NoIRQ> instead of Some(irq)
     //   2. in sam_configuration set use_irq_pin to false (maybe not required)
-    let mut interface = pn532::spi::SPIInterface {
+    let interface = pn532::spi::SPIInterface {
         spi: spi_device,
         irq: Some(irq), // : None::<Input<'_>>
                         // irq: None::<pn532::spi::NoIRQ>,
@@ -279,10 +277,8 @@ async fn nfc_task(
     let mut successful_retry = 0;
     let retries = 239;
     for retry in 0..=retries {
-        if retry % 10 == 0 {
-            if retry != 0 {
-                term_error!("Still Initializing PN532 ({})", retry);
-            }
+        if retry % 10 == 0 && retry != 0 {
+            term_error!("Still Initializing PN532 ({})", retry);
         }
         // if retry %2 == 0 {
         Timer::after(Duration::from_millis(50)).await;

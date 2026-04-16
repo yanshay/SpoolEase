@@ -639,8 +639,6 @@ impl AppWithStateBuilder for NestedAppBuilder {
             "/inventory",
             get(|| {
                 ready({
-                    let redirect_url = "/app/inventory";
-
                     let redirect_html = r#"<!doctype html><script>location.replace("/app/inventory"+location.hash)</script>"#.to_string();
                     HtmlStringResponse::new(redirect_html)
                 })

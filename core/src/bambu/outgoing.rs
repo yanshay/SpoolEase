@@ -15,7 +15,6 @@ use crate::{
             AmsFilamentSettingCommand, ExtrusionCaliGetCommand, ExtrusionCaliSelCommand, ExtrusionCaliSetCommand, GetVersionCommand, PrintCommand,
             PrinterCommand, PushAllCommand,
         },
-        tray::TrayMetaInfo,
     },
     my_mqtt::BufferedMqttPacket,
     spool_record::FullSpoolRecord,
@@ -82,6 +81,7 @@ impl BambuPrinter {
         BambuPrinter::publish_payload_async(bambu_printer, payload).await;
     }
 
+    #[allow(dead_code)]
     pub fn request_printer_command_sync(&mut self, command: PrintCommand) {
         let mut cmd = PrinterCommand::new(command);
         let payload = self.printer_message(&mut cmd);

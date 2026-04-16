@@ -422,10 +422,10 @@ impl AppConfig {
     // }
 
     pub fn set_user_cores(&mut self, user_cores: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
-        if user_cores.is_some() {
+        if let Some(user_cores) = &user_cores {
             self.framework
                 .borrow()
-                .store(USER_CORES_CONFIG_KEY.to_string(), user_cores.as_ref().unwrap().clone())?;
+                .store(USER_CORES_CONFIG_KEY.to_string(), user_cores.clone())?;
         } else {
             self.framework.borrow().remove(USER_CORES_CONFIG_KEY.to_string())?;
         }

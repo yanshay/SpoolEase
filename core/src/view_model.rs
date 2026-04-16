@@ -19,7 +19,6 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 use hashbrown::HashMap;
 use ndef_rs::NdefMessage;
 use ndef_rs::payload::UriPayload;
-use num_traits::PrimInt;
 use serde::{Deserialize, Serialize};
 use shared::gcode_analysis_task::{
     Fetch3mf, FilamentUsage, GcodeAnalysisNotification, GcodeAnalysisNotificationChannel, GcodeAnalysisRequest, GcodeAnalysisRequestChannel,
@@ -51,7 +50,7 @@ use crate::bambu::{
     tray::{Tray, TrayBits, TrayState},
 };
 use crate::color_utils::get_color_name;
-use crate::filament_staging::{self, StagingOrigin};
+use crate::filament_staging::StagingOrigin;
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleWeight, SpoolScaleObserver};
@@ -848,7 +847,6 @@ impl ViewModel {
 
         let moved_spool_tag = self.spool_tag_model.clone();
         let moved_framework = self.framework.clone();
-        let moved_app_config = self.app_config.clone();
         ui_app_backend.on_web_config_web_app(move || {
             // moved_app_config.borrow_mut().set_redirect_web_to_config();
             let borrowed_framework = moved_framework.borrow();
