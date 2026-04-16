@@ -25,7 +25,7 @@ impl BambuPrinter {
     pub fn process_print_message__vt_tray(&mut self, extruder_id: u32, v_tray: &PrintTray) -> (bool, Option<SpoolId>) {
         let old_tray = self.virt_trays()[extruder_id as usize].clone();
         let external_tray_id = if extruder_id == 0 { 255 } else { 254 };
-        let new_tray = self.get_updated_tray(&old_tray, Some(v_tray), external_tray_id);
+        let new_tray = self.get_updated_tray(Some(v_tray), external_tray_id);
         if let Some(new_tray) = new_tray {
             let removed_tag = if old_tray.state != TrayState::Empty && new_tray.state == TrayState::Empty {
                 old_tray.meta_info.spool_id
@@ -455,8 +455,7 @@ impl BambuPrinter {
                 None
             };
 
-            let old_tray = &self.ams_trays()[tray_id];
-            let new_tray = self.get_updated_tray(old_tray, source_tray, tray_id as i32);
+            let new_tray = self.get_updated_tray(source_tray, tray_id as i32);
             if let Some(mut new_tray) = new_tray {
                 change_made = true;
                 let prev_tray = self.swap_ams_tray(tray_id, &mut new_tray);
@@ -628,7 +627,9 @@ impl BambuPrinter {
     //   tray_id is the tray_id in case of AMS or None in case of External spool
     // Return value:
     //   if tray not changed from old_tray, or something wrong with tray, returns None
-    pub fn get_updated_tray(&self, old_tray: &Tray, tray_update: Option<&PrintTray>, tray_id: i32) -> Option<Tray> {
+    pub fn get_updated_tray(&mut self, tray_update: Option<&PrintTray>, tray_id: i32) -> Option<Tray> {
+
+        let old_tray = self.get_any_tray(tray_id as usize);
         if tray_id != 255 && tray_id != 254 {
             // AMS tray
             if let Some(tray_exist_bits) = self.tray_exist_bits() {

@@ -65,54 +65,54 @@ impl BambuPrinter {
     }
 
     pub async fn request_version_info_async(bambu_printer: &Rc<RefCell<BambuPrinter>>) {
-        let cmd = GetVersionCommand::new();
-        let payload = bambu_printer.borrow().printer_message(&cmd);
+        let mut cmd = GetVersionCommand::new();
+        let payload = bambu_printer.borrow_mut().printer_message(&mut cmd);
         BambuPrinter::publish_payload_async(bambu_printer, payload).await;
     }
 
-    pub fn request_full_update_sync(&self) {
-        let cmd = PushAllCommand::new();
-        let payload = self.printer_message(&cmd);
+    pub fn request_full_update_sync(&mut self) {
+        let mut cmd = PushAllCommand::new();
+        let payload = self.printer_message(&mut cmd);
         self.publish_payload(payload);
     }
 
     pub async fn request_full_update_async(bambu_printer: &Rc<RefCell<BambuPrinter>>) {
-        let cmd = PushAllCommand::new();
-        let payload = bambu_printer.borrow().printer_message(&cmd);
+        let mut cmd = PushAllCommand::new();
+        let payload = bambu_printer.borrow_mut().printer_message(&mut cmd);
         BambuPrinter::publish_payload_async(bambu_printer, payload).await;
     }
 
-    pub fn request_printer_command_sync(&self, command: PrintCommand) {
-        let cmd = PrinterCommand::new(command);
-        let payload = self.printer_message(&cmd);
+    pub fn request_printer_command_sync(&mut self, command: PrintCommand) {
+        let mut cmd = PrinterCommand::new(command);
+        let payload = self.printer_message(&mut cmd);
         self.publish_payload(payload);
     }
 
     pub async fn request_printer_command_async(bambu_printer: &Rc<RefCell<BambuPrinter>>, command: PrintCommand) {
-        let cmd = PrinterCommand::new(command);
-        let payload = bambu_printer.borrow().printer_message(&cmd);
+        let mut cmd = PrinterCommand::new(command);
+        let payload = bambu_printer.borrow_mut().printer_message(&mut cmd);
         BambuPrinter::publish_payload_async(bambu_printer, payload).await;
     }
 
-    pub fn fetch_filament_calibrations(&self, nozzle_diameter: &str) {
+    pub fn fetch_filament_calibrations(&mut self, nozzle_diameter: &str) {
         // Is this command also causing errors when printer is locked?
 
-        let cmd = ExtrusionCaliGetCommand::new(nozzle_diameter);
-        let payload = self.printer_message(&cmd);
+        let mut cmd = ExtrusionCaliGetCommand::new(nozzle_diameter);
+        let payload = self.printer_message(&mut cmd);
         if !self.is_locked() {
             self.publish_payload(payload);
         }
     }
 
     pub async fn fetch_filament_calibrations_async(bambu_printer: &Rc<RefCell<BambuPrinter>>, nozzle_diameter: &str) {
-        let cmd = ExtrusionCaliGetCommand::new(nozzle_diameter);
-        let payload = bambu_printer.borrow().printer_message(&cmd);
+        let mut cmd = ExtrusionCaliGetCommand::new(nozzle_diameter);
+        let payload = bambu_printer.borrow_mut().printer_message(&mut cmd);
         BambuPrinter::publish_payload_async(bambu_printer, payload).await;
     }
 
     pub fn reset_tray(&mut self, tray_id: i32) {
         let (ams_id, ams_tray_id, slot_id, original_tray_id) = self.get_quad_for_set_filament_from_tray_id(tray_id);
-        let cmd = AmsFilamentSettingCommand::new(
+        let mut cmd = AmsFilamentSettingCommand::new(
             ams_id,
             ams_tray_id, // here we need the tray_id within the specific ams (newer versions)
             slot_id,     // slot number within ams
@@ -123,13 +123,13 @@ impl BambuPrinter {
             0,
             0,
         );
-        let payload = self.printer_message(&cmd);
         if !self.is_locked() {
+            let payload = self.printer_message(&mut cmd);
             self.publish_payload(payload);
         }
 
         let extruder_id = self.get_extruder_id_for_tray(tray_id).unwrap_or_default();
-        let cmd = ExtrusionCaliSelCommand::new(
+        let mut cmd = ExtrusionCaliSelCommand::new(
             &self.nozzle_diameter(extruder_id).clone().unwrap_or_default(),
             ams_id,
             original_tray_id, // here we need the original tray_id
@@ -137,8 +137,8 @@ impl BambuPrinter {
             "", // tray_info_idx is filament_id in this command
             Some(-1),
         );
-        let payload = self.printer_message(&cmd);
         if !self.is_locked() {
+            let payload = self.printer_message(&mut cmd);
             self.publish_payload(payload);
         }
     }
@@ -168,7 +168,7 @@ impl BambuPrinter {
         // Send printer material & color
 
         if filament_ok_to_send {
-            let cmd = AmsFilamentSettingCommand::new(
+            let mut cmd = AmsFilamentSettingCommand::new(
                 ams_id_for_set_filament,
                 ams_tray_id, // here we need the tray_id within the specific ams (newer versions)
                 slot_id,     // slot number within ams
@@ -179,15 +179,15 @@ impl BambuPrinter {
                 filament.nozzle_temp_min,
                 filament.nozzle_temp_max,
             );
-            let payload = self.printer_message(&cmd);
             if !self.is_locked() {
+                let payload = self.printer_message(&mut cmd);
                 self.publish_payload(payload);
             }
 
             // Send printer pressure advance
 
             let extruder_id = self.get_extruder_id_for_tray(tray_id).unwrap_or_default();
-            let cmd = ExtrusionCaliSelCommand::new(
+            let mut cmd = ExtrusionCaliSelCommand::new(
                 &self.nozzle_diameter(extruder_id).clone().unwrap_or_default(),
                 ams_id_for_set_filament,
                 original_tray_id, // here we need the original tray_id
@@ -199,8 +199,8 @@ impl BambuPrinter {
                     Some(-1)
                 },
             );
-            let payload = self.printer_message(&cmd);
             if !self.is_locked() {
+                let payload = self.printer_message(&mut cmd);
                 self.publish_payload(payload);
             }
 
@@ -226,8 +226,8 @@ impl BambuPrinter {
         k_value: &str,
         name: &str,
     ) {
-        let cmd = ExtrusionCaliSetCommand::new(extruder_id, nozzle_diameter, nozzle_id, filament_id, setting_id, k_value, name);
-        let payload = self.printer_message(&cmd);
+        let mut cmd = ExtrusionCaliSetCommand::new(extruder_id, nozzle_diameter, nozzle_id, filament_id, setting_id, k_value, name);
+        let payload = self.printer_message(&mut cmd);
         self.publish_payload(payload);
     }
 

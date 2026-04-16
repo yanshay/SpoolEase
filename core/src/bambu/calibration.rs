@@ -376,7 +376,7 @@ pub async fn fix_k_on_restart(
                 } else {
                     info!("[{}] Updating pressure advance of external slot", printer_number);
                 }
-                let cmd = ExtrusionCaliSelCommand::new(
+                let mut cmd = ExtrusionCaliSelCommand::new(
                     nozzle_diameter,
                     ams_id as i32,
                     original_tray_id as i32, // here we need the original tray_id
@@ -384,9 +384,9 @@ pub async fn fix_k_on_restart(
                     &filament_info.tray_info_idx, // tray_info_idx is filament_id in this command
                     *set_tray,
                 );
-                let payload = bambu_printer.borrow().printer_message(&cmd);
 
                 if !bambu_printer.borrow().is_locked() {
+                    let payload = bambu_printer.borrow_mut().printer_message(&mut cmd);
                     BambuPrinter::publish_payload_async(&bambu_printer, payload).await;
                 }
                 Timer::after_millis(250).await;
