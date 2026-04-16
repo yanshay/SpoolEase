@@ -426,7 +426,7 @@ pub async fn generic_mqtt_task<
                 octets[1],
                 octets[2],
                 octets[3],
-                port, 
+                port,
                 printer_name,
             );
         } else if socket_error_count % 15 == 0 {

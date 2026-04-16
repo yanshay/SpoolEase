@@ -66,15 +66,10 @@ use esp_hal::{
 };
 
 use framework::prelude::*;
-use framework::{
-    RNG,
-    framework::FrameworkSettings,
-};
+use framework::{RNG, framework::FrameworkSettings};
 
 #[cfg(feature = "wt32-sc01-plus")]
-use framework::{
-    wt32_sc01_plus::{WT32SC01Plus, WT32SC01PlusDisplayPeripherals, WT32SC01PlusRunner, WT32SC01PlusSDCardPeripherals},
-};
+use framework::wt32_sc01_plus::{WT32SC01Plus, WT32SC01PlusDisplayPeripherals, WT32SC01PlusRunner, WT32SC01PlusSDCardPeripherals};
 
 #[cfg(feature = "jc8048w550c")]
 use framework::{
@@ -298,8 +293,7 @@ async fn main(spawner: Spawner) {
     let (display, runner, sdcard_device) = {
         const JC_DISP_FRAME_BYTES: usize = 800 * 480 * 2;
         let frame_buffer_a: &'static mut [u8] = unsafe {
-            let layout = core::alloc::Layout::from_size_align(JC_DISP_FRAME_BYTES, 128)
-                .expect("Invalid frame buffer layout");
+            let layout = core::alloc::Layout::from_size_align(JC_DISP_FRAME_BYTES, 128).expect("Invalid frame buffer layout");
             let ptr = esp_alloc::HEAP.alloc_caps(esp_alloc::MemoryCapability::External.into(), layout);
             if ptr.is_null() {
                 panic!("Failed to allocate external PSRAM frame buffer A");
@@ -307,8 +301,7 @@ async fn main(spawner: Spawner) {
             core::slice::from_raw_parts_mut(ptr, JC_DISP_FRAME_BYTES)
         };
         let frame_buffer_b: &'static mut [u8] = unsafe {
-            let layout = core::alloc::Layout::from_size_align(JC_DISP_FRAME_BYTES, 128)
-                .expect("Invalid frame buffer layout");
+            let layout = core::alloc::Layout::from_size_align(JC_DISP_FRAME_BYTES, 128).expect("Invalid frame buffer layout");
             let ptr = esp_alloc::HEAP.alloc_caps(esp_alloc::MemoryCapability::External.into(), layout);
             if ptr.is_null() {
                 panic!("Failed to allocate external PSRAM frame buffer B");
@@ -371,7 +364,6 @@ async fn main(spawner: Spawner) {
             framework.clone(),
         )
     };
-
 
     spawner.spawn(display_runner(runner)).ok();
     let _ = display.wait_init_done().await; // important to wait for init stage to complete before moving on
@@ -571,9 +563,8 @@ async fn main(spawner: Spawner) {
     yield_now().await;
     yield_now().await;
 
-    let mac: [u8;6] = esp_hal::efuse::Efuse::mac_address();
-    let mac_hex = alloc::format!("{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-                      mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    let mac: [u8; 6] = esp_hal::efuse::Efuse::mac_address();
+    let mac_hex = alloc::format!("{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     term_info!("Booting from partition {}", boot_partition);
     term_info!("Firmware: {} version {}", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
     term_info!("Device {}", mac_hex);

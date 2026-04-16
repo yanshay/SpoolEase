@@ -2,7 +2,11 @@
 
 use core::cell::RefCell;
 
-use alloc::{borrow::Cow, rc::Rc, string::{String, ToString}};
+use alloc::{
+    borrow::Cow,
+    rc::Rc,
+    string::{String, ToString},
+};
 use framework::debug;
 use once_cell::sync::Lazy;
 use serde::Serialize;

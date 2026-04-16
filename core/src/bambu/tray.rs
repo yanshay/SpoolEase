@@ -329,11 +329,11 @@ impl BambuPrinter {
     }
 
     pub fn set_tray_spool_rec(&mut self, tray_id: usize, spool_rec: &SpoolRecord) {
-         self.update_any_tray(tray_id as usize, |tray| {
+        self.update_any_tray(tray_id as usize, |tray| {
             tray.meta_info = TrayMetaInfo::default();
             tray.meta_info.spool_id = Some(spool_rec.id.clone());
             tray.meta_info.consumed_since_weight = spool_rec.consumed_since_weight;
-         });
+        });
     }
 
     pub fn full_slot_description(&self, tray_id: i32) -> String {

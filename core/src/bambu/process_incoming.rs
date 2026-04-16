@@ -10,14 +10,17 @@ use framework::{debug, error, info, term_info, trace, utils::SpawnerHeapExt, war
 use hashbrown::HashMap;
 
 use crate::{
-    app_config::UseAmsScan, bambu::{
+    app_config::UseAmsScan,
+    bambu::{
         BambuPrinter, Filament, FilamentInfo, PrinterMode, ReadPacketsPubSub, SpoolId,
         bambu_api::{GcodeState, Message, PrintAms, PrintData, PrintTray},
         calibration::{Calibration, fix_k_on_restart},
         fetch_initial_info,
         protocol::clean_message_bytes_to_log,
         tray::{Tray, TrayBits, TrayMetaInfo, TrayState},
-    }, settings::MAX_NUM_PRINTERS, view_model
+    },
+    settings::MAX_NUM_PRINTERS,
+    view_model,
 };
 
 impl BambuPrinter {
@@ -628,7 +631,6 @@ impl BambuPrinter {
     // Return value:
     //   if tray not changed from old_tray, or something wrong with tray, returns None
     pub fn get_updated_tray(&mut self, tray_update: Option<&PrintTray>, tray_id: i32) -> Option<Tray> {
-
         let old_tray = self.get_any_tray(tray_id as usize);
         if tray_id != 255 && tray_id != 254 {
             // AMS tray
@@ -682,7 +684,11 @@ impl BambuPrinter {
                                 && !tag_uid.starts_with("00000000")
                             {
                                 let scanned_tag = &tag_uid[..8];
-                                info!("[{}] Tag {scanned_tag} scanned by {}", self.printer_number, self.full_slot_description(tray_id));
+                                info!(
+                                    "[{}] Tag {scanned_tag} scanned by {}",
+                                    self.printer_number,
+                                    self.full_slot_description(tray_id)
+                                );
                                 self.notify_tag_scanned(tray_id, scanned_tag, matches!(self.use_ams_scan, UseAmsScan::SpoolId));
                                 new_tray.meta_info.waiting_for_tag_uid = false;
                             }

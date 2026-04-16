@@ -22,7 +22,9 @@ pub fn init_app(
     framework: Rc<RefCell<Framework>>,
     // Application
     app_config: Rc<RefCell<AppConfig>>,
-    spi_device: Option<ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>>,
+    spi_device: Option<
+        ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
+    >,
     irq: Option<esp_hal::gpio::Input<'static>>,
 ) -> Rc<RefCell<ViewModel>> {
     // == Setup ViewModel =============================================================

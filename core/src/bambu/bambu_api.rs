@@ -344,7 +344,6 @@ pub struct PushAllCommand {
     pub pushing: PushAll, // ams_filament_setting
 }
 
-
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PushAll {
     pub command: String, // ams_filament_setting
@@ -764,7 +763,6 @@ pub struct InfoModule {
 //     { "flag": 0, "hw_ver": "N/A", "loader_ver": "00.00.00.00", "name": "mc-sub", "product_name": "", "sn": "N/A", "sw_ver": "00.00.32.96", "visible": false },
 //     { "flag": 0, "hw_ver": "TH09", "loader_ver": "00.00.00.14", "name": "th", "product_name": "", "sn": "00306D483105759", "sw_ver": "00.00.07.12", "visible": false },
 //     { "flag": 0, "hw_ver": "AP05", "loader_ver": "00.00.01.08", "name": "ap", "product_name": "", "sn": "00M09D492100781", "sw_ver": "00.00.51.09", "visible": false } ], "sequence_id": "20034" } }
-
 
 /// Helpers
 
