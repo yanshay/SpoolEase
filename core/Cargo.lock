@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "SpoolEase"
-version = "0.6.2-b.28"
+version = "0.6.2-b.29"
 dependencies = [
  "aes",
  "aes-gcm",
