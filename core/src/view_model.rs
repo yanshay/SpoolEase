@@ -480,8 +480,8 @@ impl ViewModel {
             .iter()
             .chain(no_configured_printers.then_some(&dummy_printer_config).into_iter())
         {
-            if printer_number > 4 {
-                term_info!("Printers limit reached - max four printers supported");
+            if printer_number > 5 {
+                term_info!("Printers limit reached - max five printers supported");
                 break;
             }
             match bambu::init(
