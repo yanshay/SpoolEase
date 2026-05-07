@@ -748,6 +748,35 @@ impl AppWithStateBuilder for NestedAppBuilder {
         );
 
         let router = router.route(
+            "/api/reports-config",
+            post(
+                move |State(Encryption(key)): State<Encryption>, _state: State<ConsoleAppState>, _reports_config: ReportsConfigDTO| {
+                    ready(
+                        ReportsConfigDTO {
+                            reports_config_json: None,
+                        }
+                        .encrypt(&key.borrow()),
+                    )
+                    // Persistence intentionally stays disabled for now.
+                    // When it is time to enable it, wire this request to:
+                    //   state.0.store.set_reports_config_json(reports_config_json.as_deref().unwrap_or(""))
+                    // and return the stored JSON payload back to the client.
+                },
+            )
+            .get(move |State(Encryption(key)): State<Encryption>, _state: State<ConsoleAppState>| {
+                ready(
+                    ReportsConfigDTO {
+                        reports_config_json: None,
+                    }
+                    .encrypt(&key.borrow()),
+                )
+                // Persistence intentionally stays disabled for now.
+                // When it is time to enable it, load and return the JSON from:
+                //   /store/reportcfg.jsn
+            }),
+        );
+
+        let router = router.route(
             "/api/tag-scanned",
             post(
                 async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, tag_scanned: TagScannedDTO| {
@@ -1297,6 +1326,12 @@ struct FilamentsConfigDTO {
     custom_filaments: Option<String>,
 }
 encrypted_input!(FilamentsConfigDTO);
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct ReportsConfigDTO {
+    reports_config_json: Option<String>,
+}
+encrypted_input!(ReportsConfigDTO);
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct ScaleConfigDTO {

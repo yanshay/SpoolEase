@@ -737,6 +737,37 @@ impl Store {
 
     // Locations Storage
 
+    #[allow(dead_code)]
+    pub async fn get_reports_config_json(&self) -> Result<Option<String>, String> {
+        let file_store = self.framework.borrow().file_store();
+        let mut file_store = file_store.lock().await;
+
+        match file_store.read_file_str("/store/reportcfg.jsn").await {
+            Ok(reports_config_str) => Ok(Some(reports_config_str)),
+            Err(err) => Err(format!("Error reading reports configuration {err}")),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub async fn set_reports_config_json(&self, reports_config_json: &str) -> Result<(), String> {
+        let file_store = self.framework.borrow().file_store();
+        let mut file_store = file_store.lock().await;
+
+        match file_store
+            .create_write_file_str("/store/reportcfg.jsn", reports_config_json)
+            .await
+        {
+            Ok(_) => {
+                info!("Stored reports configuration to /store/reportcfg.jsn");
+                Ok(())
+            }
+            Err(err) => {
+                error!("Error storing reports configuration to /store/reportcfg.jsn");
+                Err(format!("Error storing reports configuration {err}"))
+            }
+        }
+    }
+
     pub async fn set_storage_config(&self, new_storage_config: StorageConfig) -> Result<String, String> {
         let file_store = self.framework.borrow().file_store();
         let mut file_store = file_store.lock().await;
