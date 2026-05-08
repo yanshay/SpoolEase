@@ -748,31 +748,43 @@ impl AppWithStateBuilder for NestedAppBuilder {
         );
 
         let router = router.route(
-            "/api/reports-config",
+            "/api/dashboard-config",
             post(
-                move |State(Encryption(key)): State<Encryption>, _state: State<ConsoleAppState>, _reports_config: ReportsConfigDTO| {
-                    ready(
-                        ReportsConfigDTO {
-                            reports_config_json: None,
+                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, dashboard_config: DashboardConfigDTO| {
+                    let store = state.store;
+                    match &dashboard_config.dashboard_config_json {
+                        Some(dashboard_config_json) => match store.set_dashboard_config_json(dashboard_config_json).await {
+                            Ok(_) => DashboardConfigDTO {
+                                dashboard_config_json: Some(dashboard_config_json.clone()),
+                            }
+                            .encrypt(&key.borrow()),
+                            Err(err) => {
+                                error!("Failed to store dashboard configuration: {err}");
+                                DashboardConfigDTO {
+                                    dashboard_config_json: None,
+                                }
+                                .encrypt(&key.borrow())
+                            }
+                        },
+                        None => DashboardConfigDTO {
+                            dashboard_config_json: None,
                         }
                         .encrypt(&key.borrow()),
-                    )
-                    // Persistence intentionally stays disabled for now.
-                    // When it is time to enable it, wire this request to:
-                    //   state.0.store.set_reports_config_json(reports_config_json.as_deref().unwrap_or(""))
-                    // and return the stored JSON payload back to the client.
+                    }
                 },
             )
-            .get(move |State(Encryption(key)): State<Encryption>, _state: State<ConsoleAppState>| {
-                ready(
-                    ReportsConfigDTO {
-                        reports_config_json: None,
+            .get(async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>| {
+                let store = state.store;
+                match store.get_dashboard_config_json().await {
+                    Ok(dashboard_config_json) => DashboardConfigDTO { dashboard_config_json }.encrypt(&key.borrow()),
+                    Err(err) => {
+                        error!("Failed to load dashboard configuration: {err}");
+                        DashboardConfigDTO {
+                            dashboard_config_json: None,
+                        }
+                        .encrypt(&key.borrow())
                     }
-                    .encrypt(&key.borrow()),
-                )
-                // Persistence intentionally stays disabled for now.
-                // When it is time to enable it, load and return the JSON from:
-                //   /store/reportcfg.jsn
+                }
             }),
         );
 
@@ -1328,10 +1340,10 @@ struct FilamentsConfigDTO {
 encrypted_input!(FilamentsConfigDTO);
 
 #[derive(serde::Deserialize, serde::Serialize)]
-struct ReportsConfigDTO {
-    reports_config_json: Option<String>,
+struct DashboardConfigDTO {
+    dashboard_config_json: Option<String>,
 }
-encrypted_input!(ReportsConfigDTO);
+encrypted_input!(DashboardConfigDTO);
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct ScaleConfigDTO {

@@ -738,32 +738,41 @@ impl Store {
     // Locations Storage
 
     #[allow(dead_code)]
-    pub async fn get_reports_config_json(&self) -> Result<Option<String>, String> {
+    pub async fn get_dashboard_config_json(&self) -> Result<Option<String>, String> {
         let file_store = self.framework.borrow().file_store();
         let mut file_store = file_store.lock().await;
 
-        match file_store.read_file_str("/store/reportcfg.jsn").await {
-            Ok(reports_config_str) => Ok(Some(reports_config_str)),
-            Err(err) => Err(format!("Error reading reports configuration {err}")),
+        let file_exists = file_store
+            .file_exists("/store/dashbord.jsn")
+            .await
+            .map_err(|err| format!("Error checking dashboard configuration file {err}"))?;
+
+        if !file_exists {
+            return Ok(None);
+        }
+
+        match file_store.read_file_str("/store/dashbord.jsn").await {
+            Ok(dashboard_config_str) => Ok(Some(dashboard_config_str)),
+            Err(err) => Err(format!("Error reading dashboard configuration {err}")),
         }
     }
 
     #[allow(dead_code)]
-    pub async fn set_reports_config_json(&self, reports_config_json: &str) -> Result<(), String> {
+    pub async fn set_dashboard_config_json(&self, dashboard_config_json: &str) -> Result<(), String> {
         let file_store = self.framework.borrow().file_store();
         let mut file_store = file_store.lock().await;
 
         match file_store
-            .create_write_file_str("/store/reportcfg.jsn", reports_config_json)
+            .create_write_file_str("/store/dashbord.jsn", dashboard_config_json)
             .await
         {
             Ok(_) => {
-                info!("Stored reports configuration to /store/reportcfg.jsn");
+                info!("Stored dashboard configuration to /store/dashbord.jsn");
                 Ok(())
             }
             Err(err) => {
-                error!("Error storing reports configuration to /store/reportcfg.jsn");
-                Err(format!("Error storing reports configuration {err}"))
+                error!("Error storing dashboard configuration to /store/dashbord.jsn");
+                Err(format!("Error storing dashboard configuration {err}"))
             }
         }
     }
