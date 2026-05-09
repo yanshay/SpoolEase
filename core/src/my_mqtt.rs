@@ -385,6 +385,7 @@ pub async fn generic_mqtt_task<
         concat!(include_str!("./certs/bambulab.pem"), "\0").as_bytes(),
         concat!(include_str!("./certs/bambulab_p2s.pem"), "\0").as_bytes(),
         concat!(include_str!("./certs/bambulab_h2c.pem"), "\0").as_bytes(),
+        concat!(include_str!("./certs/bambulab_x2d.pem"), "\0").as_bytes(),
     ];
     let mut bambu_cert_index = 0;
 
