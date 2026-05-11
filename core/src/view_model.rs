@@ -1031,6 +1031,54 @@ impl ViewModel {
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
+            .on_storage_rack_count(move || moved_view_model.borrow().ui_storage_rack_count());
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_get_storage_rack_options(move || moved_view_model.borrow().ui_get_storage_rack_options());
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_storage_available_bays(move |rack_id| moved_view_model.borrow().ui_storage_rack_value(rack_id, "bays"));
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_storage_available_shelves(move |rack_id, _bay| moved_view_model.borrow().ui_storage_rack_value(rack_id, "shelves"));
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_storage_available_positions(move |rack_id, _bay, _shelf| moved_view_model.borrow().ui_storage_rack_value(rack_id, "positions"));
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_storage_available_containers(move |rack_id, _bay, _shelf, _position| {
+                moved_view_model.borrow().ui_storage_rack_value(rack_id, "containers")
+            });
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_storage_location_str(move |rack_id, bay, shelf, position, container| {
+                moved_view_model
+                    .borrow()
+                    .ui_storage_location_str(rack_id, bay, shelf, position, container)
+            });
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
             .on_location_str_to_location(move |location_str| moved_view_model.borrow().ui_location_str_to_location(&location_str));
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
@@ -1298,6 +1346,76 @@ impl ViewModel {
         } else {
             SharedString::from("Spool Not Found")
         }
+    }
+
+    fn ui_storage_rack_count(&self) -> i32 {
+        self.store
+            .storage_config
+            .borrow()
+            .rack_config
+            .keys()
+            .filter(|rack_id| rack_id.parse::<i32>().is_ok())
+            .count() as i32
+    }
+
+    fn ui_get_storage_rack_options(&self) -> slint::ModelRc<crate::app::SelectorOption> {
+        let mut racks = {
+            let storage_config = self.store.storage_config.borrow();
+            storage_config
+                .rack_config
+                .iter()
+                .filter_map(|(rack_id_str, rack)| rack_id_str.parse::<i32>().ok().map(|rack_id| (rack_id, rack.name.clone())))
+                .collect::<Vec<_>>()
+        };
+
+        racks.sort_by_key(|(rack_id, _)| *rack_id);
+
+        slint::ModelRc::new(slint::VecModel::from(
+            racks
+                .into_iter()
+                .map(|(rack_id, name)| crate::app::SelectorOption {
+                    id: rack_id,
+                    text: name.to_shared_string(),
+                })
+                .collect::<Vec<_>>(),
+        ))
+    }
+
+    fn ui_storage_rack_value(&self, rack_id: i32, field: &str) -> i32 {
+        let rack_id_str = rack_id.to_string();
+        let storage_config = self.store.storage_config.borrow();
+        if let Some(rack) = storage_config.rack_config.get(&rack_id_str) {
+            match field {
+                "bays" => rack.num_bays,
+                "shelves" => rack.num_shelves,
+                "positions" => rack.num_positions,
+                "containers" => rack.num_containers,
+                _ => 0,
+            }
+        } else {
+            0
+        }
+    }
+
+    fn ui_storage_location_str(&self, rack_id: i32, bay: i32, shelf: i32, position: i32, container: i32) -> SharedString {
+        if rack_id <= 0 {
+            return SharedString::new();
+        }
+
+        let mut location = format!("#R:{rack_id}");
+        if bay > 0 {
+            location.push_str(&format!("/B:{bay}"));
+        }
+        if shelf > 0 {
+            location.push_str(&format!("/S:{shelf}"));
+        }
+        if position > 0 {
+            location.push_str(&format!("/P:{position}"));
+        }
+        if container > 0 {
+            location.push_str(&format!("/C:{container}"));
+        }
+        location.to_shared_string()
     }
 
     fn ui_location_str_to_location(&self, location_str: &str) -> crate::app::Location {
@@ -3263,7 +3381,11 @@ impl BambuPrinterObserver for ViewModel {
 
         let chars_to_replace_for_file = match printer.model_series() {
             bambu::PrinterModelSeries::P1 | bambu::PrinterModelSeries::A1 => "!@#\'@/",
-            bambu::PrinterModelSeries::X1 | bambu::PrinterModelSeries::H2 | bambu::PrinterModelSeries::P2 | bambu::PrinterModelSeries::X2 | bambu::PrinterModelSeries::Unknown => "/",
+            bambu::PrinterModelSeries::X1
+            | bambu::PrinterModelSeries::H2
+            | bambu::PrinterModelSeries::P2
+            | bambu::PrinterModelSeries::X2
+            | bambu::PrinterModelSeries::Unknown => "/",
         };
 
         let threemf_ftp_filename: String = subtask_name

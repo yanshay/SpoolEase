@@ -49,18 +49,54 @@ export component NumButton inherits MyButton {
 
 export component NumPad inherits Rectangle {
     in property <int> max-digits: 4;
+    in property <int> min-value: 0;
+    in property <int> max-value: 0;
     in property <bool> ok-visible: true;
     width: 288px;
     callback ok-clicked;
+    callback value-changed(value: int, done: bool);
     in property <string> title;
     background: white;
     in-out property <int> number;
     in-out property <string> display-postfix: " g";
     in-out property <string> display-error;
+    pure function bounded() -> bool {
+        return max-value > 0;
+    }
+    pure function single-digit-bound() -> bool {
+        return bounded() && max-value < 10;
+    }
+    pure function digit-disabled(digit: int) -> bool {
+        if !bounded() {
+            return false;
+        }
+        if single-digit-bound() {
+            return digit == 0 || digit > max-value || digit < min-value;
+        }
+        if number == 0 && digit == 0 {
+            return true;
+        }
+        if log(number, 10) >= max-digits - 1 {
+            return true;
+        }
+        let new-value = number * 10 + digit;
+        return new-value > max-value;
+    }
+    pure function ok-enabled() -> bool {
+        return ok-visible && (!bounded() || (number >= min-value && number <= max-value));
+    }
     function pressed-digit(digit: int) {
-        if log(number, 10) < max-digits - 1 {
+        if digit-disabled(digit) {
+            return;
+        }
+        if single-digit-bound() {
+            number = digit;
+            display-error = "";
+            value-changed(number, true);
+        } else if log(number, 10) < max-digits - 1 {
             number = number * 10 + digit;
             display-error = "";
+            value-changed(number, false);
         }
     }
     main := VerticalLayout {
@@ -75,6 +111,7 @@ export component NumPad inherits Rectangle {
             vertical-stretch: 1;
             NumButton {
                 digit: 7;
+                enabled: !root.digit-disabled(self.digit);
                 key-pressed(digit) => {
                     pressed-digit(digit);
                 }
@@ -82,6 +119,7 @@ export component NumPad inherits Rectangle {
 
             NumButton {
                 digit: 8;
+                enabled: !root.digit-disabled(self.digit);
                 key-pressed(digit) => {
                     pressed-digit(digit);
                 }
@@ -89,6 +127,7 @@ export component NumPad inherits Rectangle {
 
             NumButton {
                 digit: 9;
+                enabled: !root.digit-disabled(self.digit);
                 key-pressed(digit) => {
                     pressed-digit(digit);
                 }
@@ -98,6 +137,7 @@ export component NumPad inherits Rectangle {
         HorizontalLayout {
             NumButton {
                 digit: 4;
+                enabled: !root.digit-disabled(self.digit);
                 key-pressed(digit) => {
                     pressed-digit(digit);
                 }
@@ -105,6 +145,7 @@ export component NumPad inherits Rectangle {
 
             NumButton {
                 digit: 5;
+                enabled: !root.digit-disabled(self.digit);
                 key-pressed(digit) => {
                     pressed-digit(digit);
                 }
@@ -112,6 +153,7 @@ export component NumPad inherits Rectangle {
 
             NumButton {
                 digit: 6;
+                enabled: !root.digit-disabled(self.digit);
                 key-pressed(digit) => {
                     pressed-digit(digit);
                 }
@@ -121,6 +163,7 @@ export component NumPad inherits Rectangle {
         HorizontalLayout {
             NumButton {
                 digit: 1;
+                enabled: !root.digit-disabled(self.digit);
                 key-pressed(digit) => {
                     pressed-digit(digit);
                 }
@@ -128,6 +171,7 @@ export component NumPad inherits Rectangle {
 
             NumButton {
                 digit: 2;
+                enabled: !root.digit-disabled(self.digit);
                 key-pressed(digit) => {
                     pressed-digit(digit);
                 }
@@ -135,6 +179,7 @@ export component NumPad inherits Rectangle {
 
             NumButton {
                 digit: 3;
+                enabled: !root.digit-disabled(self.digit);
                 key-pressed(digit) => {
                     pressed-digit(digit);
                 }
@@ -147,11 +192,13 @@ export component NumPad inherits Rectangle {
                 key-pressed(digit) => {
                     root.number = floor(root.number / 10);
                     display-error = "";
+                    root.value-changed(root.number, false);
                 }
             }
 
             NumButton {
                 digit: 0;
+                enabled: !root.digit-disabled(self.digit);
                 key-pressed(digit) => {
                     pressed-digit(digit);
                 }
@@ -159,9 +206,11 @@ export component NumPad inherits Rectangle {
 
             NumButton {
                 text: ok-visible ? "Ok" : "";
+                enabled: !ok-visible || ok-enabled();
                 key-pressed(digit) => {
-                    if ok-visible {
+                    if ok-enabled() {
                         root.ok-clicked();
+                        root.value-changed(root.number, true);
                     }
                 }
             }

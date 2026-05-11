@@ -1,8 +1,8 @@
-import { MyText, MyButton, ButtonType, WizardButtons, Title } from "framework/widgets.slint";
+import { MyText, MyButton, ButtonType, WizardButtons, Title, Selector } from "framework/widgets.slint";
 import { AppBackend, AppState, ControlState, SpoolStagingState, SpoolScaleState, StagingOperationsPage, UiSpoolRecordDisplay } from "app.slint";
 import { SpoolDisplay } from "spool-display.slint";
 import { Utils } from "utils.slint";
-import { ScaleWeightDisplay } from "app-widgets.slint";
+import { ScaleWeightDisplay, LabeledText } from "app-widgets.slint";
 import { UpdateWeightPage } from "common-operations.slint";
 import { LocationDisplay } from "location-display.slint";
 import { NumPad } from "numpad.slint";
@@ -57,6 +57,8 @@ component SpoolDisplayStep inherits Rectangle {
 }
 
 component OperationSelectionStep inherits Rectangle {
+    width:480px;
+    height:320px;
     background: white;
     pure function linked-tag-count() -> int {
         return AppBackend.spool-tag-count(AppState.spool-staging-info.spool-record.id);
@@ -152,9 +154,11 @@ component OperationSelectionStep inherits Rectangle {
                 }
 
                 MyButton {
-                    visible: false;
-                    enabled: false;
-                    text: "Mark as Dried";
+                    enabled: AppState.spool-staging-info.spool-record.actual-location == "" && AppBackend.storage-rack-count() > 0;
+                    text: "Select Actual\nLocation";
+                    clicked => {
+                        AppState.manual-storage-start();
+                    }
                 }
 
                 MyButton {
@@ -299,6 +303,216 @@ component PlacePickSpool inherits Rectangle {
     }
 }
 
+component ManualStorageRackStep inherits Rectangle {
+    background: white;
+    VerticalLayout {
+        Selector {
+            vertical-stretch: 1;
+            selector-title: "Select Storage Rack";
+            options-list: AppBackend.get-storage-rack-options();
+            selected(text, pos-in-list, id) => {
+                AppState.manual-storage-reset();
+                AppState.manual-storage-rack-id = id;
+                AppState.manual-storage-rack-name = text;
+                AppState.manual-storage-after-rack();
+            }
+        }
+
+        WizardButtons {
+            next-text: "Place Here";
+            next-enabled: false;
+            back-enabled: true;
+            back-clicked => {
+                AppState.staging-operation-page = StagingOperationsPage.OperationSelection;
+            }
+            cancel-clicked => {
+                AppState.control-state = ControlState.Ready;
+            }
+        }
+    }
+}
+
+component ManualStorageInfo inherits LabeledText {
+    label-width: 155px;
+}
+
+component ManualStorageSummary inherits Rectangle {
+    background: white;
+    in property <length> summary-width: 180px;
+    width: summary-width;
+    pure function show-bay() -> bool {
+        return AppBackend.storage-available-bays(AppState.manual-storage-rack-id) > 1
+            && (AppState.staging-operation-page == StagingOperationsPage.ManualStorageBay
+                || AppState.staging-operation-page == StagingOperationsPage.ManualStorageShelf
+                || AppState.staging-operation-page == StagingOperationsPage.ManualStoragePosition
+                || AppState.staging-operation-page == StagingOperationsPage.ManualStorageContainer
+                || AppState.staging-operation-page == StagingOperationsPage.ManualStorageComplete);
+    }
+
+    pure function show-shelf() -> bool {
+        return AppBackend.storage-available-shelves(AppState.manual-storage-rack-id, AppState.manual-storage-bay) > 1
+            && (AppState.staging-operation-page == StagingOperationsPage.ManualStorageShelf
+                || AppState.staging-operation-page == StagingOperationsPage.ManualStoragePosition
+                || AppState.staging-operation-page == StagingOperationsPage.ManualStorageContainer
+                || AppState.staging-operation-page == StagingOperationsPage.ManualStorageComplete);
+    }
+
+    pure function show-position() -> bool {
+        return AppBackend.storage-available-positions(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf) > 1
+            && (AppState.staging-operation-page == StagingOperationsPage.ManualStoragePosition
+                || AppState.staging-operation-page == StagingOperationsPage.ManualStorageContainer
+                || AppState.staging-operation-page == StagingOperationsPage.ManualStorageComplete);
+    }
+
+    pure function show-container() -> bool {
+        return AppBackend.storage-available-containers(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf, AppState.manual-storage-position) > 1
+            && (AppState.staging-operation-page == StagingOperationsPage.ManualStorageContainer
+                || AppState.staging-operation-page == StagingOperationsPage.ManualStorageComplete);
+    }
+
+    VerticalLayout {
+        alignment: start;
+        padding-top: 3px;
+        spacing: 8px;
+        Rectangle {
+            height: 40px;
+            width: root.summary-width;
+            background: skyblue;
+            border-radius: self.height / 2;
+            MyText {
+                text: AppState.manual-storage-rack-display();
+            }
+        }
+
+        if show-bay(): ManualStorageInfo {
+            label: "Bay(1-\{AppBackend.storage-available-bays(AppState.manual-storage-rack-id)}):";
+            text: AppState.manual-storage-bay-display();
+        }
+
+        if show-shelf(): ManualStorageInfo {
+            label: "Shelf(1-\{AppBackend.storage-available-shelves(AppState.manual-storage-rack-id, AppState.manual-storage-bay)}):";
+            text: AppState.manual-storage-shelf-display();
+        }
+
+        if show-position(): ManualStorageInfo {
+            label: "Position(1-\{AppBackend.storage-available-positions(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf)}):";
+            text: AppState.manual-storage-position-display();
+        }
+
+        if show-container(): ManualStorageInfo {
+            label: "Container(1-\{AppBackend.storage-available-containers(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf, AppState.manual-storage-position)}):";
+            text: AppState.manual-storage-container-display();
+        }
+    }
+}
+
+component ManualStorageNumberStep inherits Rectangle {
+    background: white;
+    in property <string> title;
+    in property <int> max-value;
+    in property <int> number;
+    callback value-changed(value: int, done: bool);
+    callback back-clicked;
+
+    VerticalLayout {
+        alignment: space-between;
+        Title {
+            text: root.title;
+        }
+
+        HorizontalLayout {
+            height: root.height - 96px;
+            padding-left: 5px;
+            padding-right: 0px;
+            spacing: 5px;
+            ManualStorageSummary {
+                summary-width: root.width - 298px;
+            }
+
+            NumPad {
+                width: 288px;
+                height: parent.height;
+                number: root.number;
+                min-value: 1;
+                max-value: root.max-value;
+                ok-visible: root.max-value >= 10;
+                display-postfix: "";
+                value-changed(value, done) => {
+                    root.value-changed(value, done);
+                }
+            }
+        }
+
+        WizardButtons {
+            next-text: "Place Here";
+            next-enabled: AppState.manual-storage-rack-id != 0;
+            back-enabled: true;
+            next-clicked => {
+                AppState.manual-storage-place-here();
+            }
+            back-clicked => {
+                root.back-clicked();
+            }
+            cancel-clicked => {
+                AppState.control-state = ControlState.Ready;
+            }
+        }
+    }
+}
+
+component ManualStorageCompleteStep inherits Rectangle {
+    background: white;
+    in property <UiSpoolRecordDisplay> spool-display;
+    property <string> brand: spool-display.spool-record.brand == "" ? "" : "\{spool-display.spool-record.brand} ";
+    property <string> material-subtype: spool-display.spool-record.material-subtype == "" ? "" : " \{spool-display.spool-record.material_subtype}";
+    property <string> color-name: spool-display.spool-record.color-name == "" ? "" : " \{spool-display.spool-record.color-name}";
+
+    VerticalLayout {
+        alignment: space-between;
+
+        VerticalLayout {
+            spacing: 10px;
+            Title {
+                text: "Place Spool \{spool-display.spool-record.id} in Storage";
+            }
+
+            VerticalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 10px;
+                MyText {
+                    vertical-stretch: 1;
+                    horizontal-alignment: center;
+                    text: "\{brand}\{spool-display.spool-record.material-type}\{material-subtype}\{color-name}";
+                }
+
+                MyText {
+                    text: "Selected Storage Location";
+                }
+
+                LocationDisplay {
+                    location: AppBackend.location-str-to-location(AppState.manual-storage-location-str());
+                }
+            }
+        }
+
+        WizardButtons {
+            next-text: "Place Here";
+            next-enabled: AppState.manual-storage-rack-id != 0;
+            back-enabled: true;
+            next-clicked => {
+                AppState.manual-storage-place-here();
+            }
+            back-clicked => {
+                AppState.manual-storage-back-from-complete();
+            }
+            cancel-clicked => {
+                AppState.control-state = ControlState.Ready;
+            }
+        }
+    }
+}
+
 component SelectSpoolToLoadStep inherits Rectangle {
     // width: 480px;
     // height: 320px;
@@ -354,6 +568,66 @@ export component StagingOperations {
         }
     }
     if AppState.staging-operation-page == StagingOperationsPage.PlaceSpoolInAssignedLocation || AppState.staging-operation-page == StagingOperationsPage.PickSpoolFromActualLocation: PlacePickSpool {
+        spool-display: spool-display;
+    }
+    if AppState.staging-operation-page == StagingOperationsPage.ManualStorageRack: ManualStorageRackStep { }
+    if AppState.staging-operation-page == StagingOperationsPage.ManualStorageBay: ManualStorageNumberStep {
+        title: "Select Bay (1-\{AppBackend.storage-available-bays(AppState.manual-storage-rack-id)})";
+        max-value: AppBackend.storage-available-bays(AppState.manual-storage-rack-id);
+        number: AppState.manual-storage-bay;
+        value-changed(value, done) => {
+            AppState.manual-storage-bay = value;
+            if done {
+                AppState.manual-storage-after-bay();
+            }
+        }
+        back-clicked => {
+            AppState.manual-storage-back-to-rack();
+        }
+    }
+    if AppState.staging-operation-page == StagingOperationsPage.ManualStorageShelf: ManualStorageNumberStep {
+        title: "Select Shelf (1-\{AppBackend.storage-available-shelves(AppState.manual-storage-rack-id, AppState.manual-storage-bay)})";
+        max-value: AppBackend.storage-available-shelves(AppState.manual-storage-rack-id, AppState.manual-storage-bay);
+        number: AppState.manual-storage-shelf;
+        value-changed(value, done) => {
+            AppState.manual-storage-shelf = value;
+            if done {
+                AppState.manual-storage-after-shelf();
+            }
+        }
+        back-clicked => {
+            AppState.manual-storage-back-to-bay();
+        }
+    }
+    if AppState.staging-operation-page == StagingOperationsPage.ManualStoragePosition: ManualStorageNumberStep {
+        title: "Select Position (1-\{AppBackend.storage-available-positions(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf)})";
+        max-value: AppBackend.storage-available-positions(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf);
+        number: AppState.manual-storage-position;
+        value-changed(value, done) => {
+            AppState.manual-storage-position = value;
+            if done {
+                AppState.manual-storage-after-position();
+            }
+        }
+        back-clicked => {
+            AppState.manual-storage-back-to-shelf();
+        }
+    }
+    if AppState.staging-operation-page == StagingOperationsPage.ManualStorageContainer: ManualStorageNumberStep {
+        title: "Select Container (1-\{AppBackend.storage-available-containers(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf, AppState.manual-storage-position)})";
+        max-value: AppBackend.storage-available-containers(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf, AppState.manual-storage-position);
+        number: AppState.manual-storage-container;
+        value-changed(value, done) => {
+            AppState.manual-storage-container = value;
+            if done {
+                AppState.manual-storage-after-container();
+            }
+        }
+        back-clicked => {
+            AppState.manual-storage-back-to-position();
+        }
+    }
+    if AppState.staging-operation-page == StagingOperationsPage.ManualStorageComplete: ManualStorageCompleteStep {
         spool-display: spool-display;
     }
     if AppState.staging-operation-page == StagingOperationsPage.SelectSpoolToLoad: SelectSpoolToLoadStep { }

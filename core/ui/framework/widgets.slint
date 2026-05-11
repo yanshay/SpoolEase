@@ -157,7 +157,7 @@ export component Selector inherits Rectangle {
                         property <length> viewport-height: root.options-list.length * option-height;
                         property <length> viewport-y: target-viewport-y;
                         property <length> target-viewport-y;
-                        property <int> num-items-to-render: floor(list.height / option-height) + 1;
+                        property <int> num-items-to-render: max(0, min(floor(list.height / option-height) + 1, root.options-list.length - first-item));
                         changed target-viewport-y => {
                             if viewport-y == target-viewport-y {
                                 self.moving = false;
@@ -224,10 +224,14 @@ export component Selector inherits Rectangle {
                 }
             }
 
-            VerticalLayout {
+            scroll-controls := VerticalLayout {
+                property <bool> scroll-controls-active: list.viewport-height > list.height;
+                width: scroll-controls-active ? scrollbar-width : 0px;
                 if filter-button-height != 0: filter := MyButton {
                     text: "ABC";
                     height: filter-button-height;
+                    width: parent.width;
+                    enabled: scroll-controls.scroll-controls-active;
                     clicked => {
                         filter-clicked()
                     }
@@ -235,19 +239,22 @@ export component Selector inherits Rectangle {
 
                 page-up := Rectangle {
                     height: page-buttons-height;
-                    background: green;
+                    width: parent.width;
+                    background: scroll-controls.scroll-controls-active ? green : transparent;
                     Text {
                         width: parent.width;
                         height: parent.height;
                         font-size: 20px;
                         vertical-alignment: center;
                         horizontal-alignment: center;
+                        color: scroll-controls.scroll-controls-active ? black : transparent;
                         text: "▲";
                     }
 
                     TouchArea {
                         height: parent.height;
                         width: parent.width;
+                        enabled: scroll-controls.scroll-controls-active;
                         clicked => {
                             // list.target-viewport-y = max(list.target-viewport-y - list.height, 0); 
                             list.set-target(list.target-viewport-y - option-height, "page-btn");
@@ -257,17 +264,18 @@ export component Selector inherits Rectangle {
 
                 scrollbar := Rectangle {
                     property <length> thumb-range: self.height - thumb.height;
-                    background: black;
+                    background: scroll-controls.scroll-controls-active ? black : transparent;
                     property <length> thumb_y_during_drag;
-                    border-color: black;
-                    border-width: 1px;
-                    width: scrollbar-width;
+                    border-color: scroll-controls.scroll-controls-active ? black : transparent;
+                    border-width: scroll-controls.scroll-controls-active ? 1px : 0px;
+                    width: parent.width;
                     thumb := Rectangle {
-                        y: thumb-touch.pressed ? thumb_y_during_drag : (list.moving && list.move-trigger == "thumb") ? thumb_y_during_drag : list.viewport-y / (list.viewport-height - list.height) * thumb-range;
+                        y: scroll-controls.scroll-controls-active ? (thumb-touch.pressed ? thumb_y_during_drag : (list.moving && list.move-trigger == "thumb") ? thumb_y_during_drag : list.viewport-y / (list.viewport-height - list.height) * thumb-range) : 0px;
                         height: thumb-height;
-                        background: lime;
+                        background: scroll-controls.scroll-controls-active ? lime : transparent;
                         Text {
                             font-size: 20px;
+                            color: scroll-controls.scroll-controls-active ? black : transparent;
                             text: "▲\n▼";
                         }
                     }
@@ -275,6 +283,7 @@ export component Selector inherits Rectangle {
                     thumb-touch := TouchArea {
                         property <length> prev-update-y: -10px;
                         height: parent.height;
+                        enabled: scroll-controls.scroll-controls-active;
                         // Remarked because hurts the confition in the move to filter out small moves
                         // changed pressed => {
                         //     if list.preferred-height <= list.height {
@@ -305,19 +314,22 @@ export component Selector inherits Rectangle {
 
                 page-down := Rectangle {
                     height: page-up.height;
-                    background: page-up.background;
+                    width: parent.width;
+                    background: scroll-controls.scroll-controls-active ? page-up.background : transparent;
                     Text {
                         width: parent.width;
                         height: parent.height;
                         font-size: 20px;
                         vertical-alignment: center;
                         horizontal-alignment: center;
+                        color: scroll-controls.scroll-controls-active ? black : transparent;
                         text: "▼";
                     }
 
                     TouchArea {
                         height: parent.height;
                         width: parent.width;
+                        enabled: scroll-controls.scroll-controls-active;
                         clicked => {
                             // list.target-viewport-y = min(list.target-viewport-y + list.height, list.viewport-height - list.height); 
                             list.set-target(list.target-viewport-y + option-height, "page-btn");

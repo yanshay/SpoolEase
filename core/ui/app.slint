@@ -181,6 +181,13 @@ export global AppBackend {
     callback ota-update-firmware(product: string, train: string);
     callback encode-location-tag();
     callback update-actual-location(spool-id: string, location: string, message: string);
+    pure callback storage-rack-count() -> int;
+    pure callback get-storage-rack-options() -> [SelectorOption];
+    pure callback storage-available-bays(rack-id: int) -> int;
+    pure callback storage-available-shelves(rack-id: int, bay: int) -> int;
+    pure callback storage-available-positions(rack-id: int, bay: int, shelf: int) -> int;
+    pure callback storage-available-containers(rack-id: int, bay: int, shelf: int, position: int) -> int;
+    pure callback storage-location-str(rack-id: int, bay: int, shelf: int, position: int, container: int) -> string;
     callback unload-slot-tag(tray-id: int, spool-id: string);
     pure callback location-str-to-location(location-str: string) -> Location;
     callback load-staging(spool-id: string) -> string; // returns error if not found
@@ -221,7 +228,13 @@ export enum StagingOperationsPage {
   UpdateWeight,
   PlaceSpoolInAssignedLocation,
   PickSpoolFromActualLocation,
-  SelectSpoolToLoad
+  SelectSpoolToLoad,
+  ManualStorageRack,
+  ManualStorageBay,
+  ManualStorageShelf,
+  ManualStoragePosition,
+  ManualStorageContainer,
+  ManualStorageComplete
 }
 
 export struct Firmwares {
@@ -294,6 +307,12 @@ export global AppState {
 
     in-out property <StagingOperationsPage> staging-operation-page: StagingOperationsPage.OperationSelection;
     in-out property <StagingOperationsPage> prev-staging-operation-page: StagingOperationsPage.OperationSelection;
+    in-out property <int> manual-storage-rack-id: 0;
+    in-out property <string> manual-storage-rack-name: "";
+    in-out property <int> manual-storage-bay: 0;
+    in-out property <int> manual-storage-shelf: 0;
+    in-out property <int> manual-storage-position: 0;
+    in-out property <int> manual-storage-container: 0;
 
     // Global state for TraySelected Control-State
     in-out property <int> tray-selected-tray-index: -1;
@@ -587,6 +606,164 @@ export global AppState {
     public function prompt-select-tray() {
         self.tray-selected-tray-index = -1;
         AppState.control-state = ControlState.Ready;
+    }
+
+    public function manual-storage-reset() {
+        self.manual-storage-rack-id = 0;
+        self.manual-storage-rack-name = "";
+        self.manual-storage-bay = 0;
+        self.manual-storage-shelf = 0;
+        self.manual-storage-position = 0;
+        self.manual-storage-container = 0;
+    }
+
+    public function manual-storage-start() {
+        self.manual-storage-reset();
+        self.staging-operation-page = StagingOperationsPage.ManualStorageRack;
+    }
+
+    pure public function manual-storage-location-display() -> string {
+        return self.manual-storage-rack-name
+            + (self.manual-storage-bay > 0 ? "/B:\{self.manual-storage-bay}" : "")
+            + (self.manual-storage-shelf > 0 ? "/S:\{self.manual-storage-shelf}" : "")
+            + (self.manual-storage-position > 0 ? "/P:\{self.manual-storage-position}" : "")
+            + (self.manual-storage-container > 0 ? "/C:\{self.manual-storage-container}" : "");
+    }
+
+    pure public function manual-storage-rack-display() -> string {
+        return self.manual-storage-rack-name == "" ? "-" : self.manual-storage-rack-name;
+    }
+
+    pure public function manual-storage-bay-display() -> string {
+        return self.manual-storage-bay > 0 ? "\{self.manual-storage-bay}" : "-";
+    }
+
+    pure public function manual-storage-shelf-display() -> string {
+        return self.manual-storage-shelf > 0 ? "\{self.manual-storage-shelf}" : "-";
+    }
+
+    pure public function manual-storage-position-display() -> string {
+        return self.manual-storage-position > 0 ? "\{self.manual-storage-position}" : "-";
+    }
+
+    pure public function manual-storage-container-display() -> string {
+        return self.manual-storage-container > 0 ? "\{self.manual-storage-container}" : "-";
+    }
+
+    pure public function manual-storage-location-str() -> string {
+        return AppBackend.storage-location-str(
+            self.manual-storage-rack-id,
+            self.manual-storage-bay,
+            self.manual-storage-shelf,
+            self.manual-storage-position,
+            self.manual-storage-container
+        );
+    }
+
+    public function manual-storage-place-here() {
+        AppBackend.update-actual-location(
+            self.spool-staging-info.spool-record.id,
+            self.manual-storage-location-str(),
+            "Updated Spool's Actual Location\nto " + self.manual-storage-location-display()
+        );
+        self.control-state = ControlState.Ready;
+    }
+
+    public function manual-storage-after-rack() {
+        if self.manual-storage-rack-id == 0 {
+            return;
+        }
+        let bays = AppBackend.storage-available-bays(self.manual-storage-rack-id);
+        if bays <= 1 {
+            self.manual-storage-bay = bays > 0 ? bays : 0;
+            self.manual-storage-after-bay();
+        } else {
+            self.staging-operation-page = StagingOperationsPage.ManualStorageBay;
+        }
+    }
+
+    public function manual-storage-after-bay() {
+        let shelves = AppBackend.storage-available-shelves(self.manual-storage-rack-id, self.manual-storage-bay);
+        if shelves <= 1 {
+            self.manual-storage-shelf = shelves > 0 ? shelves : 0;
+            self.manual-storage-after-shelf();
+        } else {
+            self.staging-operation-page = StagingOperationsPage.ManualStorageShelf;
+        }
+    }
+
+    public function manual-storage-after-shelf() {
+        let positions = AppBackend.storage-available-positions(self.manual-storage-rack-id, self.manual-storage-bay, self.manual-storage-shelf);
+        if positions <= 1 {
+            self.manual-storage-position = positions > 0 ? positions : 0;
+            self.manual-storage-after-position();
+        } else {
+            self.staging-operation-page = StagingOperationsPage.ManualStoragePosition;
+        }
+    }
+
+    public function manual-storage-after-position() {
+        let containers = AppBackend.storage-available-containers(self.manual-storage-rack-id, self.manual-storage-bay, self.manual-storage-shelf, self.manual-storage-position);
+        if containers <= 1 {
+            self.manual-storage-container = containers > 0 ? containers : 0;
+            self.manual-storage-after-container();
+        } else {
+            self.staging-operation-page = StagingOperationsPage.ManualStorageContainer;
+        }
+    }
+
+    public function manual-storage-after-container() {
+        self.staging-operation-page = StagingOperationsPage.ManualStorageComplete;
+    }
+
+    public function manual-storage-back-to-rack() {
+        self.manual-storage-reset();
+        self.staging-operation-page = StagingOperationsPage.ManualStorageRack;
+    }
+
+    public function manual-storage-back-to-bay() {
+        self.manual-storage-bay = 0;
+        self.manual-storage-shelf = 0;
+        self.manual-storage-position = 0;
+        self.manual-storage-container = 0;
+        self.staging-operation-page = StagingOperationsPage.ManualStorageBay;
+    }
+
+    public function manual-storage-back-to-shelf() {
+        self.manual-storage-shelf = 0;
+        self.manual-storage-position = 0;
+        self.manual-storage-container = 0;
+        self.staging-operation-page = StagingOperationsPage.ManualStorageShelf;
+    }
+
+    public function manual-storage-back-to-position() {
+        self.manual-storage-position = 0;
+        self.manual-storage-container = 0;
+        self.staging-operation-page = StagingOperationsPage.ManualStoragePosition;
+    }
+
+    public function manual-storage-back-from-complete() {
+        if AppBackend.storage-available-containers(self.manual-storage-rack-id, self.manual-storage-bay, self.manual-storage-shelf, self.manual-storage-position) > 1 {
+            self.manual-storage-container = 0;
+            self.staging-operation-page = StagingOperationsPage.ManualStorageContainer;
+        } else if AppBackend.storage-available-positions(self.manual-storage-rack-id, self.manual-storage-bay, self.manual-storage-shelf) > 1 {
+            self.manual-storage-position = 0;
+            self.manual-storage-container = 0;
+            self.staging-operation-page = StagingOperationsPage.ManualStoragePosition;
+        } else if AppBackend.storage-available-shelves(self.manual-storage-rack-id, self.manual-storage-bay) > 1 {
+            self.manual-storage-shelf = 0;
+            self.manual-storage-position = 0;
+            self.manual-storage-container = 0;
+            self.staging-operation-page = StagingOperationsPage.ManualStorageShelf;
+        } else if AppBackend.storage-available-bays(self.manual-storage-rack-id) > 1 {
+            self.manual-storage-bay = 0;
+            self.manual-storage-shelf = 0;
+            self.manual-storage-position = 0;
+            self.manual-storage-container = 0;
+            self.staging-operation-page = StagingOperationsPage.ManualStorageBay;
+        } else {
+            self.manual-storage-back-to-rack();
+        }
     }
 
     // Called from UI in case of UI timeout, can also be called from backend for timeout case
