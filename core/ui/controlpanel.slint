@@ -366,13 +366,4 @@ export component ControlPanel inherits HorizontalLayout {
             }
         }
     }
-
-    staging-to-tray-timer := Timer {
-        interval: 0.1s;
-        running: AppState.staging-to-tray != -1;
-        triggered() => {
-            AppBackend.set-staging-to-tray(AppState.staging-to-tray);
-            AppState.staging-to-tray = -1;
-        }
-    }
 }

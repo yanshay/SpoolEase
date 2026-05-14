@@ -20,16 +20,11 @@ import { Settings } from "framework/settings.slint";
 import { Title, MyText, MyButton } from "framework/widgets.slint";
 
 import { Utils } from "utils.slint";
-import { Trays } from "trays.slint";
 import {
     AppBackend,
     AppState,
     AppConsts,
     ControlState,
-    SpoolScaleState,
-    UiTray,
-    UiTrayState,
-    UiFilamentState,
     StatusType,
 } from "app.slint";
 import { ControlPanel } from "controlpanel.slint";
@@ -45,7 +40,6 @@ import { MessageBox } from "message-box.slint";
 import { AppOtaSelect } from "ota.slint";
 import { Storage } from "storage.slint";
 import { Slots } from "slots.slint";
-import { GenericSlots } from "generic-slots.slint";
 
 // reexport to rust
 
@@ -177,13 +171,9 @@ export component AppWindow inherits Window {
                         Rectangle {
                             VerticalLayout { // for some reason VerticalLayout adds the required spacing below
                                 slots := Slots {
-                                    visible: !AppState.no-printers-configured && AppState.curr-printer-is-bambu();
+                                    visible: !AppState.no-printers-configured;
                                     width: FrameworkState.display-width;
                                 }
-                            }
-
-                            if !AppState.no-printers-configured && !AppState.curr-printer-is-bambu(): GenericSlots {
-                                width: FrameworkState.display-width;
                             }
 
                             if AppState.no-printers-configured: VerticalLayout {

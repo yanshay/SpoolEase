@@ -1,56 +1,57 @@
 import { FrameworkState } from "framework/framework.slint";
-import { MyText, MyButton, ButtonType, WizardButtons, Title } from "framework/widgets.slint";
-import { AppBackend, AppState, ControlState, SpoolStagingState, SpoolScaleState, UiFilamentState, UiSpoolRecordDisplay, UiTray, AppConsts } from "app.slint";
+import { MyButton, Title } from "framework/widgets.slint";
+import { AppBackend, AppState, ControlState, SpoolStagingState, UiFilamentState, UiSlot, UiSpoolRecordDisplay } from "app.slint";
 import { SpoolDisplay, MultiColorTitle } from "spool-display.slint";
 import { SlotDisplay } from "slot-display.slint";
-import { Utils } from "utils.slint";
 
-enum TrayDisplayTab {
+enum SlotDisplayTab {
     Slot,
     Spool
 }
 
-component TrayDisplayStep inherits Rectangle {
+component SlotDisplayStep inherits Rectangle {
     callback more-clicked();
-    property <TrayDisplayTab> tab: spool-id != "" ? TrayDisplayTab.Spool : TrayDisplayTab.Slot;
-    in property <string> spool-id: "1";
-    in property <int> tray-index;
+    in property <UiSlot> slot;
+    property <string> spool-id: slot.spool-id;
+    property <SlotDisplayTab> tab: spool-id != "" ? SlotDisplayTab.Spool : SlotDisplayTab.Slot;
     property <UiSpoolRecordDisplay> spool-display: AppBackend.get-spool-record-display(spool-id);
+
     VerticalLayout {
         HorizontalLayout {
             vertical-stretch: 0;
             height: 40px;
             MultiColorTitle {
-                width: spool-id != "" ? FrameworkState.display-width/2 : FrameworkState.display-width; // must force width with MultiColorTitle
+                width: spool-id != "" ? FrameworkState.display-width / 2 : FrameworkState.display-width;
                 push-button: true;
-                text: "Slot \{AppState.trays-state[tray-index].name} Information";
-                colors: AppState.trays-state[tray-index].filament.colors;
-                pushed: root.tab == TrayDisplayTab.Slot;
+                text: "Slot \{slot.name} Information";
+                colors: slot.filament.colors;
+                pushed: root.tab == SlotDisplayTab.Slot;
                 pressed => {
-                    root.tab = TrayDisplayTab.Slot
+                    root.tab = SlotDisplayTab.Slot;
                 }
             }
 
             if spool-id != "": MultiColorTitle {
-                width:FrameworkState.display-width/2; // must force width with MultiColorTitle
-                push-button: true; 
+                width: FrameworkState.display-width / 2;
+                push-button: true;
                 text: "Spool \{spool-id} Information";
-                pushed: tab == TrayDisplayTab.Spool;
+                pushed: tab == SlotDisplayTab.Spool;
                 colors: root.spool-display.colors;
                 pressed => {
-                    root.tab = TrayDisplayTab.Spool
+                    root.tab = SlotDisplayTab.Spool;
                 }
             }
         }
 
-        if root.tab == TrayDisplayTab.Spool: SpoolDisplay {
+        if root.tab == SlotDisplayTab.Spool: SpoolDisplay {
             vertical-stretch: 1;
             show-title: false;
             spool-display: root.spool-display;
         }
-        if root.tab == TrayDisplayTab.Slot: SlotDisplay {
+
+        if root.tab == SlotDisplayTab.Slot: SlotDisplay {
             vertical-stretch: 1;
-            slot-index: root.tray-index;
+            slot: root.slot;
         }
 
         HorizontalLayout {
@@ -80,7 +81,7 @@ component TrayDisplayStep inherits Rectangle {
 
 component OperationSelectionStep inherits Rectangle {
     background: white;
-    in property <int> tray-index;
+    in property <UiSlot> slot;
 
     VerticalLayout {
         Title {
@@ -92,28 +93,29 @@ component OperationSelectionStep inherits Rectangle {
             spacing: 5px;
             Row {
                 MyButton {
-                    enabled: AppState.trays-state[tray-index].spool_rec_id != "";
+                    enabled: slot.spool-id != "" && AppState.curr-printer-can-unassign-slot();
                     text: "Untag Slot";
                     clicked => {
-                        AppBackend.untag-slot(AppState.trays-state[tray-index].id);
+                        AppBackend.unassign-slot(slot.id);
                         AppState.control-state = ControlState.Ready;
                     }
                 }
 
                 MyButton {
-                    enabled: AppState.spool-staging-state != SpoolStagingState.Empty;
+                    enabled: AppState.spool-staging-state != SpoolStagingState.Empty && AppState.curr-printer-can-configure-slot();
                     text: "Configure from Staging";
                     clicked => {
-                        AppBackend.set-staging-to-tray(AppState.trays-state[tray-index].id);
+                        AppBackend.set-staging-to-slot(slot.id);
                         AppState.control-state = ControlState.Ready;
                     }
                 }
 
                 MyButton {
+                    enabled: AppState.curr-printer-can-clear-slot();
                     text: "Reset Slot";
                     clicked => {
-                        AppBackend.untag-slot(AppState.trays-state[tray-index].id);
-                        AppBackend.reset-slot(AppState.trays-state[tray-index].id);
+                        AppBackend.unassign-slot(slot.id);
+                        AppBackend.reset-slot(slot.id);
                         AppState.control-state = ControlState.Ready;
                     }
                 }
@@ -121,21 +123,19 @@ component OperationSelectionStep inherits Rectangle {
 
             Row {
                 MyButton {
-                    enabled: AppState.trays-state[tray-index].spool_rec_id != "";
+                    enabled: slot.spool-id != "" && AppState.curr-printer-can-configure-slot();
                     text: "Reapply Tag";
                     clicked => {
-                        AppBackend.configure-slot-with-spool-id(AppState.trays-state[tray-index].id,  AppState.trays-state[tray-index].spool_rec_id);
+                        AppBackend.configure-slot-with-spool-id(slot.id, slot.spool-id);
                         AppState.control-state = ControlState.Ready;
                     }
                 }
                 MyButton {
                     visible: false;
                     text: "Unload Filament";
-                    clicked => {
-                    }
                 }
-                MyButton { // just to have a second row
-                  visible: false;
+                MyButton {
+                    visible: false;
                 }
             }
         }
@@ -152,24 +152,24 @@ component OperationSelectionStep inherits Rectangle {
     }
 }
 
-enum TrayOperationsPage {
+enum SlotOperationsPage {
   SpoolDisplay,
   OperationSelection,
 }
 
-
 export component TrayOperations inherits Rectangle {
     background: white;
-    property <UiTray> ui-tray: AppState.trays-state[AppState.tray-selected-tray-index];
-    property <TrayOperationsPage> page: ui-tray.filament.state == UiFilamentState.Known || ui-tray.spool-rec-id != "" ? TrayOperationsPage.SpoolDisplay : TrayOperationsPage.OperationSelection;
-    if page == TrayOperationsPage.SpoolDisplay: TrayDisplayStep {
-        spool-id: AppState.trays-state[AppState.tray-selected-tray-index].spool_rec_id;
-        tray-index: AppState.tray-selected-tray-index;
+    property <UiSlot> slot: AppState.selected-slot;
+    property <SlotOperationsPage> page: slot.filament.state == UiFilamentState.Known || slot.spool-id != "" ? SlotOperationsPage.SpoolDisplay : SlotOperationsPage.OperationSelection;
+
+    if page == SlotOperationsPage.SpoolDisplay: SlotDisplayStep {
+        slot: root.slot;
         more-clicked => {
-            page = TrayOperationsPage.OperationSelection;
+            page = SlotOperationsPage.OperationSelection;
         }
     }
-    if page == TrayOperationsPage.OperationSelection: OperationSelectionStep {
-        tray-index: AppState.tray-selected-tray-index;
+
+    if page == SlotOperationsPage.OperationSelection: OperationSelectionStep {
+        slot: root.slot;
     }
 }

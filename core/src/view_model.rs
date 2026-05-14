@@ -38,7 +38,7 @@ use framework::{
     terminal::{self, TerminalObserver, term_mut},
 };
 
-use crate::app::{UiFilament, UiGenericSlot, UiGenericSlotGroup, UiSlotDisplay, UiSpoolRecord, UiSpoolRecordDisplay, UiTray};
+use crate::app::{UiFilament, UiSlot, UiSlotDisplay, UiSlotGroup, UiSlotGroupKind, UiSlotState, UiSpoolRecord, UiSpoolRecordDisplay};
 use crate::app_config::{
     BAMBU_COLOR_NAMES, BASE_FILAMENTS, BambuPrinterConfig, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig, PrinterMode, UseAmsScan,
 };
@@ -49,7 +49,7 @@ use crate::bambu::calibration::{KExtruder, KInfo, KNozzleDiameter, KNozzleId, KP
 use crate::bambu::filament::Filament;
 use crate::bambu::{
     SpoolId,
-    tray::{Tray, TrayBits, TrayState},
+    tray::{Tray, TrayBits},
 };
 use crate::color_utils::get_color_name;
 use crate::filament_staging::StagingOrigin;
@@ -99,10 +99,6 @@ macro_rules! debugex {
             debug!($($t)*);
         }
     };
-}
-
-struct PrinterUiState {
-    curr_ams: Option<i32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,8 +178,6 @@ pub struct ViewModel {
     spool_tag_model: Rc<RefCell<spool_tag::SpoolTag>>,
     spool_scale_model: Rc<RefCell<spool_scale::SpoolScale>>,
     pub filament_staging: Rc<RefCell<FilamentStaging>>,
-    printers_view_state: HashMap<String, PrinterUiState>,
-
     // cores_list_vec_rc: slint::ModelRc<crate::app::SelectorOption>,
     // spools_cores_weights: HashMap<i32, i32>,
     // spools_cores_filter: String,
@@ -419,7 +413,6 @@ impl ViewModel {
             spool_scale_model: spool_scale_model.clone(),
             app_config: app_config.clone(),
             filament_staging: Rc::new(RefCell::new(FilamentStaging::new(store.clone()))),
-            printers_view_state: HashMap::new(),
             // cores_list_vec_rc: selector_options_vec_rc,
             // spools_cores_weights,
             // spools_cores_filter: String::new(),
@@ -644,7 +637,7 @@ impl ViewModel {
         let available_printers = slint::ModelRc::new(slint::VecModel::from(available_printers));
         ui_app_state.invoke_set_printers_info(available_printers, default_printer);
         ui_app_state.invoke_set_curr_printer(default_printer);
-        self.update_generic_slots_from_selected_printer();
+        self.update_slot_groups_from_selected_printer();
         self.register_printer_related_listeners();
 
         let moved_ui = self.ui_weak.clone();
@@ -1024,7 +1017,7 @@ impl ViewModel {
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_get_slot_display(move |tray_id| moved_view_model.borrow().ui_get_slot_display(tray_id));
+            .on_get_slot_display(move |slot_id| moved_view_model.borrow().ui_get_slot_display(slot_id.as_str()));
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         self.ui_weak
@@ -1092,19 +1085,27 @@ impl ViewModel {
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_untag_slot(move |tray_id| moved_view_model.borrow().ui_untag_slot(tray_id));
+            .on_unassign_slot(move |slot_id| moved_view_model.borrow().ui_unassign_slot(slot_id.as_str()));
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_reset_slot(move |tray_id| moved_view_model.borrow().ui_reset_slot(tray_id));
+            .on_reset_slot(move |slot_id| moved_view_model.borrow().ui_reset_slot(slot_id.as_str()));
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_configure_slot_with_spool_id(move |tray_id, spool_id| moved_view_model.borrow().ui_configure_slot_with_spool_id(tray_id, &spool_id));
+            .on_configure_slot_with_spool_id(move |slot_id, spool_id| {
+                moved_view_model.borrow().ui_configure_slot_with_spool_id(slot_id.as_str(), &spool_id)
+            });
+
+        let moved_view_model = self.view_model.as_ref().unwrap().clone();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppBackend>()
+            .on_set_staging_to_slot(move |slot_id| moved_view_model.borrow().ui_set_staging_to_slot(slot_id.as_str()));
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         self.ui_weak
@@ -1194,17 +1195,6 @@ impl ViewModel {
     }
 
     fn perform_select_printer(moved_ui: slint::Weak<crate::app::AppWindow>, moved_view_model: Rc<RefCell<ViewModel>>, selected_printer: i32) {
-        // Collect printer view state to store until we switch back
-        let current_shown_ams = moved_ui.unwrap().global::<crate::app::AppState>().get_curr_ams_id();
-        let current_printer_selector_name = moved_ui.unwrap().global::<crate::app::AppState>().get_curr_printer();
-        moved_view_model.borrow_mut().printers_view_state.insert(
-            current_printer_selector_name.to_string(),
-            PrinterUiState {
-                curr_ams: Some(current_shown_ams),
-            },
-        );
-
-        // Then process select
         let mut borrowed_view_model = moved_view_model.borrow_mut();
         let selected_printer_usize = selected_printer as usize;
         let Some(manager_index) = borrowed_view_model.ui_printer_manager_indexes.get(selected_printer_usize).copied() else {
@@ -1216,7 +1206,6 @@ impl ViewModel {
             .get(selected_printer_usize)
             .copied()
             .flatten();
-        let selected_printer_string = selected_printer.to_string();
         moved_ui
             .unwrap()
             .global::<crate::app::AppState>()
@@ -1224,22 +1213,11 @@ impl ViewModel {
         if let Err(err) = borrowed_view_model.printer_manager.borrow_mut().set_selected_index(manager_index) {
             error!("Failed to select printer {selected_printer}: {err:?}");
         }
-        borrowed_view_model.update_generic_slots_from_selected_printer();
+        borrowed_view_model.update_slot_groups_from_selected_printer();
 
         if let Some(bambu_index) = bambu_index {
             borrowed_view_model.bambu_printer_model.index = bambu_index;
-
-            // while strange, this is importnat here for restoring curr_ams after, next call will set it to the first (in case 0 doesn't exist)
-            // Internally this will pass only for the currently displayed printer in the UI
-            moved_ui.unwrap().global::<crate::app::AppState>().set_curr_ams_id(0);
-
             borrowed_view_model.update_ui_from_printer(&borrowed_view_model.bambu_printer_model.printers[bambu_index].borrow());
-            // now we'll restore to the corret curr_ams if user was already there before, if not it will stay on the correct first ams
-            if let Some(printer_view_state) = &borrowed_view_model.printers_view_state.get(&selected_printer_string)
-                && let Some(past_curr_ams_id) = printer_view_state.curr_ams
-            {
-                moved_ui.unwrap().global::<crate::app::AppState>().set_curr_ams_id(past_curr_ams_id);
-            }
         }
         borrowed_view_model.register_printer_related_listeners();
     }
@@ -1264,12 +1242,6 @@ impl ViewModel {
         Some((current_printer, manager_index, snapshot))
     }
 
-    fn selected_printer_supports(&self, supports: impl FnOnce(&printer_domain::PrinterCapabilities) -> bool) -> bool {
-        self.selected_printer_snapshot()
-            .map(|(_, _, snapshot)| supports(&snapshot.capabilities))
-            .unwrap_or(false)
-    }
-
     fn slot_description_from_snapshot(snapshot: &printer_domain::PrinterSnapshot, slot_id: &str) -> String {
         snapshot
             .slot_groups
@@ -1280,7 +1252,7 @@ impl ViewModel {
             .unwrap_or_else(|| slot_id.to_string())
     }
 
-    fn update_generic_slots_from_selected_printer(&self) {
+    fn update_slot_groups_from_selected_printer(&self) {
         let current_printer = self.ui_weak.unwrap().global::<crate::app::AppState>().get_curr_printer();
         let selected_snapshot = if current_printer < 0 {
             None
@@ -1291,128 +1263,75 @@ impl ViewModel {
         };
 
         if let Some(snapshot) = &selected_snapshot {
-            self.update_slot_layout_from_snapshot(snapshot);
-        }
-
-        let slot_groups = if current_printer < 0
-            || self
-                .ui_printer_bambu_indexes
-                .get(current_printer as usize)
-                .copied()
-                .flatten()
-                .is_some()
-        {
-            Vec::new()
-        } else if let Some(snapshot) = &selected_snapshot {
-            snapshot
-                .slot_groups
-                .iter()
-                .map(Self::ui_generic_slot_group_from_snapshot)
-                .collect::<Vec<_>>()
+            self.update_slot_groups_from_snapshot(snapshot);
         } else {
-            Vec::new()
-        };
-
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::AppState>()
-            .set_generic_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(slot_groups))));
+            self.set_ui_slot_groups(Vec::new());
+        }
     }
 
-    fn update_slot_layout_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) {
+    fn update_slot_groups_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) {
+        let groups = snapshot
+            .slot_groups
+            .iter()
+            .map(|group| self.ui_slot_group_from_snapshot(group))
+            .collect::<Vec<_>>();
+        self.set_ui_slot_groups(groups);
+    }
+
+    fn set_ui_slot_groups(&self, groups: Vec<UiSlotGroup>) {
+        let internal_groups = groups
+            .iter()
+            .filter(|group| group.kind != UiSlotGroupKind::External)
+            .cloned()
+            .collect::<Vec<_>>();
+        let external_groups = groups
+            .iter()
+            .filter(|group| group.kind == UiSlotGroupKind::External)
+            .cloned()
+            .collect::<Vec<_>>();
         let ui = self.ui_weak.unwrap();
         let ui_app_state = ui.global::<crate::app::AppState>();
-        let group_titles = snapshot
-            .slot_groups
-            .iter()
-            .filter(|group| group.kind != printer_domain::SlotGroupKind::External)
-            .map(|group| group.name.to_shared_string())
-            .collect::<Vec<_>>();
-        let external_titles = snapshot
-            .slot_groups
-            .iter()
-            .filter(|group| group.kind == printer_domain::SlotGroupKind::External)
-            .map(|group| group.name.to_shared_string())
-            .collect::<Vec<_>>();
 
-        ui_app_state.set_ams_titles(slint::ModelRc::from(Rc::new(slint::VecModel::from(if group_titles.is_empty() {
-            vec!["AMS - 1".to_shared_string()]
-        } else {
-            group_titles
-        }))));
-        ui_app_state.set_has_external_slot_area(!external_titles.is_empty());
-        ui_app_state.set_external_slot_titles(slint::ModelRc::from(Rc::new(slint::VecModel::from(if external_titles.is_empty() {
-            vec!["External".to_shared_string()]
-        } else {
-            external_titles
-        }))));
-        let external_title_count = ui_app_state.get_external_slot_titles().row_count() as i32;
-        if ui_app_state.get_displayed_extruder() >= external_title_count {
-            ui_app_state.set_displayed_extruder(0);
+        ui_app_state.set_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(groups))));
+        ui_app_state.set_internal_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(internal_groups))));
+        ui_app_state.set_external_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(external_groups))));
+
+        if ui_app_state.get_selected_internal_slot_group() >= ui_app_state.get_internal_slot_groups().row_count() as i32 {
+            ui_app_state.set_selected_internal_slot_group(0);
+        }
+        if ui_app_state.get_displayed_external_slot_group() >= ui_app_state.get_external_slot_groups().row_count() as i32 {
+            ui_app_state.set_displayed_external_slot_group(0);
         }
     }
 
-    fn update_bambu_trays_state_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) {
-        let ui = self.ui_weak.unwrap();
-        ui.global::<crate::app::AppState>()
-            .set_trays_state(slint::ModelRc::from(Rc::new(slint::VecModel::from(
-                self.ui_bambu_trays_from_snapshot(snapshot),
-            ))));
-    }
-
-    fn ui_bambu_trays_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) -> Vec<UiTray> {
-        let mut trays = Self::empty_bambu_ui_trays();
-        for slot in snapshot.slot_groups.iter().flat_map(|group| group.slots.iter()) {
-            let Some(tray_id) = Self::bambu_tray_id_from_slot_snapshot(slot) else {
-                continue;
-            };
-            let Some(row) = Self::bambu_ui_tray_row(tray_id) else {
-                continue;
-            };
-            trays[row] = self.ui_bambu_tray_from_slot(tray_id, slot);
-        }
-        trays
-    }
-
-    fn empty_bambu_ui_trays() -> Vec<UiTray> {
-        let mut tray_ids = vec![255, 254];
-        tray_ids.extend(0..=23);
-        tray_ids.into_iter().map(Self::empty_bambu_ui_tray).collect()
-    }
-
-    fn empty_bambu_ui_tray(tray_id: i32) -> UiTray {
-        UiTray {
-            id: tray_id,
-            name: Self::bambu_ui_tray_name(tray_id).to_shared_string(),
-            external: Self::bambu_ui_tray_is_external(tray_id),
-            spool_state: crate::app::UiTrayState::Unknown,
-            filament: UiFilament {
-                state: crate::app::UiFilamentState::Unknown,
-                colors: Self::ui_color_model(vec![slint::Color::from_argb_encoded(0xFF000000)]),
-                material: "???".to_shared_string(),
-            },
-            tray_has_alpha: false,
-            spool_has_alpha: false,
-            spool_colors: Self::ui_color_model(Vec::new()),
-            k: "-1.0".to_shared_string(),
-            tagged: false,
-            weight_display: SharedString::new(),
-            used_in_print: false,
-            spool_rec_id: SharedString::new(),
+    fn ui_slot_group_from_snapshot(&self, group: &printer_domain::SlotGroupSnapshot) -> UiSlotGroup {
+        let slots = group.slots.iter().map(|slot| self.ui_slot_from_snapshot(slot)).collect::<Vec<_>>();
+        UiSlotGroup {
+            id: group.id.to_shared_string(),
+            kind: Self::ui_slot_group_kind(group.kind),
+            name: group.name.to_shared_string(),
+            slots: slint::ModelRc::from(Rc::new(slint::VecModel::from(slots))),
         }
     }
 
-    fn ui_bambu_tray_from_slot(&self, tray_id: i32, slot: &printer_domain::MaterialSlotSnapshot) -> UiTray {
-        let (filament_state, filament_colors, tray_has_alpha, material) = match &slot.filament {
-            printer_domain::PrinterFilament::Known(filament) => (
-                crate::app::UiFilamentState::Known,
-                Self::ui_colors_from_color_codes(&filament.color_codes),
-                Self::color_codes_have_alpha(&filament.color_codes),
-                filament.material_type.to_shared_string(),
-            ),
+    fn ui_slot_from_snapshot(&self, slot: &printer_domain::MaterialSlotSnapshot) -> UiSlot {
+        let (filament_state, filament_colors, filament_has_alpha, material) = match &slot.filament {
+            printer_domain::PrinterFilament::Known(filament) => {
+                let material = if filament.material_type.is_empty() {
+                    filament.slicer_filament.as_str()
+                } else {
+                    filament.material_type.as_str()
+                };
+                (
+                    crate::app::UiFilamentState::Known,
+                    Self::non_empty_ui_colors(Self::ui_colors_from_color_codes(&filament.color_codes)),
+                    Self::color_codes_have_alpha(&filament.color_codes),
+                    material.to_shared_string(),
+                )
+            }
             printer_domain::PrinterFilament::Unknown => (
                 crate::app::UiFilamentState::Unknown,
-                vec![slint::Color::from_argb_encoded(0xFF000000)],
+                Self::non_empty_ui_colors(Vec::new()),
                 false,
                 "???".to_shared_string(),
             ),
@@ -1429,17 +1348,17 @@ impl ViewModel {
             })
             .unwrap_or_default();
 
-        UiTray {
-            id: tray_id,
-            name: Self::bambu_ui_tray_name(tray_id).to_shared_string(),
-            external: Self::bambu_ui_tray_is_external(tray_id),
-            spool_state: Self::ui_tray_state_from_slot_state(slot.state),
+        UiSlot {
+            id: slot.id.as_str().to_shared_string(),
+            name: Self::ui_slot_name_from_snapshot(slot).to_shared_string(),
+            state: Self::ui_slot_state_from_slot_state(slot.state),
+            state_label: Self::slot_state_label(slot.state).into(),
             filament: UiFilament {
                 state: filament_state,
                 colors: Self::ui_color_model(filament_colors),
                 material,
             },
-            tray_has_alpha,
+            filament_has_alpha,
             spool_has_alpha,
             spool_colors: Self::ui_color_model(spool_colors),
             k: Self::driver_data_value(&slot.driver_data, "bambu_resolved_k")
@@ -1448,8 +1367,23 @@ impl ViewModel {
             tagged: slot.spool_id.is_some(),
             weight_display: self.weight_display_snapshot(slot).to_shared_string(),
             used_in_print: slot.used_in_print,
-            spool_rec_id: slot.spool_id.as_deref().unwrap_or_default().to_shared_string(),
+            spool_id: slot.spool_id.as_deref().unwrap_or_default().to_shared_string(),
         }
+    }
+
+    fn ui_slot_name_from_snapshot(slot: &printer_domain::MaterialSlotSnapshot) -> String {
+        if let Some(tray_id) = Self::bambu_tray_id_from_slot_snapshot(slot) {
+            Self::bambu_ui_slot_name(tray_id)
+        } else {
+            slot.display_name.clone()
+        }
+    }
+
+    fn non_empty_ui_colors(mut colors: Vec<slint::Color>) -> Vec<slint::Color> {
+        if colors.is_empty() {
+            colors.push(slint::Color::from_argb_encoded(0xFF000000));
+        }
+        colors
     }
 
     fn ui_color_model(colors: Vec<slint::Color>) -> slint::ModelRc<slint::Color> {
@@ -1462,16 +1396,7 @@ impl ViewModel {
             .or_else(|| Self::bambu_tray_id_from_slot_id(&slot.id))
     }
 
-    fn bambu_ui_tray_row(tray_id: i32) -> Option<usize> {
-        match tray_id {
-            255 => Some(0),
-            254 => Some(1),
-            0..=23 => Some(tray_id as usize + 2),
-            _ => None,
-        }
-    }
-
-    fn bambu_ui_tray_name(tray_id: i32) -> String {
+    fn bambu_ui_slot_name(tray_id: i32) -> String {
         match tray_id {
             255 => "Ext-R".to_string(),
             254 => "Ext-L".to_string(),
@@ -1484,68 +1409,26 @@ impl ViewModel {
         }
     }
 
-    fn bambu_ui_tray_is_external(tray_id: i32) -> bool {
-        tray_id == 254 || tray_id == 255
-    }
-
-    fn ui_tray_state_from_slot_state(state: printer_domain::SlotState) -> crate::app::UiTrayState {
-        match state {
-            printer_domain::SlotState::Unknown | printer_domain::SlotState::Error => crate::app::UiTrayState::Unknown,
-            printer_domain::SlotState::Empty => crate::app::UiTrayState::Empty,
-            printer_domain::SlotState::Occupied => crate::app::UiTrayState::Spool,
-            printer_domain::SlotState::Reading => crate::app::UiTrayState::Reading,
-            printer_domain::SlotState::Ready => crate::app::UiTrayState::Ready,
-            printer_domain::SlotState::Loading => crate::app::UiTrayState::Loading,
-            printer_domain::SlotState::Unloading => crate::app::UiTrayState::Unloading,
-            printer_domain::SlotState::Loaded => crate::app::UiTrayState::Loaded,
-        }
-    }
-
-    fn ui_generic_slot_group_from_snapshot(group: &printer_domain::SlotGroupSnapshot) -> UiGenericSlotGroup {
-        let slots = group.slots.iter().map(Self::ui_generic_slot_from_snapshot).collect::<Vec<_>>();
-        UiGenericSlotGroup {
-            kind: Self::slot_group_kind_label(group.kind).into(),
-            name: group.name.to_shared_string(),
-            slots: slint::ModelRc::from(Rc::new(slint::VecModel::from(slots))),
-        }
-    }
-
-    fn ui_generic_slot_from_snapshot(slot: &printer_domain::MaterialSlotSnapshot) -> UiGenericSlot {
-        let (material, colors, colors_have_alpha) = match &slot.filament {
-            printer_domain::PrinterFilament::Known(filament) => {
-                let material = if filament.material_type.is_empty() {
-                    filament.slicer_filament.as_str()
-                } else {
-                    filament.material_type.as_str()
-                };
-                (
-                    material.to_shared_string(),
-                    Self::ui_colors_from_color_codes(&filament.color_codes),
-                    Self::color_codes_have_alpha(&filament.color_codes),
-                )
-            }
-            printer_domain::PrinterFilament::Unknown => (SharedString::new(), Vec::new(), false),
-        };
-
-        UiGenericSlot {
-            colors: slint::ModelRc::from(Rc::new(slint::VecModel::from(colors))),
-            colors_have_alpha,
-            id: slot.id.as_str().to_shared_string(),
-            material,
-            name: slot.display_name.to_shared_string(),
-            spool_id: slot.spool_id.as_deref().unwrap_or_default().to_shared_string(),
-            state: Self::slot_state_label(slot.state).into(),
-            used_in_print: slot.used_in_print,
-        }
-    }
-
-    fn slot_group_kind_label(kind: printer_domain::SlotGroupKind) -> &'static str {
+    fn ui_slot_group_kind(kind: printer_domain::SlotGroupKind) -> UiSlotGroupKind {
         match kind {
-            printer_domain::SlotGroupKind::InternalChanger => "Internal",
-            printer_domain::SlotGroupKind::External => "External",
-            printer_domain::SlotGroupKind::Toolhead => "Toolhead",
-            printer_domain::SlotGroupKind::Virtual => "Virtual",
-            printer_domain::SlotGroupKind::Other => "Other",
+            printer_domain::SlotGroupKind::InternalChanger => UiSlotGroupKind::InternalChanger,
+            printer_domain::SlotGroupKind::External => UiSlotGroupKind::External,
+            printer_domain::SlotGroupKind::Toolhead => UiSlotGroupKind::Toolhead,
+            printer_domain::SlotGroupKind::Virtual => UiSlotGroupKind::Virtual,
+            printer_domain::SlotGroupKind::Other => UiSlotGroupKind::Other,
+        }
+    }
+
+    fn ui_slot_state_from_slot_state(state: printer_domain::SlotState) -> UiSlotState {
+        match state {
+            printer_domain::SlotState::Unknown | printer_domain::SlotState::Error => UiSlotState::Unknown,
+            printer_domain::SlotState::Empty => UiSlotState::Empty,
+            printer_domain::SlotState::Occupied => UiSlotState::Spool,
+            printer_domain::SlotState::Reading => UiSlotState::Reading,
+            printer_domain::SlotState::Ready => UiSlotState::Ready,
+            printer_domain::SlotState::Loading => UiSlotState::Loading,
+            printer_domain::SlotState::Unloading => UiSlotState::Unloading,
+            printer_domain::SlotState::Loaded => UiSlotState::Loaded,
         }
     }
 
@@ -1725,7 +1608,7 @@ impl ViewModel {
         }
     }
 
-    fn ui_set_staging_to_generic_slot(&self, slot_id: &str) {
+    fn ui_set_staging_to_slot(&self, slot_id: &str) {
         let ui_borrow = self.ui_weak.unwrap();
         let ui = ui_borrow.global::<crate::app::AppState>();
         let Some((_current_printer, manager_index, snapshot)) = self.selected_printer_snapshot() else {
@@ -1800,7 +1683,7 @@ impl ViewModel {
                 }
                 self.filament_staging.borrow_mut().clear();
                 ui.invoke_empty_spool_staging();
-                self.update_generic_slots_from_selected_printer();
+                self.update_slot_groups_from_selected_printer();
                 ui.invoke_slot_operation_succeeded("Configure".into(), full_slot_description.to_shared_string());
             }
             Err(err) => {
@@ -1813,8 +1696,8 @@ impl ViewModel {
         }
     }
 
-    fn ui_reset_generic_slot(&self, slot_id: &str) {
-        self.ui_dispatch_generic_slot_command(
+    fn ui_reset_slot(&self, slot_id: &str) {
+        self.ui_dispatch_slot_command(
             slot_id,
             PrinterCommand::ClearSlot {
                 slot_id: SlotId::new(slot_id),
@@ -1825,8 +1708,9 @@ impl ViewModel {
         );
     }
 
-    fn ui_unassign_generic_slot(&self, slot_id: &str) {
-        self.ui_dispatch_generic_slot_command(
+    fn ui_unassign_slot(&self, slot_id: &str) {
+        self.stage_unassigned_slot_if_possible(slot_id);
+        self.ui_dispatch_slot_command(
             slot_id,
             PrinterCommand::UnassignSpoolFromSlot {
                 slot_id: SlotId::new(slot_id),
@@ -1837,7 +1721,35 @@ impl ViewModel {
         );
     }
 
-    fn ui_dispatch_generic_slot_command(
+    fn stage_unassigned_slot_if_possible(&self, slot_id: &str) {
+        if self.selected_ui_bambu_index().is_none()
+            || ![StagingOrigin::Empty, StagingOrigin::Unloaded].contains(self.filament_staging.borrow().origin())
+        {
+            return;
+        }
+
+        let Some((_current_printer, _manager_index, snapshot)) = self.selected_printer_snapshot() else {
+            return;
+        };
+        let spool_id = snapshot
+            .slot_groups
+            .iter()
+            .flat_map(|group| group.slots.iter())
+            .find(|slot| slot.id.as_str() == slot_id)
+            .and_then(|slot| slot.spool_id.as_ref());
+        let Some(spool_id) = spool_id else {
+            return;
+        };
+        let Some(spool_rec) = self.store.get_spool_by_id(spool_id) else {
+            return;
+        };
+
+        self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Unloaded);
+        self.display_filament_staging(true);
+        let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
+    }
+
+    fn ui_dispatch_slot_command(
         &self,
         slot_id: &str,
         command: PrinterCommand,
@@ -1873,7 +1785,7 @@ impl ViewModel {
         let dispatch_result = { self.printer_manager.borrow_mut().dispatch_at(manager_index, command) };
         match dispatch_result {
             Ok(()) => {
-                self.update_generic_slots_from_selected_printer();
+                self.update_slot_groups_from_selected_printer();
                 ui.invoke_slot_operation_succeeded(operation.into(), full_slot_description.to_shared_string());
             }
             Err(err) => {
@@ -1917,58 +1829,8 @@ impl ViewModel {
     //     }
     // }
 
-    fn set_staging_to_tray(
-        view_model: &Rc<RefCell<ViewModel>>,
-        filament_staging: &Rc<RefCell<FilamentStaging>>,
-        bambu_printer: &Rc<RefCell<BambuPrinter>>,
-        ui: &slint::Weak<crate::app::AppWindow>,
-        tray_id: i32,
-    ) {
-        view_model
-            .borrow()
-            .set_staging_to_tray_direct(filament_staging, &mut bambu_printer.borrow_mut(), ui, tray_id);
-    }
-
     // TODO: check the neccessity of this function and if all content is relevant to it
-    fn register_printer_related_listeners(&mut self) {
-        // handler for request from UI to move to staging, need to work only on selected printer
-        // this way of doing it (with many 'moved' might be due to being called when printer is already borrowed, or staging borrowed(less likely) )
-        let moved_filament_staging = self.filament_staging.clone();
-        let moved_bambu_printer = self.bambu_printer_model.clone();
-        let moved_view_model = self.view_model.clone().unwrap();
-        let moved_ui = self.ui_weak.clone();
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::AppBackend>()
-            .on_set_staging_to_tray(move |tray_id: i32| {
-                if !moved_view_model
-                    .borrow()
-                    .selected_printer_supports(|capabilities| capabilities.material_slot_assign && capabilities.material_slot_set_spool_id)
-                    || moved_view_model.borrow().selected_ui_bambu_index().is_none()
-                {
-                    return;
-                }
-                Self::set_staging_to_tray(&moved_view_model, &moved_filament_staging, &moved_bambu_printer, &moved_ui, tray_id);
-            });
-
-        let moved_view_model = self.view_model.clone().unwrap();
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::AppBackend>()
-            .on_set_staging_to_generic_slot(move |slot_id| moved_view_model.borrow().ui_set_staging_to_generic_slot(slot_id.as_str()));
-
-        let moved_view_model = self.view_model.clone().unwrap();
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::AppBackend>()
-            .on_reset_generic_slot(move |slot_id| moved_view_model.borrow().ui_reset_generic_slot(slot_id.as_str()));
-
-        let moved_view_model = self.view_model.clone().unwrap();
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::AppBackend>()
-            .on_unassign_generic_slot(move |slot_id| moved_view_model.borrow().ui_unassign_generic_slot(slot_id.as_str()));
-    }
+    fn register_printer_related_listeners(&mut self) {}
 
     fn ui_load_staging(&self, spool_id: &str) -> SharedString {
         if let Some(spool_rec) = self.store.get_spool_by_id(spool_id) {
@@ -2158,61 +2020,80 @@ impl ViewModel {
         channel_send(&self.app_ota_request_channel, AppOtaRequest::CheckOta {});
     }
 
-    fn ui_configure_slot_with_spool_id(&self, slot_id: i32, spool_id: &str) {
-        if !self.selected_printer_supports(|capabilities| capabilities.material_slot_assign && capabilities.material_slot_set_spool_id)
-            || self.selected_ui_bambu_index().is_none()
+    fn ui_configure_slot_with_spool_id(&self, slot_id: &str, spool_id: &str) {
+        if let Some(tray_id) = Self::bambu_tray_id_from_slot_id(&SlotId::new(slot_id))
+            && self.selected_ui_bambu_index().is_some()
         {
+            let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureTrayWithSpool {
+                printer_index: None,
+                tray_id,
+                spool_id: spool_id.to_string(),
+                only_spool_id: false,
+            });
             return;
         }
 
-        let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureTrayWithSpool {
-            printer_index: None,
-            tray_id: slot_id,
-            spool_id: spool_id.to_string(),
-            only_spool_id: false,
-        });
-    }
+        let ui_borrow = self.ui_weak.unwrap();
+        let ui = ui_borrow.global::<crate::app::AppState>();
+        let Some((_current_printer, manager_index, snapshot)) = self.selected_printer_snapshot() else {
+            error!("No selected printer snapshot for slot reconfigure");
+            return;
+        };
+        let full_slot_description = Self::slot_description_from_snapshot(&snapshot, slot_id);
 
-    fn ui_untag_slot(&self, tray_id: i32) {
-        if !self.selected_printer_supports(|capabilities| capabilities.material_slot_unassign_spool) || self.selected_ui_bambu_index().is_none() {
+        if !snapshot.connected {
+            ui.invoke_slot_operation_failed("Configure".into(), full_slot_description.to_shared_string(), "Printer disconnected".into());
             return;
         }
-
-        let tray_spool_id = {
-            let bambu_printer_borrow = self.bambu_printer_model.borrow();
-            &bambu_printer_borrow.get_any_tray(tray_id as usize).meta_info.spool_id.clone()
+        if !(snapshot.capabilities.material_slot_assign && snapshot.capabilities.material_slot_set_spool_id) {
+            ui.invoke_slot_operation_failed(
+                "Configure".into(),
+                full_slot_description.to_shared_string(),
+                "Material assignment unsupported".into(),
+            );
+            return;
+        }
+        let Some(spool_rec) = self.store.get_spool_by_id(spool_id) else {
+            ui.invoke_slot_operation_failed("Configure".into(), full_slot_description.to_shared_string(), "Spool not found".into());
+            return;
+        };
+        let full_spool_rec = FullSpoolRecord {
+            spool_rec,
+            spool_rec_ext: SpoolRecordExt::default(),
+        };
+        let Some(filament_info) = self.get_filament_info(&full_spool_rec.spool_rec.slicer_filament, Some(&full_spool_rec.spool_rec.material_type))
+        else {
+            ui.invoke_slot_operation_failed(
+                "Configure".into(),
+                full_slot_description.to_shared_string(),
+                slint::format!("Spool {} Missing Required Information", full_spool_rec.spool_rec.id),
+            );
+            return;
         };
 
-        if let Some(spool_id) = tray_spool_id.as_ref()
-            && [StagingOrigin::Empty, StagingOrigin::Unloaded].contains(self.filament_staging.borrow().origin())
-        {
-            // only if empty or was unloaded (so not scanned or encoded)
-            if let Some(spool_rec) = self.store.get_spool_by_id(spool_id) {
-                self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Unloaded);
-                self.display_filament_staging_direct(&self.bambu_printer_model.borrow(), true);
-                let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
+        let dispatch_result = self.printer_manager.borrow_mut().dispatch_at(
+            manager_index,
+            PrinterCommand::AssignMaterialToSlot {
+                slot_id: SlotId::new(slot_id),
+                spool: full_spool_rec,
+                temps: FilamentTemps {
+                    nozzle_min_c: Some(filament_info.nozzle_temp_low as u32),
+                    nozzle_max_c: Some(filament_info.nozzle_temp_high as u32),
+                },
+                mode: SlotAssignMode::WritePrinterMaterial,
+            },
+        );
+        match dispatch_result {
+            Ok(()) => {
+                self.update_slot_groups_from_selected_printer();
+                ui.invoke_slot_operation_succeeded("Configure".into(), full_slot_description.to_shared_string());
             }
+            Err(err) => ui.invoke_slot_operation_failed(
+                "Configure".into(),
+                full_slot_description.to_shared_string(),
+                slint::format!("{err:?}"),
+            ),
         }
-
-        if let Err(err) = self.printer_manager.borrow_mut().dispatch_selected(PrinterCommand::UnassignSpoolFromSlot {
-            slot_id: SlotId::new(format!("bambu:{tray_id}")),
-        }) {
-            error!("Failed to unassign spool from slot {tray_id}: {err:?}");
-        }
-
-        self.update_ui_from_printer(&self.bambu_printer_model.borrow());
-    }
-    fn ui_reset_slot(&self, tray_id: i32) {
-        if !self.selected_printer_supports(|capabilities| capabilities.material_slot_clear) || self.selected_ui_bambu_index().is_none() {
-            return;
-        }
-
-        if let Err(err) = self.printer_manager.borrow_mut().dispatch_selected(PrinterCommand::ClearSlot {
-            slot_id: SlotId::new(format!("bambu:{tray_id}")),
-        }) {
-            error!("Failed to reset slot {tray_id}: {err:?}");
-        }
-        self.update_ui_from_printer(&self.bambu_printer_model.borrow());
     }
     fn ui_term_info(&self, text: &str) {
         self._terminal_view_model.borrow_mut().on_add_text(text);
@@ -2345,7 +2226,72 @@ impl ViewModel {
         self.filament_staging.borrow().scanned_tag_id().unwrap_or_default().to_shared_string()
     }
 
-    fn ui_get_slot_display(&self, tray_id: i32) -> UiSlotDisplay {
+    fn ui_get_slot_display(&self, slot_id: &str) -> UiSlotDisplay {
+        if let Some(tray_id) = Self::bambu_tray_id_from_slot_id(&SlotId::new(slot_id))
+            && self.selected_ui_bambu_index().is_some()
+        {
+            return self.ui_get_bambu_slot_display(tray_id);
+        }
+
+        let Some((_current_printer, _manager_index, snapshot)) = self.selected_printer_snapshot() else {
+            return UiSlotDisplay::default();
+        };
+        let Some(slot) = snapshot
+            .slot_groups
+            .iter()
+            .flat_map(|group| group.slots.iter())
+            .find(|slot| slot.id.as_str() == slot_id)
+        else {
+            return UiSlotDisplay::default();
+        };
+
+        self.ui_get_slot_display_from_snapshot(slot)
+    }
+
+    fn ui_get_slot_display_from_snapshot(&self, slot: &printer_domain::MaterialSlotSnapshot) -> UiSlotDisplay {
+        let (filament_title, slicer_name, color_code, temp_min, temp_max) = match &slot.filament {
+            printer_domain::PrinterFilament::Known(filament) => {
+                let material = if filament.material_type.is_empty() {
+                    filament.slicer_filament.as_str()
+                } else {
+                    filament.material_type.as_str()
+                };
+                let slicer_name = self
+                    .get_filament_info(&filament.slicer_filament, Some(material))
+                    .map(|info| {
+                        slint::format!(
+                            "{}{}",
+                            info.slicer_name,
+                            if info.base_filament { " (base)" } else { "" }
+                        )
+                    })
+                    .unwrap_or_else(|| filament.slicer_filament.to_shared_string());
+                (
+                    material.to_shared_string(),
+                    slicer_name,
+                    filament.color_codes.join(";").to_shared_string(),
+                    filament.temps.nozzle_min_c.unwrap_or_default() as i32,
+                    filament.temps.nozzle_max_c.unwrap_or_default() as i32,
+                )
+            }
+            printer_domain::PrinterFilament::Unknown => Default::default(),
+        };
+
+        UiSlotDisplay {
+            available_in_spool: self.weight_left_snapshot(slot).unwrap_or_default(),
+            color_code,
+            consumed_since_loaded: slot.consumed_since_load_g,
+            filament_title,
+            slicer_name,
+            temp_max,
+            temp_min,
+            pa: Self::driver_data_value(&slot.driver_data, "bambu_resolved_k")
+                .unwrap_or_default()
+                .to_shared_string(),
+        }
+    }
+
+    fn ui_get_bambu_slot_display(&self, tray_id: i32) -> UiSlotDisplay {
         let printer_borrow = self.bambu_printer_model.borrow();
         let tray = printer_borrow.get_any_tray(tray_id as usize);
         let color_code = if let Filament::Known(filament) = &tray.filament {
@@ -2673,32 +2619,8 @@ impl ViewModel {
             return;
         }
 
-        let ui = self.ui_weak.unwrap();
-        let ui_app_state = ui.global::<crate::app::AppState>();
         let snapshot = printer_domain::bambu_adapter::BambuPrinterDriver::snapshot_from_printer(bambu_printer);
-        let num_extruders = bambu_printer.num_extruders();
-        ui_app_state.set_num_extruders(num_extruders as i32);
-        self.update_slot_layout_from_snapshot(&snapshot);
-        // ----- handle number of ams's and curr_ams -----
-        // OPT: calculate only when ams_exists change (store in printer struct), here use the value calculated there
-        //      don't forget to consider loading the ams_exist from state which will need to recalculate, so add inner_set_ams_exist_bits
-        if let Some(ams_exist_bits) = *bambu_printer.ams_exist_bits() {
-            let (ams_exist_vec, first_ams) = Self::get_ams_list(ams_exist_bits);
-            let ams_exists: Rc<slint::VecModel<i32>> = Rc::new(slint::VecModel::from(ams_exist_vec));
-            let ams_exists = slint::ModelRc::from(ams_exists);
-            ui.global::<crate::app::AppState>().set_ams_exists(ams_exists);
-            let current_shown_ams = ui.global::<crate::app::AppState>().get_curr_ams_id();
-            if first_ams > current_shown_ams {
-                ui.global::<crate::app::AppState>().set_curr_ams_id(first_ams);
-            }
-        } else {
-            // default view
-            let ams_exists: Rc<slint::VecModel<i32>> = Rc::new(slint::VecModel::from(alloc::vec![0]));
-            let ams_exists = slint::ModelRc::from(ams_exists);
-            ui.global::<crate::app::AppState>().set_ams_exists(ams_exists);
-            ui.global::<crate::app::AppState>().set_curr_ams_id(0);
-        }
-        self.update_bambu_trays_state_from_snapshot(&snapshot);
+        self.update_slot_groups_from_snapshot(&snapshot);
     }
 
     fn weight_display(&self, tray: &Tray) -> SharedString {
@@ -3976,35 +3898,6 @@ impl ViewModel {
         slot_str
     }
 
-    fn get_ams_list(mut ams_exist_bits: u32) -> (Vec<i32>, i32) {
-        let mut ams_exist_vec = Vec::<i32>::new();
-        let mut first_ams = -1;
-        for ams_id in 0..=3 + 8 {
-            if ams_exist_bits & 1 != 0 {
-                ams_exist_vec.push(ams_id);
-                if first_ams == -1 {
-                    first_ams = ams_id;
-                }
-            }
-            ams_exist_bits >>= 1;
-        }
-        (ams_exist_vec, first_ams)
-    }
-}
-
-impl From<&TrayState> for crate::app::UiTrayState {
-    fn from(v: &TrayState) -> crate::app::UiTrayState {
-        match v {
-            TrayState::Unknown => crate::app::UiTrayState::Unknown,
-            TrayState::Empty => crate::app::UiTrayState::Empty,
-            TrayState::Spool => crate::app::UiTrayState::Spool,
-            TrayState::Reading => crate::app::UiTrayState::Reading,
-            TrayState::Ready => crate::app::UiTrayState::Ready,
-            TrayState::Loading => crate::app::UiTrayState::Loading,
-            TrayState::Unloading => crate::app::UiTrayState::Unloading,
-            TrayState::Loaded => crate::app::UiTrayState::Loaded,
-        }
-    }
 }
 
 impl BambuPrinterObserver for ViewModel {

@@ -1,20 +1,16 @@
 import { Utils } from "utils.slint";
 import { FrameworkState } from "framework/framework.slint";
 import {
+    AppBackend,
     AppConsts,
     AppState,
     ControlState,
-    SpoolScaleState,
-    AppBackend,
-    UiTray,
     UiFilamentState,
-    UiTrayState,
+    UiSlot,
+    UiSlotGroup,
+    UiSlotState,
 } from "app.slint";
-import { MyText } from "framework/widgets.slint";
-import { Log } from "framework/framework.slint";
-
-/////////////////////////////////////////////
-
+import { MyButton, MyText, Title } from "framework/widgets.slint";
 
 global Helper {
     public pure function representative-color-index(color-count: int) -> int {
@@ -29,43 +25,44 @@ global Helper {
 }
 
 component AmsButton inherits Rectangle {
-    in property <int> ams-id;
+    in property <UiSlotGroup> group;
+    in property <int> group-index;
     in property <bool> active;
-    in property <[UiTray]> trays-state;
-    horizontal-stretch: ams-id <= 3 ? 4 : 1;
+    horizontal-stretch: Math.max(group.slots.length, 1);
 
-    function slot-with-spool(tray: UiTray) -> bool {
-        return tray.spool-state == UiTrayState.Ready || tray.spool-state == UiTrayState.Loading || tray.spool-state == UiTrayState.Loaded || tray.spool-state == UiTrayState.Unloading;
-    }
-    function slot-with-known-color(tray: UiTray) -> bool {
-        return tray.filament.state != UiFilamentState.Unknown;
+    function slot-with-spool(slot: UiSlot) -> bool {
+        return slot.state == UiSlotState.Ready || slot.state == UiSlotState.Loading || slot.state == UiSlotState.Loaded || slot.state == UiSlotState.Unloading;
     }
 
-    if ams-id != -1: ams-selector := Rectangle {
+    function slot-with-known-color(slot: UiSlot) -> bool {
+        return slot.filament.state != UiFilamentState.Unknown;
+    }
+
+    ams-selector := Rectangle {
         height: parent.height;
         width: parent.width;
-        // background: active ? @linear-gradient(180deg, #09009B 0%, #0000CA 39%, #001dff 100%) : white;
         background: active ? #bbb : white;
         border-width: active ? 4px : 1px;
         border-color: #001dff;
+
         HorizontalLayout {
             padding-top: 6px + (active ? 0px : 3px);
-            padding-bottom: 0px + (active ? 0px : 3px);
+            padding-bottom: active ? 0px : 3px;
             padding-left: 6px;
             padding-right: 6px;
             spacing: 3px + (active ? 0px : 3px);
-            for tray-id in ams-id <= 3 ? [0, 1, 2, 3] : [0]: block := Rectangle {
+
+            for slot in group.slots: block := Rectangle {
                 horizontal-stretch: 0;
-                property <UiTray> ui-tray: trays-state[AppState.get_tray_index(ams-id,tray-id)];
-                property <bool> slot-is-with-spool: slot-with-spool(ui-tray);
-                property <bool> slot-is-with-known-color: slot-with-known-color(ui-tray);
-                property <bool> slot-is-loaded: ui-tray.spool-state == UiTrayState.Loaded;
-                property <bool> has-spool-id: ui-tray.spool-rec-id != "";
-                property <int> spool-color-count: ui-tray.spool-colors.length;
-                property <int> slot-color-count: ui-tray.filament.colors.length;
+                property <bool> slot-is-with-spool: slot-with-spool(slot);
+                property <bool> slot-is-with-known-color: slot-with-known-color(slot);
+                property <bool> slot-is-loaded: slot.state == UiSlotState.Loaded;
+                property <bool> has-spool-id: slot.spool-id != "";
+                property <int> spool-color-count: slot.spool-colors.length;
+                property <int> slot-color-count: slot.filament.colors.length;
                 property <bool> use-spool-colors: slot-is-with-known-color && has-spool-id && spool-color-count > 0;
-                property <bool> shown-color-has-alpha: use-spool-colors ? ui-tray.spool-has-alpha : ui-tray.tray-has-alpha;
-                property <color> representative-color: use-spool-colors ? ui-tray.spool-colors[Helper.representative-color-index(spool-color-count)] : ui-tray.filament.colors[Helper.representative-color-index(slot-color-count)];
+                property <bool> shown-color-has-alpha: use-spool-colors ? slot.spool-has-alpha : slot.filament-has-alpha;
+                property <color> representative-color: use-spool-colors ? slot.spool-colors[Helper.representative-color-index(spool-color-count)] : slot.filament.colors[Helper.representative-color-index(slot-color-count)];
                 height: parent.height - parent.padding-top - parent.padding-bottom - 3px * 2;
                 background: slot-is-with-known-color ? #00000000 : AppConsts.no-color;
 
@@ -78,23 +75,16 @@ component AmsButton inherits Rectangle {
                     source: AppState.ams-color-checkerboard-bg;
                 }
 
-                // if slot-is-with-known-color && !use-spool-colors: Rectangle {
-                //     width: parent.width;
-                //     height: parent.height;
-                //     background: ui-tray.filament.color;
-                // }
-
-                if slot-is-with-known-color: HorizontalLayout { // otherwise parent background will show (no-color gradient)
+                if slot-is-with-known-color: HorizontalLayout {
                     width: parent.width;
                     height: parent.height;
                     spacing: 0px;
-                    for stripe-color in use-spool-colors ? ui-tray.spool-colors : ui-tray.filament.colors: Rectangle {
+                    for stripe-color in use-spool-colors ? slot.spool-colors : slot.filament.colors: Rectangle {
                         horizontal-stretch: 1;
                         background: stripe-color;
                     }
                 }
 
-                // ams button circle when no spool
                 if !slot-is-with-spool: special-cases-circle := Rectangle {
                     height: Math.min(parent.height, parent.width) - 4px;
                     width: self.height;
@@ -104,23 +94,18 @@ component AmsButton inherits Rectangle {
                     border-radius: Math.min(self.width, self.height) / 2;
                 }
 
-                // border and ams button text
                 normal-border := Rectangle {
                     height: parent.height;
                     width: parent.width;
                     border-color: black;
                     border-width: 1px;
                     MyText {
-                        // The "✓" is hidden for all texts to have something, otherwise the width of the rectangles become different for some reason
-                        // only thing I didn't try to fix that with empty or space is centering the text which already looks centered
-                        // and so the "✓" won't show, use transparent color
                         text: !slot-is-with-spool ? "−" : !slot-is-with-known-color ? "?" : "✓";
                         color: self.text == "✓" ? #00000000 : !slot-is-with-spool ? black : slot-is-with-known-color ? Utils.contrasting_color(representative-color) : white;
                     }
                 }
 
-                // ams button thick outside border (can't use previous rect)
-                if ui-tray.used-in-print: in-use-border := Rectangle {
+                if slot.used-in-print: in-use-border := Rectangle {
                     x: -2px;
                     y: -2px;
                     width: parent.width + 4px;
@@ -129,7 +114,6 @@ component AmsButton inherits Rectangle {
                     border-color: black;
                 }
 
-                // ams button nozzle
                 if slot-is-loaded: Image {
                     source: @image-url("./img/extruder.png");
                     colorize: Utils.contrasting_color(representative-color);
@@ -141,7 +125,7 @@ component AmsButton inherits Rectangle {
             width: parent.width;
             height: parent.height;
             clicked => {
-                AppState.curr-ams-id = ams-id;
+                AppState.selected-internal-slot-group = group-index;
             }
         }
     }
@@ -176,8 +160,6 @@ component CircleStripes inherits Rectangle {
         source: AppState.circle-checkerboard-bg;
     }
 
-    // Vertical stripe rectangles side-by-side.
-    // Each rectangle clips its own full-size circle.
     HorizontalLayout {
         width: parent.width;
         height: parent.height;
@@ -188,7 +170,6 @@ component CircleStripes inherits Rectangle {
             background: transparent;
             clip: root.color-count > 1;
 
-            // Full circle shifted so each stripe shows its vertical slice
             Rectangle {
                 x: -idx * root.stripe-width;
                 y: 0px;
@@ -230,33 +211,29 @@ component CircleStripes inherits Rectangle {
 
 component Spool inherits Rectangle {
     callback clicked;
-    in-out property <UiTray> ui-tray;
+    in-out property <UiSlot> slot;
     in property <bool> is-in-ams;
 
-    property <bool> has-known-color: ui-tray.filament.state != UiFilamentState.Unknown && (!is-in-ams || ui-tray.spool-state != UiTrayState.Empty);
-    property <bool> has-spool-id: ui-tray.spool-rec-id != "";
-    property <int> spool-color-count: ui-tray.spool-colors.length;
-    property <bool> use-spool-colors: has-spool-id && spool-color-count > 0; // use spool color(s) if available, if not then tray-color
-    property <bool> is-multi-color: has-spool-id && spool-color-count > 1;
-    property <bool> inner-show-color: (has-known-color || has-spool-id) && ui-tray.spool-state != UiTrayState.Unknown && ui-tray.spool-state != UiTrayState.Empty && ui-tray.spool-state != UiTrayState.Spool && ui-tray.spool-state != UiTrayState.Reading;
-    property <bool> outer-color-has-alpha: ui-tray.tray-has-alpha;
-    property <bool> inner-color-has-alpha: use-spool-colors ? ui-tray.spool-has-alpha : ui-tray.tray-has-alpha;
-    property <[color]> outer-display-color: ui-tray.filament.colors;
-
-    property <string> circle-default-big-text: ui-tray.spool-state == UiTrayState.Unknown ? "?" : ui-tray.spool-state == UiTrayState.Empty ? "−" : ui-tray.spool-state == UiTrayState.Spool ? "↺" : ui-tray.spool-state == UiTrayState.Reading ? "↻" : "✓";
-    property <bool> circle-display-weight: circle-default-big-text == "✓" && ui-tray.weight-display != "";
+    property <bool> has-known-color: slot.filament.state != UiFilamentState.Unknown && (!is-in-ams || slot.state != UiSlotState.Empty);
+    property <bool> has-spool-id: slot.spool-id != "";
+    property <int> spool-color-count: slot.spool-colors.length;
+    property <bool> use-spool-colors: has-spool-id && spool-color-count > 0;
+    property <bool> inner-show-color: (has-known-color || has-spool-id) && slot.state != UiSlotState.Unknown && slot.state != UiSlotState.Empty && slot.state != UiSlotState.Spool && slot.state != UiSlotState.Reading;
+    property <bool> outer-color-has-alpha: slot.filament-has-alpha;
+    property <bool> inner-color-has-alpha: use-spool-colors ? slot.spool-has-alpha : slot.filament-has-alpha;
+    property <[color]> outer-display-color: slot.filament.colors;
+    property <string> circle-default-big-text: slot.state == UiSlotState.Unknown ? "?" : slot.state == UiSlotState.Empty ? "−" : slot.state == UiSlotState.Spool ? "↺" : slot.state == UiSlotState.Reading ? "↻" : "✓";
+    property <bool> circle-display-weight: circle-default-big-text == "✓" && slot.weight-display != "";
     property <color> circle-border-color: Utils.contrasting_color(outer-display-color[Helper.representative-color-index(outer-display-color.length)]);
-    property <string> circle-weight-display: ui-tray.weight-display;
-    property <bool> circle-spool-state-loaded: ui-tray.spool-state == UiTrayState.Loaded;
+    property <string> circle-weight-display: slot.weight-display;
+    property <bool> circle-spool-state-loaded: slot.state == UiSlotState.Loaded;
     property <bool> circle-show-checkerboard-bg: inner-show-color && inner-color-has-alpha;
-    property <[color]> circle-colors: inner-show-color ? (has-spool-id ? ui-tray.spool-colors : ui-tray.filament.colors) : [#fff];
-    property <[color]> outer-color: has-known-color ? (outer-color-has-alpha ? [#00000000] : ui-tray.filament.colors) : [AppConsts.no-color];
-
-    // this is optimization to see if can use the outer color because it is the same
+    property <[color]> circle-colors: inner-show-color ? (has-spool-id ? slot.spool-colors : slot.filament.colors) : [#fff];
+    property <[color]> outer-color: has-known-color ? (outer-color-has-alpha ? [#00000000] : slot.filament.colors) : [AppConsts.no-color];
     property <bool> need-draw-inner-color: circle-colors != outer-color;
 
-    background: has-known-color ? transparent : AppConsts.no-color; // outer-color[0]; // TODO: ?? need to fix?  Fix to multiple colors ? or maybe remove and use the below rectangle that comes after the checkers to avoid two in case of 
-    // in case of alpha, don't use a original rect background (which is no transparent for maybe rendering efficiency) but rather checkerboard and on top colored rectangle
+    background: has-known-color ? transparent : AppConsts.no-color;
+
     if has-known-color && outer-color-has-alpha: Image {
         image-fit: preserve;
         horizontal-alignment: left;
@@ -266,20 +243,15 @@ component Spool inherits Rectangle {
         source: AppState.color-checkerboard-bg;
     }
 
-    if has-known-color: HorizontalLayout { // otherwise parent background will show (no-color gradient)
+    if has-known-color: HorizontalLayout {
         width: parent.width;
         height: parent.height;
         spacing: 0px;
-        for stripe-color in ui-tray.filament.colors: Rectangle {
+        for stripe-color in slot.filament.colors: Rectangle {
             horizontal-stretch: 1;
             background: stripe-color;
         }
     }
-    // if has-known-color: Rectangle { // otherwise will show the parent background of no-color gradient
-    //     width: parent.width;
-    //     height: parent.height;
-    //     background: outer-display-color[0]; // TODO: Fix to multiple colors
-    // }
 
     VerticalLayout {
         property <length> circle-diameter: self.width - 8px;
@@ -316,32 +288,29 @@ component Spool inherits Rectangle {
             circle-show-checkerboard-bg: circle-show-checkerboard-bg;
         }
 
-        // Text below circle
-
         material := Text {
             height: 18px;
             horizontal-alignment: center;
             font-size: 20px;
-            text: has-known-color ? ui-tray.filament.material : "??";
-            color: has-known-color ? Utils.contrasting_color(root.outer-display-color[0]) : Utils.contrasting_color(root.background); // TODO: fix to multi color
+            text: has-known-color ? slot.filament.material : "??";
+            color: has-known-color ? Utils.contrasting_color(root.outer-display-color[0]) : Utils.contrasting_color(root.background);
         }
 
         k-value := Text {
             height: 20px;
             horizontal-alignment: center;
             font-size: 20px;
-            text: has-known-color ? "K " + ui-tray.k : "";
-            color: has-known-color ? Utils.contrasting_color(root.outer-display-color[0]) : Utils.contrasting_color(root.background); // TODO: fix to multi color
+            text: has-known-color ? "K " + slot.k : "";
+            color: has-known-color ? Utils.contrasting_color(root.outer-display-color[0]) : Utils.contrasting_color(root.background);
         }
     }
 
     tray-border := Rectangle {
-        // when to set border thick
-        border-width: area.pressed || (AppState.control-state == ControlState.TraySelect) || (AppState.highlight-tray == ui-tray.id && AppState.highlight-tray-flash) ? 4px : 1px;
-        border-color: AppState.control-state == ControlState.TraySelect ? (AppState.highlight-trays ? black : white) : self.border-width == 1px ? black : Utils.contrasting_color(has-known-color ? root.outer-display-color[0] : root.background); // TODO: fix to multi color
+        border-width: area.pressed || AppState.control-state == ControlState.TraySelect || (AppState.highlight-slot-id == slot.id && AppState.highlight-tray-flash) ? 4px : 1px;
+        border-color: AppState.control-state == ControlState.TraySelect ? (AppState.highlight-trays ? black : white) : self.border-width == 1px ? black : Utils.contrasting_color(has-known-color ? root.outer-display-color[0] : root.background);
     }
 
-    if ui-tray.tagged: tag := Rectangle {
+    if slot.tagged: tag := Rectangle {
         x: 15px;
         y: 2px;
         width: parent.width - 2 * self.x;
@@ -351,12 +320,12 @@ component Spool inherits Rectangle {
         border-color: darkgreen.darker(0.5);
         border-width: 1px;
         MyText {
-            text: ui-tray.spool-rec-id;
+            text: slot.spool-id;
             color: black;
         }
     }
 
-    if ui-tray.used-in-print: Rectangle {
+    if slot.used-in-print: Rectangle {
         x: -3px;
         y: -3px;
         width: parent.width + 6px;
@@ -366,7 +335,6 @@ component Spool inherits Rectangle {
     }
 
     area := TouchArea {
-        // touch area is shifted (by 20px) from the top to not accidentally press AMS and hit a tray
         y: parent.y + 20px;
         width: parent.width;
         height: parent.height - 20px;
@@ -376,17 +344,17 @@ component Spool inherits Rectangle {
     }
 }
 
-component Tray inherits Rectangle {
-    in-out property <UiTray> tray-state;
+component SlotCard inherits Rectangle {
+    callback clicked;
+    in-out property <UiSlot> slot;
     in property <bool> is-in-ams;
-    callback clicked();
-    // Not clear why, but VerticalLayout (with single item inside?) stretches it to the correct height
+
     VerticalLayout {
         padding: 0px;
         spacing: 4px;
         Spool {
             is-in-ams: is-in-ams;
-            ui-tray: tray_state;
+            slot: root.slot;
             clicked => {
                 root.clicked();
             }
@@ -395,71 +363,200 @@ component Tray inherits Rectangle {
     }
 }
 
-export component Trays {
+component SlotGroupPanel inherits VerticalLayout {
     callback title-clicked;
-    in-out property <[int]> tray_numbers;
-    in-out property <[UiTray]> trays-state;
-    in property <string> title: "External";
-    in property <bool> include-paging-left: false;
-    in property <bool> include-paging-right: false;
-    in property <bool> is_ams: false;
+    in property <UiSlotGroup> group;
+    in property <bool> is-ams: false;
     in property <bool> reserve-external-area: true;
 
-    VerticalLayout {
-        spacing: AppConsts.trays-spacing;
-        title := HorizontalLayout {
-            height: 50px;
-            spacing: 2px;
+    spacing: AppConsts.trays-spacing;
+
+    title := HorizontalLayout {
+        height: 50px;
+        spacing: 2px;
+
+        Rectangle {
+            background: AppConsts.title-gradient;
+
+            if !is-ams: Text {
+                text: group.name;
+                font-size: 20px;
+                color: white;
+            }
 
             Rectangle {
-                background: AppConsts.title-gradient;
-                if !is_ams: Text {
-                    text: root.title;
-                    font-size: 20px;
-                    color: white;
-                }
+                border-width: 1px;
+                border-color: black;
+            }
 
-                Rectangle {
-                    border-width: 1px;
-                    border-color: black;
-                }
-
-                if is_ams: HorizontalLayout {
-                    for ams-id in AppState.ams-exists: AmsButton {
-                        height: parent.height;
-                        // width: self.height;
-                        ams-id: ams-id;
-                        trays-state: trays-state;
-                        active: AppState.curr-ams-id == ams-id;
-                    }
-                }
-                if !is_ams: TouchArea {
-                    width: parent.width;
+            if is-ams: HorizontalLayout {
+                for slot-group[idx] in AppState.internal-slot-groups: AmsButton {
                     height: parent.height;
-                    clicked => {
-                        root.title-clicked()
-                    }
+                    group: slot-group;
+                    group-index: idx;
+                    active: AppState.current-internal-slot-group-index() == idx;
+                }
+            }
+
+            if !is-ams: TouchArea {
+                width: parent.width;
+                height: parent.height;
+                clicked => {
+                    root.title-clicked();
                 }
             }
         }
+    }
 
-        trays := HorizontalLayout {
-            alignment: center;
-            spacing: AppConsts.trays-spacing;
-            padding-left: 0px;
-            padding-right: 0px;
-            width: is_ams ? (reserve-external-area ? FrameworkState.display-width - (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5 - AppConsts.trays-spacing : FrameworkState.display-width) : (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
-            for index in tray_numbers: Tray {
-                is-in-ams: is_ams;
-                // visible: AppState.selected-tray-index == -1 || AppState.selected-tray-index == index;
-                tray-state: trays-state[index];
-                clicked() => { // ? TODO: Think if to move into the tray component
-                    if AppState.control-state == ControlState.TraySelect {
-                        AppBackend.set-staging-to-tray(trays-state[index].id);
-                    } else if (AppState.control-state == ControlState.Ready || AppState.control-state == ControlState.PostAction) {
-                        AppState.tray-selected(index);
-                    }
+    slots := HorizontalLayout {
+        alignment: center;
+        spacing: AppConsts.trays-spacing;
+        padding-left: 0px;
+        padding-right: 0px;
+        width: is-ams ? (reserve-external-area ? FrameworkState.display-width - (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5 - AppConsts.trays-spacing : FrameworkState.display-width) : (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
+
+        for slot in group.slots: SlotCard {
+            is-in-ams: is-ams;
+            slot: slot;
+            clicked => {
+                if AppState.control-state == ControlState.TraySelect {
+                    AppBackend.set-staging-to-slot(slot.id);
+                } else if AppState.control-state == ControlState.Ready || AppState.control-state == ControlState.PostAction {
+                    AppState.slot-selected(slot);
                 }
+            }
+        }
+    }
+}
+
+component GenericSlot inherits Rectangle {
+    in property <UiSlot> slot;
+
+    height: 52px;
+    property <bool> has-known-color: slot.filament.state == UiFilamentState.Known && slot.filament.colors.length > 0;
+    background: has-known-color ? #00000000 : white;
+    border-width: area.pressed || (AppState.control-state == ControlState.TraySelect && AppState.curr-printer-can-configure-slot()) || slot.used-in-print ? 3px : 1px;
+    border-color: slot.used-in-print ? #001dff : black;
+
+    if has-known-color && slot.filament-has-alpha: Image {
+        image-fit: preserve;
+        horizontal-alignment: left;
+        vertical-alignment: top;
+        width: parent.width;
+        height: parent.height;
+        source: AppState.color-checkerboard-bg;
+    }
+
+    if has-known-color: HorizontalLayout {
+        width: parent.width;
+        height: parent.height;
+        spacing: 0px;
+        for stripe-color in slot.filament.colors: Rectangle {
+            horizontal-stretch: 1;
+            background: stripe-color;
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 8px;
+
+        Rectangle {
+            width: 68px;
+            MyText {
+                text: slot.name;
+                horizontal-alignment: left;
+                vertical-alignment: center;
+                color: has-known-color ? Utils.contrasting_color(slot.filament.colors[0]) : black;
+            }
+        }
+
+        Rectangle {
+            MyText {
+                text: slot.filament.material == "" || slot.filament.state == UiFilamentState.Unknown ? slot.state-label : slot.filament.material;
+                horizontal-alignment: left;
+                vertical-alignment: center;
+                color: has-known-color ? Utils.contrasting_color(slot.filament.colors[0]) : black;
+            }
+        }
+
+        Rectangle {
+            width: AppState.control-state == ControlState.TraySelect ? 74px : 60px;
+            MyText {
+                text: slot.spool-id;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+                color: has-known-color ? Utils.contrasting_color(slot.filament.colors[0]) : black;
+            }
+        }
+
+        if AppState.control-state != ControlState.TraySelect: MyButton {
+            width: 72px;
+            height: parent.height;
+            text: "Untag";
+            enabled: slot.spool-id != "" && AppState.curr-printer-can-unassign-slot();
+            clicked => {
+                AppBackend.unassign-slot(slot.id);
+            }
+        }
+
+        if AppState.control-state != ControlState.TraySelect: MyButton {
+            width: 70px;
+            height: parent.height;
+            text: "Reset";
+            enabled: AppState.curr-printer-can-clear-slot();
+            clicked => {
+                AppBackend.reset-slot(slot.id);
+            }
+        }
+    }
+
+    area := TouchArea {
+        width: parent.width;
+        height: parent.height;
+        enabled: AppState.control-state == ControlState.TraySelect && AppState.curr-printer-can-configure-slot();
+        clicked => {
+            AppBackend.set-staging-to-slot(slot.id);
+        }
+    }
+}
+
+export component BambuSlotGroups inherits HorizontalLayout {
+    spacing: AppConsts.trays-spacing;
+
+    if AppState.internal-slot-groups.length > 0: SlotGroupPanel {
+        is-ams: true;
+        reserve-external-area: AppState.external-slot-groups.length > 0;
+        group: AppState.internal-slot-groups[AppState.current-internal-slot-group-index()];
+    }
+
+    if AppState.external-slot-groups.length > 0: SlotGroupPanel {
+        is-ams: false;
+        group: AppState.external-slot-groups[AppState.current-external-slot-group-index()];
+        title-clicked => {
+            if AppState.external-slot-groups.length > 1 {
+                AppState.displayed-external-slot-group = Math.mod(AppState.displayed-external-slot-group + 1, AppState.external-slot-groups.length);
+            }
+        }
+    }
+}
+
+export component GenericSlotGroups inherits Rectangle {
+    width: FrameworkState.display-width;
+    background: white;
+
+    VerticalLayout {
+        spacing: AppConsts.trays-spacing;
+        for group in AppState.slot-groups: VerticalLayout {
+            spacing: 2px;
+            Title {
+                text: group.name;
+                text-color: white;
+                background: AppConsts.title-gradient;
+            }
+            for slot in group.slots: GenericSlot {
+                slot: slot;
             }
         }
     }

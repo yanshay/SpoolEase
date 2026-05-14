@@ -3,7 +3,7 @@ import { SelectorOption } from "framework/widgets.slint";
 import { SelectorOptionsList } from "framework/widgets.slint";
 // Types
 
-export enum UiTrayState { Unknown, Empty, Spool, Reading, Ready, Loading, Unloading, Loaded }
+export enum UiSlotState { Unknown, Empty, Spool, Reading, Ready, Loading, Unloading, Loaded }
 // Spool - Spool entered the slot but not yet processed by AMS, so not ready yet
 // Ready - there is a spool, it is not loaded to the extruder now
 // Loading - during the process of loading into the extruder
@@ -21,22 +21,7 @@ export struct Printer {
     can_unassign_slot: bool,
 }
 
-export struct UiGenericSlot {
-  id: string,
-  name: string,
-  state: string,
-  material: string,
-  spool_id: string,
-  colors: [color],
-  colors_have_alpha: bool,
-  used_in_print: bool,
-}
-
-export struct UiGenericSlotGroup {
-  name: string,
-  kind: string,
-  slots: [UiGenericSlot],
-}
+export enum UiSlotGroupKind { Other, InternalChanger, External, Toolhead, Virtual }
 
 export struct UiFilament {
   state: UiFilamentState,
@@ -44,20 +29,27 @@ export struct UiFilament {
   material: string,
 }
 
-export struct UiTray {
-  id: int,
+export struct UiSlot {
+  id: string,
   name: string,
-  external: bool,
-  spool-state: UiTrayState,
+  state: UiSlotState,
+  state-label: string,
   filament: UiFilament,
-  tray-has-alpha: bool,
+  filament-has-alpha: bool,
   spool-has-alpha: bool,
   spool-colors: [color],
   k: string,
   tagged: bool,
   weight-display: string,
   used-in-print: bool,
-  spool_rec_id: string,
+  spool-id: string,
+}
+
+export struct UiSlotGroup {
+  id: string,
+  name: string,
+  kind: UiSlotGroupKind,
+  slots: [UiSlot],
 }
 
 export struct UiSpoolRecord {
@@ -171,10 +163,9 @@ export enum SpoolStagingState {
 // Functions to call rust
 export global AppBackend {
     callback clear-staging();
-    callback set-staging-to-tray(tray-id: int);
-    callback set-staging-to-generic-slot(slot-id: string);
-    callback reset-generic-slot(slot-id: string);
-    callback unassign-generic-slot(slot-id: string);
+    callback set-staging-to-slot(slot-id: string);
+    callback reset-slot(slot-id: string);
+    callback unassign-slot(slot-id: string);
     callback encode-tag() -> bool;
     callback read-tag-mode();
     callback web-config-web-app();
@@ -191,7 +182,7 @@ export global AppBackend {
     pure callback recently_added_spool_id_if_untagged() -> string;
     pure callback get-spool-record-display(spool-id: string) -> UiSpoolRecordDisplay;
     pure callback get-spool-tag-definition-display(tag-definition-type: string, tag-definition-info: string, empty-spool-weight: int) -> UiSpoolRecordDisplay;
-    pure callback get-slot-display(tray-id: int) -> UiSlotDisplay;
+    pure callback get-slot-display(slot-id: string) -> UiSlotDisplay;
     pure callback spool-tag-count(spool-id: string) -> int;
     pure callback staging-scanned-tag-id() -> string;
     callback can-link-untagged-spool-to-tag(id: string) -> string; // empty if untagged, error text if not
@@ -199,9 +190,7 @@ export global AppBackend {
     callback add-v1-tag-to-inventory(tag_id: string, tag_descriptor: string, final-step: bool);
     callback erase-tag(tag_id: string) -> bool;
     callback erase-staging-tag() -> bool;
-    callback untag-slot(tray-id: int);
-    callback reset-slot(tray-id: int);
-    callback configure-slot-with-spool-id(tray-id: int, spool-id: string);
+    callback configure-slot-with-spool-id(slot-id: string, spool-id: string);
     callback ota-check-firmwares();
     callback ota-update-firmware(product: string, train: string);
     callback encode-location-tag();
@@ -310,7 +299,6 @@ export global AppState {
     in-out property <int> circle-checkerboard-offset-x: 0;
     in-out property <int> circle-checkerboard-offset-y: 0;
 
-    in-out property <[UiTray]> trays-state: self.empty-trays-state();
     in-out property <bool> select-printer: false;
     in-out property <ControlState> control-state: ControlState.Booting;
     changed control-state => {
@@ -340,11 +328,10 @@ export global AppState {
     in-out property <int> manual-storage-container: 0;
 
     // Global state for TraySelected Control-State
-    in-out property <int> tray-selected-tray-index: -1;
+    in-out property <UiSlot> selected-slot;
 
     in-out property <SpoolStagingState> spool-staging-state: SpoolStagingState.Empty;
     in-out property <UiSpoolRecordDisplay> spool-staging-info;
-    in-out property <int> staging-to-tray: -1; // tray that needs to be updated with filament when recognizing on backend tray is reading
     in-out property <bool> reset-staging-countdown: false;
 
     in-out property <string> user-message: "Booting ...";
@@ -357,18 +344,14 @@ export global AppState {
     in-out property <int> encode-timeout: 999;
     in-out property <int> erase-timeout: 999;
 
-    in-out property <int> curr-ams-id: 0;
-    in-out property <[int]> ams-exists: [0];
-    in-out property <[string]> ams-titles: ["AMS - 1"];
-    in-out property <bool> has-external-slot-area: true;
-    in-out property <[string]> external-slot-titles: ["External"];
-
     in-out property <bool> no-printers-configured: false;
     in-out property <int> curr-printer: -1;
-    in-out property <int> num-extruders: 1;
-    in-out property <int> displayed-extruder: 0;
     in-out property <[Printer]> available-printers: [];
-    in-out property <[UiGenericSlotGroup]> generic-slot-groups: [];
+    in-out property <[UiSlotGroup]> slot-groups: [];
+    in-out property <[UiSlotGroup]> internal-slot-groups: [];
+    in-out property <[UiSlotGroup]> external-slot-groups: [];
+    in-out property <int> selected-internal-slot-group: 0;
+    in-out property <int> displayed-external-slot-group: 0;
     in-out property <int> default-printer: -1;
     in-out property <int> pending-curr-printer: -1;
     pure public function curr-printer-name() -> string {
@@ -434,20 +417,18 @@ export global AppState {
         }
     }
 
-    pure public function curr-ams-title() -> string {
-        if curr-ams-id >= 0 && curr-ams-id < ams-titles.length {
-            return ams-titles[curr-ams-id];
-        } else {
-            return "AMS - " + (curr-ams-id + 1);
+    pure public function current-internal-slot-group-index() -> int {
+        if selected-internal-slot-group >= 0 && selected-internal-slot-group < internal-slot-groups.length {
+            return selected-internal-slot-group;
         }
+        return 0;
     }
 
-    pure public function curr-external-slot-title() -> string {
-        if has-external-slot-area && displayed-extruder >= 0 && displayed-extruder < external-slot-titles.length {
-            return external-slot-titles[displayed-extruder];
-        } else {
-            return "External";
+    pure public function current-external-slot-group-index() -> int {
+        if displayed-external-slot-group >= 0 && displayed-external-slot-group < external-slot-groups.length {
+            return displayed-external-slot-group;
         }
+        return 0;
     }
 
     changed pending-curr-printer => {
@@ -467,48 +448,57 @@ export global AppState {
     in-out property <bool> highlight-trays: false;
     in-out property <bool> highlight-staging: false;
     in-out property <int> highlight-tray: -1;
+    in-out property <string> highlight-slot-id: "";
     in-out property <bool> highlight-tray-flash: false;
     out property <int> highlight-tray-counter-length: 20;
     in-out property <int> highlight-tray-counter: highlight-tray-counter-length;
 
-    public pure function ui-tray-spool-state-name(state: UiTrayState) -> string {
-        if state == UiTrayState.Unknown {
+    public pure function ui-slot-state-name(state: UiSlotState) -> string {
+        if state == UiSlotState.Unknown {
             return "Unknown";
         }
-        if state == UiTrayState.Empty {
+        if state == UiSlotState.Empty {
             return "Slot is Empty";
         }
-        if state == UiTrayState.Spool {
+        if state == UiSlotState.Spool {
             return "Spool Placed";
         }
-        if state == UiTrayState.Reading {
+        if state == UiSlotState.Reading {
             return "Reading Filament Information";
         }
-        if state == UiTrayState.Ready {
+        if state == UiSlotState.Ready {
             return "Spool in Slot, Idle";
         }
-        if state == UiTrayState.Loading {
+        if state == UiSlotState.Loading {
             return "Retracting From Extruder";
         }
-        if state == UiTrayState.Unloading {
+        if state == UiSlotState.Unloading {
             return "Loading Into Extruder";
         }
-        if state == UiTrayState.Loaded {
+        if state == UiSlotState.Loaded {
             return "In Extruder";
         }
         return "-";
     }
 
+    public function start-highlight-slot(slot-id: string) {
+        self.highlight-slot-id = slot-id;
+        self.highlight-tray-counter = highlight-tray-counter-length;
+    }
+
     public function start-highlight-tray(tray-id: int) {
         self.highlight-tray = tray-id;
+        self.highlight-slot-id = "bambu:\{tray-id}";
         self.highlight-tray-counter = highlight-tray-counter-length;
     }
     public function start-highlight-tray-forever(tray-id: int) {
         self.highlight-tray = tray-id;
+        self.highlight-slot-id = "bambu:\{tray-id}";
         self.highlight-tray-counter = -1; // number even/odd to sync this tray flashing with other flashings
     }
     public function stop-highlight-tray() {
         AppState.highlight-tray = -1;
+        AppState.highlight-slot-id = "";
         AppState.highlight-tray-flash = false;
         AppState.highlight-tray-counter = AppState.highlight-tray-counter-length;
     }
@@ -662,8 +652,6 @@ export global AppState {
         self.user-message-type = StatusType.Success;
     }
 
-    // ams-id here is as follows : 0..3 (normal), 4.. (HT), 255 (external)
-    // tray-id is the tray number inside the AMS (in HT all are 0) or 254/255 for external
     public function tray-update-succeeded(printer: int, configured-entity: string, tray-id: int) {
         self.control-state = ControlState.PostAction;
         self.user-message = "Configured Successfully\n\{configured-entity}";
@@ -674,42 +662,18 @@ export global AppState {
         }
     }
 
-    pure public function get_tray_id(ams-id: int, tray-id: int) -> int {
-        if ams-id <= 3 {
-            return ams-id * 4 + tray-id;
-        }
-        if ams-id <= 3 + 8 {
-            return 16 + ams-id - 4;
-        }
-        return ams-id; // 254 or 255
-    }
-
-    pure public function get_tray_index(ams-id: int, tray-id: int) -> int {
-        if ams-id <= 3 {
-            return ams-id * 4 + tray-id + 2;
-        }
-        if ams-id <= 3 + 8 {
-            return 16 + ams-id - 4 + 2;
-        }
-        if ams_id == 254 {
-            return 1;
-        } else {
-            return 0;
-        }
-    }
-
     public function staging-selected() {
         self.staging-operation-page = StagingOperationsPage.SpoolDisplay;
         self.control-state = ControlState.StagingSelected;
     }
 
-    public function tray-selected(tray-index: int) {
-        self.tray-selected-tray-index = tray-index;
+    public function slot-selected(slot: UiSlot) {
+        self.selected-slot = slot;
         self.control-state = ControlState.TraySelected;
     }
 
     public function prompt-select-tray() {
-        self.tray-selected-tray-index = -1;
+        self.selected-slot = { };
         AppState.control-state = ControlState.Ready;
     }
 
@@ -1128,520 +1092,4 @@ export global AppState {
         return self.firmwares.console-unstable-newer || self.firmwares.scale-unstable-newer;
     }
 
-    function empty-trays-state() -> [UiTray] {
-        return [
-  // External (Right)
-            {
-                id: 255,
-                name: "Ext-R",
-                external: true,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-
-  // External (Right)
-            {
-                id: 254,
-                name: "Ext-L",
-                external: true,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-
-  // AMS: 0
-            {
-                id: 0,
-                name: "A1",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-            {
-                id: 1,
-                name: "A2",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-            {
-                id: 2,
-                name: "A3",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-            {
-                id: 3,
-                name: "A4",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-
-  // AMS 1
-            {
-                id: 4,
-                name: "B1",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-            {
-                id: 5,
-                name: "B2",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-            {
-                id: 6,
-                name: "B3",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-            {
-                id: 7,
-                name: "B4",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-  // AMS 2
-            {
-                id: 8,
-                name: "C1",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-            {
-                id: 9,
-                name: "C2",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-            {
-                id: 10,
-                name: "C3",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-            {
-                id: 11,
-                name: "C4",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-  // AMS 3
-            {
-                id: 12,
-                name: "D1",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-            {
-                id: 13,
-                name: "D2",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-            {
-                id: 14,
-                name: "D3",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-            {
-                id: 15,
-                name: "D4",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-  // AMS-HT: 4
-            {
-                id: 16,
-                name: "HT-1",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-  // AMS-HT: 5
-            {
-                id: 17,
-                name: "HT-2",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-  // AMS-HT: 6
-            {
-                id: 18,
-                name: "HT-3",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-  // AMS-HT: 7
-            {
-                id: 19,
-                name: "HT-4",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-
-  // AMS-HT: 8
-        {
-                id: 20,
-                name: "HT-5",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-  // AMS-HT: 9
-            {
-                id: 21,
-                name: "HT-6",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-  // AMS-HT: 10 
-            {
-                id: 22,
-                name: "HT-7",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-  // AMS-HT: 11 
-            {
-                id: 23,
-                name: "HT-8",
-                external: false,
-                spool-state: UiTrayState.Unknown,
-                filament: {
-                    state: UiFilamentState.Unknown,
-                    colors: [#000],
-                    material: "???",
-                },
-                tray-has-alpha: false,
-                spool-has-alpha: false,
-                spool-colors: [],
-                k: -1.0,
-                tagged: false,
-                spool_rec_id: "",
-                weight-display: "",
-                used-in-print: false,
-            },
-        ];
-    }
 }

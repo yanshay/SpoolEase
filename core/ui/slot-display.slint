@@ -1,11 +1,11 @@
 import { MyText } from "framework/widgets.slint";
 import { LabeledText } from "app-widgets.slint";
 import {
-    UiTray,
-    UiTrayState,
-    AppState,
     AppBackend,
+    AppState,
+    UiSlot,
     UiSlotDisplay,
+    UiSlotState,
 } from "app.slint";
 
 component LabeledInfo inherits LabeledText {
@@ -14,9 +14,8 @@ component LabeledInfo inherits LabeledText {
 
 export component SlotDisplay inherits Rectangle {
     background: white;
-    in property <int> slot-index;
-    property <UiTray> tray: AppState.trays-state[slot-index];
-    property <UiSlotDisplay> display: AppBackend.get-slot-display(tray.id);
+    in property <UiSlot> slot;
+    property <UiSlotDisplay> display: AppBackend.get-slot-display(slot.id);
 
     VerticalLayout {
         alignment: stretch;
@@ -32,9 +31,9 @@ export component SlotDisplay inherits Rectangle {
 
         LabeledInfo {
             vertical-stretch: 1;
-            property <UiTrayState> state: tray.spool-state;
+            property <UiSlotState> state: slot.state;
             label: "State:";
-            text: AppState.ui-tray-spool-state-name(tray.spool-state);
+            text: AppState.ui-slot-state-name(slot.state);
         }
 
         LabeledInfo {

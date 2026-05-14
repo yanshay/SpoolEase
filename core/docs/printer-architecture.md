@@ -622,17 +622,17 @@ Target:
 
 ### Slint Coupling
 
-Current Slint types and callbacks are Bambu-shaped:
+Original Slint types and callbacks were Bambu-shaped:
 
-- `UiTray` uses integer `id` matching Bambu tray IDs.
-- `trays-state` is initialized with Bambu fixed slots.
-- `curr-ams-id` and `ams-exists` assume AMS paging.
-- `get_tray_id()` and `get_tray_index()` encode Bambu mappings.
-- Tray operations use `tray-id: int`.
+- `UiTray` used integer `id` matching Bambu tray IDs.
+- `trays-state` was initialized with Bambu fixed slots.
+- `curr-ams-id` and `ams-exists` assumed AMS paging.
+- `get_tray_id()` and `get_tray_index()` encoded Bambu mappings.
+- Tray operations used `tray-id: int`.
 - UI displays K directly.
 - New tag scan includes explicit Bambu Lab flows.
 
-This cannot support arbitrary printer topologies.
+The current Slint slot surface now uses `UiSlotGroup` / `UiSlot` with opaque string slot IDs. The Bambu AMS/external visual layout is still specialized, but it is fed by backend slot groups rather than fixed Slint tray rows.
 
 Target Slint model:
 
@@ -1212,42 +1212,39 @@ Printer ID policy:
 
 Slint must become dynamic, but this should be staged.
 
-### Current Problem
+### Original Problem
 
-`ui/app.slint` hardcodes Bambu tray state:
+`ui/app.slint` originally hardcoded Bambu tray state:
 
-- `empty-trays-state()` returns 26 fixed entries: two external plus 24 AMS/HT slots.
+- `empty-trays-state()` returned 26 fixed entries: two external plus 24 AMS/HT slots.
 - `get_tray_id()` and `get_tray_index()` encode Bambu mappings.
 - `curr-ams-id` and `ams-exists` drive AMS paging.
 - `Trays` and `AmsButton` assume Bambu AMS slot counts.
 
-### Target UI Model
+### Implemented UI Model
 
-Replace fixed tray state with dynamic printer slot groups.
+Fixed tray state was replaced with dynamic printer slot groups.
 
-Conceptual Slint structs:
+Current Slint structs:
 
 ```slint
-export struct UiPrinterSlotGroup {
+export struct UiSlotGroup {
     id: string,
     name: string,
-    kind: string,
-    extruder: int,
-    temp: float,
-    humidity: int,
-    slots: [UiMaterialSlot],
+    kind: UiSlotGroupKind,
+    slots: [UiSlot],
 }
 
-export struct UiMaterialSlot {
+export struct UiSlot {
     id: string,
     name: string,
-    state: UiTrayState,
+    state: UiSlotState,
     filament: UiFilament,
-    spool-rec-id: string,
+    spool-id: string,
     tagged: bool,
     weight-display: string,
     used-in-print: bool,
-    pa: string,
+    k: string,
 }
 ```
 
@@ -1262,9 +1259,9 @@ The visual layout should render groups generically:
 
 ### Transitional Slint Plan
 
-Phase 1 can keep current Slint and adapt generic Bambu snapshots back into existing `trays-state`. This keeps Bambu working while Rust architecture changes.
+Phase 1 kept current Slint and adapted generic Bambu snapshots back into existing `trays-state`. This kept Bambu working while Rust architecture changed.
 
-Phase 2 changes Slint to dynamic groups. At that point non-Bambu drivers can be represented.
+Phase 2 changed Slint to dynamic groups. Bambu and non-Bambu drivers are now represented through the same slot-group data contract.
 
 ## Web API Migration
 
@@ -1531,7 +1528,7 @@ Acceptance criteria:
 - `ViewModel` no longer implements product logic directly in `BambuPrinterObserver`, except inside a bridge.
 - Bambu UI updates still work.
 
-### Phase 6: Dynamic Slint Slot Groups [partial]
+### Phase 6: Dynamic Slint Slot Groups [mostly done]
 
 Replace hardcoded Bambu tray arrays with backend-provided slot groups.
 
@@ -1544,11 +1541,11 @@ Required Slint changes:
 
 Acceptance criteria:
 
-- Bambu AMS and external slots render correctly from snapshots.
-- No Slint hardcoded dependency on tray IDs `0..23`, `254`, `255` for logic.
-- [partial] UI can render a fake printer with arbitrary slot groups and basic capability-gated slot operations.
-- [partial] The current Bambu AMS/external row model is projected from `PrinterSnapshot.slot_groups` while preserving the existing fixed Bambu Slint layout.
-- [not done] Bambu AMS and external slots render from the generic slot-group view.
+- [done] Bambu AMS and external slots render from `PrinterSnapshot.slot_groups` through unified `UiSlotGroup` / `UiSlot` Slint data.
+- [done] The fixed `trays-state` / `empty-trays-state()` Slint model was removed.
+- [done] Main slot UI operations use opaque string slot IDs at the Slint/Rust boundary.
+- [done] UI can render a fake printer with arbitrary slot groups and basic capability-gated slot operations.
+- [done] Bambu AMS and external slots render through the same backend slot-group model while preserving the current Bambu visual layout.
 - [not done] Generic slot view supports pagination/scrolling for large slot counts.
 
 ### Phase 7: Replace Printer Status API and Client [not started]
@@ -1693,7 +1690,7 @@ Files to avoid changing early unless necessary:
 
 ## Suggested Immediate Next Steps
 
-1. [partial] Continue Slint dynamic slot group rendering from backend snapshots; non-Bambu assign/set-spool-id/reset/untag exists, and the current Bambu slot UI now gets titles/external visibility and fixed row state from snapshots, but Bambu generic rendering and scrolling/pagination are not done.
+1. [not done] Add scrolling/pagination or another large-topology layout for generic slot groups.
 2. [not done] Persist fake slot state across restarts.
 3. [not done] Bridge Bambu tray/snapshot changes carefully, or defer until fake driver pressures the dynamic UI model.
 4. [not done] Bridge consumption as generic slot/spool consumption notifications, keeping Bambu G-code analysis internal.
@@ -1721,6 +1718,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, generic `PrinterManager` storage, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, `ui_untag_slot` through `PrinterCommand::UnassignSpoolFromSlot`, `ui_reset_slot` through `PrinterCommand::ClearSlot`, `set_staging_to_tray_direct` and `configure_tray_with_spool_async` through `PrinterCommand::AssignMaterialToSlot`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan events, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a basic fake non-Bambu driver visible in web status, console-safe selection of generic printers, a generic non-Bambu slot view in Slint, Slint capability-gated assign/set-spool-id/reset/untag generic slot operations, a topology-driven external-area/title seam in the current Bambu slot UI, and snapshot projection into the current fixed Bambu `trays-state` row model.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, generic `PrinterManager` storage, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan events, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a basic fake non-Bambu driver visible in web status, console-safe selection of generic printers, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, Bambu AMS/external visuals driven by backend snapshot slot groups, and opaque string slot IDs for main Slint slot actions.
 
-Still not done: full `PrinterManager` ownership replacement, tray/snapshot event bridge, generic consumption reporting, Bambu rendering through the generic slot UI, paginated dynamic Slint slot groups, persisted generic fake slot state, and real non-Bambu driver.
+Still not done: full `PrinterManager` ownership replacement, tray/snapshot event bridge, generic consumption reporting, paginated/scrollable dynamic Slint slot groups for large topologies, persisted generic fake slot state, and real non-Bambu driver.

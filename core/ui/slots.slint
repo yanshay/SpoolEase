@@ -1,36 +1,17 @@
-import { Trays } from "trays.slint";
+import { FrameworkState } from "framework/framework.slint";
 import { AppConsts, AppState } from "app.slint";
+import { BambuSlotGroups, GenericSlotGroups } from "trays.slint";
 
 export component Slots inherits HorizontalLayout {
-    out property <length> slot-width: external.width;
+    out property <length> slot-width: (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
+    width: FrameworkState.display-width;
     spacing: AppConsts.trays-spacing;
-                            // Separating the external tray from the ams trays so can scroll the ams trays in case of several ams's
-                            if AppState.ams-exists.length > 0: 
-    ams := Trays {
-        is_ams: true;
-        reserve-external-area: AppState.has-external-slot-area;
-        title: AppState.curr-ams-title();
-        include-paging-left: false;
-        include-paging-right: false;
-        tray_numbers: AppState.curr-ams-id <= 3 ? [
-            AppState.get_tray_index(AppState.curr-ams-id, 0),
-            AppState.get_tray_index(AppState.curr-ams-id, 1),
-            AppState.get_tray_index(AppState.curr-ams-id, 2),
-            AppState.get_tray_index(AppState.curr-ams-id, 3),
-        ] : [AppState.get_tray_index(AppState.curr-ams-id, 0)];
-        trays-state: AppState.trays-state;
+
+    if AppState.curr-printer-is-bambu(): BambuSlotGroups {
+        width: parent.width;
     }
 
-    external := Trays {
-        is_ams: false;
-        visible: AppState.has-external-slot-area;
-        title: AppState.curr-external-slot-title();
-        tray_numbers: [AppState.displayed-extruder];
-        trays-state: AppState.trays-state;
-        title-clicked => {
-            if AppState.external-slot-titles.length > 1 {
-                AppState.displayed-extruder = 1 - AppState.displayed-extruder;
-            }
-        }
+    if !AppState.curr-printer-is-bambu(): GenericSlotGroups {
+        width: parent.width;
     }
 }
