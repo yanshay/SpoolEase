@@ -1435,7 +1435,7 @@ Current migration status:
 - [done] Adapter exposes Bambu capabilities.
 - [done] Adapter preserves compact `/api/printers-status` slot string output through compatibility conversion in `ViewModel`.
 
-### Phase 3: Introduce PrinterManager Behind ViewModel [not started]
+### Phase 3: Introduce PrinterManager Behind ViewModel [partial]
 
 Add `PrinterManager` and initialize Bambu printers through it.
 
@@ -1449,9 +1449,14 @@ Acceptance criteria:
 
 Current migration status:
 
-- [not started] `PrinterManager` does not exist yet.
+- [done] Added `src/printer/manager.rs` with a minimal `PrinterManager` bridge.
+- [done] `ViewModel` owns a `RefCell<PrinterManager>`.
+- [done] Bambu printers are added to `PrinterManager` during existing Bambu initialization.
+- [done] Selected printer index is mirrored into `PrinterManager` when the UI selects a printer.
+- [done] `/api/printers-status`, `ui_untag_slot`, and `ui_reset_slot` use `PrinterManager` instead of constructing `BambuPrinterDriver` directly.
 - [not started] `ViewModel` still stores `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>`.
-- [not started] Some flows directly construct `BambuPrinterDriver` as a temporary migration bridge.
+- [not done] `ViewModel` still uses direct Bambu access for many unreworked flows.
+- [not done] `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` is still the primary printer-facing field for those unreworked flows.
 
 ### Phase 4: Route Commands Through Generic Printer Commands [partial]
 
@@ -1648,10 +1653,10 @@ Files to avoid changing early unless necessary:
 
 ## Suggested Immediate Next Steps
 
-1. [not done] Introduce `PrinterManager` behind `ViewModel`, or explicitly decide to finish remaining Phase 4 command routing before Phase 3.
-2. [not done] Route `set_staging_to_tray_direct` through generic printer commands.
-3. [not done] Route `configure_tray_with_spool_async` through generic printer commands.
-4. [not done] Route web `/api/printer-command` through generic printer commands.
+1. [not done] Route `set_staging_to_tray_direct` through generic printer commands via `PrinterManager`.
+2. [not done] Route `configure_tray_with_spool_async` through generic printer commands via `PrinterManager`.
+3. [not done] Route web `/api/printer-command` through generic printer commands via `PrinterManager`.
+4. [not done] Continue reducing direct `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` use where a migrated generic path exists.
 5. [not done] Add generic printer event bridge after command routing is stable.
 6. [not done] Start Slint dynamic slot group work only after Bambu flows remain stable through the generic layer.
 
@@ -1677,6 +1682,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, `/api/printers-status` read projection through the adapter while preserving compact output, `ui_untag_slot` through `PrinterCommand::UnassignSpoolFromSlot`, and `ui_reset_slot` through `PrinterCommand::ClearSlot`.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, minimal `PrinterManager` bridge, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, `ui_untag_slot` through `PrinterCommand::UnassignSpoolFromSlot`, and `ui_reset_slot` through `PrinterCommand::ClearSlot`.
 
-Still not done: `PrinterManager`, material slot assignment routing, web print-command routing, generic event bridge, dynamic Slint slot groups, generic config/state, fake non-Bambu driver, and real non-Bambu driver.
+Still not done: full `PrinterManager` ownership replacement, material slot assignment routing, web print-command routing, generic event bridge, dynamic Slint slot groups, generic config/state, fake non-Bambu driver, and real non-Bambu driver.

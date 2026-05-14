@@ -1,0 +1,50 @@
+use alloc::{format, rc::Rc, string::ToString, vec::Vec};
+use core::cell::RefCell;
+
+use crate::bambu::BambuPrinter;
+
+use super::{
+    PrinterCommand, PrinterDriver, PrinterError, PrinterResult, PrinterSnapshot, bambu_adapter::BambuPrinterDriver,
+};
+
+#[derive(Default)]
+pub struct PrinterManager {
+    printers: Vec<BambuPrinterDriver>,
+    selected_index: Option<usize>,
+}
+
+impl PrinterManager {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_bambu_printer(&mut self, printer: Rc<RefCell<BambuPrinter>>) {
+        self.printers.push(BambuPrinterDriver::new(printer));
+        if self.selected_index.is_none() {
+            self.selected_index = Some(0);
+        }
+    }
+
+    pub fn set_selected_index(&mut self, index: usize) -> PrinterResult<()> {
+        if index < self.printers.len() {
+            self.selected_index = Some(index);
+            Ok(())
+        } else {
+            Err(PrinterError::PrinterUnavailable(format!("printer index {index}")))
+        }
+    }
+
+    pub fn snapshot_at(&self, index: usize) -> Option<PrinterSnapshot> {
+        self.printers.get(index).map(PrinterDriver::snapshot)
+    }
+
+    pub fn dispatch_selected(&mut self, command: PrinterCommand) -> PrinterResult<()> {
+        let selected_index = self
+            .selected_index
+            .ok_or_else(|| PrinterError::PrinterUnavailable("no selected printer".to_string()))?;
+        self.printers
+            .get_mut(selected_index)
+            .ok_or_else(|| PrinterError::PrinterUnavailable(format!("printer index {selected_index}")))?
+            .dispatch(command)
+    }
+}

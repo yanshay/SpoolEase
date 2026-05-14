@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 pub mod bambu_adapter;
+pub mod manager;
 
 use alloc::{
     rc::Weak,
