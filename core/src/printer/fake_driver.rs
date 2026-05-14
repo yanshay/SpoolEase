@@ -11,7 +11,7 @@ use crate::app_config::FakePrinterConfig;
 use super::{
     DriverData, ExtruderSnapshot, MaterialSlotSnapshot, PressureAdvanceCapability, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange,
     PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError, PrinterFilament, PrinterFilamentInfo, PrinterId,
-    PrinterObserver, PrinterResult, PrinterSnapshot, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    PrinterObserver, PrinterResult, PrinterSnapshot, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
 };
 
 pub struct FakePrinterDriver {
@@ -89,6 +89,10 @@ impl PrinterDriver for FakePrinterDriver {
         PrinterCapabilities {
             material_slot_read: true,
             material_slot_write: true,
+            material_slot_assign: true,
+            material_slot_set_spool_id: true,
+            material_slot_clear: true,
+            material_slot_unassign_spool: true,
             print_status_read: true,
             print_control: false,
             consumption_tracking: false,
@@ -136,19 +140,21 @@ impl PrinterDriver for FakePrinterDriver {
     fn dispatch(&mut self, command: PrinterCommand) -> PrinterResult<()> {
         match command {
             PrinterCommand::Refresh => Ok(()),
-            PrinterCommand::AssignMaterialToSlot { slot_id, spool, temps, .. } => {
+            PrinterCommand::AssignMaterialToSlot { slot_id, spool, temps, mode } => {
                 let slot = self.slot_mut(&slot_id)?;
-                slot.state = SlotState::Ready;
                 slot.spool_id = Some(spool.spool_rec.id.clone());
-                slot.filament = PrinterFilament::Known(PrinterFilamentInfo {
-                    material_type: spool.spool_rec.material_type.clone(),
-                    material_subtype: spool.spool_rec.material_subtype.clone(),
-                    brand: spool.spool_rec.brand.clone(),
-                    color_name: spool.spool_rec.color_name.clone(),
-                    color_codes: spool.spool_rec.color_code.clone(),
-                    slicer_filament: spool.spool_rec.slicer_filament.clone(),
-                    temps,
-                });
+                if mode == SlotAssignMode::WritePrinterMaterial {
+                    slot.state = SlotState::Ready;
+                    slot.filament = PrinterFilament::Known(PrinterFilamentInfo {
+                        material_type: spool.spool_rec.material_type.clone(),
+                        material_subtype: spool.spool_rec.material_subtype.clone(),
+                        brand: spool.spool_rec.brand.clone(),
+                        color_name: spool.spool_rec.color_name.clone(),
+                        color_codes: spool.spool_rec.color_code.clone(),
+                        slicer_filament: spool.spool_rec.slicer_filament.clone(),
+                        temps,
+                    });
+                }
                 self.notify_slots_changed();
                 Ok(())
             }

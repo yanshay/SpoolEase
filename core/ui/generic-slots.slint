@@ -1,5 +1,5 @@
 import { FrameworkState } from "framework/framework.slint";
-import { MyText, Title } from "framework/widgets.slint";
+import { MyButton, MyText, Title } from "framework/widgets.slint";
 import { Utils } from "utils.slint";
 import { AppBackend, AppConsts, AppState, ControlState, UiGenericSlot } from "app.slint";
 
@@ -8,7 +8,7 @@ component GenericSlot inherits Rectangle {
 
     height: 52px;
     background: slot.colors.length > 0 ? #00000000 : white;
-    border-width: area.pressed || AppState.control-state == ControlState.TraySelect || slot.used_in_print ? 3px : 1px;
+    border-width: area.pressed || (AppState.control-state == ControlState.TraySelect && AppState.curr-printer-can-configure-slot()) || slot.used_in_print ? 3px : 1px;
     border-color: slot.used_in_print ? #001dff : black;
 
     if slot.colors.length > 0 && slot.colors_have_alpha: Image {
@@ -55,7 +55,7 @@ component GenericSlot inherits Rectangle {
         }
 
         Rectangle {
-            width: 74px;
+            width: AppState.control-state == ControlState.TraySelect ? 74px : 60px;
             MyText {
                 text: slot.spool_id;
                 horizontal-alignment: right;
@@ -63,15 +63,34 @@ component GenericSlot inherits Rectangle {
                 color: slot.colors.length > 0 ? Utils.contrasting_color(slot.colors[0]) : black;
             }
         }
+
+        if AppState.control-state != ControlState.TraySelect: MyButton {
+            width: 72px;
+            height: parent.height;
+            text: "Untag";
+            enabled: slot.spool_id != "" && AppState.curr-printer-can-unassign-slot();
+            clicked => {
+                AppBackend.unassign-generic-slot(slot.id);
+            }
+        }
+
+        if AppState.control-state != ControlState.TraySelect: MyButton {
+            width: 70px;
+            height: parent.height;
+            text: "Reset";
+            enabled: AppState.curr-printer-can-clear-slot();
+            clicked => {
+                AppBackend.reset-generic-slot(slot.id);
+            }
+        }
     }
 
     area := TouchArea {
         width: parent.width;
         height: parent.height;
+        enabled: AppState.control-state == ControlState.TraySelect && AppState.curr-printer-can-configure-slot();
         clicked => {
-            if AppState.control-state == ControlState.TraySelect {
-                AppBackend.set-staging-to-generic-slot(slot.id);
-            }
+            AppBackend.set-staging-to-generic-slot(slot.id);
         }
     }
 }

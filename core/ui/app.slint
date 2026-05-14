@@ -15,6 +15,10 @@ export struct Printer {
     name: string,
     connected: bool,
     kind: string,
+    can_assign_slot: bool,
+    can_set_spool_id: bool,
+    can_clear_slot: bool,
+    can_unassign_slot: bool,
 }
 
 export struct UiGenericSlot {
@@ -169,6 +173,8 @@ export global AppBackend {
     callback clear-staging();
     callback set-staging-to-tray(tray-id: int);
     callback set-staging-to-generic-slot(slot-id: string);
+    callback reset-generic-slot(slot-id: string);
+    callback unassign-generic-slot(slot-id: string);
     callback encode-tag() -> bool;
     callback read-tag-mode();
     callback web-config-web-app();
@@ -389,6 +395,42 @@ export global AppState {
         return curr-printer-kind() == "Bambu";
     }
 
+    pure public function curr-printer-can-assign-slot() -> bool {
+        if curr-printer != -1 && available-printers.length != 0 {
+            return available-printers[curr-printer].can_assign_slot;
+        } else {
+            return false;
+        }
+    }
+
+    pure public function curr-printer-can-set-spool-id() -> bool {
+        if curr-printer != -1 && available-printers.length != 0 {
+            return available-printers[curr-printer].can_set_spool_id;
+        } else {
+            return false;
+        }
+    }
+
+    pure public function curr-printer-can-configure-slot() -> bool {
+        return curr-printer-can-assign-slot() && curr-printer-can-set-spool-id();
+    }
+
+    pure public function curr-printer-can-clear-slot() -> bool {
+        if curr-printer != -1 && available-printers.length != 0 {
+            return available-printers[curr-printer].can_clear_slot;
+        } else {
+            return false;
+        }
+    }
+
+    pure public function curr-printer-can-unassign-slot() -> bool {
+        if curr-printer != -1 && available-printers.length != 0 {
+            return available-printers[curr-printer].can_unassign_slot;
+        } else {
+            return false;
+        }
+    }
+
     changed pending-curr-printer => {
         if pending-curr-printer != -1 {
             AppBackend.select-printer(pending-curr-printer);
@@ -587,6 +629,18 @@ export global AppState {
         self.control-state = ControlState.PostAction;
         self.user-message = "Failed to Configure\n\{configured-entity}\n\{err-txt}";
         self.user-message-type = StatusType.Error;
+    }
+
+    public function slot-operation-failed(operation: string, configured-entity: string, err-txt: string) {
+        self.control-state = ControlState.PostAction;
+        self.user-message = "Failed to " + operation + "\n\{configured-entity}\n\{err-txt}";
+        self.user-message-type = StatusType.Error;
+    }
+
+    public function slot-operation-succeeded(operation: string, configured-entity: string) {
+        self.control-state = ControlState.PostAction;
+        self.user-message = operation + " Succeeded\n\{configured-entity}";
+        self.user-message-type = StatusType.Success;
     }
 
     // ams-id here is as follows : 0..3 (normal), 4.. (HT), 255 (external)

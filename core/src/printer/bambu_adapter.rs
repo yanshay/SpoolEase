@@ -107,6 +107,10 @@ impl BambuPrinterDriver {
         PrinterCapabilities {
             material_slot_read: true,
             material_slot_write: true,
+            material_slot_assign: true,
+            material_slot_set_spool_id: true,
+            material_slot_clear: true,
+            material_slot_unassign_spool: true,
             print_status_read: true,
             print_control: true,
             consumption_tracking: printer.track_print_consume,
