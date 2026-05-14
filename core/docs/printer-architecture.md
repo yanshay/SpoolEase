@@ -71,7 +71,7 @@ Bambu currently tracks print consumption by:
 - Mapping gcode filament IDs to Bambu AMS/external slots.
 - Incrementing spool consumption from analyzed usage entries.
 
-That is Bambu-specific.
+That is Bambu-specific. G-code/3MF fetching, parsing, layer tracking, Bambu AMS mapping, and print resume state should stay hidden inside the Bambu driver/adapter. Do not make G-code parsing a generic printer feature.
 
 The generic concept is not "fetch G-code and track layers". The generic concept is:
 
@@ -447,6 +447,13 @@ Compatibility:
 - `use_ams == false` maps to external spool for some cases.
 
 This entire mechanism is Bambu-specific and should become a Bambu implementation of generic consumption reporting.
+
+Important boundary:
+
+- Keep G-code/3MF analysis under Bambu-specific code.
+- Do not require non-Bambu drivers to expose print files, G-code paths, layer telemetry, or Bambu-style AMS mappings.
+- The generic printer/application layer should receive consumption notifications, not analysis jobs.
+- If Bambu needs internal analysis events during migration, treat them as Bambu adapter internals or Bambu-specific extension events.
 
 ### Bambu Calibration
 
@@ -1295,6 +1302,7 @@ Bambu implementation:
 - Keep current gcode analysis and Bambu print tracking initially.
 - Convert final consumption increments into generic consumption events later.
 - Preserve print resume state while doing so.
+- Treat any `PrintFileAnalysisRequested`-style event as transitional Bambu-specific plumbing, not a required generic printer event.
 
 Other drivers:
 
