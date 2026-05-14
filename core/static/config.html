@@ -187,7 +187,7 @@
 
     <!-- Printer Settings Section -->
     <div class="section" id="printer-section">
-        <h2 class="section-title">Bambu Lab Printers Settings</h2>
+        <h2 class="section-title">Printer Settings</h2>
 
         <div id="printers-container">
           <!-- Printer forms will be added here dynamically -->
@@ -786,13 +786,15 @@ ProtoPasta 500g - Cardboard - 84g,84"
       function setupChangeListeners(sectionId, buttonId, feedbackLabelId) {
         const section = document.getElementById(sectionId);
         const applyButton = document.getElementById(buttonId);
-        section.addEventListener("input", () => {
+        const handleChange = () => {
           applyButton.disabled = false;
           if (feedbackLabelId) {
             const feedbackLabel = document.getElementById(feedbackLabelId);
             feedbackLabel.textContent = "";
           }
-        });
+        };
+        section.addEventListener("input", handleChange);
+        section.addEventListener("change", handleChange);
       }
 
       function togglePasswordVisibility(inputId, toggleButton) {
@@ -810,6 +812,55 @@ ProtoPasta 500g - Cardboard - 84g,84"
       // ==========================================
       // Printer Settings Functions
       // ==========================================
+      const BAMBU_DRIVER_KIND = "Bambu";
+
+      function isBambuDriverKind(driverKind) {
+        return (driverKind || BAMBU_DRIVER_KIND) === BAMBU_DRIVER_KIND;
+      }
+
+      function printerIdFromForm(form) {
+        const driverKind = form.querySelector(".driver-kind")?.value || BAMBU_DRIVER_KIND;
+        if (isBambuDriverKind(driverKind)) {
+          const serial = form.querySelector(".serial").value.trim();
+          return serial ? `bambu_printer_${serial}` : null;
+        }
+        return null;
+      }
+
+      function updatePrinterKindFields(form) {
+        const driverKind = form.querySelector(".driver-kind")?.value || BAMBU_DRIVER_KIND;
+        const isBambu = isBambuDriverKind(driverKind);
+
+        const serialLabel = form.querySelector(".serial-label-text");
+        if (serialLabel) {
+          serialLabel.textContent = isBambu ? "Serial Number: *" : "Printer ID: *";
+        }
+
+        const serialInput = form.querySelector(".serial");
+        if (serialInput) {
+          serialInput.placeholder = isBambu ? "Enter serial number" : "Enter stable printer ID";
+        }
+
+        const serialError = form.querySelector(".serial-error");
+        if (serialError) {
+          serialError.textContent = isBambu ? "Serial number is required" : "Printer ID is required";
+        }
+
+        const accessCodeRow = form.querySelector(".access-code-row");
+        if (accessCodeRow) {
+          accessCodeRow.style.display = isBambu ? "block" : "none";
+        }
+
+        form.querySelectorAll(".bambu-setting-row").forEach((row) => {
+          row.style.display = isBambu ? (row.classList.contains("bambu-flex-row") ? "flex" : "") : "none";
+        });
+
+        const advancedSection = form.querySelector(".printer-advanced-section");
+        if (advancedSection) {
+          advancedSection.style.display = isBambu && hasHashFlag("advanced") ? "block" : "none";
+        }
+      }
+
       // Template for the printer form
       function createPrinterTemplate(id, isRemovable = true) {
         const advancedMode = hasHashFlag("advanced");
@@ -825,12 +876,19 @@ ProtoPasta 500g - Cardboard - 84g,84"
                 </div>
 
                 <div class="form-row">
-                    <label>Serial Number: *</label>
+                    <label>Printer Type:<span>Configuration below depends on type</span></label>
+                    <select class="driver-kind" onchange="updatePrinterKindFields(this.closest('.printer-form'))" style="width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;">
+                      <option value="Bambu" selected>Bambu Lab</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label class="serial-label-text">Serial Number: *</label>
                     <input type="text" class="serial" placeholder="Enter serial number">
                     <div class="error-message serial-error">Serial number is required</div>
                 </div>
 
-                <div class="form-row">
+                <div class="form-row access-code-row">
                     <label>Access Code: *</label>
                     <input type="text" class="access-code" placeholder="Enter access code">
                     <div class="error-message access-code-error">Access code is required</div>
@@ -861,7 +919,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
                     <div class="error-message ip-error">IP requires name to be provided</div>
                 </div>
 
-                <div class = "form-row" style="display: flex; align-items: center; margin-top: 6px;">
+                <div class = "form-row bambu-setting-row bambu-flex-row" style="display: flex; align-items: center; margin-top: 6px;">
                   <label style="margin-top: 0px; margin-bottom:0px; padding-left: 2px;">Printer Mode</label>
                     <select class="printer-mode" style="flex-grow: 1; padding-right: 12px; height: 20px; font-size: 1rem; margin-left: 12px;">
                     <option value="Auto" selected>Auto Recognize</option>
@@ -869,7 +927,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
                     <option value="Cloud">Cloud Mode</option>
                   </select>
                 </div>
-                <div class = "form-row" style="display: flex; align-items: center; margin-top: 6px;">
+                <div class = "form-row bambu-setting-row bambu-flex-row" style="display: flex; align-items: center; margin-top: 6px;">
                   <label style="margin-top: 0px; margin-bottom:0px; padding-left: 2px;">Use AMS scanned tags</label>
                     <select class="use-ams-scan" style="flex-grow: 1; padding-right: 12px; height: 20px; font-size: 1rem; margin-left: 12px;">
                     <option value="SpoolIdAndConfigure">For Spool-Id &amp; Slot Config</option>
@@ -877,7 +935,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
                     <option value="Disabled" selected>Disabled</option>
                   </select>
                 </div>
-                <div class = "form-row" style="margin-top: 6px;">
+                <div class = "form-row bambu-setting-row" style="margin-top: 6px;">
                   <div style="display: flex; align-items: center; margin-bottom: 0px; margin-top: 0px; padding-bottom: 0px;">
                     <input class="track-print-consume" type="checkbox" id="tack-print-consume" checked>
                     <label for="track-print-consume" style="margin-top: 0px; margin-bottom:0px; padding-left: 2px;">Track Prints Filament Consumption</label>
@@ -890,14 +948,14 @@ ProtoPasta 500g - Cardboard - 84g,84"
                     </select>
                   </div>
                 </div>
-                <div class = "form-row">
+                <div class = "form-row bambu-setting-row">
                   <div style="display: flex; align-items: center; margin-bottom: 0px;">
                     <input class="auto-restore-k" type="checkbox" id="auto-restore-k">
                     <label for="auto-restore-k" style="margin-top: 0px; margin-bottom: 0px; padding-left: 2px;">Auto Restore K Values On Printer Restart</label>
                   </div>
                   <span>Use only with X1 printer, if it forgets K on restart.</span>
                 </div>
-                <div class = "form-row">
+                <div class = "form-row bambu-setting-row">
                   <div style="display: flex; align-items: center; margin-bottom: 0px;">
                     <input class="printer-log-filter" type="checkbox" id="printer-log-filter">
                     <label for="printer-log-filter" style="margin-top: 6px; padding-left: 2px;">Enable Extra  Printer  Logs</label>
@@ -937,16 +995,19 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const isFirst = index === 0;
           const newPrinterForm = createPrinterTemplate(index + 1, true);
           printersContainer.appendChild(newPrinterForm);
+          const driverConfig = printer.driver_config || printer;
 
           // Fill in the printer data
-          newPrinterForm.querySelector(".serial").value = printer.serial || "";
+          newPrinterForm.querySelector(".driver-kind").value = printer.driver_kind || BAMBU_DRIVER_KIND;
+          updatePrinterKindFields(newPrinterForm);
+          newPrinterForm.querySelector(".serial").value = driverConfig.serial || "";
           newPrinterForm.querySelector(".access-code").value =
-            printer.access_code || "";
+            driverConfig.access_code || "";
           newPrinterForm.querySelector(".name").value = printer.name || "";
 
           // Set IP if available
-          if (printer.ip) {
-            const ipParts = printer.ip.split(".");
+          if (driverConfig.ip) {
+            const ipParts = driverConfig.ip.split(".");
             const ipInputs = newPrinterForm.querySelectorAll(".ip-part");
 
             for (
@@ -959,8 +1020,8 @@ ProtoPasta 500g - Cardboard - 84g,84"
           }
 
           var logsEnabled = false;
-          if (printer.log_filter) {
-            switch (printer.log_filter) {
+          if (driverConfig.log_filter) {
+            switch (driverConfig.log_filter) {
               case "OFF":
               case "ERROR":
               case "WARN":
@@ -972,23 +1033,22 @@ ProtoPasta 500g - Cardboard - 84g,84"
           }
           newPrinterForm.querySelector(".printer-log-filter").checked =
             logsEnabled;
-          newPrinterForm.querySelector(".auto-restore-k").checked = printer.auto_restore_k;
-          newPrinterForm.querySelector(".track-print-consume").checked = printer.track_print_consume;
-          newPrinterForm.querySelector(".fetch-3mf").value = printer.fetch_3mf;
-          newPrinterForm.querySelector(".ignore-certificates").checked = !!printer.ignore_certificates;
-          newPrinterForm.querySelector(".printer-mode").value = printer.printer_mode || "Auto";
-          newPrinterForm.querySelector(".use-ams-scan").value = printer.use_ams_scan || "Disabled";
+          newPrinterForm.querySelector(".auto-restore-k").checked = driverConfig.auto_restore_k;
+          newPrinterForm.querySelector(".track-print-consume").checked = driverConfig.track_print_consume;
+          newPrinterForm.querySelector(".fetch-3mf").value = driverConfig.fetch_3mf;
+          newPrinterForm.querySelector(".ignore-certificates").checked = !!driverConfig.ignore_certificates;
+          newPrinterForm.querySelector(".printer-mode").value = driverConfig.printer_mode || "Auto";
+          newPrinterForm.querySelector(".use-ams-scan").value = driverConfig.use_ams_scan || "Disabled";
         });
 
         // Setup IP fields for all printers
         setupIPFields(document.querySelectorAll(".ip-part"));
 
         // Set the default printer if specified
-        if (printersConfig.default_printer_serial) {
-          const defaultSerial = printersConfig.default_printer_serial;
+        if (printersConfig.default_printer_id || printersConfig.default_printer_serial) {
+          const defaultPrinterId = printersConfig.default_printer_id || `bambu_printer_${printersConfig.default_printer_serial}`;
           document.querySelectorAll(".printer-form").forEach((form) => {
-            const serial = form.querySelector(".serial").value;
-            if (serial === defaultSerial) {
+            if (printerIdFromForm(form) === defaultPrinterId) {
               const id = form.dataset.id;
               setAsDefault(id);
             }
@@ -1033,6 +1093,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
         const currentCount = printersContainer.children.length;
         const newId = currentCount + 1;
         const newPrinterForm = createPrinterTemplate(newId, true);
+        updatePrinterKindFields(newPrinterForm);
         // Setup IP fields for the new printer
         setupIPFields(newPrinterForm.querySelectorAll(".ip-part"));
         return newPrinterForm;
@@ -1133,6 +1194,8 @@ ProtoPasta 500g - Cardboard - 84g,84"
 
         // Validate each printer form
         document.querySelectorAll(".printer-form").forEach((form) => {
+          const driverKind = form.querySelector(".driver-kind")?.value || BAMBU_DRIVER_KIND;
+          const isBambu = isBambuDriverKind(driverKind);
           const serialInput = form.querySelector(".serial");
           const accessCodeInput = form.querySelector(".access-code");
           const nameInput = form.querySelector(".name");
@@ -1144,7 +1207,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
             isValid = false;
           }
 
-          if (!accessCodeInput.value.trim()) {
+          if (isBambu && !accessCodeInput.value.trim()) {
             form.querySelector(".access-code-error").style.display = "block";
             isValid = false;
           }
@@ -1182,9 +1245,10 @@ ProtoPasta 500g - Cardboard - 84g,84"
         }
 
         const printers = [];
-        let defaultPrinterSerial = null;
+        let defaultPrinterId = null;
 
         document.querySelectorAll(".printer-form").forEach((form) => {
+          const driverKind = form.querySelector(".driver-kind")?.value || BAMBU_DRIVER_KIND;
           const serial = form.querySelector(".serial").value.trim();
           const accessCode = form.querySelector(".access-code").value.trim();
           const name = form.querySelector(".name").value.trim();
@@ -1207,9 +1271,17 @@ ProtoPasta 500g - Cardboard - 84g,84"
             ip = ipParts.map((part) => part.value.trim()).join(".");
           }
 
-          const printer = {
+          const driverConfig = {
             serial: serial,
-            access_code: accessCode,
+          };
+
+          if (isBambuDriverKind(driverKind) || accessCode) {
+            driverConfig.access_code = accessCode;
+          }
+
+          const printer = {
+            driver_kind: driverKind,
+            driver_config: driverConfig,
           };
 
           if (name) {
@@ -1217,36 +1289,36 @@ ProtoPasta 500g - Cardboard - 84g,84"
           }
 
           if (ip) {
-            printer.ip = ip;
+            driverConfig.ip = ip;
           }
 
           if (logFilterEnabled) {
-            printer.log_filter = "TRACE";
+            driverConfig.log_filter = "TRACE";
           } else {
-            printer.log_filter = "WARN";
+            driverConfig.log_filter = "WARN";
           }
 
-          printer.auto_restore_k = autoRestoreK;
-          printer.track_print_consume = trackPrintConsume;
-          printer.fetch_3mf = fetch3mf;
-          printer.ignore_certificates = ignoreCertificates;
-          printer.printer_mode = printerMode;
-          printer.use_ams_scan = useAmsScan;
+          driverConfig.auto_restore_k = autoRestoreK;
+          driverConfig.track_print_consume = trackPrintConsume;
+          driverConfig.fetch_3mf = fetch3mf;
+          driverConfig.ignore_certificates = ignoreCertificates;
+          driverConfig.printer_mode = printerMode;
+          driverConfig.use_ams_scan = useAmsScan;
 
           printers.push(printer);
 
           // Check if this is the default printer
           if (form.classList.contains("default")) {
-            defaultPrinterSerial = serial;
+            defaultPrinterId = printerIdFromForm(form);
           }
         });
 
         // Create the final JSON object
         const jsonData = { printers: printers };
 
-        // Add default_printer_serial if set
-        if (defaultPrinterSerial) {
-          jsonData.default_printer_serial = defaultPrinterSerial;
+        // Add default_printer_id if set
+        if (defaultPrinterId) {
+          jsonData.default_printer_id = defaultPrinterId;
         }
 
         return jsonData; // not really json, it's an object here

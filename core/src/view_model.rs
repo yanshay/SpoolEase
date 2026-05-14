@@ -39,7 +39,9 @@ use framework::{
 };
 
 use crate::app::{UiSlotDisplay, UiSpoolRecord, UiSpoolRecordDisplay};
-use crate::app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig, PrinterMode, UseAmsScan};
+use crate::app_config::{
+    BAMBU_COLOR_NAMES, BASE_FILAMENTS, BambuPrinterConfig, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig, PrinterMode, UseAmsScan,
+};
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
 use crate::bambu::bambu_api::{GcodeState, PrintCommand as BambuPrintCommand};
 use crate::bambu::bambu_print::PrintProject;
@@ -53,7 +55,7 @@ use crate::color_utils::get_color_name;
 use crate::filament_staging::StagingOrigin;
 use crate::printer::{
     self as printer_domain, FilamentTemps, PrintControlCommand, PrinterCommand, PrinterEvent, PrinterId, SlotAssignMode, SlotId,
-    manager::PrinterManager, PrinterDriverKind,
+    manager::PrinterManager,
 };
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
@@ -464,30 +466,42 @@ impl ViewModel {
         let mut printer_index = 0; // starts from zero and incremented only on successful init and adding to array
         let mut available_printers: Vec<crate::app::Printer> = Vec::new();
 
-        let dummy_printer_config = PrinterConfig {
-            driver_kind: PrinterDriverKind::Bambu,
-            ip: None,
-            name: Some("No Printer Configured".to_string()),
-            serial: Some("000000000000000".to_string()),
-            access_code: Some("00000000".to_string()),
-            log_filter: None,
-            auto_restore_k: false,
-            track_print_consume: false,
-            fetch_3mf: Fetch3mf::CloudHttp,
-            ignore_certificates: false,
-            printer_mode: PrinterMode::Auto,
-            use_ams_scan: UseAmsScan::SpoolIdAndConfigure,
-        };
+        let dummy_printer_config = PrinterConfig::bambu(
+            Some("No Printer Configured".to_string()),
+            BambuPrinterConfig {
+                ip: None,
+                serial: Some("000000000000000".to_string()),
+                access_code: Some("00000000".to_string()),
+                log_filter: None,
+                auto_restore_k: false,
+                track_print_consume: false,
+                fetch_3mf: Fetch3mf::CloudHttp,
+                ignore_certificates: false,
+                printer_mode: PrinterMode::Auto,
+                use_ams_scan: UseAmsScan::SpoolIdAndConfigure,
+            },
+        );
 
-        let no_configured_printers = self.app_config.borrow().configured_printers.printers.is_empty();
+        let has_configured_bambu_printers = self
+            .app_config
+            .borrow()
+            .configured_printers
+            .printers
+            .iter()
+            .any(|printer| printer.bambu_config().is_some());
+        let use_dummy_printer = !has_configured_bambu_printers;
         for printer_config in self
             .app_config
             .borrow()
             .configured_printers
             .printers
             .iter()
-            .chain(no_configured_printers.then_some(&dummy_printer_config).into_iter())
+            .chain(use_dummy_printer.then_some(&dummy_printer_config).into_iter())
         {
+            let Some(bambu_config) = printer_config.bambu_config() else {
+                term_info!("Skipping unsupported printer driver kind {:?}", printer_config.driver_kind());
+                continue;
+            };
             if printer_number > 5 {
                 term_info!("Printers limit reached - max five printers supported");
                 break;
@@ -496,7 +510,8 @@ impl ViewModel {
                 self.framework.clone(),
                 printer_number,
                 printer_index,
-                printer_config,
+                &printer_config.name,
+                bambu_config,
                 self.app_config.clone(),
                 self.ssdp_pub_sub,
                 self.store_state_request_channel.clone(),
@@ -504,9 +519,8 @@ impl ViewModel {
                 Ok(bambu_printer_model) => {
                     self.bambu_printer_model.printers.push(bambu_printer_model.clone());
                     self.printer_manager.borrow_mut().add_bambu_printer(bambu_printer_model.clone());
-                    if !default_printer_set
-                        && Some(&bambu_printer_model.borrow().printer_serial) == self.app_config.borrow().configured_default_printer.serial.as_ref()
-                    {
+                    let printer_id = BambuPrinterConfig::printer_id_for_serial(&bambu_printer_model.borrow().printer_serial);
+                    if !default_printer_set && Some(&printer_id.0) == self.app_config.borrow().configured_default_printer.printer_id.as_ref() {
                         // set the first with default serial to be the default (in case of using the same printer several times, for testing ...)
                         self.bambu_printer_model.index = self.bambu_printer_model.printers.len() - 1;
                         let _ = self.printer_manager.borrow_mut().set_selected_index(self.bambu_printer_model.index);
@@ -543,7 +557,7 @@ impl ViewModel {
         ui_app_state.set_color_checkerboard_bg(Self::create_color_checkerboard_image());
         ui_app_state.set_ams_color_checkerboard_bg(Self::create_ams_color_checkerboard_image());
 
-        if no_configured_printers {
+        if use_dummy_printer {
             ui_app_state.set_no_printers_configured(true);
         }
 
@@ -561,7 +575,7 @@ impl ViewModel {
             Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), selected_printer);
         });
 
-        if !no_configured_printers {
+        if has_configured_bambu_printers {
             // if only dummy printer, no point in tasks running
             self.framework
                 .borrow()
@@ -3186,7 +3200,7 @@ impl ViewModel {
             BambuPrintCommand::Resume => PrintControlCommand::Resume,
             BambuPrintCommand::Stop => PrintControlCommand::Stop,
         });
-        let printer_id = PrinterId::new(format!("bambu:{printer_serial}"));
+        let printer_id = BambuPrinterConfig::printer_id_for_serial(printer_serial);
 
         self.printer_manager
             .borrow_mut()
@@ -3494,7 +3508,7 @@ impl BambuPrinterObserver for ViewModel {
         }
 
         self.handle_printer_event(PrinterEvent::ConnectivityChanged {
-            printer_id: PrinterId::new(format!("bambu:{}", bambu_printer.printer_serial)),
+            printer_id: BambuPrinterConfig::printer_id_for_serial(&bambu_printer.printer_serial),
             connected: status,
         });
     }

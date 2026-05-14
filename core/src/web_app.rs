@@ -37,12 +37,11 @@ use sha2::{Digest, Sha256};
 use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::app_config::{
-    AiProviderAvailability, AiProviderId, AppConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrinterMode, PrintersConfig,
-    SPOOLS_CATALOG, ScaleConfig, UseAmsScan, default_printer_driver_kind,
+    AiProviderAvailability, AiProviderId, AppConfig, BambuPrinterConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrinterMode,
+    PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
 };
 use crate::bambu::calibration::KInfo;
 use crate::bambu::bambu_api::PrintCommand;
-use crate::printer::PrinterDriverKind;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
 use crate::store::{BackupMeta, FileMeta, Store};
@@ -121,12 +120,17 @@ impl AppWithStateBuilder for NestedAppBuilder {
             "/api/printer-config",
             post(
                 move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, printers_config_dto: PrintersConfigDTO| {
-                    let default_printer_serial = printers_config_dto.default_printer_serial.clone();
+                    let default_printer_id = printers_config_dto.default_printer_id.clone().or_else(|| {
+                        printers_config_dto
+                            .default_printer_serial
+                            .as_deref()
+                            .map(|serial| BambuPrinterConfig::printer_id_for_serial(serial).0)
+                    });
                     ready(
                         match state.0.app_config.borrow_mut().set_printers_config(
                             printers_config_dto.into(),
                             DefaultPrinterConfig {
-                                serial: default_printer_serial,
+                                printer_id: default_printer_id,
                             },
                         ) {
                             Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
@@ -152,7 +156,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     };
                     let default_printer = &borrowed_app_config.configured_default_printer;
                     let mut printers_config = PrintersConfigDTO::from(printers);
-                    printers_config.default_printer_serial = default_printer.serial.clone();
+                    printers_config.default_printer_id = default_printer.printer_id.clone();
                     printers_config.encrypt(&key.borrow())
                 })
             }),
@@ -1229,14 +1233,27 @@ impl picoserve::response::chunked::Chunks for StoreBackupChunks {
 }
 #[derive(serde::Deserialize, serde::Serialize)]
 struct PrinterConfigDTO {
-    #[serde(default = "default_printer_driver_kind")]
-    driver_kind: PrinterDriverKind,
-    ip: Option<String>,
     name: Option<String>,
+    #[serde(flatten)]
+    driver: PrinterDriverConfigDTO,
+}
+encrypted_input!(PrinterConfigDTO);
+
+#[derive(serde::Deserialize, serde::Serialize)]
+#[serde(tag = "driver_kind", content = "driver_config")]
+enum PrinterDriverConfigDTO {
+    Bambu(BambuPrinterConfigDTO),
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct BambuPrinterConfigDTO {
+    ip: Option<String>,
     serial: Option<String>,
     access_code: Option<String>,
     log_filter: Option<log::LevelFilter>,
+    #[serde(default)]
     auto_restore_k: bool,
+    #[serde(default)]
     track_print_consume: bool,
     fetch_3mf: Option<String>,
     #[serde(default)]
@@ -1246,13 +1263,11 @@ struct PrinterConfigDTO {
     #[serde(default)]
     use_ams_scan: UseAmsScan,
 }
-encrypted_input!(PrinterConfigDTO);
-impl From<PrinterConfigDTO> for PrinterConfig {
-    fn from(v: PrinterConfigDTO) -> Self {
+
+impl From<BambuPrinterConfigDTO> for BambuPrinterConfig {
+    fn from(v: BambuPrinterConfigDTO) -> Self {
         Self {
-            driver_kind: v.driver_kind,
             ip: v.ip.and_then(|s| s.parse::<Ipv4Addr>().ok()),
-            name: v.name,
             serial: v.serial,
             access_code: v.access_code,
             log_filter: v.log_filter,
@@ -1269,12 +1284,11 @@ impl From<PrinterConfigDTO> for PrinterConfig {
         }
     }
 }
-impl From<&PrinterConfig> for PrinterConfigDTO {
-    fn from(v: &PrinterConfig) -> Self {
+
+impl From<&BambuPrinterConfig> for BambuPrinterConfigDTO {
+    fn from(v: &BambuPrinterConfig) -> Self {
         Self {
-            driver_kind: v.driver_kind.clone(),
             ip: v.ip.map(|ip| ip.to_string()),
-            name: v.name.clone(),
             serial: v.serial.clone(),
             access_code: v.access_code.clone(),
             log_filter: v.log_filter,
@@ -1291,9 +1305,31 @@ impl From<&PrinterConfig> for PrinterConfigDTO {
     }
 }
 
+impl From<PrinterConfigDTO> for PrinterConfig {
+    fn from(v: PrinterConfigDTO) -> Self {
+        match v.driver {
+            PrinterDriverConfigDTO::Bambu(bambu_config) => Self::bambu(v.name, bambu_config.into()),
+        }
+    }
+}
+impl From<&PrinterConfig> for PrinterConfigDTO {
+    fn from(v: &PrinterConfig) -> Self {
+        let driver = match v.bambu_config() {
+            Some(bambu_config) => PrinterDriverConfigDTO::Bambu(BambuPrinterConfigDTO::from(bambu_config)),
+            None => PrinterDriverConfigDTO::Bambu(BambuPrinterConfigDTO::from(&BambuPrinterConfig::default())),
+        };
+        Self {
+            name: v.name.clone(),
+            driver,
+        }
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize)]
 struct PrintersConfigDTO {
     printers: Vec<PrinterConfigDTO>,
+    default_printer_id: Option<String>,
+    #[serde(default)]
     default_printer_serial: Option<String>,
 }
 encrypted_input!(PrintersConfigDTO);
@@ -1317,6 +1353,7 @@ impl From<&PrintersConfig> for PrintersConfigDTO {
                 .map(PrinterConfigDTO::from) // Convert each Printer to PrinterDTO
                 .collect(),
             default_printer_serial: None,
+            default_printer_id: None,
         }
     }
 }

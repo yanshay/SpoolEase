@@ -13,7 +13,7 @@ use serde::{Deserialize, Deserializer, Serializer};
 use framework::prelude::*;
 use shared::gcode_analysis_task::Fetch3mf;
 
-use crate::printer::PrinterDriverKind;
+use crate::printer::{PrinterDriverKind, PrinterId};
 
 pub const SPOOLS_CATALOG: &str = include_str!("../data/Spool-Core-Weights.csv");
 pub const BASE_FILAMENTS: &str = include_str!("../data/base-filaments-index.csv");
@@ -108,15 +108,57 @@ pub enum UseAmsScan {
 
 // These struct is first and foremost for persistent configuration
 // Changing it should be well dealt with including upgrade
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone, Default)]
+pub struct PrinterConfig {
+    pub name: Option<String>,
+    #[serde(flatten)]
+    pub driver: PrinterDriverConfig,
+}
+
+impl PrinterConfig {
+    pub fn bambu(name: Option<String>, config: BambuPrinterConfig) -> Self {
+        Self {
+            name,
+            driver: PrinterDriverConfig::Bambu(config),
+        }
+    }
+
+    pub fn driver_kind(&self) -> PrinterDriverKind {
+        match &self.driver {
+            PrinterDriverConfig::Bambu(_) => PrinterDriverKind::Bambu,
+        }
+    }
+
+    pub fn printer_id(&self) -> Result<PrinterId, String> {
+        match &self.driver {
+            PrinterDriverConfig::Bambu(config) => config.printer_id(),
+        }
+    }
+
+    pub fn bambu_config(&self) -> Option<&BambuPrinterConfig> {
+        match &self.driver {
+            PrinterDriverConfig::Bambu(config) => Some(config),
+        }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone)]
+#[serde(tag = "driver_kind", content = "driver_config")]
+pub enum PrinterDriverConfig {
+    Bambu(BambuPrinterConfig),
+}
+
+impl Default for PrinterDriverConfig {
+    fn default() -> Self {
+        Self::Bambu(BambuPrinterConfig::default())
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone, Derivative)]
 #[derivative(Default)]
-pub struct PrinterConfig {
-    #[derivative(Default(value = "PrinterDriverKind::Bambu"))]
-    #[serde(default = "default_printer_driver_kind")]
-    pub driver_kind: PrinterDriverKind,
-    #[serde(serialize_with = "serialize_option_ipv4", deserialize_with = "deserialize_option_ipv4")]
+pub struct BambuPrinterConfig {
+    #[serde(default, serialize_with = "serialize_option_ipv4", deserialize_with = "deserialize_option_ipv4")]
     pub ip: Option<Ipv4Address>,
-    pub name: Option<String>,
     pub serial: Option<String>,
     pub access_code: Option<String>,
     pub log_filter: Option<log::LevelFilter>,
@@ -139,13 +181,102 @@ pub struct PrinterConfig {
     pub use_ams_scan: UseAmsScan,
 }
 
+impl BambuPrinterConfig {
+    pub fn printer_id_for_serial(serial: &str) -> PrinterId {
+        PrinterId::new(format!("bambu_printer_{serial}"))
+    }
+
+    pub fn printer_id(&self) -> Result<PrinterId, String> {
+        self.serial
+            .as_deref()
+            .map(Self::printer_id_for_serial)
+            .ok_or_else(|| "Missing Bambu printer serial".to_string())
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct LegacyPrinterConfig {
+    #[serde(default = "default_printer_driver_kind")]
+    driver_kind: PrinterDriverKind,
+    #[serde(default, deserialize_with = "deserialize_option_ipv4")]
+    ip: Option<Ipv4Address>,
+    name: Option<String>,
+    serial: Option<String>,
+    access_code: Option<String>,
+    log_filter: Option<log::LevelFilter>,
+    #[serde(default = "default_false")]
+    auto_restore_k: bool,
+    #[serde(default = "default_true")]
+    track_print_consume: bool,
+    #[serde(default)]
+    fetch_3mf: Fetch3mf,
+    #[serde(default = "default_false")]
+    ignore_certificates: bool,
+    #[serde(default)]
+    printer_mode: PrinterMode,
+    #[serde(default)]
+    use_ams_scan: UseAmsScan,
+}
+
+impl From<LegacyPrinterConfig> for PrinterConfig {
+    fn from(v: LegacyPrinterConfig) -> Self {
+        match v.driver_kind {
+            PrinterDriverKind::Bambu | PrinterDriverKind::Unknown => Self::bambu(
+                v.name,
+                BambuPrinterConfig {
+                    ip: v.ip,
+                    serial: v.serial,
+                    access_code: v.access_code,
+                    log_filter: v.log_filter,
+                    auto_restore_k: v.auto_restore_k,
+                    track_print_consume: v.track_print_consume,
+                    fetch_3mf: v.fetch_3mf,
+                    ignore_certificates: v.ignore_certificates,
+                    printer_mode: v.printer_mode,
+                    use_ams_scan: v.use_ams_scan,
+                },
+            ),
+            _ => Self::default(),
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct LegacyPrintersConfig {
+    printers: Vec<LegacyPrinterConfig>,
+}
+
+impl From<LegacyPrintersConfig> for PrintersConfig {
+    fn from(v: LegacyPrintersConfig) -> Self {
+        Self {
+            printers: v.printers.into_iter().map(PrinterConfig::from).collect(),
+        }
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 pub struct PrintersConfig {
     pub printers: Vec<PrinterConfig>,
 }
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 pub struct DefaultPrinterConfig {
-    pub serial: Option<String>,
+    pub printer_id: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct StoredDefaultPrinterConfig {
+    printer_id: Option<String>,
+    serial: Option<String>,
+}
+
+impl From<StoredDefaultPrinterConfig> for DefaultPrinterConfig {
+    fn from(v: StoredDefaultPrinterConfig) -> Self {
+        Self {
+            printer_id: v
+                .printer_id
+                .or_else(|| v.serial.map(|serial| BambuPrinterConfig::printer_id_for_serial(&serial).0)),
+        }
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default, PartialEq, Debug, Clone)]
@@ -187,15 +318,14 @@ impl AppConfig {
         let mut missing = true;
         let mut partial_missing = false;
         for printer in &self.configured_printers.printers {
-            if printer.driver_kind != PrinterDriverKind::Bambu {
-                continue;
-            }
-            has_bambu_printers = true;
-            if printer.serial.is_some() && printer.access_code.is_some() {
-                missing = false;
-            }
-            if printer.serial.is_none() || printer.access_code.is_none() {
-                partial_missing = true;
+            if let Some(bambu_config) = printer.bambu_config() {
+                has_bambu_printers = true;
+                if bambu_config.serial.is_some() && bambu_config.access_code.is_some() {
+                    missing = false;
+                }
+                if bambu_config.serial.is_none() || bambu_config.access_code.is_none() {
+                    partial_missing = true;
+                }
             }
         }
         if !has_bambu_printers {
@@ -216,7 +346,7 @@ impl AppConfig {
         Self {
             framework,
             configured_printers: PrintersConfig { printers: Vec::new() },
-            configured_default_printer: DefaultPrinterConfig { serial: None },
+            configured_default_printer: DefaultPrinterConfig { printer_id: None },
             configured_scale: None,
             scale_encryption_key: crate::mk_static!(RefCell<Vec<u8>>, RefCell::new(alloc::vec![])),
 
@@ -240,26 +370,29 @@ impl AppConfig {
                 self.configured_printers = printers_config;
                 let config = self.framework.borrow_mut().fetch(String::from(DEFAULT_PRINTER_CONFIG_KEY));
                 if let Ok(Some(default_printer_store)) = config
-                    && let Ok(default_printer_config) = serde_json::from_str::<DefaultPrinterConfig>(&default_printer_store)
+                    && let Ok(default_printer_config) = serde_json::from_str::<StoredDefaultPrinterConfig>(&default_printer_store)
                 {
-                    self.configured_default_printer = default_printer_config;
+                    self.configured_default_printer = default_printer_config.into();
                 }
+            } else if let Ok(legacy_printers_config) = serde_json::from_str::<LegacyPrintersConfig>(&printers_store) {
+                self.configured_printers = legacy_printers_config.into();
             }
         } else {
             // backwards compatibility with a single printer
             let config = self.framework.borrow_mut().fetch(String::from(PRINTER_CONFIG_KEY));
             if let Ok(Some(printer_store)) = config
-                && let Ok(printer_config) = serde_json::from_str::<PrinterConfig>(&printer_store)
+                && let Ok(printer_config) = serde_json::from_str::<LegacyPrinterConfig>(&printer_store)
             {
-                self.configured_default_printer.serial = printer_config.serial.clone();
+                let printer_config = PrinterConfig::from(printer_config);
+                self.configured_default_printer.printer_id = printer_config.printer_id().ok().map(|printer_id| printer_id.0);
                 self.configured_printers.printers.push(printer_config);
             }
         }
         let config = self.framework.borrow_mut().fetch(String::from(DEFAULT_PRINTER_CONFIG_KEY));
         if let Ok(Some(default_printer_store)) = config
-            && let Ok(printers_config) = serde_json::from_str::<DefaultPrinterConfig>(&default_printer_store)
+            && let Ok(printers_config) = serde_json::from_str::<StoredDefaultPrinterConfig>(&default_printer_store)
         {
-            self.configured_default_printer = printers_config;
+            self.configured_default_printer = printers_config.into();
         }
         // Load core weights configuration
 
@@ -296,7 +429,9 @@ impl AppConfig {
         let mut section = String::from("");
 
         let mut parse_errors = false;
-        let mut toml_priner_config = PrinterConfig::default();
+        let mut toml_printer_name = None;
+        let mut toml_bambu_config = BambuPrinterConfig::default();
+        let mut toml_has_printer_config = false;
 
         for (line_num, line) in toml_str.lines().enumerate() {
             // Trim whitespace and ignore empty lines or comments
@@ -320,19 +455,25 @@ impl AppConfig {
                 match expanded_key.as_str() {
                     "printer_ip" => {
                         if let Ok(addr) = Ipv4Address::from_str(value) {
-                            toml_priner_config.ip = Some(addr);
+                            toml_bambu_config.ip = Some(addr);
+                            toml_has_printer_config = true;
                         } else {
                             parse_errors = true;
                             term_error!("config file format error at printer ip");
                         }
                     }
                     "printer_name" => {
-                        toml_priner_config.name = Some(String::from(value));
+                        toml_printer_name = Some(String::from(value));
+                        toml_has_printer_config = true;
                     }
                     "printer_serial" => {
-                        toml_priner_config.serial = Some(String::from(value));
+                        toml_bambu_config.serial = Some(String::from(value));
+                        toml_has_printer_config = true;
                     }
-                    "printer_access_code" => toml_priner_config.access_code = Some(String::from(value)),
+                    "printer_access_code" => {
+                        toml_bambu_config.access_code = Some(String::from(value));
+                        toml_has_printer_config = true;
+                    }
                     _ => {
                         // allow unknown configs, ignore them
                     }
@@ -348,8 +489,10 @@ impl AppConfig {
                 return Err(String::from("Parse Error"));
             }
         }
-        if toml_priner_config != PrinterConfig::default() {
-            self.configured_printers.printers.push(toml_priner_config);
+        if toml_has_printer_config {
+            self.configured_printers
+                .printers
+                .push(PrinterConfig::bambu(toml_printer_name, toml_bambu_config));
         }
 
         // If after all, no printer configured, fill in an empty printer config

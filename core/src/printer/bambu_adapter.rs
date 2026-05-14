@@ -6,6 +6,7 @@ use alloc::{
 };
 use core::cell::RefCell;
 
+use crate::app_config::BambuPrinterConfig;
 use crate::bambu::{
     BambuPrinter, NozzleType,
     bambu_api::{GcodeState, PrintCommand as BambuPrintCommand},
@@ -28,7 +29,7 @@ pub struct BambuPrinterDriver {
 
 impl BambuPrinterDriver {
     pub fn new(printer: Rc<RefCell<BambuPrinter>>) -> Self {
-        let id = PrinterId::new(format!("bambu:{}", printer.borrow().printer_serial));
+        let id = BambuPrinterConfig::printer_id_for_serial(&printer.borrow().printer_serial);
         Self {
             id,
             printer,
@@ -42,7 +43,7 @@ impl BambuPrinterDriver {
 
     pub fn snapshot_from_printer(printer: &BambuPrinter) -> PrinterSnapshot {
         PrinterSnapshot {
-            id: PrinterId::new(format!("bambu:{}", printer.printer_serial)),
+            id: BambuPrinterConfig::printer_id_for_serial(&printer.printer_serial),
             kind: PrinterDriverKind::Bambu,
             name: printer.printer_name().clone(),
             connected: printer.printer_connectivity_ok.unwrap_or_default(),

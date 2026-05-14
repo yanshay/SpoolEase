@@ -48,7 +48,6 @@ pub enum PrinterDriverKind {
     Moonraker,
     Prusa,
     Snapmaker,
-    Simulator,
     Other(String),
 }
 

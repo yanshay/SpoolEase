@@ -23,7 +23,7 @@ use crate::bambu::protocol::ProtocolState;
 use crate::bambu::tray::{Tray, TrayBits};
 use crate::view_model::StoreStateRequestChannel;
 use crate::{
-    app_config::{PrinterConfig, PrinterMode, UseAmsScan},
+    app_config::{BambuPrinterConfig, PrinterMode, UseAmsScan},
     ssdp::SSDPPubSubChannel,
 };
 use alloc::{
@@ -572,7 +572,8 @@ pub fn init(
     framework: Rc<RefCell<Framework>>,
     printer_number: usize, // number of printer in user's configuration,
     printer_index: usize, // index of printer in the array of printers, if a config is not good and skipped, then index would be different than number
-    printer_config: &PrinterConfig,
+    printer_config_name: &Option<String>,
+    printer_config: &BambuPrinterConfig,
     app_config: Rc<RefCell<AppConfig>>,
     ssdp_pub_sub: &'static SSDPPubSubChannel,
     store_state_request_channel: Rc<StoreStateRequestChannel>,
@@ -590,7 +591,6 @@ pub fn init(
         return Err("Missing printer access code".to_string());
     };
 
-    let printer_config_name = printer_config.name.clone();
     let printer_ip = printer_config.ip;
     let log_filter = if let Some(log_filter) = &printer_config.log_filter {
         *log_filter
@@ -616,7 +616,7 @@ pub fn init(
         printer_index,
         &printer_serial,
         &printer_access_code,
-        &printer_config_name,
+        printer_config_name,
         &printer_ip,
         auto_restore_k,
         track_print_consume,
