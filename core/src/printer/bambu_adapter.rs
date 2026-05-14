@@ -186,7 +186,7 @@ impl BambuPrinterDriver {
     fn external_group(printer: &BambuPrinter, tray_id: i32, extruder: u32) -> SlotGroupSnapshot {
         SlotGroupSnapshot {
             id: format!("bambu:external:{tray_id}"),
-            name: printer.ams_name(tray_id as usize),
+            name: Self::external_group_name(printer, extruder),
             kind: SlotGroupKind::External,
             extruder: Some(extruder),
             temperature_c: None,
@@ -196,6 +196,16 @@ impl BambuPrinterDriver {
                 slots.push(Self::slot_from_tray(printer, tray_id, printer.get_any_tray(tray_id as usize)));
                 slots
             },
+        }
+    }
+
+    fn external_group_name(printer: &BambuPrinter, extruder: u32) -> String {
+        if printer.num_extruders() == 1 {
+            "External".into()
+        } else if extruder == 1 {
+            "Ext Left".into()
+        } else {
+            "Ext Right".into()
         }
     }
 

@@ -8,6 +8,7 @@ export component Slots inherits HorizontalLayout {
                             if AppState.ams-exists.length > 0: 
     ams := Trays {
         is_ams: true;
+        reserve-external-area: AppState.has-external-slot-area;
         title: AppState.curr-ams-title();
         include-paging-left: false;
         include-paging-right: false;
@@ -22,6 +23,7 @@ export component Slots inherits HorizontalLayout {
 
     external := Trays {
         is_ams: false;
+        visible: AppState.has-external-slot-area;
         title: AppState.curr-external-slot-title();
         tray_numbers: [AppState.displayed-extruder];
         trays-state: AppState.trays-state;

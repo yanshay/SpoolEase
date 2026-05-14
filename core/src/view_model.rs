@@ -1282,6 +1282,18 @@ impl ViewModel {
 
     fn update_generic_slots_from_selected_printer(&self) {
         let current_printer = self.ui_weak.unwrap().global::<crate::app::AppState>().get_curr_printer();
+        let selected_snapshot = if current_printer < 0 {
+            None
+        } else {
+            self.ui_printer_manager_indexes
+                .get(current_printer as usize)
+                .and_then(|manager_index| self.printer_manager.borrow().snapshot_at(*manager_index))
+        };
+
+        if let Some(snapshot) = &selected_snapshot {
+            self.update_slot_layout_from_snapshot(snapshot);
+        }
+
         let slot_groups = if current_printer < 0
             || self
                 .ui_printer_bambu_indexes
@@ -1291,18 +1303,12 @@ impl ViewModel {
                 .is_some()
         {
             Vec::new()
-        } else if let Some(manager_index) = self.ui_printer_manager_indexes.get(current_printer as usize).copied() {
-            self.printer_manager
-                .borrow()
-                .snapshot_at(manager_index)
-                .map(|snapshot| {
-                    snapshot
-                        .slot_groups
-                        .iter()
-                        .map(Self::ui_generic_slot_group_from_snapshot)
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default()
+        } else if let Some(snapshot) = &selected_snapshot {
+            snapshot
+                .slot_groups
+                .iter()
+                .map(Self::ui_generic_slot_group_from_snapshot)
+                .collect::<Vec<_>>()
         } else {
             Vec::new()
         };
@@ -1311,6 +1317,39 @@ impl ViewModel {
             .unwrap()
             .global::<crate::app::AppState>()
             .set_generic_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(slot_groups))));
+    }
+
+    fn update_slot_layout_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) {
+        let ui = self.ui_weak.unwrap();
+        let ui_app_state = ui.global::<crate::app::AppState>();
+        let group_titles = snapshot
+            .slot_groups
+            .iter()
+            .filter(|group| group.kind != printer_domain::SlotGroupKind::External)
+            .map(|group| group.name.to_shared_string())
+            .collect::<Vec<_>>();
+        let external_titles = snapshot
+            .slot_groups
+            .iter()
+            .filter(|group| group.kind == printer_domain::SlotGroupKind::External)
+            .map(|group| group.name.to_shared_string())
+            .collect::<Vec<_>>();
+
+        ui_app_state.set_ams_titles(slint::ModelRc::from(Rc::new(slint::VecModel::from(if group_titles.is_empty() {
+            vec!["AMS - 1".to_shared_string()]
+        } else {
+            group_titles
+        }))));
+        ui_app_state.set_has_external_slot_area(!external_titles.is_empty());
+        ui_app_state.set_external_slot_titles(slint::ModelRc::from(Rc::new(slint::VecModel::from(if external_titles.is_empty() {
+            vec!["External".to_shared_string()]
+        } else {
+            external_titles
+        }))));
+        let external_title_count = ui_app_state.get_external_slot_titles().row_count() as i32;
+        if ui_app_state.get_displayed_extruder() >= external_title_count {
+            ui_app_state.set_displayed_extruder(0);
+        }
     }
 
     fn ui_generic_slot_group_from_snapshot(group: &printer_domain::SlotGroupSnapshot) -> UiGenericSlotGroup {
@@ -2489,19 +2528,7 @@ impl ViewModel {
         let ui_app_state = ui.global::<crate::app::AppState>();
         let num_extruders = bambu_printer.num_extruders();
         ui_app_state.set_num_extruders(num_extruders as i32);
-        ui_app_state.set_ams_titles(slint::ModelRc::from(Rc::new(slint::VecModel::from(
-            (0..12).map(|ams_id| format!("AMS - {}", ams_id + 1).to_shared_string()).collect::<Vec<_>>(),
-        ))));
-        ui_app_state.set_external_slot_titles(slint::ModelRc::from(Rc::new(slint::VecModel::from(
-            if num_extruders == 1 {
-                vec!["External".to_shared_string()]
-            } else {
-                vec!["Ext Right".to_shared_string(), "Ext Left".to_shared_string()]
-            },
-        ))));
-        if num_extruders == 1 && ui_app_state.get_displayed_extruder() != 0 {
-            ui_app_state.set_displayed_extruder(0);
-        }
+        self.update_slot_layout_from_snapshot(&printer_domain::bambu_adapter::BambuPrinterDriver::snapshot_from_printer(bambu_printer));
         // ----- handle number of ams's and curr_ams -----
         // OPT: calculate only when ams_exists change (store in printer struct), here use the value calculated there
         //      don't forget to consider loading the ams_exist from state which will need to recalculate, so add inner_set_ams_exist_bits

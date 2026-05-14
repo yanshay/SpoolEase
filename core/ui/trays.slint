@@ -403,6 +403,7 @@ export component Trays {
     in property <bool> include-paging-left: false;
     in property <bool> include-paging-right: false;
     in property <bool> is_ams: false;
+    in property <bool> reserve-external-area: true;
 
     VerticalLayout {
         spacing: AppConsts.trays-spacing;
@@ -447,7 +448,7 @@ export component Trays {
             spacing: AppConsts.trays-spacing;
             padding-left: 0px;
             padding-right: 0px;
-            width: is_ams ? FrameworkState.display-width - (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5 - AppConsts.trays-spacing : (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
+            width: is_ams ? (reserve-external-area ? FrameworkState.display-width - (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5 - AppConsts.trays-spacing : FrameworkState.display-width) : (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
             for index in tray_numbers: Tray {
                 is-in-ams: is_ams;
                 // visible: AppState.selected-tray-index == -1 || AppState.selected-tray-index == index;

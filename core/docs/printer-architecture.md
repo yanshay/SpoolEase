@@ -1692,7 +1692,7 @@ Files to avoid changing early unless necessary:
 
 ## Suggested Immediate Next Steps
 
-1. [partial] Continue Slint dynamic slot group rendering from backend snapshots; non-Bambu assign/set-spool-id/reset/untag exists, but Bambu generic rendering and scrolling/pagination are not done.
+1. [partial] Continue Slint dynamic slot group rendering from backend snapshots; non-Bambu assign/set-spool-id/reset/untag exists, and the current Bambu slot UI has a first topology-driven external-area/title seam, but Bambu generic rendering and scrolling/pagination are not done.
 2. [not done] Persist fake slot state across restarts.
 3. [not done] Bridge Bambu tray/snapshot changes carefully, or defer until fake driver pressures the dynamic UI model.
 4. [not done] Bridge consumption as generic slot/spool consumption notifications, keeping Bambu G-code analysis internal.
@@ -1720,6 +1720,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, generic `PrinterManager` storage, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, `ui_untag_slot` through `PrinterCommand::UnassignSpoolFromSlot`, `ui_reset_slot` through `PrinterCommand::ClearSlot`, `set_staging_to_tray_direct` and `configure_tray_with_spool_async` through `PrinterCommand::AssignMaterialToSlot`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan events, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a basic fake non-Bambu driver visible in web status, console-safe selection of generic printers, a generic non-Bambu slot view in Slint, and Slint capability-gated assign/set-spool-id/reset/untag generic slot operations.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, generic `PrinterManager` storage, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, `ui_untag_slot` through `PrinterCommand::UnassignSpoolFromSlot`, `ui_reset_slot` through `PrinterCommand::ClearSlot`, `set_staging_to_tray_direct` and `configure_tray_with_spool_async` through `PrinterCommand::AssignMaterialToSlot`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan events, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a basic fake non-Bambu driver visible in web status, console-safe selection of generic printers, a generic non-Bambu slot view in Slint, Slint capability-gated assign/set-spool-id/reset/untag generic slot operations, and a topology-driven external-area/title seam in the current Bambu slot UI.
 
 Still not done: full `PrinterManager` ownership replacement, tray/snapshot event bridge, generic consumption reporting, Bambu rendering through the generic slot UI, paginated dynamic Slint slot groups, persisted generic fake slot state, and real non-Bambu driver.

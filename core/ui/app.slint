@@ -360,6 +360,7 @@ export global AppState {
     in-out property <int> curr-ams-id: 0;
     in-out property <[int]> ams-exists: [0];
     in-out property <[string]> ams-titles: ["AMS - 1"];
+    in-out property <bool> has-external-slot-area: true;
     in-out property <[string]> external-slot-titles: ["External"];
 
     in-out property <bool> no-printers-configured: false;
@@ -442,7 +443,7 @@ export global AppState {
     }
 
     pure public function curr-external-slot-title() -> string {
-        if displayed-extruder >= 0 && displayed-extruder < external-slot-titles.length {
+        if has-external-slot-area && displayed-extruder >= 0 && displayed-extruder < external-slot-titles.length {
             return external-slot-titles[displayed-extruder];
         } else {
             return "External";
