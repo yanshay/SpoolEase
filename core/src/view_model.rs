@@ -51,7 +51,10 @@ use crate::bambu::{
 };
 use crate::color_utils::get_color_name;
 use crate::filament_staging::StagingOrigin;
-use crate::printer::{self as printer_domain, FilamentTemps, PrintControlCommand, PrinterCommand, PrinterId, SlotAssignMode, SlotId, manager::PrinterManager};
+use crate::printer::{
+    self as printer_domain, FilamentTemps, PrintControlCommand, PrinterCommand, PrinterEvent, PrinterId, SlotAssignMode, SlotId,
+    manager::PrinterManager,
+};
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleWeight, SpoolScaleObserver};
@@ -3190,6 +3193,62 @@ impl ViewModel {
             .map_err(|err| format!("{err:?}"))
     }
 
+    fn handle_printer_event(&self, event: PrinterEvent) {
+        match event {
+            PrinterEvent::ConnectivityChanged { printer_id, connected } => self.handle_printer_connectivity_changed(&printer_id, connected),
+            PrinterEvent::SlotTagScanned {
+                printer_id,
+                slot_id,
+                tag_id,
+                only_spool_id,
+            } => self.handle_slot_tag_scanned(&printer_id, &slot_id, &tag_id, only_spool_id),
+            _ => {}
+        }
+    }
+
+    fn handle_printer_connectivity_changed(&self, printer_id: &PrinterId, connected: bool) {
+        let Some(printer_index) = self.printer_manager.borrow().index_by_id(printer_id) else {
+            error!("Connectivity event for unknown printer {}", printer_id.as_str());
+            return;
+        };
+
+        let ui_borrow = self.ui_weak.unwrap();
+        let ui = ui_borrow.global::<crate::app::AppState>();
+        let ui_printers = ui.get_available_printers();
+        let mut printer_row = ui_printers.row_data(printer_index).unwrap();
+        printer_row.connected = connected;
+        ui_printers.set_row_data(printer_index, printer_row);
+    }
+
+    fn handle_slot_tag_scanned(&self, printer_id: &PrinterId, slot_id: &SlotId, tag_id: &str, only_spool_id: bool) {
+        let Some(printer_index) = self.printer_manager.borrow().index_by_id(printer_id) else {
+            error!("Tag scan event for unknown printer {}", printer_id.as_str());
+            return;
+        };
+        let Some(tray_id) = Self::bambu_tray_id_from_slot_id(slot_id) else {
+            error!("Tag scan event for unsupported slot id {}", slot_id.as_str());
+            return;
+        };
+
+        if let Some(spool_id) = self.store.get_spool_id_by_tag_id(tag_id) {
+            info!(
+                "[{}] Tag is registered, setting slot's spool-id{}",
+                printer_index + 1,
+                if only_spool_id { "" } else { " and configuring slot material/color/k" }
+            );
+            let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureTrayWithSpool {
+                printer_index: Some(printer_index),
+                tray_id,
+                spool_id,
+                only_spool_id,
+            });
+        }
+    }
+
+    fn bambu_tray_id_from_slot_id(slot_id: &SlotId) -> Option<i32> {
+        slot_id.as_str().strip_prefix("bambu:").unwrap_or(slot_id.as_str()).parse().ok()
+    }
+
     fn slot_sets_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) -> Vec<SlotSet> {
         let num_extruders = snapshot.extruders.len() as u32;
         snapshot
@@ -3420,8 +3479,6 @@ impl BambuPrinterObserver for ViewModel {
     }
 
     fn on_printer_connect_status(&self, bambu_printer: &mut BambuPrinter, status: bool) {
-        let ui_borrow = self.ui_weak.unwrap();
-        let ui = ui_borrow.global::<crate::app::AppState>();
         if status {
             // TODO: I can't borrow at this stage because my_mqtt reports this and need to borrow_mut so now can't borrow.
             //       Need to switch to the notifications coming from a notifier object and not directly from the objects.
@@ -3435,10 +3492,10 @@ impl BambuPrinterObserver for ViewModel {
             term_info!("[{}] Printer disconnected", bambu_printer.printer_number);
         }
 
-        let ui_printers = ui.get_available_printers();
-        let mut printer_row = ui_printers.row_data(bambu_printer.printer_index).unwrap();
-        printer_row.connected = status;
-        ui_printers.set_row_data(bambu_printer.printer_index, printer_row);
+        self.handle_printer_event(PrinterEvent::ConnectivityChanged {
+            printer_id: PrinterId::new(format!("bambu:{}", bambu_printer.printer_serial)),
+            connected: status,
+        });
     }
 
     fn on_request_gcode_analysis(&mut self, printer: &mut BambuPrinter, print_project: &PrintProject) -> i32 {
@@ -3544,19 +3601,16 @@ impl BambuPrinterObserver for ViewModel {
     }
 
     fn on_tag_scanned(&self, printer_index: usize, tray_id: i32, tag_id: &str, only_spool_id: bool) {
-        if let Some(spool_id) = self.store.get_spool_id_by_tag_id(tag_id) {
-            info!(
-                "[{}] Tag is registered, setting slot's spool-id{}",
-                printer_index + 1,
-                if only_spool_id { "" } else { " and configuring slot material/color/k" }
-            );
-            let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureTrayWithSpool {
-                printer_index: Some(printer_index),
-                tray_id,
-                spool_id,
-                only_spool_id,
-            });
-        }
+        let Some(printer_id) = self.printer_manager.borrow().id_at(printer_index) else {
+            error!("Tag scan event for unknown printer index {printer_index}");
+            return;
+        };
+        self.handle_printer_event(PrinterEvent::SlotTagScanned {
+            printer_id,
+            slot_id: SlotId::new(format!("bambu:{tray_id}")),
+            tag_id: tag_id.to_string(),
+            only_spool_id,
+        });
     }
 }
 

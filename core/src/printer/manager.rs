@@ -38,6 +38,14 @@ impl PrinterManager {
         self.printers.get(index).map(PrinterDriver::snapshot)
     }
 
+    pub fn id_at(&self, index: usize) -> Option<PrinterId> {
+        self.printers.get(index).map(|printer| printer.id().clone())
+    }
+
+    pub fn index_by_id(&self, printer_id: &PrinterId) -> Option<usize> {
+        self.printers.iter().position(|printer| printer.id() == printer_id)
+    }
+
     pub fn dispatch_selected(&mut self, command: PrinterCommand) -> PrinterResult<()> {
         let selected_index = self
             .selected_index

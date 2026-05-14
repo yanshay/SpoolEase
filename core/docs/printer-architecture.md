@@ -1489,17 +1489,17 @@ Acceptance criteria:
 - Bambu AMS scan auto-configuration works.
 - Reset/untag behavior works.
 
-### Phase 5: Generic Printer Events [not started]
+### Phase 5: Generic Printer Events [partial]
 
 Bridge `BambuPrinterObserver` into generic `PrinterEvent`.
 
 Refactor `ViewModel` to handle generic events:
 
-- connectivity
-- snapshot changed
-- slot tag scanned
-- gcode analysis request/cancel
-- consumption reported, later
+- [done] Connectivity changes route through `PrinterEvent::ConnectivityChanged`.
+- [done] Slot tag scans route through `PrinterEvent::SlotTagScanned`.
+- [not done] Snapshot/tray changes still use direct Bambu observer handling.
+- [not done] Consumption reporting is not bridged yet.
+- [not done] G-code analysis request/cancel remains Bambu-specific and should not become a required generic printer event.
 
 Acceptance criteria:
 
@@ -1662,9 +1662,10 @@ Files to avoid changing early unless necessary:
 
 ## Suggested Immediate Next Steps
 
-1. [not done] Continue reducing direct `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` use where a migrated generic path exists.
-2. [not done] Add generic printer event bridge after command routing is stable.
-3. [not done] Start Slint dynamic slot group work only after Bambu flows remain stable through the generic layer.
+1. [not done] Bridge Bambu tray/snapshot changes carefully, or defer and add a fake non-Bambu driver first.
+2. [not done] Bridge consumption as generic slot/spool consumption notifications, keeping Bambu G-code analysis internal.
+3. [not done] Continue reducing direct `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` use where a migrated generic path exists.
+4. [not done] Start Slint dynamic slot group work only after Bambu flows remain stable through the generic layer.
 
 ## Session Handoff Instructions
 
@@ -1688,6 +1689,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, minimal `PrinterManager` bridge, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, `ui_untag_slot` through `PrinterCommand::UnassignSpoolFromSlot`, `ui_reset_slot` through `PrinterCommand::ClearSlot`, `set_staging_to_tray_direct` and `configure_tray_with_spool_async` through `PrinterCommand::AssignMaterialToSlot`, and web `/api/printer-command` through `PrinterCommand::PrintControl`.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, minimal `PrinterManager` bridge, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, `ui_untag_slot` through `PrinterCommand::UnassignSpoolFromSlot`, `ui_reset_slot` through `PrinterCommand::ClearSlot`, `set_staging_to_tray_direct` and `configure_tray_with_spool_async` through `PrinterCommand::AssignMaterialToSlot`, web `/api/printer-command` through `PrinterCommand::PrintControl`, and generic event routing for connectivity/tag-scan events.
 
-Still not done: full `PrinterManager` ownership replacement, generic event bridge, dynamic Slint slot groups, generic config/state, fake non-Bambu driver, and real non-Bambu driver.
+Still not done: full `PrinterManager` ownership replacement, tray/snapshot event bridge, generic consumption reporting, dynamic Slint slot groups, generic config/state, fake non-Bambu driver, and real non-Bambu driver.
