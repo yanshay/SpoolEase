@@ -1148,6 +1148,8 @@ Current `PrinterConfig` is Bambu-specific:
 - `printer_mode`
 - `use_ams_scan`
 
+Current `static/config.html` is also Bambu-specific. It labels the section as Bambu Lab printers, requires serial/access code, and posts the same Bambu-shaped fields to `/api/printer-config`.
+
 Target configuration should be driver-kind based.
 
 Conceptual shape:
@@ -1176,6 +1178,15 @@ Backward compatibility:
 - Existing `_printers_` config without `kind` should load as Bambu.
 - Existing `_printer_` single-printer fallback should still load as Bambu.
 - Current `DefaultPrinterConfig.serial` should migrate to a generic default printer ID.
+
+Current migration status:
+
+- [done] `PrinterConfig` has `driver_kind`, defaulting to Bambu for old persisted configs.
+- [done] `/api/printer-config` DTO has `driver_kind`, defaulting to Bambu for old clients/config pages.
+- [done] Missing serial/access-code validation is limited to Bambu configs.
+- [not done] `static/config.html` cannot choose non-Bambu/fake printers yet.
+- [not done] Runtime startup still initializes configured printers as Bambu.
+- [not done] Default printer selection still uses Bambu serial instead of a generic printer ID.
 
 Printer ID policy:
 
@@ -1535,7 +1546,7 @@ Acceptance criteria:
 - Bambu printer status displays correctly.
 - Non-Bambu fake driver status can display.
 
-### Phase 8: Generic Configuration and State for New Drivers [not started]
+### Phase 8: Generic Configuration and State for New Drivers [partial]
 
 Introduce driver-kind config.
 
@@ -1545,9 +1556,9 @@ Introduce generic state for new drivers.
 
 Acceptance criteria:
 
-- Existing Bambu config loads as Bambu.
-- New fake/non-Bambu config can be persisted.
-- Default printer selection works by generic printer ID.
+- [done] Existing Bambu config loads as Bambu because missing `driver_kind` defaults to Bambu.
+- [partial] New fake/non-Bambu config can be persisted by DTO/model shape, but `config.html` cannot create it yet.
+- [not done] Default printer selection works by generic printer ID.
 
 ### Phase 9: Add Fake Non-Bambu Driver [not started]
 
@@ -1662,10 +1673,12 @@ Files to avoid changing early unless necessary:
 
 ## Suggested Immediate Next Steps
 
-1. [not done] Bridge Bambu tray/snapshot changes carefully, or defer and add a fake non-Bambu driver first.
-2. [not done] Bridge consumption as generic slot/spool consumption notifications, keeping Bambu G-code analysis internal.
-3. [not done] Continue reducing direct `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` use where a migrated generic path exists.
-4. [not done] Start Slint dynamic slot group work only after Bambu flows remain stable through the generic layer.
+1. [not done] Update `static/config.html` to choose printer driver kind without breaking Bambu defaults.
+2. [not done] Add fake/non-Bambu runtime initialization only after config can express it.
+3. [not done] Bridge Bambu tray/snapshot changes carefully, or defer until fake driver pressures the dynamic UI model.
+4. [not done] Bridge consumption as generic slot/spool consumption notifications, keeping Bambu G-code analysis internal.
+5. [not done] Continue reducing direct `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` use where a migrated generic path exists.
+6. [not done] Start Slint dynamic slot group work only after Bambu flows remain stable through the generic layer.
 
 ## Session Handoff Instructions
 
@@ -1689,6 +1702,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, minimal `PrinterManager` bridge, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, `ui_untag_slot` through `PrinterCommand::UnassignSpoolFromSlot`, `ui_reset_slot` through `PrinterCommand::ClearSlot`, `set_staging_to_tray_direct` and `configure_tray_with_spool_async` through `PrinterCommand::AssignMaterialToSlot`, web `/api/printer-command` through `PrinterCommand::PrintControl`, and generic event routing for connectivity/tag-scan events.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, minimal `PrinterManager` bridge, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, `ui_untag_slot` through `PrinterCommand::UnassignSpoolFromSlot`, `ui_reset_slot` through `PrinterCommand::ClearSlot`, `set_staging_to_tray_direct` and `configure_tray_with_spool_async` through `PrinterCommand::AssignMaterialToSlot`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan events, and a Bambu-defaulting `driver_kind` in printer config/API DTOs.
 
-Still not done: full `PrinterManager` ownership replacement, tray/snapshot event bridge, generic consumption reporting, dynamic Slint slot groups, generic config/state, fake non-Bambu driver, and real non-Bambu driver.
+Still not done: config UI driver-kind selection, full `PrinterManager` ownership replacement, tray/snapshot event bridge, generic consumption reporting, dynamic Slint slot groups, generic state, fake non-Bambu driver, and real non-Bambu driver.

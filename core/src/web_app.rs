@@ -38,10 +38,11 @@ use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::app_config::{
     AiProviderAvailability, AiProviderId, AppConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrinterMode, PrintersConfig,
-    SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
+    SPOOLS_CATALOG, ScaleConfig, UseAmsScan, default_printer_driver_kind,
 };
 use crate::bambu::calibration::KInfo;
 use crate::bambu::bambu_api::PrintCommand;
+use crate::printer::PrinterDriverKind;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
 use crate::store::{BackupMeta, FileMeta, Store};
@@ -1228,6 +1229,8 @@ impl picoserve::response::chunked::Chunks for StoreBackupChunks {
 }
 #[derive(serde::Deserialize, serde::Serialize)]
 struct PrinterConfigDTO {
+    #[serde(default = "default_printer_driver_kind")]
+    driver_kind: PrinterDriverKind,
     ip: Option<String>,
     name: Option<String>,
     serial: Option<String>,
@@ -1247,6 +1250,7 @@ encrypted_input!(PrinterConfigDTO);
 impl From<PrinterConfigDTO> for PrinterConfig {
     fn from(v: PrinterConfigDTO) -> Self {
         Self {
+            driver_kind: v.driver_kind,
             ip: v.ip.and_then(|s| s.parse::<Ipv4Addr>().ok()),
             name: v.name,
             serial: v.serial,
@@ -1268,6 +1272,7 @@ impl From<PrinterConfigDTO> for PrinterConfig {
 impl From<&PrinterConfig> for PrinterConfigDTO {
     fn from(v: &PrinterConfig) -> Self {
         Self {
+            driver_kind: v.driver_kind.clone(),
             ip: v.ip.map(|ip| ip.to_string()),
             name: v.name.clone(),
             serial: v.serial.clone(),

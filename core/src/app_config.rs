@@ -13,6 +13,8 @@ use serde::{Deserialize, Deserializer, Serializer};
 use framework::prelude::*;
 use shared::gcode_analysis_task::Fetch3mf;
 
+use crate::printer::PrinterDriverKind;
+
 pub const SPOOLS_CATALOG: &str = include_str!("../data/Spool-Core-Weights.csv");
 pub const BASE_FILAMENTS: &str = include_str!("../data/base-filaments-index.csv");
 pub const BAMBU_COLOR_NAMES: &str = include_str!("../data/bambu-color-names.csv");
@@ -82,6 +84,10 @@ fn default_false() -> bool {
     false
 }
 
+pub fn default_printer_driver_kind() -> PrinterDriverKind {
+    PrinterDriverKind::Bambu
+}
+
 use serde::Serialize;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Copy, Default)]
@@ -105,6 +111,9 @@ pub enum UseAmsScan {
 #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone, Derivative)]
 #[derivative(Default)]
 pub struct PrinterConfig {
+    #[derivative(Default(value = "PrinterDriverKind::Bambu"))]
+    #[serde(default = "default_printer_driver_kind")]
+    pub driver_kind: PrinterDriverKind,
     #[serde(serialize_with = "serialize_option_ipv4", deserialize_with = "deserialize_option_ipv4")]
     pub ip: Option<Ipv4Address>,
     pub name: Option<String>,
@@ -174,9 +183,14 @@ impl AppConfig {
             return false;
         }
 
+        let mut has_bambu_printers = false;
         let mut missing = true;
         let mut partial_missing = false;
         for printer in &self.configured_printers.printers {
+            if printer.driver_kind != PrinterDriverKind::Bambu {
+                continue;
+            }
+            has_bambu_printers = true;
             if printer.serial.is_some() && printer.access_code.is_some() {
                 missing = false;
             }
@@ -184,11 +198,14 @@ impl AppConfig {
                 partial_missing = true;
             }
         }
+        if !has_bambu_printers {
+            return false;
+        }
         if log {
             if missing {
-                term_error!("Missing printer(s) information");
+                term_error!("Missing Bambu printer(s) information");
             } else if partial_missing {
-                term_error!("At least one printer is missing serial/access_code configuration");
+                term_error!("At least one Bambu printer is missing serial/access_code configuration");
             }
         }
 

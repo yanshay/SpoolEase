@@ -53,7 +53,7 @@ use crate::color_utils::get_color_name;
 use crate::filament_staging::StagingOrigin;
 use crate::printer::{
     self as printer_domain, FilamentTemps, PrintControlCommand, PrinterCommand, PrinterEvent, PrinterId, SlotAssignMode, SlotId,
-    manager::PrinterManager,
+    manager::PrinterManager, PrinterDriverKind,
 };
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
@@ -465,6 +465,7 @@ impl ViewModel {
         let mut available_printers: Vec<crate::app::Printer> = Vec::new();
 
         let dummy_printer_config = PrinterConfig {
+            driver_kind: PrinterDriverKind::Bambu,
             ip: None,
             name: Some("No Printer Configured".to_string()),
             serial: Some("000000000000000".to_string()),
