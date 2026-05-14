@@ -1,15 +1,23 @@
-use alloc::{format, rc::Rc, string::ToString, vec::Vec};
+use alloc::{
+    boxed::Box,
+    format,
+    rc::Rc,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::cell::RefCell;
 
+use crate::app_config::FakePrinterConfig;
 use crate::bambu::BambuPrinter;
 
 use super::{
     PrinterCommand, PrinterDriver, PrinterError, PrinterId, PrinterResult, PrinterSnapshot, bambu_adapter::BambuPrinterDriver,
+    fake_driver::FakePrinterDriver,
 };
 
 #[derive(Default)]
 pub struct PrinterManager {
-    printers: Vec<BambuPrinterDriver>,
+    printers: Vec<Box<dyn PrinterDriver>>,
     selected_index: Option<usize>,
 }
 
@@ -19,10 +27,22 @@ impl PrinterManager {
     }
 
     pub fn add_bambu_printer(&mut self, printer: Rc<RefCell<BambuPrinter>>) {
-        self.printers.push(BambuPrinterDriver::new(printer));
+        self.add_driver(Box::new(BambuPrinterDriver::new(printer)));
+    }
+
+    pub fn add_fake_printer(&mut self, name: Option<String>, config: &FakePrinterConfig) {
+        self.add_driver(Box::new(FakePrinterDriver::new(name, config)));
+    }
+
+    fn add_driver(&mut self, driver: Box<dyn PrinterDriver>) {
+        self.printers.push(driver);
         if self.selected_index.is_none() {
             self.selected_index = Some(0);
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.printers.len()
     }
 
     pub fn set_selected_index(&mut self, index: usize) -> PrinterResult<()> {
@@ -35,7 +55,7 @@ impl PrinterManager {
     }
 
     pub fn snapshot_at(&self, index: usize) -> Option<PrinterSnapshot> {
-        self.printers.get(index).map(PrinterDriver::snapshot)
+        self.printers.get(index).map(|printer| printer.snapshot())
     }
 
     pub fn id_at(&self, index: usize) -> Option<PrinterId> {

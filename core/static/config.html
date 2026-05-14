@@ -813,9 +813,14 @@ ProtoPasta 500g - Cardboard - 84g,84"
       // Printer Settings Functions
       // ==========================================
       const BAMBU_DRIVER_KIND = "Bambu";
+      const FAKE_DRIVER_KIND = "Fake";
 
       function isBambuDriverKind(driverKind) {
         return (driverKind || BAMBU_DRIVER_KIND) === BAMBU_DRIVER_KIND;
+      }
+
+      function isFakeDriverKind(driverKind) {
+        return driverKind === FAKE_DRIVER_KIND;
       }
 
       function printerIdFromForm(form) {
@@ -824,12 +829,17 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const serial = form.querySelector(".serial").value.trim();
           return serial ? `bambu_printer_${serial}` : null;
         }
+        if (isFakeDriverKind(driverKind)) {
+          const uniqueId = form.querySelector(".fake-unique-id").value.trim();
+          return uniqueId ? `fake_printer_${uniqueId}` : null;
+        }
         return null;
       }
 
       function updatePrinterKindFields(form) {
         const driverKind = form.querySelector(".driver-kind")?.value || BAMBU_DRIVER_KIND;
         const isBambu = isBambuDriverKind(driverKind);
+        const isFake = isFakeDriverKind(driverKind);
 
         const serialLabel = form.querySelector(".serial-label-text");
         if (serialLabel) {
@@ -851,8 +861,16 @@ ProtoPasta 500g - Cardboard - 84g,84"
           accessCodeRow.style.display = isBambu ? "block" : "none";
         }
 
+        form.querySelectorAll(".bambu-config-row").forEach((row) => {
+          row.style.display = isBambu ? "" : "none";
+        });
+
         form.querySelectorAll(".bambu-setting-row").forEach((row) => {
           row.style.display = isBambu ? (row.classList.contains("bambu-flex-row") ? "flex" : "") : "none";
+        });
+
+        form.querySelectorAll(".fake-setting-row").forEach((row) => {
+          row.style.display = isFake ? "" : "none";
         });
 
         const advancedSection = form.querySelector(".printer-advanced-section");
@@ -879,19 +897,32 @@ ProtoPasta 500g - Cardboard - 84g,84"
                     <label>Printer Type:<span>Configuration below depends on type</span></label>
                     <select class="driver-kind" onchange="updatePrinterKindFields(this.closest('.printer-form'))" style="width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;">
                       <option value="Bambu" selected>Bambu Lab</option>
+                      <option value="Fake">Fake Non-Bambu</option>
                     </select>
                 </div>
 
-                <div class="form-row">
+                <div class="form-row bambu-config-row">
                     <label class="serial-label-text">Serial Number: *</label>
                     <input type="text" class="serial" placeholder="Enter serial number">
                     <div class="error-message serial-error">Serial number is required</div>
                 </div>
 
-                <div class="form-row access-code-row">
+                <div class="form-row bambu-config-row access-code-row">
                     <label>Access Code: *</label>
                     <input type="text" class="access-code" placeholder="Enter access code">
                     <div class="error-message access-code-error">Access code is required</div>
+                </div>
+
+                <div class="form-row fake-setting-row" style="display: none;">
+                    <label>Fake Printer Unique ID: *</label>
+                    <input type="text" class="fake-unique-id" placeholder="Enter stable fake printer ID">
+                    <div class="error-message fake-unique-id-error">Fake printer unique ID is required</div>
+                </div>
+
+                <div class="form-row fake-setting-row" style="display: none;">
+                    <label>Fake Slot Count:<span>1-64 writable slots</span></label>
+                    <input type="number" class="fake-slot-count" min="1" max="64" value="4">
+                    <div class="error-message fake-slot-count-error">Fake slot count must be between 1 and 64</div>
                 </div>
 
                 <div class="form-row">
@@ -900,7 +931,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
                     <div class="error-message name-error">Name is required when IP is provided</div>
                 </div>
 
-                <div class="form-row">
+                <div class="form-row bambu-config-row">
                     <label>IP Address:<span>If set, requires also name</span></label>
                     <div class="ip-container">
                         <div class="ip-segment">
@@ -1003,6 +1034,8 @@ ProtoPasta 500g - Cardboard - 84g,84"
           newPrinterForm.querySelector(".serial").value = driverConfig.serial || "";
           newPrinterForm.querySelector(".access-code").value =
             driverConfig.access_code || "";
+          newPrinterForm.querySelector(".fake-unique-id").value = driverConfig.unique_id || "";
+          newPrinterForm.querySelector(".fake-slot-count").value = driverConfig.slot_count || 4;
           newPrinterForm.querySelector(".name").value = printer.name || "";
 
           // Set IP if available
@@ -1196,19 +1229,33 @@ ProtoPasta 500g - Cardboard - 84g,84"
         document.querySelectorAll(".printer-form").forEach((form) => {
           const driverKind = form.querySelector(".driver-kind")?.value || BAMBU_DRIVER_KIND;
           const isBambu = isBambuDriverKind(driverKind);
+          const isFake = isFakeDriverKind(driverKind);
           const serialInput = form.querySelector(".serial");
           const accessCodeInput = form.querySelector(".access-code");
+          const fakeUniqueIdInput = form.querySelector(".fake-unique-id");
+          const fakeSlotCountInput = form.querySelector(".fake-slot-count");
           const nameInput = form.querySelector(".name");
           const ipParts = Array.from(form.querySelectorAll(".ip-part"));
 
           // Check required fields
-          if (!serialInput.value.trim()) {
+          if (isBambu && !serialInput.value.trim()) {
             form.querySelector(".serial-error").style.display = "block";
             isValid = false;
           }
 
           if (isBambu && !accessCodeInput.value.trim()) {
             form.querySelector(".access-code-error").style.display = "block";
+            isValid = false;
+          }
+
+          if (isFake && !fakeUniqueIdInput.value.trim()) {
+            form.querySelector(".fake-unique-id-error").style.display = "block";
+            isValid = false;
+          }
+
+          const fakeSlotCount = parseInt(fakeSlotCountInput.value, 10);
+          if (isFake && (isNaN(fakeSlotCount) || fakeSlotCount < 1 || fakeSlotCount > 64)) {
+            form.querySelector(".fake-slot-count-error").style.display = "block";
             isValid = false;
           }
 
@@ -1219,7 +1266,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const ipFilled = ipParts.every((part) => part.value.trim() !== "");
           const ipEmpty = ipParts.every((part) => part.value.trim() === "");
 
-          if (hasIPValue && !ipFilled) {
+          if (isBambu && hasIPValue && !ipFilled) {
             form.querySelector(".ip-error").textContent =
               "All IP fields must be filled";
             form.querySelector(".ip-error").style.display = "block";
@@ -1227,7 +1274,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           }
 
           // If IP is provided, name is required
-          if (hasIPValue && !nameInput.value.trim()) {
+          if (isBambu && hasIPValue && !nameInput.value.trim()) {
             form.querySelector(".name-error").style.display = "block";
             isValid = false;
           }
@@ -1251,6 +1298,8 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const driverKind = form.querySelector(".driver-kind")?.value || BAMBU_DRIVER_KIND;
           const serial = form.querySelector(".serial").value.trim();
           const accessCode = form.querySelector(".access-code").value.trim();
+          const fakeUniqueId = form.querySelector(".fake-unique-id").value.trim();
+          const fakeSlotCount = parseInt(form.querySelector(".fake-slot-count").value, 10);
           const name = form.querySelector(".name").value.trim();
           const logFilterEnabled = form.querySelector(
             ".printer-log-filter",
@@ -1271,13 +1320,9 @@ ProtoPasta 500g - Cardboard - 84g,84"
             ip = ipParts.map((part) => part.value.trim()).join(".");
           }
 
-          const driverConfig = {
-            serial: serial,
-          };
-
-          if (isBambuDriverKind(driverKind) || accessCode) {
-            driverConfig.access_code = accessCode;
-          }
+          const driverConfig = isBambuDriverKind(driverKind)
+            ? { serial: serial, access_code: accessCode }
+            : { unique_id: fakeUniqueId, slot_count: fakeSlotCount };
 
           const printer = {
             driver_kind: driverKind,
@@ -1288,22 +1333,24 @@ ProtoPasta 500g - Cardboard - 84g,84"
             printer.name = name;
           }
 
-          if (ip) {
+          if (isBambuDriverKind(driverKind) && ip) {
             driverConfig.ip = ip;
           }
 
-          if (logFilterEnabled) {
+          if (isBambuDriverKind(driverKind) && logFilterEnabled) {
             driverConfig.log_filter = "TRACE";
-          } else {
+          } else if (isBambuDriverKind(driverKind)) {
             driverConfig.log_filter = "WARN";
           }
 
-          driverConfig.auto_restore_k = autoRestoreK;
-          driverConfig.track_print_consume = trackPrintConsume;
-          driverConfig.fetch_3mf = fetch3mf;
-          driverConfig.ignore_certificates = ignoreCertificates;
-          driverConfig.printer_mode = printerMode;
-          driverConfig.use_ams_scan = useAmsScan;
+          if (isBambuDriverKind(driverKind)) {
+            driverConfig.auto_restore_k = autoRestoreK;
+            driverConfig.track_print_consume = trackPrintConsume;
+            driverConfig.fetch_3mf = fetch3mf;
+            driverConfig.ignore_certificates = ignoreCertificates;
+            driverConfig.printer_mode = printerMode;
+            driverConfig.use_ams_scan = useAmsScan;
+          }
 
           printers.push(printer);
 

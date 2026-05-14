@@ -548,6 +548,18 @@ impl ViewModel {
             printer_number += 1; // printer_number is always increased, even if printer is bad config
         }
 
+        for printer_config in &self.app_config.borrow().configured_printers.printers {
+            if let Some(fake_config) = printer_config.fake_config() {
+                if fake_config.printer_id().is_err() {
+                    term_info!("Skipping fake printer with invalid config");
+                    continue;
+                }
+                self.printer_manager
+                    .borrow_mut()
+                    .add_fake_printer(printer_config.name.clone(), fake_config);
+            }
+        }
+
         let ui = self.ui_weak.unwrap();
         let ui_app_backend = ui.global::<crate::app::AppBackend>();
         let ui_app_state = ui.global::<crate::app::AppState>();
@@ -3151,41 +3163,70 @@ impl ViewModel {
     }
     pub fn get_printers_status(&self) -> Vec<PrinterInfo> {
         let mut printers_info = Vec::new();
-        for (printer_index, printer) in self.bambu_printer_model.printers.iter().enumerate() {
-            let printer_borrow = printer.borrow();
-            if printer_borrow.printer_serial.starts_with("000000") {
-                // dummy printer
-                break;
-            }
-            let Some(snapshot) = self.printer_manager.borrow().snapshot_at(printer_index) else {
-                error!("Missing printer snapshot for printer index {printer_index}");
-                continue;
+        let snapshots = {
+            let printer_manager = self.printer_manager.borrow();
+            (0..printer_manager.len())
+                .filter_map(|printer_index| {
+                    let snapshot = printer_manager.snapshot_at(printer_index);
+                    if snapshot.is_none() {
+                        error!("Missing printer snapshot for printer index {printer_index}");
+                    }
+                    snapshot
+                })
+                .collect::<Vec<_>>()
+        };
+
+        for (printer_index, snapshot) in snapshots.into_iter().enumerate() {
+            let bambu_printer_borrow = if snapshot.kind == printer_domain::PrinterDriverKind::Bambu {
+                self.bambu_printer_model.printers.get(printer_index).map(|printer| printer.borrow())
+            } else {
+                None
             };
+
+            if bambu_printer_borrow
+                .as_ref()
+                .is_some_and(|printer_borrow| printer_borrow.printer_serial.starts_with("000000"))
+            {
+                // dummy printer
+                continue;
+            }
+
             let slots_sets = self.slot_sets_from_snapshot(&snapshot);
 
             let printer_info = PrinterInfo {
-                printer_name: snapshot.name,
-                printer_serial: printer_borrow.printer_serial.clone(),
+                printer_name: snapshot.name.clone(),
+                printer_serial: bambu_printer_borrow
+                    .as_ref()
+                    .map(|printer_borrow| printer_borrow.printer_serial.clone())
+                    .unwrap_or_else(|| snapshot.id.0.clone()),
                 connected: snapshot.connected,
-                num_ams: printer_borrow.ams_exist_bits().map(|_| {
-                    snapshot
-                        .slot_groups
-                        .iter()
-                        .filter(|group| group.kind == printer_domain::SlotGroupKind::InternalChanger)
-                        .count() as u32
-                }),
+                num_ams: bambu_printer_borrow
+                    .as_ref()
+                    .filter(|printer_borrow| printer_borrow.ams_exist_bits().is_some())
+                    .map(|_| {
+                        snapshot
+                            .slot_groups
+                            .iter()
+                            .filter(|group| group.kind == printer_domain::SlotGroupKind::InternalChanger)
+                            .count() as u32
+                    }),
                 print_state: Self::print_state_from_snapshot(snapshot.print.state),
                 progress_percent: snapshot.print.progress_percent.map(i32::from),
                 remain_secs: snapshot.print.remaining_minutes.map(|v| (v.min(i32::MAX as u32 / 60) as i32) * 60),
                 print_name: snapshot.print.job_name,
                 layer: snapshot.print.current_layer.map(|v| v.min(i32::MAX as u32) as i32),
                 num_layers: snapshot.print.total_layers.map(|v| v.min(i32::MAX as u32) as i32),
-                stage: printer_borrow.stg_cur,
-                print_error: printer_borrow.print_error,
-                hms_errors: printer_borrow
-                    .hms
+                stage: bambu_printer_borrow.as_ref().and_then(|printer_borrow| printer_borrow.stg_cur),
+                print_error: bambu_printer_borrow.as_ref().and_then(|printer_borrow| printer_borrow.print_error),
+                hms_errors: bambu_printer_borrow
                     .as_ref()
-                    .map_or(Vec::new(), |vs| vs.iter().map(|v| (v.attr.unwrap_or(0), v.code.unwrap_or(0))).collect()),
+                    .and_then(|printer_borrow| {
+                        printer_borrow
+                            .hms
+                            .as_ref()
+                            .map(|vs| vs.iter().map(|v| (v.attr.unwrap_or(0), v.code.unwrap_or(0))).collect())
+                    })
+                    .unwrap_or_default(),
                 num_extruders: snapshot.extruders.len() as u32,
                 slots_sets,
             };

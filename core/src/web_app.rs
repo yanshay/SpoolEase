@@ -37,8 +37,8 @@ use sha2::{Digest, Sha256};
 use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::app_config::{
-    AiProviderAvailability, AiProviderId, AppConfig, BambuPrinterConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, PrinterConfig, PrinterMode,
-    PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
+    AiProviderAvailability, AiProviderId, AppConfig, BambuPrinterConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, FakePrinterConfig,
+    PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
 };
 use crate::bambu::calibration::KInfo;
 use crate::bambu::bambu_api::PrintCommand;
@@ -1243,6 +1243,7 @@ encrypted_input!(PrinterConfigDTO);
 #[serde(tag = "driver_kind", content = "driver_config")]
 enum PrinterDriverConfigDTO {
     Bambu(BambuPrinterConfigDTO),
+    Fake(FakePrinterConfigDTO),
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -1262,6 +1263,17 @@ struct BambuPrinterConfigDTO {
     printer_mode: PrinterMode,
     #[serde(default)]
     use_ams_scan: UseAmsScan,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct FakePrinterConfigDTO {
+    unique_id: String,
+    #[serde(default = "default_fake_slot_count_dto")]
+    slot_count: u8,
+}
+
+fn default_fake_slot_count_dto() -> u8 {
+    4
 }
 
 impl From<BambuPrinterConfigDTO> for BambuPrinterConfig {
@@ -1305,18 +1317,37 @@ impl From<&BambuPrinterConfig> for BambuPrinterConfigDTO {
     }
 }
 
+impl From<FakePrinterConfigDTO> for FakePrinterConfig {
+    fn from(v: FakePrinterConfigDTO) -> Self {
+        Self {
+            unique_id: v.unique_id,
+            slot_count: v.slot_count,
+        }
+    }
+}
+
+impl From<&FakePrinterConfig> for FakePrinterConfigDTO {
+    fn from(v: &FakePrinterConfig) -> Self {
+        Self {
+            unique_id: v.unique_id.clone(),
+            slot_count: v.slot_count,
+        }
+    }
+}
+
 impl From<PrinterConfigDTO> for PrinterConfig {
     fn from(v: PrinterConfigDTO) -> Self {
         match v.driver {
             PrinterDriverConfigDTO::Bambu(bambu_config) => Self::bambu(v.name, bambu_config.into()),
+            PrinterDriverConfigDTO::Fake(fake_config) => Self::fake(v.name, fake_config.into()),
         }
     }
 }
 impl From<&PrinterConfig> for PrinterConfigDTO {
     fn from(v: &PrinterConfig) -> Self {
-        let driver = match v.bambu_config() {
-            Some(bambu_config) => PrinterDriverConfigDTO::Bambu(BambuPrinterConfigDTO::from(bambu_config)),
-            None => PrinterDriverConfigDTO::Bambu(BambuPrinterConfigDTO::from(&BambuPrinterConfig::default())),
+        let driver = match &v.driver {
+            PrinterDriverConfig::Bambu(bambu_config) => PrinterDriverConfigDTO::Bambu(BambuPrinterConfigDTO::from(bambu_config)),
+            PrinterDriverConfig::Fake(fake_config) => PrinterDriverConfigDTO::Fake(FakePrinterConfigDTO::from(fake_config)),
         };
         Self {
             name: v.name.clone(),

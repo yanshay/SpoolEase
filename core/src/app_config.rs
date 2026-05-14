@@ -123,21 +123,38 @@ impl PrinterConfig {
         }
     }
 
+    pub fn fake(name: Option<String>, config: FakePrinterConfig) -> Self {
+        Self {
+            name,
+            driver: PrinterDriverConfig::Fake(config),
+        }
+    }
+
     pub fn driver_kind(&self) -> PrinterDriverKind {
         match &self.driver {
             PrinterDriverConfig::Bambu(_) => PrinterDriverKind::Bambu,
+            PrinterDriverConfig::Fake(_) => PrinterDriverKind::Fake,
         }
     }
 
     pub fn printer_id(&self) -> Result<PrinterId, String> {
         match &self.driver {
             PrinterDriverConfig::Bambu(config) => config.printer_id(),
+            PrinterDriverConfig::Fake(config) => config.printer_id(),
         }
     }
 
     pub fn bambu_config(&self) -> Option<&BambuPrinterConfig> {
         match &self.driver {
             PrinterDriverConfig::Bambu(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    pub fn fake_config(&self) -> Option<&FakePrinterConfig> {
+        match &self.driver {
+            PrinterDriverConfig::Fake(config) => Some(config),
+            _ => None,
         }
     }
 }
@@ -146,6 +163,7 @@ impl PrinterConfig {
 #[serde(tag = "driver_kind", content = "driver_config")]
 pub enum PrinterDriverConfig {
     Bambu(BambuPrinterConfig),
+    Fake(FakePrinterConfig),
 }
 
 impl Default for PrinterDriverConfig {
@@ -194,6 +212,33 @@ impl BambuPrinterConfig {
     }
 }
 
+fn default_fake_slot_count() -> u8 {
+    4
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone, Derivative)]
+#[derivative(Default)]
+pub struct FakePrinterConfig {
+    pub unique_id: String,
+    #[derivative(Default(value = "4"))]
+    #[serde(default = "default_fake_slot_count")]
+    pub slot_count: u8,
+}
+
+impl FakePrinterConfig {
+    pub fn printer_id_for_unique_id(unique_id: &str) -> PrinterId {
+        PrinterId::new(format!("fake_printer_{unique_id}"))
+    }
+
+    pub fn printer_id(&self) -> Result<PrinterId, String> {
+        if self.unique_id.trim().is_empty() {
+            Err("Missing fake printer unique ID".to_string())
+        } else {
+            Ok(Self::printer_id_for_unique_id(self.unique_id.trim()))
+        }
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct LegacyPrinterConfig {
     #[serde(default = "default_printer_driver_kind")]
@@ -236,6 +281,7 @@ impl From<LegacyPrinterConfig> for PrinterConfig {
                     use_ams_scan: v.use_ams_scan,
                 },
             ),
+            PrinterDriverKind::Fake => Self::fake(v.name, FakePrinterConfig::default()),
             _ => Self::default(),
         }
     }
@@ -314,28 +360,37 @@ impl AppConfig {
             return false;
         }
 
-        let mut has_bambu_printers = false;
+        let mut has_printers = false;
         let mut missing = true;
         let mut partial_missing = false;
         for printer in &self.configured_printers.printers {
-            if let Some(bambu_config) = printer.bambu_config() {
-                has_bambu_printers = true;
-                if bambu_config.serial.is_some() && bambu_config.access_code.is_some() {
-                    missing = false;
+            has_printers = true;
+            match &printer.driver {
+                PrinterDriverConfig::Bambu(bambu_config) => {
+                    if bambu_config.serial.is_some() && bambu_config.access_code.is_some() {
+                        missing = false;
+                    }
+                    if bambu_config.serial.is_none() || bambu_config.access_code.is_none() {
+                        partial_missing = true;
+                    }
                 }
-                if bambu_config.serial.is_none() || bambu_config.access_code.is_none() {
-                    partial_missing = true;
+                PrinterDriverConfig::Fake(fake_config) => {
+                    if fake_config.printer_id().is_ok() {
+                        missing = false;
+                    } else {
+                        partial_missing = true;
+                    }
                 }
             }
         }
-        if !has_bambu_printers {
+        if !has_printers {
             return false;
         }
         if log {
             if missing {
-                term_error!("Missing Bambu printer(s) information");
+                term_error!("Missing printer(s) information");
             } else if partial_missing {
-                term_error!("At least one Bambu printer is missing serial/access_code configuration");
+                term_error!("At least one printer has incomplete configuration");
             }
         }
 
@@ -583,9 +638,7 @@ impl AppConfig {
 
     pub fn set_user_cores(&mut self, user_cores: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
         if let Some(user_cores) = &user_cores {
-            self.framework
-                .borrow()
-                .store(USER_CORES_CONFIG_KEY.to_string(), user_cores.clone())?;
+            self.framework.borrow().store(USER_CORES_CONFIG_KEY.to_string(), user_cores.clone())?;
         } else {
             self.framework.borrow().remove(USER_CORES_CONFIG_KEY.to_string())?;
         }

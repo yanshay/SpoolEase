@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 pub mod bambu_adapter;
+pub mod fake_driver;
 pub mod manager;
 
 use alloc::{
@@ -45,6 +46,7 @@ pub enum PrinterDriverKind {
     #[default]
     Unknown,
     Bambu,
+    Fake,
     Moonraker,
     Prusa,
     Snapmaker,
