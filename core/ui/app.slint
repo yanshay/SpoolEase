@@ -14,6 +14,24 @@ export enum UiFilamentState { Unknown, Known }
 export struct Printer {
     name: string,
     connected: bool,
+    kind: string,
+}
+
+export struct UiGenericSlot {
+  id: string,
+  name: string,
+  state: string,
+  material: string,
+  spool_id: string,
+  colors: [color],
+  colors_have_alpha: bool,
+  used_in_print: bool,
+}
+
+export struct UiGenericSlotGroup {
+  name: string,
+  kind: string,
+  slots: [UiGenericSlot],
 }
 
 export struct UiFilament {
@@ -150,6 +168,7 @@ export enum SpoolStagingState {
 export global AppBackend {
     callback clear-staging();
     callback set-staging-to-tray(tray-id: int);
+    callback set-staging-to-generic-slot(slot-id: string);
     callback encode-tag() -> bool;
     callback read-tag-mode();
     callback web-config-web-app();
@@ -340,6 +359,7 @@ export global AppState {
     in-out property <int> num-extruders: 1;
     in-out property <int> displayed-extruder: 0;
     in-out property <[Printer]> available-printers: [];
+    in-out property <[UiGenericSlotGroup]> generic-slot-groups: [];
     in-out property <int> default-printer: -1;
     in-out property <int> pending-curr-printer: -1;
     pure public function curr-printer-name() -> string {
@@ -355,6 +375,18 @@ export global AppState {
         } else {
             return false;
         }
+    }
+
+    pure public function curr-printer-kind() -> string {
+        if curr-printer != -1 && available-printers.length != 0 {
+            return available-printers[curr-printer].kind;
+        } else {
+            return "";
+        }
+    }
+
+    pure public function curr-printer-is-bambu() -> bool {
+        return curr-printer-kind() == "Bambu";
     }
 
     changed pending-curr-printer => {

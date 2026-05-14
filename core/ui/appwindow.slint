@@ -45,6 +45,7 @@ import { MessageBox } from "message-box.slint";
 import { AppOtaSelect } from "ota.slint";
 import { Storage } from "storage.slint";
 import { Slots } from "slots.slint";
+import { GenericSlots } from "generic-slots.slint";
 
 // reexport to rust
 
@@ -176,9 +177,13 @@ export component AppWindow inherits Window {
                         Rectangle {
                             VerticalLayout { // for some reason VerticalLayout adds the required spacing below
                                 slots := Slots {
-                                    visible: !AppState.no-printers-configured;
+                                    visible: !AppState.no-printers-configured && AppState.curr-printer-is-bambu();
                                     width: FrameworkState.display-width;
                                 }
+                            }
+
+                            if !AppState.no-printers-configured && !AppState.curr-printer-is-bambu(): GenericSlots {
+                                width: FrameworkState.display-width;
                             }
 
                             if AppState.no-printers-configured: VerticalLayout {
