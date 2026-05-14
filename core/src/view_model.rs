@@ -2486,8 +2486,22 @@ impl ViewModel {
         }
 
         let ui = self.ui_weak.unwrap();
-        ui.global::<crate::app::AppState>()
-            .set_num_extruders(bambu_printer.num_extruders() as i32);
+        let ui_app_state = ui.global::<crate::app::AppState>();
+        let num_extruders = bambu_printer.num_extruders();
+        ui_app_state.set_num_extruders(num_extruders as i32);
+        ui_app_state.set_ams_titles(slint::ModelRc::from(Rc::new(slint::VecModel::from(
+            (0..12).map(|ams_id| format!("AMS - {}", ams_id + 1).to_shared_string()).collect::<Vec<_>>(),
+        ))));
+        ui_app_state.set_external_slot_titles(slint::ModelRc::from(Rc::new(slint::VecModel::from(
+            if num_extruders == 1 {
+                vec!["External".to_shared_string()]
+            } else {
+                vec!["Ext Right".to_shared_string(), "Ext Left".to_shared_string()]
+            },
+        ))));
+        if num_extruders == 1 && ui_app_state.get_displayed_extruder() != 0 {
+            ui_app_state.set_displayed_extruder(0);
+        }
         // ----- handle number of ams's and curr_ams -----
         // OPT: calculate only when ams_exists change (store in printer struct), here use the value calculated there
         //      don't forget to consider loading the ams_exist from state which will need to recalculate, so add inner_set_ams_exist_bits

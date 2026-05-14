@@ -359,6 +359,8 @@ export global AppState {
 
     in-out property <int> curr-ams-id: 0;
     in-out property <[int]> ams-exists: [0];
+    in-out property <[string]> ams-titles: ["AMS - 1"];
+    in-out property <[string]> external-slot-titles: ["External"];
 
     in-out property <bool> no-printers-configured: false;
     in-out property <int> curr-printer: -1;
@@ -428,6 +430,22 @@ export global AppState {
             return available-printers[curr-printer].can_unassign_slot;
         } else {
             return false;
+        }
+    }
+
+    pure public function curr-ams-title() -> string {
+        if curr-ams-id >= 0 && curr-ams-id < ams-titles.length {
+            return ams-titles[curr-ams-id];
+        } else {
+            return "AMS - " + (curr-ams-id + 1);
+        }
+    }
+
+    pure public function curr-external-slot-title() -> string {
+        if displayed-extruder >= 0 && displayed-extruder < external-slot-titles.length {
+            return external-slot-titles[displayed-extruder];
+        } else {
+            return "External";
         }
     }
 

@@ -104,7 +104,7 @@ export component GenericSlots inherits Rectangle {
         for group in AppState.generic-slot-groups: VerticalLayout {
             spacing: 2px;
             Title {
-                text: group.name + " (" + group.kind + ")";
+                text: group.name;
                 text-color: white;
                 background: AppConsts.title-gradient;
             }

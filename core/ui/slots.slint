@@ -8,7 +8,7 @@ export component Slots inherits HorizontalLayout {
                             if AppState.ams-exists.length > 0: 
     ams := Trays {
         is_ams: true;
-        title: "AMS - " + (AppState.curr-ams-id + 1);
+        title: AppState.curr-ams-title();
         include-paging-left: false;
         include-paging-right: false;
         tray_numbers: AppState.curr-ams-id <= 3 ? [
@@ -22,11 +22,11 @@ export component Slots inherits HorizontalLayout {
 
     external := Trays {
         is_ams: false;
-        title: AppState.num-extruders == 1 ? "External" : AppState.displayed-extruder == 0 ? "Ext Right" : "Ext Left";
+        title: AppState.curr-external-slot-title();
         tray_numbers: [AppState.displayed-extruder];
         trays-state: AppState.trays-state;
         title-clicked => {
-            if AppState.num-extruders == 2 {
+            if AppState.external-slot-titles.length > 1 {
                 AppState.displayed-extruder = 1 - AppState.displayed-extruder;
             }
         }
