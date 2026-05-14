@@ -1208,36 +1208,6 @@ impl ViewModel {
         None
     }
 
-    fn set_tray_filament(
-        &self,
-        bambu_printer: &mut BambuPrinter,
-        tray_id: i32,
-        full_spool_rec: &FullSpoolRecord,
-        temp_min: u32,
-        temp_max: u32,
-        only_spool_id: bool,
-    ) {
-        let set_tray_ok = match only_spool_id {
-            true => {
-                bambu_printer.set_tray_spool_rec(tray_id as usize, &full_spool_rec.spool_rec);
-                true
-            }
-            false => bambu_printer.set_tray_filament(tray_id, full_spool_rec, temp_min, temp_max).is_ok(),
-        };
-        if set_tray_ok {
-            // spool_rec loaded to slot, so remove it from it's actual location
-
-            if !full_spool_rec.spool_rec.actual_location.is_empty() {
-                let mut spool_rec = Box::new(full_spool_rec.spool_rec.clone());
-                spool_rec.actual_location = String::new();
-                let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec {
-                    spool_rec,
-                    message_box: None,
-                });
-            }
-        }
-    }
-
     fn set_tray_filament_via_manager(
         &self,
         bambu_printer: &mut BambuPrinter,
@@ -3010,7 +2980,7 @@ impl ViewModel {
                     Some(printer_index) => view_model_borrow.bambu_printer_model.printers.get(printer_index).unwrap().clone(),
                 };
                 let mut bambu_printer_mut = bambu_printer.borrow_mut();
-                view_model.borrow().set_tray_filament(
+                view_model.borrow().set_tray_filament_via_manager(
                     &mut bambu_printer_mut,
                     tray_id,
                     &full_spool_rec,
