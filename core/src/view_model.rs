@@ -38,7 +38,7 @@ use framework::{
     terminal::{self, TerminalObserver, term_mut},
 };
 
-use crate::app::{UiGenericSlot, UiGenericSlotGroup, UiSlotDisplay, UiSpoolRecord, UiSpoolRecordDisplay};
+use crate::app::{UiFilament, UiGenericSlot, UiGenericSlotGroup, UiSlotDisplay, UiSpoolRecord, UiSpoolRecordDisplay, UiTray};
 use crate::app_config::{
     BAMBU_COLOR_NAMES, BASE_FILAMENTS, BambuPrinterConfig, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig, PrinterMode, UseAmsScan,
 };
@@ -319,7 +319,7 @@ impl ViewModel {
         color_codes
             .iter()
             .flat_map(|color_code| color_code.split(';'))
-            .filter_map(Self::rgba_hex_to_slint_color)
+            .filter_map(Self::rgb_or_rgba_hex_to_slint_color)
             .collect()
     }
 
@@ -1349,6 +1349,155 @@ impl ViewModel {
         let external_title_count = ui_app_state.get_external_slot_titles().row_count() as i32;
         if ui_app_state.get_displayed_extruder() >= external_title_count {
             ui_app_state.set_displayed_extruder(0);
+        }
+    }
+
+    fn update_bambu_trays_state_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) {
+        let ui = self.ui_weak.unwrap();
+        ui.global::<crate::app::AppState>()
+            .set_trays_state(slint::ModelRc::from(Rc::new(slint::VecModel::from(
+                self.ui_bambu_trays_from_snapshot(snapshot),
+            ))));
+    }
+
+    fn ui_bambu_trays_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) -> Vec<UiTray> {
+        let mut trays = Self::empty_bambu_ui_trays();
+        for slot in snapshot.slot_groups.iter().flat_map(|group| group.slots.iter()) {
+            let Some(tray_id) = Self::bambu_tray_id_from_slot_snapshot(slot) else {
+                continue;
+            };
+            let Some(row) = Self::bambu_ui_tray_row(tray_id) else {
+                continue;
+            };
+            trays[row] = self.ui_bambu_tray_from_slot(tray_id, slot);
+        }
+        trays
+    }
+
+    fn empty_bambu_ui_trays() -> Vec<UiTray> {
+        let mut tray_ids = vec![255, 254];
+        tray_ids.extend(0..=23);
+        tray_ids.into_iter().map(Self::empty_bambu_ui_tray).collect()
+    }
+
+    fn empty_bambu_ui_tray(tray_id: i32) -> UiTray {
+        UiTray {
+            id: tray_id,
+            name: Self::bambu_ui_tray_name(tray_id).to_shared_string(),
+            external: Self::bambu_ui_tray_is_external(tray_id),
+            spool_state: crate::app::UiTrayState::Unknown,
+            filament: UiFilament {
+                state: crate::app::UiFilamentState::Unknown,
+                colors: Self::ui_color_model(vec![slint::Color::from_argb_encoded(0xFF000000)]),
+                material: "???".to_shared_string(),
+            },
+            tray_has_alpha: false,
+            spool_has_alpha: false,
+            spool_colors: Self::ui_color_model(Vec::new()),
+            k: "-1.0".to_shared_string(),
+            tagged: false,
+            weight_display: SharedString::new(),
+            used_in_print: false,
+            spool_rec_id: SharedString::new(),
+        }
+    }
+
+    fn ui_bambu_tray_from_slot(&self, tray_id: i32, slot: &printer_domain::MaterialSlotSnapshot) -> UiTray {
+        let (filament_state, filament_colors, tray_has_alpha, material) = match &slot.filament {
+            printer_domain::PrinterFilament::Known(filament) => (
+                crate::app::UiFilamentState::Known,
+                Self::ui_colors_from_color_codes(&filament.color_codes),
+                Self::color_codes_have_alpha(&filament.color_codes),
+                filament.material_type.to_shared_string(),
+            ),
+            printer_domain::PrinterFilament::Unknown => (
+                crate::app::UiFilamentState::Unknown,
+                vec![slint::Color::from_argb_encoded(0xFF000000)],
+                false,
+                "???".to_shared_string(),
+            ),
+        };
+        let (spool_colors, spool_has_alpha) = slot
+            .spool_id
+            .as_ref()
+            .and_then(|spool_id| self.store.get_spool_by_id(spool_id))
+            .map(|spool| {
+                (
+                    Self::ui_colors_from_color_codes(&spool.color_code),
+                    Self::color_codes_have_alpha(&spool.color_code),
+                )
+            })
+            .unwrap_or_default();
+
+        UiTray {
+            id: tray_id,
+            name: Self::bambu_ui_tray_name(tray_id).to_shared_string(),
+            external: Self::bambu_ui_tray_is_external(tray_id),
+            spool_state: Self::ui_tray_state_from_slot_state(slot.state),
+            filament: UiFilament {
+                state: filament_state,
+                colors: Self::ui_color_model(filament_colors),
+                material,
+            },
+            tray_has_alpha,
+            spool_has_alpha,
+            spool_colors: Self::ui_color_model(spool_colors),
+            k: Self::driver_data_value(&slot.driver_data, "bambu_resolved_k")
+                .unwrap_or("-1.0")
+                .to_shared_string(),
+            tagged: slot.spool_id.is_some(),
+            weight_display: self.weight_display_snapshot(slot).to_shared_string(),
+            used_in_print: slot.used_in_print,
+            spool_rec_id: slot.spool_id.as_deref().unwrap_or_default().to_shared_string(),
+        }
+    }
+
+    fn ui_color_model(colors: Vec<slint::Color>) -> slint::ModelRc<slint::Color> {
+        slint::ModelRc::from(Rc::new(slint::VecModel::from(colors)))
+    }
+
+    fn bambu_tray_id_from_slot_snapshot(slot: &printer_domain::MaterialSlotSnapshot) -> Option<i32> {
+        Self::driver_data_value(&slot.driver_data, "bambu_tray_id")
+            .and_then(|tray_id| tray_id.parse().ok())
+            .or_else(|| Self::bambu_tray_id_from_slot_id(&slot.id))
+    }
+
+    fn bambu_ui_tray_row(tray_id: i32) -> Option<usize> {
+        match tray_id {
+            255 => Some(0),
+            254 => Some(1),
+            0..=23 => Some(tray_id as usize + 2),
+            _ => None,
+        }
+    }
+
+    fn bambu_ui_tray_name(tray_id: i32) -> String {
+        match tray_id {
+            255 => "Ext-R".to_string(),
+            254 => "Ext-L".to_string(),
+            0..=15 => {
+                let ams_letter = (b'A' + (tray_id / 4) as u8) as char;
+                format!("{ams_letter}{}", tray_id % 4 + 1)
+            }
+            16..=23 => format!("HT-{}", tray_id - 15),
+            _ => tray_id.to_string(),
+        }
+    }
+
+    fn bambu_ui_tray_is_external(tray_id: i32) -> bool {
+        tray_id == 254 || tray_id == 255
+    }
+
+    fn ui_tray_state_from_slot_state(state: printer_domain::SlotState) -> crate::app::UiTrayState {
+        match state {
+            printer_domain::SlotState::Unknown | printer_domain::SlotState::Error => crate::app::UiTrayState::Unknown,
+            printer_domain::SlotState::Empty => crate::app::UiTrayState::Empty,
+            printer_domain::SlotState::Occupied => crate::app::UiTrayState::Spool,
+            printer_domain::SlotState::Reading => crate::app::UiTrayState::Reading,
+            printer_domain::SlotState::Ready => crate::app::UiTrayState::Ready,
+            printer_domain::SlotState::Loading => crate::app::UiTrayState::Loading,
+            printer_domain::SlotState::Unloading => crate::app::UiTrayState::Unloading,
+            printer_domain::SlotState::Loaded => crate::app::UiTrayState::Loaded,
         }
     }
 
@@ -2526,9 +2675,10 @@ impl ViewModel {
 
         let ui = self.ui_weak.unwrap();
         let ui_app_state = ui.global::<crate::app::AppState>();
+        let snapshot = printer_domain::bambu_adapter::BambuPrinterDriver::snapshot_from_printer(bambu_printer);
         let num_extruders = bambu_printer.num_extruders();
         ui_app_state.set_num_extruders(num_extruders as i32);
-        self.update_slot_layout_from_snapshot(&printer_domain::bambu_adapter::BambuPrinterDriver::snapshot_from_printer(bambu_printer));
+        self.update_slot_layout_from_snapshot(&snapshot);
         // ----- handle number of ams's and curr_ams -----
         // OPT: calculate only when ams_exists change (store in printer struct), here use the value calculated there
         //      don't forget to consider loading the ams_exist from state which will need to recalculate, so add inner_set_ams_exist_bits
@@ -2548,64 +2698,7 @@ impl ViewModel {
             ui.global::<crate::app::AppState>().set_ams_exists(ams_exists);
             ui.global::<crate::app::AppState>().set_curr_ams_id(0);
         }
-        // ----- handle trays view update ----
-        let trays_state_rc = ui.global::<crate::app::AppState>().get_trays_state();
-        // let trays_state_rc = ui.get_trays_state();
-        let trays_state = trays_state_rc;
-        // OPT: run only on real trays (consider also AMS-HT), use the ams_exists from above
-        for tray_row in 0..trays_state.row_count() {
-            let ui_tray_id = trays_state.row_data(tray_row).unwrap().id;
-            let curr_tray = match ui_tray_id {
-                255 => &bambu_printer.virt_trays()[0],
-                254 => &bambu_printer.virt_trays()[1],
-                _ => &bambu_printer.ams_trays()[ui_tray_id as usize],
-            };
-            let mut ui_tray = trays_state.row_data(tray_row).unwrap().clone();
-            ui_tray.spool_state = crate::app::UiTrayState::from(&curr_tray.state);
-            if let Filament::Known(filament_info) = &curr_tray.filament {
-                ui_tray.filament.colors = slint::ModelRc::new(slint::VecModel::from(
-                    filament_info
-                        .tray_color
-                        .iter()
-                        .filter_map(|c| Self::rgb_or_rgba_hex_to_slint_color(c))
-                        .collect::<Vec<_>>(),
-                ));
-                ui_tray.tray_has_alpha = filament_info.tray_color.iter().any(|c| Self::rgba_hex_has_alpha(c));
-                ui_tray.filament.material = slint::SharedString::from(&filament_info.tray_type);
-                ui_tray.filament.state = crate::app::UiFilamentState::Known;
-            } else {
-                ui_tray.filament.state = crate::app::UiFilamentState::Unknown;
-                ui_tray.tray_has_alpha = false;
-            }
-            if let Some(spool_id) = &curr_tray.meta_info.spool_id {
-                ui_tray.tagged = true;
-                ui_tray.spool_rec_id = spool_id.into();
-                let (spool_colors, spool_has_alpha) = self
-                    .store
-                    .get_spool_by_id(spool_id)
-                    .map(|spool| {
-                        (
-                            Self::ui_colors_from_color_codes(&spool.color_code),
-                            Self::color_codes_have_alpha(&spool.color_code),
-                        )
-                    })
-                    .unwrap_or_default();
-                ui_tray.spool_colors = slint::ModelRc::from(Rc::new(slint::VecModel::from(spool_colors)));
-                ui_tray.spool_has_alpha = spool_has_alpha;
-            } else {
-                ui_tray.tagged = false;
-                ui_tray.spool_rec_id = SharedString::new();
-                ui_tray.spool_colors = slint::ModelRc::from(Rc::new(slint::VecModel::from(Vec::<slint::Color>::new())));
-                ui_tray.spool_has_alpha = false;
-            }
-            // let k_value_unformatted = curr_tray.k.as_ref().unwrap_or(&"(0.020)".to_string()).clone();
-            let k_value_unformatted = bambu_printer.get_tray_resolved_k_value(curr_tray, ui_tray_id);
-            // let k_value_for_ui = k_value_for_ui(&k_value_unformatted);
-            ui_tray.k = SharedString::from(k_value_unformatted);
-            ui_tray.weight_display = self.weight_display(curr_tray);
-            ui_tray.used_in_print = curr_tray.meta_info.used_in_print;
-            trays_state.set_row_data(tray_row, ui_tray);
-        }
+        self.update_bambu_trays_state_from_snapshot(&snapshot);
     }
 
     fn weight_display(&self, tray: &Tray) -> SharedString {
