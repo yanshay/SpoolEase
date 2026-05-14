@@ -1279,7 +1279,7 @@ impl ViewModel {
     }
 
     fn set_ui_slot_groups(&self, groups: Vec<UiSlotGroup>) {
-        let internal_groups = groups
+        let primary_groups = groups
             .iter()
             .filter(|group| group.kind != UiSlotGroupKind::External)
             .cloned()
@@ -1293,11 +1293,11 @@ impl ViewModel {
         let ui_app_state = ui.global::<crate::app::AppState>();
 
         ui_app_state.set_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(groups))));
-        ui_app_state.set_internal_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(internal_groups))));
+        ui_app_state.set_primary_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(primary_groups))));
         ui_app_state.set_external_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(external_groups))));
 
-        if ui_app_state.get_selected_internal_slot_group() >= ui_app_state.get_internal_slot_groups().row_count() as i32 {
-            ui_app_state.set_selected_internal_slot_group(0);
+        if ui_app_state.get_selected_primary_slot_group() >= ui_app_state.get_primary_slot_groups().row_count() as i32 {
+            ui_app_state.set_selected_primary_slot_group(0);
         }
         if ui_app_state.get_displayed_external_slot_group() >= ui_app_state.get_external_slot_groups().row_count() as i32 {
             ui_app_state.set_displayed_external_slot_group(0);

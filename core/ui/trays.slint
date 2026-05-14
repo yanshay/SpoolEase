@@ -10,7 +10,7 @@ import {
     UiSlotGroup,
     UiSlotState,
 } from "app.slint";
-import { MyButton, MyText, Title } from "framework/widgets.slint";
+import { MyText } from "framework/widgets.slint";
 
 global Helper {
     public pure function representative-color-index(color-count: int) -> int {
@@ -24,7 +24,7 @@ global Helper {
     }
 }
 
-component AmsButton inherits Rectangle {
+component SlotGroupTab inherits Rectangle {
     in property <UiSlotGroup> group;
     in property <int> group-index;
     in property <bool> active;
@@ -125,7 +125,7 @@ component AmsButton inherits Rectangle {
             width: parent.width;
             height: parent.height;
             clicked => {
-                AppState.selected-internal-slot-group = group-index;
+                AppState.selected-primary-slot-group = group-index;
             }
         }
     }
@@ -212,9 +212,9 @@ component CircleStripes inherits Rectangle {
 component Spool inherits Rectangle {
     callback clicked;
     in-out property <UiSlot> slot;
-    in property <bool> is-in-ams;
+    in property <bool> is-in-primary-group;
 
-    property <bool> has-known-color: slot.filament.state != UiFilamentState.Unknown && (!is-in-ams || slot.state != UiSlotState.Empty);
+    property <bool> has-known-color: slot.filament.state != UiFilamentState.Unknown && (!is-in-primary-group || slot.state != UiSlotState.Empty);
     property <bool> has-spool-id: slot.spool-id != "";
     property <int> spool-color-count: slot.spool-colors.length;
     property <bool> use-spool-colors: has-spool-id && spool-color-count > 0;
@@ -347,13 +347,13 @@ component Spool inherits Rectangle {
 component SlotCard inherits Rectangle {
     callback clicked;
     in-out property <UiSlot> slot;
-    in property <bool> is-in-ams;
+    in property <bool> is-in-primary-group;
 
     VerticalLayout {
         padding: 0px;
         spacing: 4px;
         Spool {
-            is-in-ams: is-in-ams;
+            is-in-primary-group: is-in-primary-group;
             slot: root.slot;
             clicked => {
                 root.clicked();
@@ -366,7 +366,7 @@ component SlotCard inherits Rectangle {
 component SlotGroupPanel inherits VerticalLayout {
     callback title-clicked;
     in property <UiSlotGroup> group;
-    in property <bool> is-ams: false;
+    in property <bool> is-primary-group: false;
     in property <bool> reserve-external-area: true;
 
     spacing: AppConsts.trays-spacing;
@@ -378,7 +378,7 @@ component SlotGroupPanel inherits VerticalLayout {
         Rectangle {
             background: AppConsts.title-gradient;
 
-            if !is-ams: Text {
+            if !is-primary-group: Text {
                 text: group.name;
                 font-size: 20px;
                 color: white;
@@ -389,16 +389,16 @@ component SlotGroupPanel inherits VerticalLayout {
                 border-color: black;
             }
 
-            if is-ams: HorizontalLayout {
-                for slot-group[idx] in AppState.internal-slot-groups: AmsButton {
+            if is-primary-group: HorizontalLayout {
+                for slot-group[idx] in AppState.primary-slot-groups: SlotGroupTab {
                     height: parent.height;
                     group: slot-group;
                     group-index: idx;
-                    active: AppState.current-internal-slot-group-index() == idx;
+                    active: AppState.current-primary-slot-group-index() == idx;
                 }
             }
 
-            if !is-ams: TouchArea {
+            if !is-primary-group: TouchArea {
                 width: parent.width;
                 height: parent.height;
                 clicked => {
@@ -413,10 +413,10 @@ component SlotGroupPanel inherits VerticalLayout {
         spacing: AppConsts.trays-spacing;
         padding-left: 0px;
         padding-right: 0px;
-        width: is-ams ? (reserve-external-area ? FrameworkState.display-width - (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5 - AppConsts.trays-spacing : FrameworkState.display-width) : (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
+        width: is-primary-group ? (reserve-external-area ? FrameworkState.display-width - (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5 - AppConsts.trays-spacing : FrameworkState.display-width) : (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
 
         for slot in group.slots: SlotCard {
-            is-in-ams: is-ams;
+            is-in-primary-group: is-primary-group;
             slot: slot;
             clicked => {
                 if AppState.control-state == ControlState.TraySelect {
@@ -429,134 +429,21 @@ component SlotGroupPanel inherits VerticalLayout {
     }
 }
 
-component GenericSlot inherits Rectangle {
-    in property <UiSlot> slot;
-
-    height: 52px;
-    property <bool> has-known-color: slot.filament.state == UiFilamentState.Known && slot.filament.colors.length > 0;
-    background: has-known-color ? #00000000 : white;
-    border-width: area.pressed || (AppState.control-state == ControlState.TraySelect && AppState.curr-printer-can-configure-slot()) || slot.used-in-print ? 3px : 1px;
-    border-color: slot.used-in-print ? #001dff : black;
-
-    if has-known-color && slot.filament-has-alpha: Image {
-        image-fit: preserve;
-        horizontal-alignment: left;
-        vertical-alignment: top;
-        width: parent.width;
-        height: parent.height;
-        source: AppState.color-checkerboard-bg;
-    }
-
-    if has-known-color: HorizontalLayout {
-        width: parent.width;
-        height: parent.height;
-        spacing: 0px;
-        for stripe-color in slot.filament.colors: Rectangle {
-            horizontal-stretch: 1;
-            background: stripe-color;
-        }
-    }
-
-    HorizontalLayout {
-        padding-left: 8px;
-        padding-right: 8px;
-        spacing: 8px;
-
-        Rectangle {
-            width: 68px;
-            MyText {
-                text: slot.name;
-                horizontal-alignment: left;
-                vertical-alignment: center;
-                color: has-known-color ? Utils.contrasting_color(slot.filament.colors[0]) : black;
-            }
-        }
-
-        Rectangle {
-            MyText {
-                text: slot.filament.material == "" || slot.filament.state == UiFilamentState.Unknown ? slot.state-label : slot.filament.material;
-                horizontal-alignment: left;
-                vertical-alignment: center;
-                color: has-known-color ? Utils.contrasting_color(slot.filament.colors[0]) : black;
-            }
-        }
-
-        Rectangle {
-            width: AppState.control-state == ControlState.TraySelect ? 74px : 60px;
-            MyText {
-                text: slot.spool-id;
-                horizontal-alignment: right;
-                vertical-alignment: center;
-                color: has-known-color ? Utils.contrasting_color(slot.filament.colors[0]) : black;
-            }
-        }
-
-        if AppState.control-state != ControlState.TraySelect: MyButton {
-            width: 72px;
-            height: parent.height;
-            text: "Untag";
-            enabled: slot.spool-id != "" && AppState.curr-printer-can-unassign-slot();
-            clicked => {
-                AppBackend.unassign-slot(slot.id);
-            }
-        }
-
-        if AppState.control-state != ControlState.TraySelect: MyButton {
-            width: 70px;
-            height: parent.height;
-            text: "Reset";
-            enabled: AppState.curr-printer-can-clear-slot();
-            clicked => {
-                AppBackend.reset-slot(slot.id);
-            }
-        }
-    }
-
-    area := TouchArea {
-        width: parent.width;
-        height: parent.height;
-        enabled: AppState.control-state == ControlState.TraySelect && AppState.curr-printer-can-configure-slot();
-        clicked => {
-            AppBackend.set-staging-to-slot(slot.id);
-        }
-    }
-}
-
-export component BambuSlotGroups inherits HorizontalLayout {
+export component StandardSlotGroups inherits HorizontalLayout {
     spacing: AppConsts.trays-spacing;
 
-    if AppState.internal-slot-groups.length > 0: SlotGroupPanel {
-        is-ams: true;
+    if AppState.primary-slot-groups.length > 0: SlotGroupPanel {
+        is-primary-group: true;
         reserve-external-area: AppState.external-slot-groups.length > 0;
-        group: AppState.internal-slot-groups[AppState.current-internal-slot-group-index()];
+        group: AppState.primary-slot-groups[AppState.current-primary-slot-group-index()];
     }
 
     if AppState.external-slot-groups.length > 0: SlotGroupPanel {
-        is-ams: false;
+        is-primary-group: false;
         group: AppState.external-slot-groups[AppState.current-external-slot-group-index()];
         title-clicked => {
             if AppState.external-slot-groups.length > 1 {
                 AppState.displayed-external-slot-group = Math.mod(AppState.displayed-external-slot-group + 1, AppState.external-slot-groups.length);
-            }
-        }
-    }
-}
-
-export component GenericSlotGroups inherits Rectangle {
-    width: FrameworkState.display-width;
-    background: white;
-
-    VerticalLayout {
-        spacing: AppConsts.trays-spacing;
-        for group in AppState.slot-groups: VerticalLayout {
-            spacing: 2px;
-            Title {
-                text: group.name;
-                text-color: white;
-                background: AppConsts.title-gradient;
-            }
-            for slot in group.slots: GenericSlot {
-                slot: slot;
             }
         }
     }

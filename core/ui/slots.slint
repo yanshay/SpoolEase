@@ -1,17 +1,13 @@
 import { FrameworkState } from "framework/framework.slint";
 import { AppConsts, AppState } from "app.slint";
-import { BambuSlotGroups, GenericSlotGroups } from "trays.slint";
+import { StandardSlotGroups } from "trays.slint";
 
 export component Slots inherits HorizontalLayout {
     out property <length> slot-width: (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
     width: FrameworkState.display-width;
     spacing: AppConsts.trays-spacing;
 
-    if AppState.curr-printer-is-bambu(): BambuSlotGroups {
-        width: parent.width;
-    }
-
-    if !AppState.curr-printer-is-bambu(): GenericSlotGroups {
+    StandardSlotGroups {
         width: parent.width;
     }
 }

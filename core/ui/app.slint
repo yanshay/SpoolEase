@@ -348,9 +348,9 @@ export global AppState {
     in-out property <int> curr-printer: -1;
     in-out property <[Printer]> available-printers: [];
     in-out property <[UiSlotGroup]> slot-groups: [];
-    in-out property <[UiSlotGroup]> internal-slot-groups: [];
+    in-out property <[UiSlotGroup]> primary-slot-groups: [];
     in-out property <[UiSlotGroup]> external-slot-groups: [];
-    in-out property <int> selected-internal-slot-group: 0;
+    in-out property <int> selected-primary-slot-group: 0;
     in-out property <int> displayed-external-slot-group: 0;
     in-out property <int> default-printer: -1;
     in-out property <int> pending-curr-printer: -1;
@@ -417,9 +417,9 @@ export global AppState {
         }
     }
 
-    pure public function current-internal-slot-group-index() -> int {
-        if selected-internal-slot-group >= 0 && selected-internal-slot-group < internal-slot-groups.length {
-            return selected-internal-slot-group;
+    pure public function current-primary-slot-group-index() -> int {
+        if selected-primary-slot-group >= 0 && selected-primary-slot-group < primary-slot-groups.length {
+            return selected-primary-slot-group;
         }
         return 0;
     }

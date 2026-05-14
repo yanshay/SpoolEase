@@ -1219,7 +1219,7 @@ Slint must become dynamic, but this should be staged.
 - `empty-trays-state()` returned 26 fixed entries: two external plus 24 AMS/HT slots.
 - `get_tray_id()` and `get_tray_index()` encode Bambu mappings.
 - `curr-ams-id` and `ams-exists` drive AMS paging.
-- `Trays` and `AmsButton` assume Bambu AMS slot counts.
+- `Trays` and `AmsButton` assumed Bambu AMS slot counts.
 
 ### Implemented UI Model
 
@@ -1546,6 +1546,7 @@ Acceptance criteria:
 - [done] Main slot UI operations use opaque string slot IDs at the Slint/Rust boundary.
 - [done] UI can render a fake printer with arbitrary slot groups and basic capability-gated slot operations.
 - [done] Bambu AMS and external slots render through the same backend slot-group model while preserving the current Bambu visual layout.
+- [done] Fake and Bambu now use the same standard circular slot-card UI path; group selector naming is generic (`SlotGroupTab`, primary/external groups).
 - [not done] Generic slot view supports pagination/scrolling for large slot counts.
 
 ### Phase 7: Replace Printer Status API and Client [not started]
@@ -1718,6 +1719,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, generic `PrinterManager` storage, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan events, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a basic fake non-Bambu driver visible in web status, console-safe selection of generic printers, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, Bambu AMS/external visuals driven by backend snapshot slot groups, and opaque string slot IDs for main Slint slot actions.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, generic `PrinterManager` storage, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan events, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a basic fake non-Bambu driver visible in web status, console-safe selection of generic printers, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, standard circular slot-card UI for Bambu and Fake, backend-driven primary/external slot groups, and opaque string slot IDs for main Slint slot actions.
 
 Still not done: full `PrinterManager` ownership replacement, tray/snapshot event bridge, generic consumption reporting, paginated/scrollable dynamic Slint slot groups for large topologies, persisted generic fake slot state, and real non-Bambu driver.
