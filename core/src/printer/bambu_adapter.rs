@@ -54,6 +54,54 @@ impl BambuPrinterDriver {
         }
     }
 
+    pub fn dispatch_to_printer(printer: &mut BambuPrinter, command: PrinterCommand) -> PrinterResult<()> {
+        match command {
+            PrinterCommand::Refresh => {
+                printer.request_full_update_sync();
+                Ok(())
+            }
+            PrinterCommand::PrintControl(command) => {
+                printer.request_printer_command_sync(match command {
+                    PrintControlCommand::Pause => BambuPrintCommand::Pause,
+                    PrintControlCommand::Resume => BambuPrintCommand::Resume,
+                    PrintControlCommand::Stop => BambuPrintCommand::Stop,
+                });
+                Ok(())
+            }
+            PrinterCommand::AssignMaterialToSlot { slot_id, spool, temps, mode } => {
+                let tray_id = Self::tray_id_from_slot_id(&slot_id)?;
+                match mode {
+                    SlotAssignMode::SpoolIdOnly => {
+                        printer.set_tray_spool_rec(tray_id as usize, &spool.spool_rec);
+                        Ok(())
+                    }
+                    SlotAssignMode::WritePrinterMaterial => printer
+                        .set_tray_filament(
+                            tray_id,
+                            &spool,
+                            temps.nozzle_min_c.unwrap_or_default(),
+                            temps.nozzle_max_c.unwrap_or_default(),
+                        )
+                        .map_err(PrinterError::DriverError),
+                }
+            }
+            PrinterCommand::ClearSlot { slot_id } => {
+                let tray_id = Self::tray_id_from_slot_id(&slot_id)?;
+                printer.reset_tray(tray_id);
+                Ok(())
+            }
+            PrinterCommand::UnassignSpoolFromSlot { slot_id } => {
+                let tray_id = Self::tray_id_from_slot_id(&slot_id)?;
+                printer.update_any_tray(tray_id as usize, |tray| {
+                    tray.meta_info.spool_id = None;
+                });
+                Ok(())
+            }
+            PrinterCommand::AddPressureAdvance(_profile) => Err(PrinterError::UnsupportedCommand("add_pressure_advance".to_string())),
+            PrinterCommand::DriverSpecific(command) => Err(PrinterError::UnsupportedCommand(command.name)),
+        }
+    }
+
     fn capabilities_from_printer(printer: &BambuPrinter) -> PrinterCapabilities {
         PrinterCapabilities {
             material_slot_read: true,
@@ -335,53 +383,8 @@ impl PrinterDriver for BambuPrinterDriver {
     }
 
     fn dispatch(&mut self, command: PrinterCommand) -> PrinterResult<()> {
-        match command {
-            PrinterCommand::Refresh => {
-                self.printer.borrow_mut().request_full_update_sync();
-                Ok(())
-            }
-            PrinterCommand::PrintControl(command) => {
-                self.printer.borrow_mut().request_printer_command_sync(match command {
-                    PrintControlCommand::Pause => BambuPrintCommand::Pause,
-                    PrintControlCommand::Resume => BambuPrintCommand::Resume,
-                    PrintControlCommand::Stop => BambuPrintCommand::Stop,
-                });
-                Ok(())
-            }
-            PrinterCommand::AssignMaterialToSlot { slot_id, spool, temps, mode } => {
-                let tray_id = Self::tray_id_from_slot_id(&slot_id)?;
-                match mode {
-                    SlotAssignMode::SpoolIdOnly => {
-                        self.printer.borrow_mut().set_tray_spool_rec(tray_id as usize, &spool.spool_rec);
-                        Ok(())
-                    }
-                    SlotAssignMode::WritePrinterMaterial => self
-                        .printer
-                        .borrow_mut()
-                        .set_tray_filament(
-                            tray_id,
-                            &spool,
-                            temps.nozzle_min_c.unwrap_or_default(),
-                            temps.nozzle_max_c.unwrap_or_default(),
-                        )
-                        .map_err(PrinterError::DriverError),
-                }
-            }
-            PrinterCommand::ClearSlot { slot_id } => {
-                let tray_id = Self::tray_id_from_slot_id(&slot_id)?;
-                self.printer.borrow_mut().reset_tray(tray_id);
-                Ok(())
-            }
-            PrinterCommand::UnassignSpoolFromSlot { slot_id } => {
-                let tray_id = Self::tray_id_from_slot_id(&slot_id)?;
-                self.printer.borrow_mut().update_any_tray(tray_id as usize, |tray| {
-                    tray.meta_info.spool_id = None;
-                });
-                Ok(())
-            }
-            PrinterCommand::AddPressureAdvance(_profile) => Err(PrinterError::UnsupportedCommand("add_pressure_advance".to_string())),
-            PrinterCommand::DriverSpecific(command) => Err(PrinterError::UnsupportedCommand(command.name)),
-        }
+        let mut printer = self.printer.borrow_mut();
+        Self::dispatch_to_printer(&mut printer, command)
     }
 
     fn subscribe(&mut self, observer: Weak<RefCell<dyn PrinterObserver>>) {

@@ -51,7 +51,7 @@ use crate::bambu::{
 };
 use crate::color_utils::get_color_name;
 use crate::filament_staging::StagingOrigin;
-use crate::printer::{self as printer_domain, PrinterCommand, SlotId, manager::PrinterManager};
+use crate::printer::{self as printer_domain, FilamentTemps, PrinterCommand, SlotAssignMode, SlotId, manager::PrinterManager};
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleWeight, SpoolScaleObserver};
@@ -1238,6 +1238,47 @@ impl ViewModel {
         }
     }
 
+    fn set_tray_filament_via_manager(
+        &self,
+        bambu_printer: &mut BambuPrinter,
+        tray_id: i32,
+        full_spool_rec: &FullSpoolRecord,
+        temp_min: u32,
+        temp_max: u32,
+        only_spool_id: bool,
+    ) {
+        let mode = if only_spool_id {
+            SlotAssignMode::SpoolIdOnly
+        } else {
+            SlotAssignMode::WritePrinterMaterial
+        };
+        let set_tray_ok = self
+            .printer_manager
+            .borrow_mut()
+            .dispatch_bambu_printer(
+                bambu_printer,
+                PrinterCommand::AssignMaterialToSlot {
+                    slot_id: SlotId::new(format!("bambu:{tray_id}")),
+                    spool: full_spool_rec.clone(),
+                    temps: FilamentTemps {
+                        nozzle_min_c: Some(temp_min),
+                        nozzle_max_c: Some(temp_max),
+                    },
+                    mode,
+                },
+            )
+            .is_ok();
+
+        if set_tray_ok && !full_spool_rec.spool_rec.actual_location.is_empty() {
+            let mut spool_rec = Box::new(full_spool_rec.spool_rec.clone());
+            spool_rec.actual_location = String::new();
+            let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec {
+                spool_rec,
+                message_box: None,
+            });
+        }
+    }
+
     fn set_staging_to_tray_direct(
         &self,
         filament_staging: &Rc<RefCell<FilamentStaging>>,
@@ -1258,7 +1299,7 @@ impl ViewModel {
             if let Some(filament_info) =
                 self.get_filament_info(&full_spool_rec.spool_rec.slicer_filament, Some(&full_spool_rec.spool_rec.material_type))
             {
-                self.set_tray_filament(
+                self.set_tray_filament_via_manager(
                     bambu_printer,
                     tray_id,
                     full_spool_rec,

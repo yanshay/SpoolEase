@@ -47,4 +47,8 @@ impl PrinterManager {
             .ok_or_else(|| PrinterError::PrinterUnavailable(format!("printer index {selected_index}")))?
             .dispatch(command)
     }
+
+    pub fn dispatch_bambu_printer(&mut self, printer: &mut BambuPrinter, command: PrinterCommand) -> PrinterResult<()> {
+        BambuPrinterDriver::dispatch_to_printer(printer, command)
+    }
 }
