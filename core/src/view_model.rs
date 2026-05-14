@@ -51,6 +51,7 @@ use crate::bambu::{
 };
 use crate::color_utils::get_color_name;
 use crate::filament_staging::StagingOrigin;
+use crate::printer::{self as printer_domain, bambu_adapter::BambuPrinterDriver};
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleWeight, SpoolScaleObserver};
@@ -3112,88 +3113,33 @@ impl ViewModel {
                 // dummy printer
                 break;
             }
-            let mut slots_sets = Vec::new();
-
-            if let Some(ams_exist_bits) = *printer_borrow.ams_exist_bits() {
-                let (ams_list, _) = Self::get_ams_list(ams_exist_bits);
-                for ams_index in ams_list {
-                    let mut slot_set = SlotSet {
-                        kind: SpoolsSlotsKind::Ams,
-                        name: printer_borrow.ams_name(ams_index as usize),
-                        extruder: printer_borrow.ams_info[ams_index as usize].extruder,
-                        slots: Vec::new(),
-                        temp: printer_borrow.ams_info[ams_index as usize].temp,
-                        humidity: printer_borrow.ams_info[ams_index as usize].humidity,
-                    };
-                    let num_of_ams_slots: usize = if ams_index <= 3 { 4 } else { 1 };
-                    let slots_offset: usize = match ams_index {
-                        0..3 => ams_index as usize * 4,
-                        _ => 16 + (ams_index - 4) as usize,
-                    };
-
-                    for slot_index in slots_offset..slots_offset + num_of_ams_slots {
-                        let slot = &printer_borrow.ams_trays()[slot_index];
-                        //TrayState,material, color,k, spool_id, net_weight,
-                        let slot_str = self.slot_str(&printer_borrow, slot_index, slot);
-                        slot_set.slots.push(slot_str);
-                    }
-                    slots_sets.push(slot_set);
-                }
-            }
-
-            // First external (always available, but name differ if single or dual extruders)
-            let ext_slot_set = SlotSet {
-                kind: SpoolsSlotsKind::Ext,
-                name: if printer_borrow.num_extruders() == 2 {
-                    "Ext Right".to_string()
-                } else {
-                    "Ext".to_string()
-                },
-                extruder: 0,
-                slots: alloc::vec![self.slot_str(&printer_borrow, 255, printer_borrow.get_any_tray(255))],
-                temp: None,
-                humidity: None,
-            };
-            slots_sets.push(ext_slot_set);
-            // Second external
-            if printer_borrow.num_extruders() == 2 {
-                let ext_slot_set = SlotSet {
-                    kind: SpoolsSlotsKind::Ext,
-                    name: if printer_borrow.num_extruders() == 2 {
-                        "Ext Left".to_string()
-                    } else {
-                        "Ext".to_string()
-                    },
-                    extruder: 1,
-                    slots: alloc::vec![self.slot_str(&printer_borrow, 254, printer_borrow.get_any_tray(254))],
-                    temp: None,
-                    humidity: None,
-                };
-                slots_sets.push(ext_slot_set);
-            }
+            let snapshot = BambuPrinterDriver::snapshot_from_printer(&printer_borrow);
+            let slots_sets = self.slot_sets_from_snapshot(&snapshot);
 
             let printer_info = PrinterInfo {
-                printer_name: printer_borrow.printer_name().clone(),
+                printer_name: snapshot.name,
                 printer_serial: printer_borrow.printer_serial.clone(),
-                connected: printer_borrow.printer_connectivity_ok.unwrap_or_default(),
-                num_ams: printer_borrow.ams_exist_bits().map_or(None, |v| Some(v.count_ones())),
-                print_state: printer_borrow.gcode_state.into(),
-                progress_percent: match printer_borrow.gcode_state {
-                    GcodeState::PREPARE => printer_borrow.gcode_file_prepare_percent,
-                    GcodeState::RUNNING | GcodeState::PAUSE => printer_borrow.mc_percent,
-                    _ => None,
-                },
-                remain_secs: printer_borrow.mc_remaining_time.map(|v| v * 60),
-                print_name: printer_borrow.subtask_name.clone(),
-                layer: printer_borrow.layer_num,
-                num_layers: printer_borrow.total_layer_num,
+                connected: snapshot.connected,
+                num_ams: printer_borrow.ams_exist_bits().map(|_| {
+                    snapshot
+                        .slot_groups
+                        .iter()
+                        .filter(|group| group.kind == printer_domain::SlotGroupKind::InternalChanger)
+                        .count() as u32
+                }),
+                print_state: Self::print_state_from_snapshot(snapshot.print.state),
+                progress_percent: snapshot.print.progress_percent.map(i32::from),
+                remain_secs: snapshot.print.remaining_minutes.map(|v| (v.min(i32::MAX as u32 / 60) as i32) * 60),
+                print_name: snapshot.print.job_name,
+                layer: snapshot.print.current_layer.map(|v| v.min(i32::MAX as u32) as i32),
+                num_layers: snapshot.print.total_layers.map(|v| v.min(i32::MAX as u32) as i32),
                 stage: printer_borrow.stg_cur,
                 print_error: printer_borrow.print_error,
                 hms_errors: printer_borrow
                     .hms
                     .as_ref()
                     .map_or(Vec::new(), |vs| vs.iter().map(|v| (v.attr.unwrap_or(0), v.code.unwrap_or(0))).collect()),
-                num_extruders: printer_borrow.num_extruders(),
+                num_extruders: snapshot.extruders.len() as u32,
                 slots_sets,
             };
             printers_info.push(printer_info);
@@ -3201,6 +3147,113 @@ impl ViewModel {
         printers_info
     }
 
+    fn slot_sets_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) -> Vec<SlotSet> {
+        let num_extruders = snapshot.extruders.len() as u32;
+        snapshot
+            .slot_groups
+            .iter()
+            .map(|group| SlotSet {
+                kind: Self::legacy_slot_group_kind(group.kind),
+                name: Self::legacy_slot_group_name(group, num_extruders),
+                extruder: group.extruder.unwrap_or_default(),
+                slots: group.slots.iter().map(|slot| self.slot_snapshot_str(slot)).collect(),
+                temp: group.temperature_c,
+                humidity: group.humidity_percent,
+            })
+            .collect()
+    }
+
+    fn legacy_slot_group_kind(kind: printer_domain::SlotGroupKind) -> SpoolsSlotsKind {
+        match kind {
+            printer_domain::SlotGroupKind::InternalChanger => SpoolsSlotsKind::Ams,
+            _ => SpoolsSlotsKind::Ext,
+        }
+    }
+
+    fn legacy_slot_group_name(group: &printer_domain::SlotGroupSnapshot, num_extruders: u32) -> String {
+        if group.kind != printer_domain::SlotGroupKind::External {
+            return group.name.clone();
+        }
+
+        if num_extruders == 2 {
+            if group.extruder == Some(1) {
+                "Ext Left".to_string()
+            } else {
+                "Ext Right".to_string()
+            }
+        } else {
+            "Ext".to_string()
+        }
+    }
+
+    fn slot_snapshot_str(&self, slot: &printer_domain::MaterialSlotSnapshot) -> String {
+        let (material, color) = match &slot.filament {
+            printer_domain::PrinterFilament::Known(filament_info) => (filament_info.material_type.as_str(), filament_info.color_codes.join(";")),
+            printer_domain::PrinterFilament::Unknown => ("", String::new()),
+        };
+        let k_value = Self::driver_data_value(&slot.driver_data, "bambu_resolved_k").unwrap_or("");
+
+        format!(
+            "{},{},{},{},{},{},{}",
+            Self::legacy_slot_state(slot.state),
+            material,
+            color,
+            k_value,
+            slot.spool_id.as_deref().unwrap_or(""),
+            self.weight_display_snapshot(slot),
+            i32::from(slot.used_in_print),
+        )
+    }
+
+    fn legacy_slot_state(state: printer_domain::SlotState) -> &'static str {
+        match state {
+            printer_domain::SlotState::Unknown => "Unknown",
+            printer_domain::SlotState::Empty => "Empty",
+            printer_domain::SlotState::Occupied => "Spool",
+            printer_domain::SlotState::Reading => "Reading",
+            printer_domain::SlotState::Ready => "Ready",
+            printer_domain::SlotState::Loading => "Loading",
+            printer_domain::SlotState::Unloading => "Unloading",
+            printer_domain::SlotState::Loaded => "Loaded",
+            printer_domain::SlotState::Error => "Error",
+        }
+    }
+
+    fn print_state_from_snapshot(state: printer_domain::PrintState) -> PrintState {
+        match state {
+            printer_domain::PrintState::Unknown => PrintState::Unknown,
+            printer_domain::PrintState::Idle => PrintState::Idle,
+            printer_domain::PrintState::Slicing => PrintState::Slicing,
+            printer_domain::PrintState::Preparing => PrintState::Prepare,
+            printer_domain::PrintState::Printing => PrintState::Running,
+            printer_domain::PrintState::Paused => PrintState::Pause,
+            printer_domain::PrintState::Finished => PrintState::Finish,
+            printer_domain::PrintState::Failed => PrintState::Failed,
+            printer_domain::PrintState::Canceled => PrintState::Unknown,
+        }
+    }
+
+    fn driver_data_value<'a>(driver_data: &'a printer_domain::DriverData, key: &str) -> Option<&'a str> {
+        driver_data.fields.iter().find(|field| field.key == key).map(|field| field.value.as_str())
+    }
+
+    fn weight_display_snapshot(&self, slot: &printer_domain::MaterialSlotSnapshot) -> String {
+        if let Some(weight_left) = self.weight_left_snapshot(slot) {
+            format!("{:.1}g", weight_left)
+        } else if slot.consumed_since_load_g != 0.0 {
+            format!("-{:.1}g", slot.consumed_since_load_g)
+        } else {
+            String::new()
+        }
+    }
+
+    fn weight_left_snapshot(&self, slot: &printer_domain::MaterialSlotSnapshot) -> Option<f32> {
+        let spool_id = slot.spool_id.as_ref()?;
+        let spool = self.store.get_spool_by_id(spool_id)?;
+        self.weight_left_spool(&spool, Some(slot.consumed_since_weight_g))
+    }
+
+    #[allow(dead_code)]
     fn slot_str(&self, printer_borrow: &core::cell::Ref<'_, BambuPrinter>, slot_index: usize, slot: &Tray) -> String {
         // state, material, color, k, spool_id, weight_display
         let slot_str = format!(

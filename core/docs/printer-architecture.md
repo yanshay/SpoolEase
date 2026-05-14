@@ -1,0 +1,1655 @@
+# Printer Architecture Handoff
+
+This document captures the current backend architecture review and the proposed path for making printer support pluggable while preserving the existing Bambu Lab behavior.
+
+The intent is to make this file the durable handoff point for future work. A new session should be able to read this document and continue without relying on chat history.
+
+## Scope
+
+This document covers only backend code in `console/core` and direct backend dependencies under `console/shared` where they affect printer integration.
+
+Primary reviewed areas:
+
+- `src/bambu.rs`
+- `src/bambu/*`
+- `src/view_model.rs`
+- `src/app_config.rs`
+- `src/web_app.rs`
+- `src/store.rs`
+- `src/spool_record.rs`
+- `src/filament_staging.rs`
+- `src/tag_v1.rs`
+- `src/tag_standards.rs`
+- `src/spool_scale.rs`
+- `src/ssdp.rs`
+- `src/my_mqtt.rs`
+- `ui/*.slint`
+- `console/shared/src/gcode_analysis*.rs`
+- `console/shared/src/scale.rs`
+- `console/shared/src/spool_tag.rs`
+
+The client app is intentionally out of scope for this document, except where backend API compatibility is discussed.
+
+## Product Goal
+
+The project currently works well for Bambu Lab printers. The next goal is to support very different printer technologies, starting with likely candidates such as Snapmaker U1, Prusa Core One, and printers exposed through Moonraker.
+
+The architecture must support:
+
+- Multiple printer driver implementations.
+- Writable material slot configuration as the most important cross-printer feature.
+- Printer status and print tracking where available, but not as mandatory capabilities.
+- Driver-specific implementation details without leaking those details into generic inventory code.
+- Bambu Lab behavior that remains absolutely compatible with the current implementation during the first migration phase.
+
+## Key Decisions
+
+These decisions incorporate both the review and follow-up product direction.
+
+### Bambu MQTT Is Bambu-Specific
+
+MQTT should not be generalized now.
+
+Current Bambu MQTT behavior is specific enough that making it generic would add abstraction cost without a real second consumer:
+
+- TLS MQTT to printer port `8883`.
+- Username `bblp`.
+- Password is the Bambu access code.
+- Topics are `device/{serial}/report` and `device/{serial}/request`.
+- Certificate selection and rotation are Bambu model-specific.
+- Simulator behavior is Bambu-specific.
+
+If a future printer also uses MQTT, revisit this then. For now, `src/my_mqtt.rs` can be treated as Bambu transport infrastructure, even if some helper code is technically reusable.
+
+### Print Consumption Tracking Is Not a Generic Algorithm
+
+Bambu currently tracks print consumption by:
+
+- Receiving a `project_file` command.
+- Fetching and analyzing the 3MF/G-code.
+- Tracking layer changes and active tray changes.
+- Mapping gcode filament IDs to Bambu AMS/external slots.
+- Incrementing spool consumption from analyzed usage entries.
+
+That is Bambu-specific.
+
+The generic concept is not "fetch G-code and track layers". The generic concept is:
+
+```text
+slot X consumed Y grams
+```
+
+A driver may produce this by any mechanism:
+
+- Bambu: derive from gcode analysis plus print telemetry.
+- Moonraker: possibly read direct extrusion/filament sensor/tool events.
+- Another printer: possibly receive direct per-slot usage reports.
+- Some printers: no consumption tracking capability at all.
+
+### Pressure Advance Is Optional and Driver-Specific
+
+Bambu stores and manages pressure advance/K calibration in the printer and exposes calibration tables through MQTT commands. Other printers may ignore this completely because pressure advance is embedded in slicer-generated G-code or handled differently.
+
+Pressure advance must therefore be an optional driver capability, not a generic inventory requirement.
+
+The existing Bambu K model should remain as a Bambu-specific extension until there is a real second implementation that needs similar semantics.
+
+### Material Slot Assignment Is Required for First Non-Bambu Work
+
+The first non-Bambu implementation must support writable material slot assignment. This is more important than status monitoring.
+
+The generic printer interface should therefore be designed around material slots and assignment commands first.
+
+### Backend API Can Change With The Client
+
+There is no need to preserve the current printer status API by adding a parallel V2 endpoint if the client will be updated in the same project phase.
+
+During the internal migration, temporary compatibility adapters are still useful to keep Bambu working while Rust and Slint are refactored. But the external API can be replaced when the client is updated.
+
+### Slint Must Be Refactored
+
+Current Slint code is Bambu topology UI. It hardcodes:
+
+- External tray IDs `255` and `254`.
+- AMS slots `0..15`.
+- AMS-HT slots `16..23`.
+- AMS A-D names.
+- HT slots.
+- `curr-ams-id` and `ams-exists`.
+- `tray-id: int` callbacks.
+
+This must become dynamic and slot-group driven before non-Bambu printers can be represented cleanly.
+
+## Current Backend Architecture
+
+The current backend has one concrete printer implementation: Bambu Lab.
+
+High-level flow:
+
+```text
+main.rs
+  -> app.rs
+    -> ViewModel
+      -> BambuPrinter instances
+      -> Store inventory
+      -> Slint AppState/AppBackend
+      -> Web API state
+      -> SpoolTag local NFC
+      -> SpoolScale remote scale/NFC/gcode helper
+      -> G-code analysis jobs
+```
+
+`ViewModel` is the central orchestrator. It owns or coordinates nearly every domain:
+
+- Printer instances through `bambu_printer_model: SelectedPrinter`.
+- Inventory through `Store`.
+- Staging through `FilamentStaging`.
+- Local NFC tag reader.
+- Remote scale.
+- Slint UI projection.
+- Web API responses.
+- Print consumption updates.
+- G-code analysis dispatch and completion.
+- Printer state persistence scheduling.
+
+This is the main source of coupling. The Bambu protocol code is mostly isolated, but the application layer is Bambu-shaped.
+
+## Current Bambu Implementation
+
+### Main State Object
+
+`src/bambu.rs` defines `BambuPrinter`, which is the concrete runtime state and command surface for a Bambu printer.
+
+Important state includes:
+
+- Config and identity:
+  - `printer_number`
+  - `printer_index`
+  - `printer_serial`
+  - `printer_access_code`
+  - `configured_printer_name`
+  - `inner_printer_name`
+  - `printer_selector_name`
+  - `configured_printer_ip`
+- Behavior settings:
+  - `auto_restore_k`
+  - `track_print_consume`
+  - `fetch_3mf`
+  - `ignore_certificates`
+  - `printer_mode`
+  - `use_ams_scan`
+- Runtime connection:
+  - `printer_ip`
+  - `printer_connectivity_ok`
+  - `locked_mode`
+- Protocol and channels:
+  - `protocol_state`
+  - `write_packets`
+  - `restart_printer`
+- Printer topology:
+  - `inner_extruders: [Extruder; 2]`
+  - `inner_ams_trays: Vec<Tray>` fixed to 24 slots
+  - `inner_virt_trays: [Tray; 2]`
+  - `tray_tar`, `tray_now`, `tray_pre`
+  - `ams_info`
+- Dirty persistence flags:
+  - `extruders_dirty`
+  - `ams_trays_dirty`
+  - `virt_trays_dirty`
+  - `tray_exist_bits_dirty`
+  - `tray_read_done_bits_dirty`
+  - `ams_exist_bits_dirty`
+  - `calibrations_dirty`
+  - `printer_name_dirty`
+  - `relevant_extruder_state_dirty`
+- Print status:
+  - `gcode_state`
+  - `layer_num`
+  - `total_layer_num`
+  - `mc_percent`
+  - `mc_remaining_time`
+  - `print_error`
+  - `gcode_file_prepare_percent`
+  - `subtask_name`
+  - `stg_cur`
+  - `hms`
+- Print consumption tracking:
+  - `curr_print_project`
+  - `loaded_print_project`
+- Calibration:
+  - `calibrations: Vec<Calibration>`
+
+### Bambu Model Detection
+
+`BambuPrinter::model()` maps serial prefixes to models:
+
+- `094`: H2D
+- `239`: H2DPro
+- `00M`: X1C
+- `03W`: X1E
+- `01P`: P1S
+- `01S`: P1P
+- `039`: A1
+- `030`: A1Mini
+- `22E`: P2S
+- `31B`: H2C
+- `093`: H2S
+- `20P`: X2D
+
+`model_series()` groups models into behavior families:
+
+- X1
+- P1
+- A1
+- H2
+- P2
+- X2
+- Unknown
+
+This affects transport certificates and gcode/FTP handling.
+
+### Bambu Slot Topology
+
+Bambu slots are represented as fixed integer tray IDs:
+
+- `0..15`: standard AMS slots, four AMS units with four slots each.
+- `16..23`: AMS-HT slots, corresponding to Bambu AMS IDs `128..135`.
+- `255`: right or single external spool, extruder 0.
+- `254`: left external spool, extruder 1.
+
+Important helpers:
+
+- `BambuPrinter::get_ams_and_slot_id(tray_id)` maps internal tray ID to Bambu AMS ID and slot ID.
+- `BambuPrinter::get_ams_info_index_for_tray(tray_id)` maps slot ID to metadata index.
+- `BambuPrinter::get_tray_detailed_ready_state(tray_id)` derives `Ready`, `Loaded`, or `Empty` based on active extruder and tray state.
+- `BambuPrinter::get_quad_for_set_filament_from_tray_id(tray_id)` computes `(ams_id, ams_tray_id, slot_id, original_tray_id)` for Bambu commands.
+
+### Tray State
+
+`src/bambu/tray.rs` defines:
+
+```rust
+pub enum TrayState {
+    Unknown,
+    Empty,
+    Spool,
+    Reading,
+    Ready,
+    Loading,
+    Unloading,
+    Loaded,
+}
+```
+
+`Tray` contains:
+
+- `state`
+- `filament`
+- `k_from_tray`
+- `cali_idx`
+- flattened `TrayMetaInfo`
+
+`TrayMetaInfo` contains generic-looking application metadata embedded inside Bambu tray state:
+
+- `spool_id`
+- `old_tag_info` for migration
+- `consumed_since_load`
+- `consumed_since_load_saved`
+- `consumed_since_weight`
+- `used_in_print`
+- `waiting_for_tag_uid`
+
+This mix is important for persistence planning. `spool_id` and consumption counters are generic app concepts, but they currently live inside Bambu-specific persisted state.
+
+### Incoming Report Compatibility
+
+`src/bambu/process_incoming.rs` contains delicate compatibility logic across Bambu models and firmware versions.
+
+Do not rewrite this in the first migration.
+
+Important compatibility behaviors:
+
+- Locked/cloud mode:
+  - `PrinterMode::Auto` reads `print.fun` bit `0x20000000`.
+  - `DevOrOldFirmware` forces unlocked.
+  - `Cloud` forces locked.
+- Nozzle information:
+  - New format: `print.device.nozzle.info[]`.
+  - Old format: top-level `print.nozzle_diameter`.
+- Tray movement:
+  - New/H2-style format: `device.extruder.info[*].star/snow/spre`.
+  - Old format: `ams.tray_tar/tray_now/tray_pre`.
+- External tray reports:
+  - Old/single external: `vt_tray`.
+  - New/multiple external: `vir_slot`.
+  - Fallback derived from tray movement when no external slot report is present.
+- AMS bits:
+  - `ams_exist_bits`
+  - `tray_exist_bits`
+  - `tray_read_done_bits`
+  - `tray_reading_bits`
+- AMS scan:
+  - When tray read completes and `tag_uid` is present, `notify_tag_scanned()` can trigger automatic slot configuration.
+- Partial external tray update with `id: None`:
+  - Current behavior requests a full update rather than merging partial fields.
+- Failed printer responses:
+  - Messages with `result == "fail"` are ignored.
+
+### Bambu API Schema
+
+`src/bambu/bambu_api.rs` defines Bambu JSON schema and outgoing command structures.
+
+Important incoming models:
+
+- `Message::Print`
+- `Message::Info`
+- `PrintData`
+- `PrintAms`
+- `PrintAmsData`
+- `PrintTray`
+- `PrintDevice`
+- `PrintDeviceExtruder`
+- `PrintDeviceNozzle`
+
+Important outgoing commands:
+
+- `PushAllCommand`
+- `AmsFilamentSettingCommand`
+- `ExtrusionCaliGetCommand`
+- `ExtrusionCaliSelCommand`
+- `ExtrusionCaliSetCommand`
+- `GetVersionCommand`
+- `PrinterCommand`
+
+Serde compatibility:
+
+- Many numeric fields are strings.
+- Some values are hex strings.
+- `gcode_file_prepare_percent` supports string integer form.
+- `PrintDevice.nozzle` ignores parse failures for known firmware differences.
+- `PrintTray::tray_colors()` supports both `tray_color` and multi-color `cols`.
+
+### Bambu Outgoing Commands
+
+`src/bambu/outgoing.rs` implements current command behavior:
+
+- Publish payloads to `device/{serial}/request`.
+- Request version info.
+- Request full update.
+- Pause/resume/stop.
+- Fetch calibrations.
+- Reset tray.
+- Set tray filament.
+- Select pressure advance/K calibration.
+- Add calibration to printer.
+
+Many mutation commands are skipped while `is_locked()` is true. This behavior must be preserved.
+
+### Bambu Persistence
+
+`src/bambu/printer_state.rs` persists Bambu state to SD card under paths derived from serial:
+
+- `/state/{file_name}.{file_ext}/startup.jsn`
+- `/state/{file_name}.{file_ext}/print.jsn`
+- `/state/{file_name}.{file_ext}/print.csv`
+- `/state/{file_name}.{file_ext}/print.ci0`
+- `/state/{file_name}.{file_ext}/print.ci1`
+
+`PrinterPersistentState` includes:
+
+- `ams_trays`
+- legacy `virt_tray`
+- `virt_trays`
+- legacy `nozzle_diameter`
+- `ams_exist_bits`
+- `tray_exist_bits`
+- `tray_read_done_bits`
+- `calibrations`
+- `printer_name`
+- `extruders`
+- `extruder_state`
+
+Compatibility behavior:
+
+- Legacy single virtual tray is migrated into `virt_trays[0]`.
+- Legacy `nozzle_diameter` is restored into extruder 0.
+- Old `tag_info` is migrated into `spool_id`.
+- Tray vector is resized to 24.
+- Missing spool IDs are cleared if no longer in inventory.
+
+This should remain unchanged in the first phase.
+
+### Bambu Print Tracking
+
+`src/bambu/bambu_print.rs` tracks active print projects.
+
+Current flow:
+
+- `project_file` creates `PrintProject`.
+- It stores Bambu project fields:
+  - `project_id`
+  - `subtask_name`
+  - `threemf_url`
+  - `gcode_filename_in_3mf`
+  - `ams_mapping`
+  - `ams_mapping2`
+  - `use_ams`
+- G-code analysis is requested through observers.
+- Trays used in print are marked.
+- State changes, layer changes, tray changes, and finish/fail events trigger consumption logic.
+- Consumption maps gcode filament IDs to Bambu tray IDs.
+- Print resume state is persisted separately.
+
+Compatibility:
+
+- Old `ams_mapping` is preferred.
+- New `ams_mapping2` is used for external slots.
+- `use_ams == false` maps to external spool for some cases.
+
+This entire mechanism is Bambu-specific and should become a Bambu implementation of generic consumption reporting.
+
+### Bambu Calibration
+
+`src/bambu/calibration.rs` models Bambu pressure advance/K data.
+
+Important concepts:
+
+- `Calibration`
+- `KInfo`
+- `KPrinter`
+- `KExtruder`
+- `KNozzleDiameter`
+- `KNozzleId`
+- Bambu `cali_idx`
+- Bambu `setting_id`
+- Bambu nozzle ID and high-flow/standard detection
+
+The matching logic is delicate:
+
+- Match by printer serial.
+- Match by extruder.
+- Match by nozzle diameter.
+- Match by nozzle type.
+- Match by filament ID.
+- Fall back from exact calibration name to cleaned name to K value.
+- Tolerate H2D missing `setting_id`.
+
+This should be treated as a Bambu optional capability, not a generic inventory primitive.
+
+## Current Generic Domains
+
+### Inventory
+
+`src/spool_record.rs` defines `SpoolRecord`, the main inventory row stored as CSV.
+
+Mostly generic fields:
+
+- `id`
+- `tag_id`
+- `material_type`
+- `material_subtype`
+- `color_name`
+- `color_code`
+- `note`
+- `brand`
+- `weight_advertised`
+- `weight_core`
+- `weight_new`
+- `weight_current`
+- `added_time`
+- `encode_time`
+- `added_full`
+- `consumed_since_add`
+- `consumed_since_weight`
+- `data_origin`
+- `tag_type`
+- `assigned_location`
+- `actual_location`
+- `spools_count`
+
+Bambu-coupled fields or semantics:
+
+- `slicer_filament` currently often stores Bambu filament/material IDs.
+- `ext_has_k` signals Bambu pressure advance extension presence.
+- `SpoolRecordExt.k_info` stores Bambu K information.
+- `SpoolRecordExt::get_calibration()` takes Bambu `NozzleType` and Bambu K hierarchy.
+- `OriginData::BambuLabTag` stores Bambu tag origin.
+
+Short-term recommendation:
+
+- Keep schema unchanged for compatibility.
+- Hide Bambu-specific interpretation behind adapter/service APIs.
+
+Long-term recommendation:
+
+- Replace `k_info` with a generic extension map or driver-specific extension enum.
+- Keep `slicer_filament` but clarify it means slicer/material code, not Bambu-specific ID.
+
+### Store
+
+`src/store.rs` owns persistent inventory databases:
+
+- `spools_db`
+- `locations_db`
+- spool tag ID index
+- storage config
+
+The CSV database layer in `src/csvdb.rs` is generic and should remain reusable.
+
+Store coupling to clean up later:
+
+- Imports Bambu `KInfo`.
+- Imports `ViewModel`.
+- `edit_spool_from_web(..., k_info: Option<KInfo>)` exposes Bambu K directly.
+- Upgrade code uses `ViewModel::get_k_info_from_old_tag()`.
+- Store emits UI messages through `ViewModel` in upgrade paths.
+
+Target:
+
+- Store should not know `ViewModel`.
+- Store should not know Bambu `KInfo` in generic APIs.
+- Store should emit domain errors/events and let the application layer decide UI messages.
+
+### Staging
+
+`src/filament_staging.rs` holds the currently staged spool:
+
+- `full_spool_rec`
+- `scanned_tag_id`
+- `origin`
+
+Origins:
+
+- `Empty`
+- `Scanned`
+- `Encoded`
+- `Unloaded`
+
+This is mostly generic, although the name `FilamentStaging` and some usage patterns are tied to printer tray operations.
+
+Target:
+
+- Keep the concept.
+- Consider renaming later to `SpoolStaging` or `MaterialStaging`.
+- Route assignment through generic printer slot commands, not Bambu tray functions.
+
+### Tags
+
+`src/tag_v1.rs` and `src/tag_standards.rs` handle tag formats.
+
+Current tag standards:
+
+- SpoolEase V1.
+- Bambu Lab RFID tag.
+- OpenPrintTag.
+
+Bambu coupling:
+
+- `BambuLabTag` is explicitly Bambu.
+- `TagInformationV1` imports Bambu `Calibration` and `FilamentInfo`.
+- V1 K handling is Bambu-specific.
+- Shared local NFC reports `ReadResult::BambulabTag`.
+
+Target:
+
+- Tag readers remain generic devices.
+- Tag format parsers become adapters.
+- Bambu Lab RFID remains an inventory tag adapter, not inherently a printer adapter.
+
+### Scale
+
+`src/spool_scale.rs` and `console/shared/src/scale.rs` are mostly generic for weight/NFC/button functions.
+
+Coupling:
+
+- Remote scale protocol includes gcode analysis requests with `printer_index`.
+- `GcodeAnalysisRequest` contains Bambu-specific fields such as serial, access code, FTPS details, and filename rules.
+
+Target:
+
+- Keep scale weight and NFC generic.
+- Treat remote gcode analysis as a driver-owned optional helper.
+- Version the scale protocol before changing non-compatible gcode request types.
+
+## Current UI and API Coupling
+
+### Slint Coupling
+
+Current Slint types and callbacks are Bambu-shaped:
+
+- `UiTray` uses integer `id` matching Bambu tray IDs.
+- `trays-state` is initialized with Bambu fixed slots.
+- `curr-ams-id` and `ams-exists` assume AMS paging.
+- `get_tray_id()` and `get_tray_index()` encode Bambu mappings.
+- Tray operations use `tray-id: int`.
+- UI displays K directly.
+- New tag scan includes explicit Bambu Lab flows.
+
+This cannot support arbitrary printer topologies.
+
+Target Slint model:
+
+```text
+PrinterView
+  printer_id
+  display_name
+  connected
+  slot_groups[]
+    group_id
+    display_name
+    kind
+    slots[]
+      slot_id
+      display_name
+      state
+      filament
+      spool_id
+      weight_display
+      used_in_print
+      capabilities
+```
+
+Callbacks should become:
+
+```text
+set-staging-to-slot(printer-id: string, slot-id: string)
+configure-slot-with-spool-id(printer-id: string, slot-id: string, spool-id: string)
+reset-slot(printer-id: string, slot-id: string)
+untag-slot(printer-id: string, slot-id: string)
+select-printer(printer-id: string)
+```
+
+Bambu can still map string slot IDs to current internal tray IDs.
+
+### Web API Coupling
+
+Important current endpoints:
+
+- `/api/printer-config`
+- `/api/printers-status`
+- `/api/printer-command`
+- `/api/printers-filament-pa`
+- `/api/add-printer-pa`
+- `/api/spool-kinfo`
+- `/api/spools-in-printers`
+- inventory and storage endpoints
+
+Bambu-specific API concepts:
+
+- `PrinterConfigDTO.serial`
+- `PrinterConfigDTO.access_code`
+- `PrinterMode`
+- `UseAmsScan`
+- `auto_restore_k`
+- `fetch_3mf`
+- `ignore_certificates`
+- `PrintCommand` from Bambu API module
+- K/pressure advance DTOs
+- Slot status serialized as CSV-like strings
+- `SpoolsSlotsKind::Ams | Ext`
+
+Because client changes are acceptable, these endpoints can be redesigned directly when the client work starts. Internal compatibility adapters are still helpful while only backend is changing.
+
+## Proposed Target Architecture
+
+The central change is to introduce a generic printer layer based on material slots and capabilities.
+
+```text
+ViewModel / Web API / Slint
+  -> PrinterManager
+    -> BambuPrinterDriver
+      -> existing BambuPrinter and src/bambu/*
+    -> future SnapmakerDriver
+    -> future MoonrakerDriver
+    -> future PrusaDriver
+
+Inventory / Store / Tags / Scale
+  -> generic services
+  -> optional printer capability calls
+```
+
+### Domain Language
+
+Use generic terms:
+
+- Printer
+- Driver
+- Slot group
+- Material slot
+- Slot assignment
+- Filament/material metadata
+- Print status
+- Consumption event
+- Capability
+
+Avoid generic use of Bambu terms:
+
+- AMS
+- tray
+- tray bits
+- cali index
+- K restore
+- Bambu serial access code
+- MQTT report/request
+
+Bambu code can continue using Bambu terminology internally.
+
+### Printer Capabilities
+
+Capabilities should be explicit and optional.
+
+Required for first non-Bambu driver:
+
+- Writable material slot assignment.
+
+Likely generic capabilities:
+
+- `MaterialSlotRead`
+- `MaterialSlotWrite`
+- `PrintStatusRead`
+- `PrintControl`
+- `ConsumptionTracking`
+- `TagScanFromPrinter`
+- `DriverManagedPressureAdvance`
+- `PrintFileFetch`
+- `PersistentSlotState`
+
+Example:
+
+```rust
+pub struct PrinterCapabilities {
+    pub material_slot_read: bool,
+    pub material_slot_write: bool,
+    pub print_status_read: bool,
+    pub print_control: bool,
+    pub consumption_tracking: bool,
+    pub printer_tag_scan: bool,
+    pub pressure_advance: PressureAdvanceCapability,
+}
+
+pub enum PressureAdvanceCapability {
+    Unsupported,
+    DriverManaged,
+}
+```
+
+### Printer Driver Trait
+
+Avoid `async fn` in the core trait for now. This codebase uses `Rc<RefCell<_>>`, Embassy tasks, and channels heavily. A command-enqueue model is safer for embedded Rust and avoids object-safety/generic task issues.
+
+Conceptual shape:
+
+```rust
+pub trait PrinterDriver {
+    fn id(&self) -> &PrinterId;
+    fn kind(&self) -> PrinterDriverKind;
+    fn display_name(&self) -> String;
+    fn capabilities(&self) -> PrinterCapabilities;
+    fn snapshot(&self) -> PrinterSnapshot;
+    fn dispatch(&mut self, command: PrinterCommand) -> Result<(), PrinterError>;
+    fn subscribe(&mut self, observer: Weak<RefCell<dyn PrinterObserver>>);
+}
+```
+
+`dispatch()` can internally enqueue async commands or call current synchronous Bambu functions.
+
+### Printer Manager
+
+`PrinterManager` should replace `SelectedPrinter` as the application-facing collection.
+
+Responsibilities:
+
+- Own all configured printers.
+- Provide current selected printer.
+- Provide snapshots for UI/API.
+- Dispatch commands by `PrinterId`.
+- Route driver events to application services.
+- Hide `Rc<RefCell<BambuPrinter>>` from `ViewModel`.
+
+Conceptual shape:
+
+```rust
+pub struct PrinterManager {
+    printers: Vec<Rc<RefCell<dyn PrinterDriver>>>,
+    selected: Option<PrinterId>,
+}
+```
+
+If trait objects become painful because of embedded generics or allocation constraints, an enum is acceptable:
+
+```rust
+pub enum PrinterInstance {
+    Bambu(BambuPrinterDriver),
+    Snapmaker(SnapmakerDriver),
+    Moonraker(MoonrakerDriver),
+}
+```
+
+Given the codebase style, the enum approach may be more pragmatic initially. It avoids object-safety problems and keeps concrete methods available during migration.
+
+### Printer Snapshot
+
+The snapshot should be the only object Slint/API projection reads.
+
+Conceptual shape:
+
+```rust
+pub struct PrinterSnapshot {
+    pub id: PrinterId,
+    pub kind: PrinterDriverKind,
+    pub name: String,
+    pub connected: bool,
+    pub capabilities: PrinterCapabilities,
+    pub extruders: Vec<ExtruderSnapshot>,
+    pub slot_groups: Vec<SlotGroupSnapshot>,
+    pub print: PrintSnapshot,
+    pub diagnostics: Vec<PrinterDiagnostic>,
+}
+```
+
+Slot groups:
+
+```rust
+pub struct SlotGroupSnapshot {
+    pub id: String,
+    pub name: String,
+    pub kind: SlotGroupKind,
+    pub extruder: Option<u32>,
+    pub temp: Option<f32>,
+    pub humidity: Option<i32>,
+    pub slots: Vec<MaterialSlotSnapshot>,
+}
+
+pub enum SlotGroupKind {
+    InternalChanger,
+    External,
+    Toolhead,
+    Virtual,
+    Other,
+}
+```
+
+Slots:
+
+```rust
+pub struct MaterialSlotSnapshot {
+    pub id: SlotId,
+    pub display_name: String,
+    pub state: SlotState,
+    pub filament: PrinterFilament,
+    pub spool_id: Option<String>,
+    pub consumed_since_load: f32,
+    pub consumed_since_weight: f32,
+    pub used_in_print: bool,
+    pub driver_data: SlotDriverData,
+}
+```
+
+Slot IDs should be opaque strings in the generic API/UI:
+
+```rust
+pub struct SlotId(pub String);
+```
+
+Bambu can use stable IDs such as:
+
+- `bambu:0`
+- `bambu:1`
+- `bambu:16`
+- `bambu:254`
+- `bambu:255`
+
+or simply `0`, `1`, `254`, `255` inside the Bambu adapter. The UI should not rely on their numeric meaning.
+
+### Printer Commands
+
+Commands should express user intent, not Bambu protocol.
+
+```rust
+pub enum PrinterCommand {
+    Refresh,
+    PrintControl(PrintControlCommand),
+    AssignMaterialToSlot {
+        slot_id: SlotId,
+        spool: FullSpoolRecord,
+        temps: FilamentTemps,
+        mode: SlotAssignMode,
+    },
+    ClearSlot {
+        slot_id: SlotId,
+    },
+    UnassignSpoolFromSlot {
+        slot_id: SlotId,
+    },
+    AddPressureAdvance(PressureAdvanceProfile),
+    DriverSpecific(DriverCommand),
+}
+```
+
+Assignment mode matters because current behavior has two variants:
+
+- Assign only the app's spool ID to the slot.
+- Write material/color/K information to the printer and also assign spool ID.
+
+```rust
+pub enum SlotAssignMode {
+    SpoolIdOnly,
+    WritePrinterMaterial,
+}
+```
+
+For Bambu:
+
+- `SpoolIdOnly` maps to `set_tray_spool_rec()`.
+- `WritePrinterMaterial` maps to `set_tray_filament()`.
+
+For another printer:
+
+- It maps to that printer's writable material slot API.
+
+### Printer Events
+
+Drivers should emit generic events to the application layer.
+
+```rust
+pub trait PrinterObserver {
+    fn on_printer_event(&mut self, event: PrinterEvent);
+}
+
+pub enum PrinterEvent {
+    ConnectivityChanged {
+        printer_id: PrinterId,
+        connected: bool,
+    },
+    SnapshotChanged {
+        printer_id: PrinterId,
+        change: PrinterChange,
+    },
+    SlotTagScanned {
+        printer_id: PrinterId,
+        slot_id: SlotId,
+        tag_id: String,
+        only_spool_id: bool,
+    },
+    SlotConsumptionReported {
+        printer_id: PrinterId,
+        slot_id: SlotId,
+        grams: f32,
+        source: ConsumptionSource,
+    },
+    GcodeAnalysisRequested {
+        printer_id: PrinterId,
+        request: PrintFileAnalysisRequest,
+    },
+    GcodeAnalysisCanceled {
+        printer_id: PrinterId,
+        job_number: i32,
+    },
+}
+```
+
+Bambu can initially bridge its existing `BambuPrinterObserver` into these events.
+
+## Bambu Adapter Strategy
+
+The first implementation should preserve Bambu internals.
+
+Do not rewrite:
+
+- `process_incoming.rs`
+- `tray.rs`
+- `bambu_print.rs`
+- `calibration.rs`
+- `printer_state.rs`
+- `bambu_api.rs`
+- `mqtt.rs`
+- `outgoing.rs`
+
+Instead add a wrapper, conceptually:
+
+```rust
+pub struct BambuPrinterDriver {
+    inner: Rc<RefCell<BambuPrinter>>,
+}
+```
+
+Responsibilities:
+
+- Convert Bambu state to generic `PrinterSnapshot`.
+- Convert generic `SlotId` to Bambu tray ID.
+- Convert generic commands to existing Bambu methods.
+- Bridge Bambu observer events into generic printer events.
+- Preserve Bambu persistence as-is.
+
+This allows `ViewModel` to stop depending on `BambuPrinter` directly without destabilizing Bambu behavior.
+
+## Persistence Architecture
+
+Persistence must be split carefully because current state mixes generic and Bambu-specific concepts.
+
+### Existing Inventory State
+
+Keep existing inventory CSV and sidecar JSON initially.
+
+Existing files:
+
+- spool CSV database under store paths managed by `Store`
+- `SpoolRecordExt` files under `/store/spools.ext/...`
+- tag-location DB
+- storage config
+
+Generic concepts that remain:
+
+- Spool records.
+- Tag links.
+- Weight fields.
+- Consumption totals.
+- Actual and assigned storage locations.
+- Stock/split count.
+
+Bambu leakage to tolerate short-term:
+
+- `ext_has_k`
+- `SpoolRecordExt.k_info`
+- Bambu origin data.
+
+### Existing Bambu Printer State
+
+Keep current Bambu state files unchanged at first.
+
+Reasons:
+
+- They encode delicate compatibility and migration behavior.
+- They persist Bambu-specific trays, bitfields, extruders, calibration, and print resume state.
+- They include generic-looking slot assignment and consumption data embedded in `TrayMetaInfo`.
+- Changing them first creates high migration risk before the architecture has proven itself.
+
+Short-term approach:
+
+```text
+BambuPrinterDriver
+  -> reads/writes existing Bambu state exactly as today
+  -> exposes generic snapshots from Bambu state
+```
+
+### New Generic Printer State
+
+For new drivers, introduce a generic printer app state file.
+
+Conceptual shape:
+
+```rust
+pub struct StoredPrinterState {
+    pub version: u32,
+    pub printer_id: String,
+    pub driver_kind: PrinterDriverKind,
+    pub generic: GenericPrinterState,
+    pub driver_state: DriverSpecificState,
+}
+
+pub struct GenericPrinterState {
+    pub slots: Vec<StoredSlotState>,
+}
+
+pub struct StoredSlotState {
+    pub slot_id: String,
+    pub spool_id: Option<String>,
+    pub consumed_since_load: f32,
+    pub consumed_since_weight: f32,
+    pub last_assigned_material: Option<StoredMaterialAssignment>,
+}
+```
+
+Driver-specific state can be an enum:
+
+```rust
+pub enum DriverSpecificState {
+    None,
+    BambuLegacy,
+    Snapmaker(SnapmakerState),
+    Moonraker(MoonrakerState),
+}
+```
+
+For Bambu, do not use this immediately except possibly as a wrapper marker pointing to legacy state.
+
+### Future Bambu Migration Option
+
+Only after the generic layer is stable, consider moving generic slot fields out of Bambu `TrayMetaInfo`:
+
+- `spool_id`
+- `consumed_since_load`
+- `consumed_since_load_saved`
+- `consumed_since_weight`
+- `used_in_print`
+
+This is optional. If legacy Bambu persistence remains stable and well-contained, there may be no need to migrate it.
+
+## Configuration Architecture
+
+Current `PrinterConfig` is Bambu-specific:
+
+- `ip`
+- `name`
+- `serial`
+- `access_code`
+- `log_filter`
+- `auto_restore_k`
+- `track_print_consume`
+- `fetch_3mf`
+- `ignore_certificates`
+- `printer_mode`
+- `use_ams_scan`
+
+Target configuration should be driver-kind based.
+
+Conceptual shape:
+
+```rust
+pub struct ConfiguredPrinter {
+    pub id: String,
+    pub name: Option<String>,
+    pub kind: PrinterDriverKind,
+    pub enabled: bool,
+    pub config: PrinterDriverConfig,
+}
+
+pub enum PrinterDriverConfig {
+    Bambu(BambuPrinterConfig),
+    Snapmaker(SnapmakerPrinterConfig),
+    Moonraker(MoonrakerPrinterConfig),
+    Prusa(PrusaPrinterConfig),
+}
+```
+
+Bambu config can initially mirror current `PrinterConfig`.
+
+Backward compatibility:
+
+- Existing `_printers_` config without `kind` should load as Bambu.
+- Existing `_printer_` single-printer fallback should still load as Bambu.
+- Current `DefaultPrinterConfig.serial` should migrate to a generic default printer ID.
+
+Printer ID policy:
+
+- Bambu: serial is a good stable ID.
+- Moonraker: configured URL or generated ID.
+- Snapmaker: configured ID, serial if available, or generated stable ID.
+
+## Slint Migration
+
+Slint must become dynamic, but this should be staged.
+
+### Current Problem
+
+`ui/app.slint` hardcodes Bambu tray state:
+
+- `empty-trays-state()` returns 26 fixed entries: two external plus 24 AMS/HT slots.
+- `get_tray_id()` and `get_tray_index()` encode Bambu mappings.
+- `curr-ams-id` and `ams-exists` drive AMS paging.
+- `Trays` and `AmsButton` assume Bambu AMS slot counts.
+
+### Target UI Model
+
+Replace fixed tray state with dynamic printer slot groups.
+
+Conceptual Slint structs:
+
+```slint
+export struct UiPrinterSlotGroup {
+    id: string,
+    name: string,
+    kind: string,
+    extruder: int,
+    temp: float,
+    humidity: int,
+    slots: [UiMaterialSlot],
+}
+
+export struct UiMaterialSlot {
+    id: string,
+    name: string,
+    state: UiTrayState,
+    filament: UiFilament,
+    spool-rec-id: string,
+    tagged: bool,
+    weight-display: string,
+    used-in-print: bool,
+    pa: string,
+}
+```
+
+The visual layout should render groups generically:
+
+- Horizontal/vertical group cards.
+- Group title from backend.
+- Slots in the group from backend.
+- No assumption of 4 slots per group.
+- No assumption of HT slot count.
+- No numeric external tray IDs.
+
+### Transitional Slint Plan
+
+Phase 1 can keep current Slint and adapt generic Bambu snapshots back into existing `trays-state`. This keeps Bambu working while Rust architecture changes.
+
+Phase 2 changes Slint to dynamic groups. At that point non-Bambu drivers can be represented.
+
+## Web API Migration
+
+Because the client can be changed with the backend, the current printer API can be replaced rather than versioned.
+
+### Target Endpoints
+
+Conceptual endpoints:
+
+```text
+GET  /api/printers
+POST /api/printers/config
+GET  /api/printers/status
+POST /api/printers/command
+POST /api/printers/slots/assign
+POST /api/printers/slots/clear
+POST /api/printers/slots/unassign-spool
+GET  /api/printers/capabilities
+```
+
+Status should be typed JSON, not positional slot strings.
+
+Slot assignment payload should be generic:
+
+```rust
+pub struct AssignSlotDTO {
+    pub printer_id: String,
+    pub slot_id: String,
+    pub spool_id: String,
+    pub mode: SlotAssignMode,
+}
+```
+
+Pressure advance endpoints should become optional and capability-gated:
+
+```text
+GET  /api/printers/{id}/pressure-advance
+POST /api/printers/{id}/pressure-advance
+```
+
+or be kept as Bambu-specific extension endpoints if the client only shows them for Bambu.
+
+## Print Consumption Architecture
+
+Generic inventory only needs consumption deltas by spool or slot.
+
+Target generic flow:
+
+```text
+Driver detects consumption
+  -> emits SlotConsumptionReported { printer_id, slot_id, grams }
+    -> PrinterManager/Application resolves slot to spool_id
+      -> Store increments SpoolRecord.consumed_since_add
+      -> Store increments SpoolRecord.consumed_since_weight
+      -> Generic printer state records consumed_since_load if relevant
+```
+
+Bambu implementation:
+
+- Keep current gcode analysis and Bambu print tracking initially.
+- Convert final consumption increments into generic consumption events later.
+- Preserve print resume state while doing so.
+
+Other drivers:
+
+- May emit direct usage events.
+- May have no consumption tracking.
+- May need driver-specific print job state.
+
+Do not require all printers to support consumption tracking.
+
+## Pressure Advance Architecture
+
+Pressure advance should be optional.
+
+Bambu support remains:
+
+- Existing `KInfo` in spool extension.
+- Existing printer calibration table.
+- Existing K matching and restore behavior.
+- Existing add/select calibration commands.
+
+Generic layer should expose capability and extension data, but not require all drivers to implement it.
+
+Conceptual capability:
+
+```rust
+pub enum PressureAdvanceCapability {
+    Unsupported,
+    DriverManaged,
+}
+```
+
+The UI/client should only show pressure advance features when the selected printer supports them.
+
+## Material Slot Assignment Architecture
+
+This is the most important cross-printer feature.
+
+Generic assignment inputs:
+
+- Printer ID.
+- Slot ID.
+- Spool record.
+- Slicer/material code.
+- Material type.
+- Colors.
+- Temperature hints.
+- Optional driver-specific extension such as Bambu K.
+
+Driver responsibilities:
+
+- Validate the slot exists and is writable.
+- Convert material metadata to printer-specific format.
+- Send command to printer if possible.
+- Update local slot-spool assignment state if command succeeds or if mode is app-only.
+- Emit snapshot change.
+
+Bambu mapping:
+
+- Generic slot ID to tray ID.
+- `AssignMaterialToSlot` with `WritePrinterMaterial` to `set_tray_filament()`.
+- `AssignMaterialToSlot` with `SpoolIdOnly` to `set_tray_spool_rec()`.
+- `ClearSlot` to `reset_tray()`.
+
+## Recommended Migration Phases
+
+### Phase 0: Documentation
+
+Completed by this document.
+
+Purpose:
+
+- Preserve architectural findings.
+- Record product decisions.
+- Avoid context loss between sessions.
+
+### Phase 1: Add Generic Printer Domain Types
+
+Add `src/printer/` with no behavior changes.
+
+Suggested files:
+
+- `src/printer.rs` or `src/printer/mod.rs`
+- `src/printer/types.rs`
+- `src/printer/manager.rs`
+- `src/printer/events.rs`
+- `src/printer/commands.rs`
+
+Add types:
+
+- `PrinterId`
+- `PrinterDriverKind`
+- `PrinterCapabilities`
+- `PrinterSnapshot`
+- `SlotGroupSnapshot`
+- `MaterialSlotSnapshot`
+- `SlotId`
+- `SlotState`
+- `PrinterFilament`
+- `PrinterCommand`
+- `PrinterEvent`
+- `PrinterObserver`
+
+Acceptance criteria:
+
+- Project builds.
+- No Bambu behavior changes.
+- No `ViewModel` behavior changes yet.
+
+### Phase 2: Add Bambu Adapter Snapshot
+
+Create `BambuPrinterDriver` wrapper.
+
+Responsibilities:
+
+- Hold `Rc<RefCell<BambuPrinter>>`.
+- Produce generic snapshots from existing Bambu state.
+- Convert generic slot IDs to Bambu tray IDs.
+- Expose Bambu capabilities.
+
+Acceptance criteria:
+
+- Tests or debug logs can show generic snapshots for Bambu printers.
+- Current UI still uses old direct Bambu path.
+- Bambu protocol untouched.
+
+### Phase 3: Introduce PrinterManager Behind ViewModel
+
+Add `PrinterManager` and initialize Bambu printers through it.
+
+During this phase, `ViewModel` may still use compatibility methods that internally call the Bambu adapter.
+
+Acceptance criteria:
+
+- `ViewModel` no longer stores `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` as its primary printer-facing field.
+- Current Bambu UI still works.
+- Existing Bambu state restore/store still works.
+
+### Phase 4: Route Commands Through Generic Printer Commands
+
+Refactor these paths:
+
+- `set_staging_to_tray_direct`
+- `configure_tray_with_spool_async`
+- `ui_reset_slot`
+- `ui_untag_slot`
+- web `/api/printer-command`
+
+They should dispatch `PrinterCommand` instead of calling `BambuPrinter` methods directly.
+
+Acceptance criteria:
+
+- Bambu slot configuration works exactly as before.
+- Bambu AMS scan auto-configuration works.
+- Reset/untag behavior works.
+
+### Phase 5: Generic Printer Events
+
+Bridge `BambuPrinterObserver` into generic `PrinterEvent`.
+
+Refactor `ViewModel` to handle generic events:
+
+- connectivity
+- snapshot changed
+- slot tag scanned
+- gcode analysis request/cancel
+- consumption reported, later
+
+Acceptance criteria:
+
+- `ViewModel` no longer implements product logic directly in `BambuPrinterObserver`, except inside a bridge.
+- Bambu UI updates still work.
+
+### Phase 6: Dynamic Slint Slot Groups
+
+Replace hardcoded Bambu tray arrays with backend-provided slot groups.
+
+Required Slint changes:
+
+- Replace `trays-state` fixed list with selected printer slot groups.
+- Replace integer tray callbacks with string printer/slot IDs.
+- Remove generic dependency on `curr-ams-id` and `ams-exists`.
+- Keep Bambu-specific visual grouping only as data from the backend, not fixed UI structure.
+
+Acceptance criteria:
+
+- Bambu AMS and external slots render correctly from snapshots.
+- No Slint hardcoded dependency on tray IDs `0..23`, `254`, `255` for logic.
+- UI can render a fake printer with arbitrary slot groups.
+
+### Phase 7: Replace Printer Status API and Client
+
+Replace `/api/printers-status` response shape with typed dynamic printer/slot groups.
+
+Remove positional slot strings.
+
+Acceptance criteria:
+
+- Client updated to consume new typed shape.
+- Bambu printer status displays correctly.
+- Non-Bambu fake driver status can display.
+
+### Phase 8: Generic Configuration and State for New Drivers
+
+Introduce driver-kind config.
+
+Keep old Bambu config migration.
+
+Introduce generic state for new drivers.
+
+Acceptance criteria:
+
+- Existing Bambu config loads as Bambu.
+- New fake/non-Bambu config can be persisted.
+- Default printer selection works by generic printer ID.
+
+### Phase 9: Add Fake Non-Bambu Driver
+
+Before Snapmaker, add a fake driver with arbitrary writable slots.
+
+Purpose:
+
+- Validate dynamic Slint.
+- Validate API shape.
+- Validate generic material assignment.
+- Validate generic persistence.
+
+Acceptance criteria:
+
+- Fake printer has configurable slot groups.
+- Assign staging spool to fake slot.
+- Slot-spool state persists.
+- Bambu still works.
+
+### Phase 10: Add First Real Non-Bambu Driver
+
+Start with material slot assignment.
+
+Do not require print status or consumption tracking immediately.
+
+Acceptance criteria:
+
+- Driver can configure printer material slots from SpoolEase inventory.
+- Driver-specific connection/configuration is isolated.
+- Unsupported capabilities are not shown or are disabled in UI/client.
+
+## Risks
+
+### RefCell Borrowing
+
+Current code has several comments about avoiding nested `RefCell` borrows, especially around Bambu callbacks and async commands.
+
+The generic event layer should avoid passing mutable printer references into observers. Prefer value events and snapshots.
+
+### Persistence Migration
+
+Changing Bambu state schema too early is risky. Keep it unchanged until generic architecture is proven.
+
+### Slint Rewrite Size
+
+Dynamic slot groups are a meaningful UI change. Do not combine this with Bambu protocol refactoring.
+
+### API and Client Coordination
+
+Because API can change, backend and client must be coordinated. Avoid leaving half-updated compatibility layers unless there is a clear transition plan.
+
+### Scale Protocol Compatibility
+
+Remote scale gcode analysis messages are serialized. Changing them can break older scale firmware. Version this protocol if it changes.
+
+### Pressure Advance Scope Creep
+
+Do not design a broad generic calibration system until there is a second real driver with similar requirements.
+
+### Over-Generalizing Transport
+
+Do not generalize MQTT now. Keep Bambu transport in the Bambu driver.
+
+## Guardrails
+
+- Preserve Bambu behavior until the adapter path is proven.
+- Prefer adding wrappers over rewriting Bambu internals.
+- Make slots opaque in generic code.
+- Make capabilities explicit.
+- Keep inventory generic.
+- Keep pressure advance optional.
+- Keep print consumption optional and driver-produced.
+- Avoid driver-specific terms in generic UI/API names.
+- Add fake driver before real non-Bambu driver to validate abstractions.
+
+## Files Most Likely To Change
+
+Early phases:
+
+- `src/main.rs` to add `mod printer`.
+- new `src/printer/*`.
+- new Bambu adapter module, likely `src/bambu/driver.rs` or `src/printer/bambu_adapter.rs`.
+- `src/view_model.rs` to introduce `PrinterManager` and command/event routing.
+
+Middle phases:
+
+- `ui/app.slint`
+- `ui/trays.slint`
+- `ui/slots.slint`
+- `ui/tray-operations.slint`
+- `ui/slot-display.slint`
+- `src/web_app.rs`
+- `src/app_config.rs`
+
+Later phases:
+
+- `src/store.rs`
+- `src/spool_record.rs`
+- `src/tag_v1.rs`
+- `src/spool_scale.rs`
+- `console/shared/src/gcode_analysis_task.rs`
+- `console/shared/src/scale.rs`
+
+Files to avoid changing early unless necessary:
+
+- `src/bambu/process_incoming.rs`
+- `src/bambu/tray.rs`
+- `src/bambu/bambu_print.rs`
+- `src/bambu/calibration.rs`
+- `src/bambu/printer_state.rs`
+- `src/bambu/bambu_api.rs`
+
+## Suggested Immediate Next Steps
+
+1. Add `src/printer/` domain types only.
+2. Add `BambuPrinterDriver` snapshot adapter without changing `ViewModel` behavior.
+3. Add a debug-only or log-only path to compare current Bambu UI projection with generic snapshot projection.
+4. Refactor `ViewModel` to use `PrinterManager` for read-only status projection.
+5. Then refactor material slot assignment commands through `PrinterManager`.
+6. Only after that, start Slint dynamic slot group work.
+
+## Session Handoff Instructions
+
+For future sessions, start with:
+
+```text
+Read console/core/docs/printer-architecture.md. Continue from the next unfinished phase in the printer architecture migration. Preserve Bambu behavior and avoid rewriting src/bambu internals unless explicitly required.
+```
+
+If context is limited, read these files next:
+
+- `src/bambu.rs`
+- `src/bambu/tray.rs`
+- `src/bambu/process_incoming.rs`
+- `src/bambu/outgoing.rs`
+- `src/view_model.rs`
+- `src/app_config.rs`
+- `src/web_app.rs`
+- `ui/app.slint`
+- `ui/trays.slint`
+
+## Current Status
+
+This document is the first architecture artifact. No migration code has been implemented yet.

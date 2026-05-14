@@ -19,6 +19,7 @@ mod color_utils;
 mod csvdb;
 mod filament_staging;
 mod my_mqtt;
+mod printer;
 mod settings;
 mod spool_record;
 mod spool_scale;
