@@ -51,7 +51,7 @@ use crate::bambu::{
 };
 use crate::color_utils::get_color_name;
 use crate::filament_staging::StagingOrigin;
-use crate::printer::{self as printer_domain, bambu_adapter::BambuPrinterDriver};
+use crate::printer::{self as printer_domain, PrinterCommand, PrinterDriver, SlotId, bambu_adapter::BambuPrinterDriver};
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleWeight, SpoolScaleObserver};
@@ -1547,9 +1547,12 @@ impl ViewModel {
             }
         }
 
-        self.bambu_printer_model
-            .borrow_mut()
-            .update_any_tray(tray_id as usize, |tray| tray.meta_info.spool_id = None);
+        let mut printer_driver = BambuPrinterDriver::new(self.bambu_printer_model.printers[self.bambu_printer_model.index].clone());
+        if let Err(err) = printer_driver.dispatch(PrinterCommand::UnassignSpoolFromSlot {
+            slot_id: SlotId::new(format!("bambu:{tray_id}")),
+        }) {
+            error!("Failed to unassign spool from slot {tray_id}: {err:?}");
+        }
 
         self.update_ui_from_printer(&self.bambu_printer_model.borrow());
     }

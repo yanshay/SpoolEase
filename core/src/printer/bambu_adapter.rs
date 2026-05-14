@@ -10,7 +10,7 @@ use crate::bambu::{
     BambuPrinter, NozzleType,
     bambu_api::{GcodeState, PrintCommand as BambuPrintCommand},
     filament::Filament as BambuFilament,
-    tray::{Tray, TrayMetaInfo, TrayState as BambuTrayState},
+    tray::{Tray, TrayState as BambuTrayState},
 };
 
 use super::{
@@ -375,7 +375,7 @@ impl PrinterDriver for BambuPrinterDriver {
             PrinterCommand::UnassignSpoolFromSlot { slot_id } => {
                 let tray_id = Self::tray_id_from_slot_id(&slot_id)?;
                 self.printer.borrow_mut().update_any_tray(tray_id as usize, |tray| {
-                    tray.meta_info = TrayMetaInfo::default();
+                    tray.meta_info.spool_id = None;
                 });
                 Ok(())
             }
