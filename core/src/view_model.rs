@@ -1557,7 +1557,12 @@ impl ViewModel {
         self.update_ui_from_printer(&self.bambu_printer_model.borrow());
     }
     fn ui_reset_slot(&self, tray_id: i32) {
-        self.bambu_printer_model.borrow_mut().reset_tray(tray_id);
+        let mut printer_driver = BambuPrinterDriver::new(self.bambu_printer_model.printers[self.bambu_printer_model.index].clone());
+        if let Err(err) = printer_driver.dispatch(PrinterCommand::ClearSlot {
+            slot_id: SlotId::new(format!("bambu:{tray_id}")),
+        }) {
+            error!("Failed to reset slot {tray_id}: {err:?}");
+        }
         self.update_ui_from_printer(&self.bambu_printer_model.borrow());
     }
     fn ui_term_info(&self, text: &str) {

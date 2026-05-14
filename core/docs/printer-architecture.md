@@ -1360,7 +1360,7 @@ Bambu mapping:
 
 ## Recommended Migration Phases
 
-### Phase 0: Documentation
+### Phase 0: Documentation [done]
 
 Completed by this document.
 
@@ -1370,7 +1370,7 @@ Purpose:
 - Record product decisions.
 - Avoid context loss between sessions.
 
-### Phase 1: Add Generic Printer Domain Types
+### Phase 1: Add Generic Printer Domain Types [done]
 
 Add `src/printer/` with no behavior changes.
 
@@ -1403,7 +1403,13 @@ Acceptance criteria:
 - No Bambu behavior changes.
 - No `ViewModel` behavior changes yet.
 
-### Phase 2: Add Bambu Adapter Snapshot
+Current migration status:
+
+- [done] Added generic printer domain scaffold in `src/printer/mod.rs`.
+- [done] Added generic IDs, snapshots, slot groups, slots, capabilities, commands, events, observer, and driver trait.
+- [done] Registered `mod printer` in `src/main.rs`.
+
+### Phase 2: Add Bambu Adapter Snapshot [done]
 
 Create `BambuPrinterDriver` wrapper.
 
@@ -1420,7 +1426,16 @@ Acceptance criteria:
 - Current UI still uses old direct Bambu path.
 - Bambu protocol untouched.
 
-### Phase 3: Introduce PrinterManager Behind ViewModel
+Current migration status:
+
+- [done] Added `src/printer/bambu_adapter.rs` with `BambuPrinterDriver`.
+- [done] Adapter holds `Rc<RefCell<BambuPrinter>>`.
+- [done] Adapter produces generic `PrinterSnapshot` from existing Bambu state.
+- [done] Adapter maps generic `SlotId` values such as `bambu:255` to Bambu tray IDs.
+- [done] Adapter exposes Bambu capabilities.
+- [done] Adapter preserves compact `/api/printers-status` slot string output through compatibility conversion in `ViewModel`.
+
+### Phase 3: Introduce PrinterManager Behind ViewModel [not started]
 
 Add `PrinterManager` and initialize Bambu printers through it.
 
@@ -1432,15 +1447,25 @@ Acceptance criteria:
 - Current Bambu UI still works.
 - Existing Bambu state restore/store still works.
 
-### Phase 4: Route Commands Through Generic Printer Commands
+Current migration status:
+
+- [not started] `PrinterManager` does not exist yet.
+- [not started] `ViewModel` still stores `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>`.
+- [not started] Some flows directly construct `BambuPrinterDriver` as a temporary migration bridge.
+
+### Phase 4: Route Commands Through Generic Printer Commands [partial]
 
 Refactor these paths:
 
-- `set_staging_to_tray_direct`
-- `configure_tray_with_spool_async`
-- `ui_reset_slot`
-- `ui_untag_slot`
-- web `/api/printer-command`
+- [done] `ui_untag_slot` dispatches `PrinterCommand::UnassignSpoolFromSlot`.
+- [done] `ui_reset_slot` dispatches `PrinterCommand::ClearSlot`.
+- [not done] `set_staging_to_tray_direct` still calls Bambu-specific assignment flow.
+- [not done] `configure_tray_with_spool_async` still calls Bambu-specific assignment flow.
+- [not done] web `/api/printer-command` still calls Bambu print command directly.
+
+Additional read-path migration:
+
+- [done] `/api/printers-status` builds from `BambuPrinterDriver::snapshot_from_printer(...)` internally while preserving the existing compact response format.
 
 They should dispatch `PrinterCommand` instead of calling `BambuPrinter` methods directly.
 
@@ -1450,7 +1475,7 @@ Acceptance criteria:
 - Bambu AMS scan auto-configuration works.
 - Reset/untag behavior works.
 
-### Phase 5: Generic Printer Events
+### Phase 5: Generic Printer Events [not started]
 
 Bridge `BambuPrinterObserver` into generic `PrinterEvent`.
 
@@ -1467,7 +1492,7 @@ Acceptance criteria:
 - `ViewModel` no longer implements product logic directly in `BambuPrinterObserver`, except inside a bridge.
 - Bambu UI updates still work.
 
-### Phase 6: Dynamic Slint Slot Groups
+### Phase 6: Dynamic Slint Slot Groups [not started]
 
 Replace hardcoded Bambu tray arrays with backend-provided slot groups.
 
@@ -1484,11 +1509,11 @@ Acceptance criteria:
 - No Slint hardcoded dependency on tray IDs `0..23`, `254`, `255` for logic.
 - UI can render a fake printer with arbitrary slot groups.
 
-### Phase 7: Replace Printer Status API and Client
+### Phase 7: Replace Printer Status API and Client [not started]
 
-Replace `/api/printers-status` response shape with typed dynamic printer/slot groups.
+Replace `/api/printers-status` response shape with dynamic printer/slot groups if needed by the client work.
 
-Remove positional slot strings.
+Keep compact encoded fields where needed for payload size; do not remove them unless the replacement preserves the size goal.
 
 Acceptance criteria:
 
@@ -1496,7 +1521,7 @@ Acceptance criteria:
 - Bambu printer status displays correctly.
 - Non-Bambu fake driver status can display.
 
-### Phase 8: Generic Configuration and State for New Drivers
+### Phase 8: Generic Configuration and State for New Drivers [not started]
 
 Introduce driver-kind config.
 
@@ -1510,7 +1535,7 @@ Acceptance criteria:
 - New fake/non-Bambu config can be persisted.
 - Default printer selection works by generic printer ID.
 
-### Phase 9: Add Fake Non-Bambu Driver
+### Phase 9: Add Fake Non-Bambu Driver [not started]
 
 Before Snapmaker, add a fake driver with arbitrary writable slots.
 
@@ -1528,7 +1553,7 @@ Acceptance criteria:
 - Slot-spool state persists.
 - Bambu still works.
 
-### Phase 10: Add First Real Non-Bambu Driver
+### Phase 10: Add First Real Non-Bambu Driver [not started]
 
 Start with material slot assignment.
 
@@ -1623,12 +1648,12 @@ Files to avoid changing early unless necessary:
 
 ## Suggested Immediate Next Steps
 
-1. Add `src/printer/` domain types only.
-2. Add `BambuPrinterDriver` snapshot adapter without changing `ViewModel` behavior.
-3. Add a debug-only or log-only path to compare current Bambu UI projection with generic snapshot projection.
-4. Refactor `ViewModel` to use `PrinterManager` for read-only status projection.
-5. Then refactor material slot assignment commands through `PrinterManager`.
-6. Only after that, start Slint dynamic slot group work.
+1. [not done] Introduce `PrinterManager` behind `ViewModel`, or explicitly decide to finish remaining Phase 4 command routing before Phase 3.
+2. [not done] Route `set_staging_to_tray_direct` through generic printer commands.
+3. [not done] Route `configure_tray_with_spool_async` through generic printer commands.
+4. [not done] Route web `/api/printer-command` through generic printer commands.
+5. [not done] Add generic printer event bridge after command routing is stable.
+6. [not done] Start Slint dynamic slot group work only after Bambu flows remain stable through the generic layer.
 
 ## Session Handoff Instructions
 
@@ -1652,4 +1677,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-This document is the first architecture artifact. No migration code has been implemented yet.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, `/api/printers-status` read projection through the adapter while preserving compact output, `ui_untag_slot` through `PrinterCommand::UnassignSpoolFromSlot`, and `ui_reset_slot` through `PrinterCommand::ClearSlot`.
+
+Still not done: `PrinterManager`, material slot assignment routing, web print-command routing, generic event bridge, dynamic Slint slot groups, generic config/state, fake non-Bambu driver, and real non-Bambu driver.
