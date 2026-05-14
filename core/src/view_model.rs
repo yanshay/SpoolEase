@@ -51,7 +51,7 @@ use crate::bambu::{
 };
 use crate::color_utils::get_color_name;
 use crate::filament_staging::StagingOrigin;
-use crate::printer::{self as printer_domain, FilamentTemps, PrintControlCommand, PrinterCommand, SlotAssignMode, SlotId, manager::PrinterManager};
+use crate::printer::{self as printer_domain, FilamentTemps, PrintControlCommand, PrinterCommand, PrinterId, SlotAssignMode, SlotId, manager::PrinterManager};
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleWeight, SpoolScaleObserver};
@@ -3177,22 +3177,16 @@ impl ViewModel {
     }
 
     pub fn request_printer_command(&self, printer_serial: &str, command: BambuPrintCommand) -> Result<(), String> {
-        let printer_index = self
-            .bambu_printer_model
-            .printers
-            .iter()
-            .position(|printer| printer.borrow().printer_serial == printer_serial)
-            .ok_or_else(|| format!("Printer not found: {printer_serial}"))?;
-
         let command = PrinterCommand::PrintControl(match command {
             BambuPrintCommand::Pause => PrintControlCommand::Pause,
             BambuPrintCommand::Resume => PrintControlCommand::Resume,
             BambuPrintCommand::Stop => PrintControlCommand::Stop,
         });
+        let printer_id = PrinterId::new(format!("bambu:{printer_serial}"));
 
         self.printer_manager
             .borrow_mut()
-            .dispatch_at(printer_index, command)
+            .dispatch_by_id(&printer_id, command)
             .map_err(|err| format!("{err:?}"))
     }
 

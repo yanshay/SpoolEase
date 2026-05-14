@@ -1454,6 +1454,7 @@ Current migration status:
 - [done] Bambu printers are added to `PrinterManager` during existing Bambu initialization.
 - [done] Selected printer index is mirrored into `PrinterManager` when the UI selects a printer.
 - [done] `/api/printers-status`, `ui_untag_slot`, and `ui_reset_slot` use `PrinterManager` instead of constructing `BambuPrinterDriver` directly.
+- [done] Web print-command dispatch uses `PrinterManager::dispatch_by_id` instead of scanning `SelectedPrinter` directly.
 - [not started] `ViewModel` still stores `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>`.
 - [not done] `ViewModel` still uses direct Bambu access for many unreworked flows.
 - [not done] `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` is still the primary printer-facing field for those unreworked flows.

@@ -4,7 +4,7 @@ use core::cell::RefCell;
 use crate::bambu::BambuPrinter;
 
 use super::{
-    PrinterCommand, PrinterDriver, PrinterError, PrinterResult, PrinterSnapshot, bambu_adapter::BambuPrinterDriver,
+    PrinterCommand, PrinterDriver, PrinterError, PrinterId, PrinterResult, PrinterSnapshot, bambu_adapter::BambuPrinterDriver,
 };
 
 #[derive(Default)]
@@ -49,6 +49,14 @@ impl PrinterManager {
         self.printers
             .get_mut(index)
             .ok_or_else(|| PrinterError::PrinterUnavailable(format!("printer index {index}")))?
+            .dispatch(command)
+    }
+
+    pub fn dispatch_by_id(&mut self, printer_id: &PrinterId, command: PrinterCommand) -> PrinterResult<()> {
+        self.printers
+            .iter_mut()
+            .find(|printer| printer.id() == printer_id)
+            .ok_or_else(|| PrinterError::PrinterUnavailable(format!("printer id {}", printer_id.as_str())))?
             .dispatch(command)
     }
 
