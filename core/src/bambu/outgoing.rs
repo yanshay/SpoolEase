@@ -88,6 +88,7 @@ impl BambuPrinter {
         self.publish_payload(payload);
     }
 
+    #[allow(dead_code)]
     pub async fn request_printer_command_async(bambu_printer: &Rc<RefCell<BambuPrinter>>, command: PrintCommand) {
         let mut cmd = PrinterCommand::new(command);
         let payload = bambu_printer.borrow_mut().printer_message(&mut cmd);

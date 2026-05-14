@@ -41,7 +41,7 @@ use framework::{
 use crate::app::{UiSlotDisplay, UiSpoolRecord, UiSpoolRecordDisplay};
 use crate::app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig, PrinterMode, UseAmsScan};
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
-use crate::bambu::bambu_api::GcodeState;
+use crate::bambu::bambu_api::{GcodeState, PrintCommand as BambuPrintCommand};
 use crate::bambu::bambu_print::PrintProject;
 use crate::bambu::calibration::{KExtruder, KInfo, KNozzleDiameter, KNozzleId, KPrinter};
 use crate::bambu::filament::Filament;
@@ -51,7 +51,7 @@ use crate::bambu::{
 };
 use crate::color_utils::get_color_name;
 use crate::filament_staging::StagingOrigin;
-use crate::printer::{self as printer_domain, FilamentTemps, PrinterCommand, SlotAssignMode, SlotId, manager::PrinterManager};
+use crate::printer::{self as printer_domain, FilamentTemps, PrintControlCommand, PrinterCommand, SlotAssignMode, SlotId, manager::PrinterManager};
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleWeight, SpoolScaleObserver};
@@ -3174,6 +3174,26 @@ impl ViewModel {
             printers_info.push(printer_info);
         }
         printers_info
+    }
+
+    pub fn request_printer_command(&self, printer_serial: &str, command: BambuPrintCommand) -> Result<(), String> {
+        let printer_index = self
+            .bambu_printer_model
+            .printers
+            .iter()
+            .position(|printer| printer.borrow().printer_serial == printer_serial)
+            .ok_or_else(|| format!("Printer not found: {printer_serial}"))?;
+
+        let command = PrinterCommand::PrintControl(match command {
+            BambuPrintCommand::Pause => PrintControlCommand::Pause,
+            BambuPrintCommand::Resume => PrintControlCommand::Resume,
+            BambuPrintCommand::Stop => PrintControlCommand::Stop,
+        });
+
+        self.printer_manager
+            .borrow_mut()
+            .dispatch_at(printer_index, command)
+            .map_err(|err| format!("{err:?}"))
     }
 
     fn slot_sets_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) -> Vec<SlotSet> {

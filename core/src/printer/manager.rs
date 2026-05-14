@@ -42,9 +42,13 @@ impl PrinterManager {
         let selected_index = self
             .selected_index
             .ok_or_else(|| PrinterError::PrinterUnavailable("no selected printer".to_string()))?;
+        self.dispatch_at(selected_index, command)
+    }
+
+    pub fn dispatch_at(&mut self, index: usize, command: PrinterCommand) -> PrinterResult<()> {
         self.printers
-            .get_mut(selected_index)
-            .ok_or_else(|| PrinterError::PrinterUnavailable(format!("printer index {selected_index}")))?
+            .get_mut(index)
+            .ok_or_else(|| PrinterError::PrinterUnavailable(format!("printer index {index}")))?
             .dispatch(command)
     }
 

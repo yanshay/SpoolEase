@@ -1466,7 +1466,7 @@ Refactor these paths:
 - [done] `ui_reset_slot` dispatches `PrinterCommand::ClearSlot`.
 - [done] `set_staging_to_tray_direct` dispatches `PrinterCommand::AssignMaterialToSlot` through `PrinterManager`.
 - [done] `configure_tray_with_spool_async` dispatches `PrinterCommand::AssignMaterialToSlot` through `PrinterManager`.
-- [not done] web `/api/printer-command` still calls Bambu print command directly.
+- [done] web `/api/printer-command` dispatches `PrinterCommand::PrintControl` through `PrinterManager`.
 
 Additional read-path migration:
 
@@ -1653,10 +1653,9 @@ Files to avoid changing early unless necessary:
 
 ## Suggested Immediate Next Steps
 
-1. [not done] Route web `/api/printer-command` through generic printer commands via `PrinterManager`.
-2. [not done] Continue reducing direct `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` use where a migrated generic path exists.
-3. [not done] Add generic printer event bridge after command routing is stable.
-4. [not done] Start Slint dynamic slot group work only after Bambu flows remain stable through the generic layer.
+1. [not done] Continue reducing direct `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` use where a migrated generic path exists.
+2. [not done] Add generic printer event bridge after command routing is stable.
+3. [not done] Start Slint dynamic slot group work only after Bambu flows remain stable through the generic layer.
 
 ## Session Handoff Instructions
 
@@ -1680,6 +1679,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, minimal `PrinterManager` bridge, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, `ui_untag_slot` through `PrinterCommand::UnassignSpoolFromSlot`, `ui_reset_slot` through `PrinterCommand::ClearSlot`, `set_staging_to_tray_direct` through `PrinterCommand::AssignMaterialToSlot`, and `configure_tray_with_spool_async` through `PrinterCommand::AssignMaterialToSlot`.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, minimal `PrinterManager` bridge, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, `ui_untag_slot` through `PrinterCommand::UnassignSpoolFromSlot`, `ui_reset_slot` through `PrinterCommand::ClearSlot`, `set_staging_to_tray_direct` and `configure_tray_with_spool_async` through `PrinterCommand::AssignMaterialToSlot`, and web `/api/printer-command` through `PrinterCommand::PrintControl`.
 
-Still not done: full `PrinterManager` ownership replacement, web print-command routing, generic event bridge, dynamic Slint slot groups, generic config/state, fake non-Bambu driver, and real non-Bambu driver.
+Still not done: full `PrinterManager` ownership replacement, generic event bridge, dynamic Slint slot groups, generic config/state, fake non-Bambu driver, and real non-Bambu driver.

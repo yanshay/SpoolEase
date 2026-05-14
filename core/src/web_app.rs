@@ -41,7 +41,7 @@ use crate::app_config::{
     SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
 };
 use crate::bambu::calibration::KInfo;
-use crate::bambu::{BambuPrinter, bambu_api::PrintCommand};
+use crate::bambu::bambu_api::PrintCommand;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
 use crate::store::{BackupMeta, FileMeta, Store};
@@ -213,28 +213,17 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     let PrinterCommandDTO { printer_serial, command } = printer_command;
                     let command_name = command.get_command().to_string();
 
-                    let printer = {
-                        let borrowed_view_model = state.0.view_model.borrow();
-                        borrowed_view_model
-                            .bambu_printer_model
-                            .printers
-                            .iter()
-                            .find(|printer| printer.borrow().printer_serial == printer_serial.as_str())
-                            .cloned()
-                    };
-
-                    match printer {
-                        Some(printer) => {
-                            BambuPrinter::request_printer_command_async(&printer, command).await;
+                    match state.0.view_model.borrow().request_printer_command(&printer_serial, command) {
+                        Ok(()) => {
                             GenericResponse {
                                 text: format!("Sent {command_name} command to printer {printer_serial}"),
                                 error: None,
                             }
                             .encrypt(&key.borrow())
                         }
-                        None => GenericResponse {
+                        Err(err) => GenericResponse {
                             text: "Printer not found".to_string(),
-                            error: Some(format!("Printer not found: {printer_serial}")),
+                            error: Some(err),
                         }
                         .encrypt(&key.borrow()),
                     }
