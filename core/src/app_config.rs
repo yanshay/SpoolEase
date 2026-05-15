@@ -130,6 +130,7 @@ impl PrinterConfig {
         }
     }
 
+    #[allow(dead_code)]
     pub fn driver_kind(&self) -> PrinterDriverKind {
         match &self.driver {
             PrinterDriverConfig::Bambu(_) => PrinterDriverKind::Bambu,
@@ -151,6 +152,7 @@ impl PrinterConfig {
         }
     }
 
+    #[allow(dead_code)]
     pub fn fake_config(&self) -> Option<&FakePrinterConfig> {
         match &self.driver {
             PrinterDriverConfig::Fake(config) => Some(config),

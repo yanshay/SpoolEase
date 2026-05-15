@@ -31,6 +31,7 @@ pub struct FakePrinterDriver {
 
 struct FakePrinterRuntime {
     id: PrinterId,
+    printer_number: usize,
     name: String,
     state_path: String,
     state_dirty: bool,
@@ -40,7 +41,7 @@ struct FakePrinterRuntime {
 }
 
 impl FakePrinterRuntime {
-    fn new(name: Option<String>, config: &FakePrinterConfig) -> Self {
+    fn new(name: Option<String>, config: &FakePrinterConfig, printer_number: usize) -> Self {
         let id = config
             .printer_id()
             .unwrap_or_else(|_| FakePrinterConfig::printer_id_for_unique_id("invalid"));
@@ -66,6 +67,7 @@ impl FakePrinterRuntime {
 
         Self {
             id,
+            printer_number,
             name,
             state_path,
             state_dirty: false,
@@ -290,7 +292,7 @@ impl FakePrinterRuntime {
 
         debug!(
             "[{}] Dirty status: Fake slots({}), Reasons({})",
-            self.name,
+            self.printer_number,
             self.state_dirty,
             if self.state_dirty_reasons.is_empty() {
                 "unknown".to_string()
@@ -316,8 +318,8 @@ impl FakePrinterRuntime {
 }
 
 impl FakePrinterDriver {
-    pub fn new(name: Option<String>, config: &FakePrinterConfig) -> Self {
-        let runtime = Rc::new(RefCell::new(FakePrinterRuntime::new(name, config)));
+    pub fn new(name: Option<String>, config: &FakePrinterConfig, printer_number: usize) -> Self {
+        let runtime = Rc::new(RefCell::new(FakePrinterRuntime::new(name, config, printer_number)));
         let id = runtime.borrow().id.clone();
         Self {
             id,
@@ -407,8 +409,8 @@ fn notify_runtime_observers(runtime: &Rc<RefCell<FakePrinterRuntime>>, event: Pr
 }
 
 async fn fake_printer_task(runtime: Rc<RefCell<FakePrinterRuntime>>, command_channel: Rc<FakePrinterCommandChannel>) {
-    let printer_id = runtime.borrow().id.clone();
-    info!("[{}] Fake printer runtime task started", printer_id.as_str());
+    let printer_number = runtime.borrow().printer_number;
+    info!("[{printer_number}] Fake printer runtime task started");
     let receiver = command_channel.receiver();
 
     loop {
@@ -422,7 +424,7 @@ async fn fake_printer_task(runtime: Rc<RefCell<FakePrinterRuntime>>, command_cha
         match event {
             Ok(Some(event)) => notify_runtime_observers(&runtime, event),
             Ok(None) => {}
-            Err(err) => error!("[{}] Fake printer command failed: {err:?}", printer_id.as_str()),
+            Err(err) => error!("[{printer_number}] Fake printer command failed: {err:?}"),
         }
     }
 }

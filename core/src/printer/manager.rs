@@ -33,7 +33,8 @@ impl PrinterManager {
     }
 
     pub fn add_fake_printer(&mut self, name: Option<String>, config: &FakePrinterConfig) {
-        self.add_driver(Box::new(FakePrinterDriver::new(name, config)));
+        let printer_number = self.printers.len() + 1;
+        self.add_driver(Box::new(FakePrinterDriver::new(name, config, printer_number)));
     }
 
     fn add_driver(&mut self, driver: Box<dyn PrinterDriver>) {
@@ -62,6 +63,14 @@ impl PrinterManager {
 
     pub fn id_at(&self, index: usize) -> Option<PrinterId> {
         self.printers.get(index).map(|printer| printer.id().clone())
+    }
+
+    pub fn printer_number_at(&self, index: usize) -> Option<usize> {
+        self.printers.get(index).map(|_| index + 1)
+    }
+
+    pub fn printer_number_by_id(&self, printer_id: &PrinterId) -> Option<usize> {
+        self.index_by_id(printer_id).map(|index| index + 1)
     }
 
     pub fn index_by_id(&self, printer_id: &PrinterId) -> Option<usize> {

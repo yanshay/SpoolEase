@@ -197,7 +197,7 @@ impl BambuPrinter {
                 Ok(state_str) => {
                     if state_str.trim().is_empty() {
                         err_str = format!("[{printer_number}] Loaded empty state file {path} in trial {trial}");
-                        term_error!("{err_str}"); // will retry after timeout below
+                        term_error!("{}", err_str); // will retry after timeout below
                     } else {
                         match serde_json::from_str::<PrinterPersistentState>(&state_str) {
                             Ok(printer_state) => {

@@ -44,7 +44,9 @@ struct BambuPrinterEventBridge {
 
 impl BambuPrinterDriver {
     pub fn new(printer: Rc<RefCell<BambuPrinter>>) -> Self {
-        let id = BambuPrinterConfig::printer_id_for_serial(&printer.borrow().printer_serial);
+        let printer_borrow = printer.borrow();
+        let id = BambuPrinterConfig::printer_id_for_serial(&printer_borrow.printer_serial);
+        drop(printer_borrow);
         Self {
             id,
             printer,

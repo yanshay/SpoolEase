@@ -40,7 +40,8 @@ use framework::{
 
 use crate::app::{UiFilament, UiSlot, UiSlotDisplay, UiSlotGroup, UiSlotGroupKind, UiSlotState, UiSpoolRecord, UiSpoolRecordDisplay};
 use crate::app_config::{
-    BAMBU_COLOR_NAMES, BASE_FILAMENTS, BambuPrinterConfig, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig, PrinterMode, UseAmsScan,
+    BAMBU_COLOR_NAMES, BASE_FILAMENTS, BambuPrinterConfig, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig, PrinterDriverConfig, PrinterMode,
+    UseAmsScan,
 };
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
 use crate::bambu::bambu_api::{GcodeState, PrintCommand as BambuPrintCommand};
@@ -457,7 +458,6 @@ impl ViewModel {
         // Initialize Printers ///////////////////////////
 
         let mut default_printer_ui_index = None;
-        let mut printer_number = 1; // starts from one and incremented for any printer
         let mut printer_index = 0; // starts from zero and incremented only on successful init and adding to array
         let mut available_printers: Vec<crate::app::Printer> = Vec::new();
         let mut ui_printer_manager_indexes = Vec::new();
@@ -479,148 +479,148 @@ impl ViewModel {
             },
         );
 
-        let has_configured_bambu_printers = self
-            .app_config
-            .borrow()
-            .configured_printers
-            .printers
-            .iter()
-            .any(|printer| printer.bambu_config().is_some());
-        let no_configured_printers = self.app_config.borrow().configured_printers.printers.is_empty();
-        let use_dummy_printer = !has_configured_bambu_printers;
-        for printer_config in self
-            .app_config
-            .borrow()
-            .configured_printers
-            .printers
-            .iter()
-            .chain(use_dummy_printer.then_some(&dummy_printer_config).into_iter())
-        {
-            let Some(bambu_config) = printer_config.bambu_config() else {
-                term_info!("Skipping unsupported printer driver kind {:?}", printer_config.driver_kind());
-                continue;
-            };
+        let configured_printers = self.app_config.borrow().configured_printers.printers.clone();
+        let configured_default_printer_id = self.app_config.borrow().configured_default_printer.printer_id.clone();
+        let no_configured_printers = configured_printers.is_empty();
+        let mut initialized_bambu_printers = false;
+
+        for printer_config in configured_printers.iter() {
+            let manager_index = self.printer_manager.borrow().len();
+            let printer_number = manager_index + 1;
             if printer_number > 5 {
                 term_info!("Printers limit reached - max five printers supported");
                 break;
             }
+
+            match &printer_config.driver {
+                PrinterDriverConfig::Bambu(bambu_config) => {
+                    match bambu::init(
+                        self.framework.clone(),
+                        printer_number,
+                        printer_index,
+                        &printer_config.name,
+                        bambu_config,
+                        self.app_config.clone(),
+                        self.ssdp_pub_sub,
+                        self.store_state_request_channel.clone(),
+                    ) {
+                        Ok(bambu_printer_model) => {
+                            let bambu_index = self.bambu_printer_model.printers.len();
+                            self.bambu_printer_model.printers.push(bambu_printer_model.clone());
+                            initialized_bambu_printers = true;
+                            self.printer_manager.borrow_mut().add_bambu_printer(bambu_printer_model.clone());
+                            let printer_id = BambuPrinterConfig::printer_id_for_serial(&bambu_printer_model.borrow().printer_serial);
+                            if default_printer_ui_index.is_none() && Some(&printer_id.0) == configured_default_printer_id.as_ref() {
+                                default_printer_ui_index = Some(available_printers.len());
+                                self.bambu_printer_model.index = bambu_index;
+                            }
+                            let capabilities = self
+                                .printer_manager
+                                .borrow()
+                                .snapshot_at(manager_index)
+                                .map(|snapshot| snapshot.capabilities)
+                                .unwrap_or_default();
+                            let printer = crate::app::Printer {
+                                can_assign_slot: capabilities.material_slot_assign,
+                                can_set_spool_id: capabilities.material_slot_set_spool_id,
+                                can_clear_slot: capabilities.material_slot_clear,
+                                can_unassign_slot: capabilities.material_slot_unassign_spool,
+                                connected: false,
+                                name: bambu_printer_model.borrow().printer_selector_name.to_shared_string(),
+                                kind: "Bambu".into(),
+                            };
+                            available_printers.push(printer);
+                            ui_printer_manager_indexes.push(manager_index);
+                            ui_printer_bambu_indexes.push(Some(bambu_index));
+
+                            // notification from printer on events, should be treated for all printers,
+                            // but selected printer should be considered as to what to update in the UI
+                            if let Some(view_model_rc) = &self.view_model {
+                                let trait_for_bambu_printer_rc: Rc<RefCell<dyn bambu::BambuPrinterObserver>> = view_model_rc.clone();
+                                let trait_for_bambu_printer_weak: Weak<RefCell<dyn bambu::BambuPrinterObserver>> =
+                                    Rc::downgrade(&trait_for_bambu_printer_rc);
+                                bambu_printer_model.borrow_mut().subscribe(trait_for_bambu_printer_weak);
+
+                                let trait_for_printer_rc: Rc<RefCell<dyn printer_domain::PrinterObserver>> = view_model_rc.clone();
+                                let trait_for_printer_weak: Weak<RefCell<dyn printer_domain::PrinterObserver>> =
+                                    Rc::downgrade(&trait_for_printer_rc);
+                                if let Err(err) = self.printer_manager.borrow_mut().subscribe_at(manager_index, trait_for_printer_weak) {
+                                    error!("Failed to subscribe generic printer observer: {err:?}");
+                                }
+                            }
+                            if let Err(err) = self.printer_manager.borrow_mut().start_at(manager_index, self.framework.clone()) {
+                                error!("Failed to start generic printer runtime: {err:?}");
+                            }
+                            printer_index += 1; // Bambu index is increased only for Bambu printers
+                        }
+                        Err(e) => {
+                            term_info!("[{}] Error initializing printer: {}", printer_number, e);
+                        }
+                    }
+                }
+                PrinterDriverConfig::Fake(fake_config) => {
+                    if fake_config.printer_id().is_err() {
+                        term_info!("[{}] Skipping fake printer with invalid config", printer_number);
+                        continue;
+                    }
+                    self.printer_manager.borrow_mut().add_fake_printer(printer_config.name.clone(), fake_config);
+                    if let Some(view_model_rc) = &self.view_model {
+                        let trait_for_printer_rc: Rc<RefCell<dyn printer_domain::PrinterObserver>> = view_model_rc.clone();
+                        let trait_for_printer_weak: Weak<RefCell<dyn printer_domain::PrinterObserver>> = Rc::downgrade(&trait_for_printer_rc);
+                        if let Err(err) = self.printer_manager.borrow_mut().subscribe_at(manager_index, trait_for_printer_weak) {
+                            error!("Failed to subscribe generic printer observer: {err:?}");
+                        }
+                    }
+                    if let Err(err) = self.printer_manager.borrow_mut().start_at(manager_index, self.framework.clone()) {
+                        error!("Failed to start generic printer runtime: {err:?}");
+                    }
+                    let capabilities = self
+                        .printer_manager
+                        .borrow()
+                        .snapshot_at(manager_index)
+                        .map(|snapshot| snapshot.capabilities)
+                        .unwrap_or_default();
+                    if default_printer_ui_index.is_none() && Some(&fake_config.printer_id().unwrap().0) == configured_default_printer_id.as_ref() {
+                        default_printer_ui_index = Some(available_printers.len());
+                    }
+                    available_printers.push(crate::app::Printer {
+                        can_assign_slot: capabilities.material_slot_assign,
+                        can_set_spool_id: capabilities.material_slot_set_spool_id,
+                        can_clear_slot: capabilities.material_slot_clear,
+                        can_unassign_slot: capabilities.material_slot_unassign_spool,
+                        connected: true,
+                        name: printer_config
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| format!("Fake Printer {}", fake_config.unique_id))
+                            .to_shared_string(),
+                        kind: "Fake".into(),
+                    });
+                    ui_printer_manager_indexes.push(manager_index);
+                    ui_printer_bambu_indexes.push(None);
+                }
+            }
+        }
+
+        if !initialized_bambu_printers
+            && let Some(bambu_config) = dummy_printer_config.bambu_config()
+        {
             match bambu::init(
                 self.framework.clone(),
-                printer_number,
+                1,
                 printer_index,
-                &printer_config.name,
+                &dummy_printer_config.name,
                 bambu_config,
                 self.app_config.clone(),
                 self.ssdp_pub_sub,
                 self.store_state_request_channel.clone(),
             ) {
                 Ok(bambu_printer_model) => {
-                    let bambu_index = self.bambu_printer_model.printers.len();
-                    self.bambu_printer_model.printers.push(bambu_printer_model.clone());
-                    let is_dummy_printer = bambu_printer_model.borrow().printer_serial.starts_with("000000");
-
-                    if !is_dummy_printer {
-                        let manager_index = self.printer_manager.borrow().len();
-                        self.printer_manager.borrow_mut().add_bambu_printer(bambu_printer_model.clone());
-                        let printer_id = BambuPrinterConfig::printer_id_for_serial(&bambu_printer_model.borrow().printer_serial);
-                        if default_printer_ui_index.is_none()
-                            && Some(&printer_id.0) == self.app_config.borrow().configured_default_printer.printer_id.as_ref()
-                        {
-                            default_printer_ui_index = Some(available_printers.len());
-                            self.bambu_printer_model.index = bambu_index;
-                        }
-                        let capabilities = self
-                            .printer_manager
-                            .borrow()
-                            .snapshot_at(manager_index)
-                            .map(|snapshot| snapshot.capabilities)
-                            .unwrap_or_default();
-                        let printer = crate::app::Printer {
-                            can_assign_slot: capabilities.material_slot_assign,
-                            can_set_spool_id: capabilities.material_slot_set_spool_id,
-                            can_clear_slot: capabilities.material_slot_clear,
-                            can_unassign_slot: capabilities.material_slot_unassign_spool,
-                            connected: false,
-                            name: bambu_printer_model.borrow().printer_selector_name.to_shared_string(),
-                            kind: "Bambu".into(),
-                        };
-                        available_printers.push(printer);
-                        ui_printer_manager_indexes.push(manager_index);
-                        ui_printer_bambu_indexes.push(Some(bambu_index));
-
-                        // notification from printer on events, should be treated for all printers,
-                        // but selected printer should be considered as to what to update in the UI
-                        if let Some(view_model_rc) = &self.view_model {
-                            let trait_for_bambu_printer_rc: Rc<RefCell<dyn bambu::BambuPrinterObserver>> = view_model_rc.clone();
-                            let trait_for_bambu_printer_weak: Weak<RefCell<dyn bambu::BambuPrinterObserver>> =
-                                Rc::downgrade(&trait_for_bambu_printer_rc);
-                            bambu_printer_model.borrow_mut().subscribe(trait_for_bambu_printer_weak);
-
-                            let trait_for_printer_rc: Rc<RefCell<dyn printer_domain::PrinterObserver>> = view_model_rc.clone();
-                            let trait_for_printer_weak: Weak<RefCell<dyn printer_domain::PrinterObserver>> = Rc::downgrade(&trait_for_printer_rc);
-                            if let Err(err) = self.printer_manager.borrow_mut().subscribe_at(manager_index, trait_for_printer_weak) {
-                                error!("Failed to subscribe generic printer observer: {err:?}");
-                            }
-                        }
-                        if let Err(err) = self.printer_manager.borrow_mut().start_at(manager_index, self.framework.clone()) {
-                            error!("Failed to start generic printer runtime: {err:?}");
-                        }
-                    }
-                    printer_index += 1; // index is increased only if printer is added to array
+                    self.bambu_printer_model.printers.push(bambu_printer_model);
                 }
                 Err(e) => {
-                    term_info!("[{}] Error initializing printer: {}", printer_number, e);
+                    term_info!("[1] Error initializing printer: {}", e);
                 }
-            }
-            printer_number += 1; // printer_number is always increased, even if printer is bad config
-        }
-
-        for printer_config in &self.app_config.borrow().configured_printers.printers {
-            if let Some(fake_config) = printer_config.fake_config() {
-                if fake_config.printer_id().is_err() {
-                    term_info!("Skipping fake printer with invalid config");
-                    continue;
-                }
-                let manager_index = self.printer_manager.borrow().len();
-                self.printer_manager
-                    .borrow_mut()
-                    .add_fake_printer(printer_config.name.clone(), fake_config);
-                if let Some(view_model_rc) = &self.view_model {
-                    let trait_for_printer_rc: Rc<RefCell<dyn printer_domain::PrinterObserver>> = view_model_rc.clone();
-                    let trait_for_printer_weak: Weak<RefCell<dyn printer_domain::PrinterObserver>> = Rc::downgrade(&trait_for_printer_rc);
-                    if let Err(err) = self.printer_manager.borrow_mut().subscribe_at(manager_index, trait_for_printer_weak) {
-                        error!("Failed to subscribe generic printer observer: {err:?}");
-                    }
-                }
-                if let Err(err) = self.printer_manager.borrow_mut().start_at(manager_index, self.framework.clone()) {
-                    error!("Failed to start generic printer runtime: {err:?}");
-                }
-                let capabilities = self
-                    .printer_manager
-                    .borrow()
-                    .snapshot_at(manager_index)
-                    .map(|snapshot| snapshot.capabilities)
-                    .unwrap_or_default();
-                if default_printer_ui_index.is_none()
-                    && Some(&fake_config.printer_id().unwrap().0) == self.app_config.borrow().configured_default_printer.printer_id.as_ref()
-                {
-                    default_printer_ui_index = Some(available_printers.len());
-                }
-                available_printers.push(crate::app::Printer {
-                    can_assign_slot: capabilities.material_slot_assign,
-                    can_set_spool_id: capabilities.material_slot_set_spool_id,
-                    can_clear_slot: capabilities.material_slot_clear,
-                    can_unassign_slot: capabilities.material_slot_unassign_spool,
-                    connected: true,
-                    name: printer_config
-                        .name
-                        .clone()
-                        .unwrap_or_else(|| format!("Fake Printer {}", fake_config.unique_id))
-                        .to_shared_string(),
-                    kind: "Fake".into(),
-                });
-                ui_printer_manager_indexes.push(manager_index);
-                ui_printer_bambu_indexes.push(None);
             }
         }
 
@@ -678,7 +678,7 @@ impl ViewModel {
                 .ok();
         }
 
-        if has_configured_bambu_printers {
+        if initialized_bambu_printers {
             self.framework
                 .borrow()
                 .spawner
@@ -3773,12 +3773,18 @@ impl ViewModel {
         printer_row.connected = connected;
         ui_printers.set_row_data(ui_index as usize, printer_row);
 
+        let printer_number = self
+            .printer_manager
+            .borrow()
+            .printer_number_by_id(printer_id)
+            .unwrap_or(ui_index as usize + 1);
+
         if connected {
             term_info!(&"-".repeat(62));
-            term_info!("Printer [{}] connected successfully", ui_index + 1);
+            term_info!("Printer [{}] connected successfully", printer_number);
             term_info!(&"-".repeat(62));
         } else {
-            term_info!("[{}] Printer disconnected", ui_index + 1);
+            term_info!("[{}] Printer disconnected", printer_number);
         }
     }
 
@@ -4572,16 +4578,16 @@ async fn load_persistent_printer_state(
     store: &Rc<Store>,
     manager_index: usize,
 ) -> Result<bool, String> {
-    let (printer_id, path) = {
+    let (printer_number, path) = {
         let view_model_borrow = view_model.borrow();
         let printer_manager = view_model_borrow.printer_manager.borrow();
-        let Some(printer_id) = printer_manager.id_at(manager_index) else {
+        let Some(printer_number) = printer_manager.printer_number_at(manager_index) else {
             return Err(format!("Unknown printer index {manager_index}"));
         };
         let Some(path) = printer_manager.persistent_state_path_at(manager_index) else {
             return Ok(false);
         };
-        (printer_id, path)
+        (printer_number, path)
     };
     validate_persistent_printer_state_path(view_model, manager_index, &path)?;
 
@@ -4595,7 +4601,7 @@ async fn load_persistent_printer_state(
                 Err(err) => {
                     term_error!(
                         "[{}] Can't read printer state file (ok, if first printer run) {} : {}",
-                        printer_id.as_str(),
+                        printer_number,
                         path,
                         err
                     );
@@ -4605,8 +4611,8 @@ async fn load_persistent_printer_state(
         };
 
         if state_str.trim().is_empty() {
-            err_str = format!("[{}] Loaded empty state file {path} in trial {trial}", printer_id.as_str());
-            term_error!("{err_str}");
+            err_str = format!("[{}] Loaded empty state file {} in trial {}", printer_number, path, trial);
+            term_error!("{}", err_str);
             Timer::after_millis(250).await;
             continue;
         }
@@ -4616,7 +4622,7 @@ async fn load_persistent_printer_state(
             .printer_manager
             .borrow_mut()
             .load_persistent_state_at(manager_index, &state_str, store)?;
-        term_info!("[{}] Restored printer state from SDCard", printer_id.as_str());
+        term_info!("[{}] Restored printer state from SDCard", printer_number);
         return Ok(true);
     }
 
@@ -4701,6 +4707,12 @@ async fn store_persistent_printer_state(
     let Some(payload) = payload else {
         return Ok(false);
     };
+    let printer_number = view_model
+        .borrow()
+        .printer_manager
+        .borrow()
+        .printer_number_at(manager_index)
+        .unwrap_or(manager_index + 1);
 
     if let Err(err) = validate_persistent_printer_state_path(view_model, manager_index, &payload.path) {
         restore_persistent_printer_dirty_state(view_model, manager_index);
@@ -4711,14 +4723,14 @@ async fn store_persistent_printer_state(
         return Err(format!("Printer state to store is empty for {}", payload.path));
     }
 
-    info!("Storing printer state to {}", payload.path);
+    info!("[{printer_number}] Storing printer state to {}", payload.path);
     let file_store = framework.borrow().file_store();
     let mut file_store = file_store.lock().await;
     match file_store.create_write_file_str(&payload.path, &payload.contents).await {
         Ok(_) => match file_store.read_file_str(&payload.path).await {
             Ok(verify_read_str) => {
                 if verify_read_str == payload.contents {
-                    info!("Store state verification passed for {}", payload.path);
+                    info!("[{printer_number}] Store state verification passed for {}", payload.path);
                     view_model
                         .borrow()
                         .printer_manager
@@ -4727,19 +4739,19 @@ async fn store_persistent_printer_state(
                     Ok(true)
                 } else {
                     restore_persistent_printer_dirty_state(view_model, manager_index);
-                    error!("During store state verification read data differ from written data for {}", payload.path);
+                    error!("[{printer_number}] During store state verification read data differ from written data for {}", payload.path);
                     Err(String::from("Verification of state store failed"))
                 }
             }
             Err(err) => {
                 restore_persistent_printer_dirty_state(view_model, manager_index);
-                error!("Failed to verify store printer restart state {} : {err}", payload.path);
+                error!("[{printer_number}] Failed to verify store printer restart state {} : {err}", payload.path);
                 Err(format!("Error reading state store to verify : {err}"))
             }
         },
         Err(err) => {
             restore_persistent_printer_dirty_state(view_model, manager_index);
-            error!("Failed to store printer restart state {} : {err}", payload.path);
+            error!("[{printer_number}] Failed to store printer restart state {} : {err}", payload.path);
             Err(format!("Error storing state : {err}"))
         }
     }
@@ -4835,7 +4847,13 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
                                         crate::app::StatusType::Error,
                                         0,
                                     );
-                                    error!("[{}] Failed all retries trying to store printer restart state : {err}", printer_index + 1);
+                                    let printer_number = view_model
+                                        .borrow()
+                                        .printer_manager
+                                        .borrow()
+                                        .printer_number_at(printer_index)
+                                        .unwrap_or(printer_index + 1);
+                                    error!("[{printer_number}] Failed all retries trying to store printer restart state : {err}");
                                 }
                             }
                         }

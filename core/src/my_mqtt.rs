@@ -449,7 +449,7 @@ pub async fn generic_mqtt_task<
                         //     ConnectError::NoRoute => (),
                         // }
                         if socket_error_count % (15 * 5) == 0 {
-                            term_error!("[{}] Error connecting to {remote_endpoint:?}, will retry ({:?})", printer_log_id, e);
+                            term_error!("[{}] Error connecting to {:?}, will retry ({:?})", printer_log_id, remote_endpoint, e);
                         } else if socket_error_count % 15 == 0 {
                             // to log we want every time
                             error!("[{}] Error connecting to {remote_endpoint:?}, will retry ({:?})", printer_log_id, e);
@@ -516,15 +516,16 @@ pub async fn generic_mqtt_task<
 
         info!("[{printer_log_id}] Printer model is {printer_model:?}");
         term_info!(
-            "[{}] Establishing TLS connection with Printer {:?} using {bambu_cert_index}",
+            "[{}] Establishing TLS connection with Printer {:?} using {}",
             printer_log_id,
-            servername
+            servername,
+            bambu_cert_index
         );
 
         if let Err(e) = session.connect().await {
             match e {
                 SessionError::MbedTls(err) if err == MbedtlsError::new(-9984) => {
-                    term_error!("[{}] Certificate {bambu_cert_index} rejected {:?}", printer_log_id, err);
+                    term_error!("[{}] Certificate {} rejected {:?}", printer_log_id, bambu_cert_index, err);
                     bambu_cert_index = (bambu_cert_index + 1) % bambu_certs.len();
                 }
                 other => {
