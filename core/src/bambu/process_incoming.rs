@@ -31,11 +31,14 @@ impl BambuPrinter {
         let new_tray = self.get_updated_tray(Some(v_tray), external_tray_id);
         if let Some(new_tray) = new_tray {
             let removed_tag = if old_tray.state != TrayState::Empty && new_tray.state == TrayState::Empty {
-                old_tray.meta_info.spool_id
+                self.snapshot_slot_spool_id(external_tray_id as usize).or(old_tray.meta_info.spool_id)
             } else {
                 None
             };
             self.set_virt_tray(extruder_id, new_tray);
+            if removed_tag.is_some() {
+                self.clear_snapshot_slot_consumption(external_tray_id as usize);
+            }
             return (true, removed_tag);
         }
         (false, None)
@@ -81,6 +84,7 @@ impl BambuPrinter {
             // tray_id == 254 in the response message is for old firmwares
             // in new firmwares the response message arrives with ams_id==255 && tray_id==Some(0) (not like the command which is tray 254 and slot_id 0)
             // check first the use of ams_id, if not available then switch to tray_index 254
+            let clearing_filament = new_filament == Filament::Unknown;
             if (print.ams_id.is_none() && tray_index == 254) || print.ams_id == Some(255) || print.ams_id == Some(254) {
                 // External tray handling
                 let extruder_id = if print.ams_id == Some(254) { 1 } else { 0 };
@@ -92,7 +96,7 @@ impl BambuPrinter {
                 // in case of external slot, clearing filament should remove tag
                 // that's because setting filament from spool marks the tag
                 // can in addition do it all when spool is removed after loaded, but that's elsewhere to do
-                if new_filament == Filament::Unknown {
+                if clearing_filament {
                     self.update_virt_tray(extruder_id, |virt_tray| {
                         virt_tray.meta_info = TrayMetaInfo::default();
                     });
@@ -107,6 +111,9 @@ impl BambuPrinter {
                     ams_tray.k_from_tray = None;
                 });
                 // no change to tray state in case of AMS
+            }
+            if clearing_filament {
+                self.clear_snapshot_slot_consumption(tray_index);
             }
             change_made = true;
         }
@@ -278,9 +285,12 @@ impl BambuPrinter {
 
                 if curr_vt_tray_detailed_ready_state != TrayState::Empty && new_vt_tray_detailed_ready_state == TrayState::Empty {
                     let mut vt_tray = self.virt_trays()[extruder_id as usize].clone();
-                    let spool_id = vt_tray.meta_info.spool_id.take();
+                    let spool_id = self
+                        .snapshot_slot_spool_id(external_tray_id as usize)
+                        .or_else(|| vt_tray.meta_info.spool_id.take());
                     vt_tray.meta_info = TrayMetaInfo::default();
                     self.set_virt_tray(extruder_id, vt_tray);
+                    self.clear_snapshot_slot_consumption(external_tray_id as usize);
                     if let Some(spool_id) = spool_id {
                         removed_tags.insert(external_tray_id as usize, spool_id);
                     }
@@ -462,12 +472,13 @@ impl BambuPrinter {
                 change_made = true;
                 let prev_tray = self.swap_ams_tray(tray_id, &mut new_tray);
 
-                if spool_removed
-                    && let Some(prev_spool_id) = prev_tray.meta_info.spool_id.take()
-                    && self.ams_trays()[tray_id].meta_info.spool_id.is_none()
-                {
-                    // Before there was a tag and spool removed, add it to the list
-                    removed_tags.insert(tray_id, prev_spool_id);
+                if spool_removed {
+                    let prev_spool_id = self.snapshot_slot_spool_id(tray_id).or_else(|| prev_tray.meta_info.spool_id.clone());
+                    self.clear_snapshot_slot_consumption(tray_id);
+                    if let Some(prev_spool_id) = prev_spool_id {
+                        // Before there was a tag and spool removed, add it to the list
+                        removed_tags.insert(tray_id, prev_spool_id);
+                    }
                 }
             }
 

@@ -17,7 +17,7 @@ use super::{
     DriverData, ExtruderSnapshot, GenericPrinterPersistentState, GenericSlotPersistentState, MaterialSlotSnapshot, PressureAdvanceCapability,
     PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError,
     PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult,
-    PrinterSnapshot, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    PrinterSnapshot, PrinterSnapshotState, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
 };
 
 type FakePrinterCommandChannel = Channel<NoopRawMutex, PrinterCommand, 5>;
@@ -32,11 +32,10 @@ pub struct FakePrinterDriver {
 struct FakePrinterRuntime {
     id: PrinterId,
     printer_number: usize,
-    name: String,
     state_path: String,
     state_dirty: bool,
     state_dirty_reasons: Vec<String>,
-    slots: Vec<MaterialSlotSnapshot>,
+    state: PrinterSnapshotState,
     observers: Vec<Weak<RefCell<dyn PrinterObserver>>>,
 }
 
@@ -57,6 +56,7 @@ impl FakePrinterRuntime {
                 filament: PrinterFilament::Unknown,
                 spool_id: None,
                 consumed_since_load_g: 0.0,
+                consumed_since_load_saved_g: 0.0,
                 consumed_since_weight_g: 0.0,
                 used_in_print: false,
                 pressure_advance_value: String::new(),
@@ -65,14 +65,46 @@ impl FakePrinterRuntime {
             })
             .collect();
 
+        let snapshot = PrinterSnapshot {
+            id: id.clone(),
+            kind: PrinterDriverKind::Fake,
+            name,
+            connected: true,
+            capabilities: Self::capabilities(),
+            extruders: alloc::vec![ExtruderSnapshot {
+                id: 0,
+                name: "Toolhead".into(),
+                active: true,
+                loaded_slot_id: None,
+                nozzle_diameter_mm: None,
+                nozzle_type: None,
+                temperature_c: None,
+                target_temperature_c: None,
+            }],
+            slot_groups: alloc::vec![SlotGroupSnapshot {
+                id: "fake:slots".into(),
+                name: "Fake Slots".into(),
+                short_name: "Fake".into(),
+                kind: SlotGroupKind::Virtual,
+                extruder: Some(0),
+                temperature_c: None,
+                humidity_percent: None,
+                slots,
+            }],
+            print: PrintSnapshot {
+                state: PrintState::Idle,
+                ..PrintSnapshot::default()
+            },
+            diagnostics: Vec::<PrinterDiagnostic>::new(),
+        };
+
         Self {
             id,
             printer_number,
-            name,
             state_path,
             state_dirty: false,
             state_dirty_reasons: Vec::new(),
-            slots,
+            state: Rc::new(RefCell::new(snapshot)),
             observers: Vec::new(),
         }
     }
@@ -119,16 +151,28 @@ impl FakePrinterRuntime {
     fn slot_index(&self, slot_id: &SlotId) -> PrinterResult<usize> {
         let raw_slot_id = slot_id.as_str().strip_prefix("fake:").unwrap_or(slot_id.as_str());
         let slot_index = raw_slot_id.parse::<usize>().map_err(|_| PrinterError::SlotNotFound(slot_id.clone()))?;
-        if slot_index < self.slots.len() {
+        let slot_count = self
+            .state
+            .borrow()
+            .slot_groups
+            .iter()
+            .flat_map(|group| group.slots.iter())
+            .count();
+        if slot_index < slot_count {
             Ok(slot_index)
         } else {
             Err(PrinterError::SlotNotFound(slot_id.clone()))
         }
     }
 
-    fn slot_mut(&mut self, slot_id: &SlotId) -> PrinterResult<&mut MaterialSlotSnapshot> {
-        let slot_index = self.slot_index(slot_id)?;
-        Ok(&mut self.slots[slot_index])
+    fn update_slot<F>(&self, slot_id: &SlotId, f: F) -> PrinterResult<()>
+    where
+        F: FnOnce(&mut MaterialSlotSnapshot),
+    {
+        let mut state = self.state.borrow_mut();
+        let slot = slot_in_snapshot_mut(&mut state, slot_id).ok_or_else(|| PrinterError::SlotNotFound(slot_id.clone()))?;
+        f(slot);
+        Ok(())
     }
 
     fn validate_command(&self, command: &PrinterCommand) -> PrinterResult<()> {
@@ -144,74 +188,51 @@ impl FakePrinterRuntime {
     }
 
     fn snapshot(&self) -> PrinterSnapshot {
-        PrinterSnapshot {
-            id: self.id.clone(),
-            kind: PrinterDriverKind::Fake,
-            name: self.name.clone(),
-            connected: true,
-            capabilities: Self::capabilities(),
-            extruders: alloc::vec![ExtruderSnapshot {
-                id: 0,
-                name: "Toolhead".into(),
-                active: true,
-                loaded_slot_id: None,
-                nozzle_diameter_mm: None,
-                nozzle_type: None,
-                temperature_c: None,
-                target_temperature_c: None,
-            }],
-            slot_groups: alloc::vec![SlotGroupSnapshot {
-                id: "fake:slots".into(),
-                name: "Fake Slots".into(),
-                short_name: "Fake".into(),
-                kind: SlotGroupKind::Virtual,
-                extruder: Some(0),
-                temperature_c: None,
-                humidity_percent: None,
-                slots: self.slots.clone(),
-            }],
-            print: PrintSnapshot {
-                state: PrintState::Idle,
-                ..PrintSnapshot::default()
-            },
-            diagnostics: Vec::<PrinterDiagnostic>::new(),
-        }
+        self.state.borrow().clone()
     }
 
     fn dispatch_command(&mut self, command: PrinterCommand) -> PrinterResult<Option<PrinterEvent>> {
         match command {
             PrinterCommand::Refresh => Ok(Some(self.snapshot_changed(PrinterChange::All))),
             PrinterCommand::AssignMaterialToSlot { slot_id, spool, temps, mode } => {
-                let slot = self.slot_mut(&slot_id)?;
-                slot.spool_id = Some(spool.spool_rec.id.clone());
-                if mode == SlotAssignMode::WritePrinterMaterial {
-                    slot.state = SlotState::Ready;
-                    slot.filament = PrinterFilament::Known(PrinterFilamentInfo {
-                        material_type: spool.spool_rec.material_type.clone(),
-                        material_subtype: spool.spool_rec.material_subtype.clone(),
-                        brand: spool.spool_rec.brand.clone(),
-                        color_name: spool.spool_rec.color_name.clone(),
-                        color_codes: spool.spool_rec.color_code.clone(),
-                        slicer_filament: spool.spool_rec.slicer_filament.clone(),
-                        temps,
-                    });
-                }
+                self.update_slot(&slot_id, |slot| {
+                    slot.spool_id = Some(spool.spool_rec.id.clone());
+                    slot.consumed_since_load_g = 0.0;
+                    slot.consumed_since_load_saved_g = 0.0;
+                    slot.consumed_since_weight_g = spool.spool_rec.consumed_since_weight;
+                    if mode == SlotAssignMode::WritePrinterMaterial {
+                        slot.state = SlotState::Ready;
+                        slot.filament = PrinterFilament::Known(PrinterFilamentInfo {
+                            material_type: spool.spool_rec.material_type.clone(),
+                            material_subtype: spool.spool_rec.material_subtype.clone(),
+                            brand: spool.spool_rec.brand.clone(),
+                            color_name: spool.spool_rec.color_name.clone(),
+                            color_codes: spool.spool_rec.color_code.clone(),
+                            slicer_filament: spool.spool_rec.slicer_filament.clone(),
+                            temps,
+                        });
+                    }
+                })?;
                 self.mark_state_dirty(format!("assign slot {}", slot_id.as_str()));
                 Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
             }
             PrinterCommand::ClearSlot { slot_id } => {
-                let slot = self.slot_mut(&slot_id)?;
-                slot.state = SlotState::Empty;
-                slot.spool_id = None;
-                slot.filament = PrinterFilament::Unknown;
-                slot.consumed_since_load_g = 0.0;
-                slot.consumed_since_weight_g = 0.0;
-                slot.used_in_print = false;
+                self.update_slot(&slot_id, |slot| {
+                    slot.state = SlotState::Empty;
+                    slot.spool_id = None;
+                    slot.filament = PrinterFilament::Unknown;
+                    slot.consumed_since_load_g = 0.0;
+                    slot.consumed_since_load_saved_g = 0.0;
+                    slot.consumed_since_weight_g = 0.0;
+                    slot.used_in_print = false;
+                })?;
                 self.mark_state_dirty(format!("clear slot {}", slot_id.as_str()));
                 Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
             }
             PrinterCommand::UnassignSpoolFromSlot { slot_id } => {
-                self.slot_mut(&slot_id)?.spool_id = None;
+                self.update_slot(&slot_id, |slot| {
+                    slot.spool_id = None;
+                })?;
                 self.mark_state_dirty(format!("unassign spool from slot {}", slot_id.as_str()));
                 Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
             }
@@ -246,6 +267,7 @@ impl FakePrinterRuntime {
             filament: slot.filament.clone(),
             spool_id: slot.spool_id.clone(),
             consumed_since_load_g: slot.consumed_since_load_g,
+            consumed_since_load_saved_g: slot.consumed_since_load_saved_g,
             consumed_since_weight_g: slot.consumed_since_weight_g,
             used_in_print: slot.used_in_print,
         }
@@ -269,15 +291,18 @@ impl FakePrinterRuntime {
                 .spool_id
                 .as_ref()
                 .is_some_and(|spool_id| store.get_spool_by_id(spool_id).is_none());
-            let Ok(slot) = self.slot_mut(&stored_slot.slot_id) else {
+            let update_result = self.update_slot(&stored_slot.slot_id, |slot| {
+                slot.state = stored_slot.state;
+                slot.filament = stored_slot.filament;
+                slot.spool_id = if missing_spool { None } else { stored_slot.spool_id };
+                slot.consumed_since_load_g = stored_slot.consumed_since_load_g;
+                slot.consumed_since_load_saved_g = stored_slot.consumed_since_load_saved_g;
+                slot.consumed_since_weight_g = stored_slot.consumed_since_weight_g;
+                slot.used_in_print = stored_slot.used_in_print;
+            });
+            if update_result.is_err() {
                 continue;
-            };
-            slot.state = stored_slot.state;
-            slot.filament = stored_slot.filament;
-            slot.spool_id = if missing_spool { None } else { stored_slot.spool_id };
-            slot.consumed_since_load_g = stored_slot.consumed_since_load_g;
-            slot.consumed_since_weight_g = stored_slot.consumed_since_weight_g;
-            slot.used_in_print = stored_slot.used_in_print;
+            }
             if missing_spool {
                 self.mark_state_dirty(format!("removed missing spool from slot {}", stored_slot.slot_id.as_str()));
             }
@@ -305,7 +330,14 @@ impl FakePrinterRuntime {
             version: 1,
             printer_id: self.id.clone(),
             driver_kind: PrinterDriverKind::Fake,
-            slots: self.slots.iter().map(Self::persistent_slot_state).collect(),
+            slots: self
+                .state
+                .borrow()
+                .slot_groups
+                .iter()
+                .flat_map(|group| group.slots.iter())
+                .map(Self::persistent_slot_state)
+                .collect(),
         };
         let contents = serde_json::to_string(&state).map_err(|err| format!("Failed to serialize fake printer state: {err}"))?;
         self.state_dirty = false;
@@ -340,15 +372,28 @@ impl PrinterDriver for FakePrinterDriver {
     }
 
     fn display_name(&self) -> String {
-        self.runtime.borrow().name.clone()
+        self.runtime.borrow().state.borrow().name.clone()
     }
 
     fn capabilities(&self) -> PrinterCapabilities {
         FakePrinterRuntime::capabilities()
     }
 
+    fn snapshot_state(&self) -> PrinterSnapshotState {
+        self.runtime.borrow().state.clone()
+    }
+
     fn snapshot(&self) -> PrinterSnapshot {
         self.runtime.borrow().snapshot()
+    }
+
+    fn acknowledge_slot_consumption_saved(&mut self, slot_id: &SlotId, consumed_since_load_saved_g: f32) -> PrinterResult<()> {
+        let mut runtime = self.runtime.borrow_mut();
+        runtime.update_slot(slot_id, |slot| {
+            slot.consumed_since_load_saved_g = consumed_since_load_saved_g;
+        })?;
+        runtime.mark_state_dirty(format!("acknowledge consumption for slot {}", slot_id.as_str()));
+        Ok(())
     }
 
     fn dispatch(&mut self, command: PrinterCommand) -> PrinterResult<()> {

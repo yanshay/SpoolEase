@@ -4868,6 +4868,14 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
     }
 }
 
+struct PendingPrinterConsumption {
+    printer_id: PrinterId,
+    slot_id: SlotId,
+    spool_id: String,
+    consumed_since_load_g: f32,
+    consumed_since_load_saved_g: f32,
+}
+
 // #[embassy_executor::task]
 pub async fn store_printers_consume(view_model: Rc<RefCell<ViewModel>>) {
     info!("store_printers_consume task started");
@@ -4883,57 +4891,69 @@ pub async fn store_printers_consume(view_model: Rc<RefCell<ViewModel>>) {
         warn!("Store is not available in store_printer_consume_task");
         return;
     }
-    //TODO: test CsvDB is available
-    let num_of_printers = view_model.borrow().bambu_printer_model.printers.len();
     loop {
-        for printer_index in 0..num_of_printers {
-            let printer = view_model.borrow().bambu_printer_model.printers[printer_index].clone();
-            let num_of_trays = printer.borrow().ams_trays().len();
-            for tray_id in (0..num_of_trays).chain([254, 255]) {
-                let spool_id;
-                let consumed_during_print;
-                let consumed_during_print_saved;
-                {
-                    let printer_borrow = printer.borrow();
-                    let tray = &printer_borrow.get_any_tray(tray_id);
-                    spool_id = if let Some(spool_id) = &tray.meta_info.spool_id {
-                        spool_id.clone()
-                    } else {
-                        continue;
-                    };
-                    consumed_during_print = tray.meta_info.consumed_since_load;
-                    if consumed_during_print == 0.0 {
-                        continue;
+        let pending_consumption = {
+            let view_model_borrow = view_model.borrow();
+            let printer_manager = view_model_borrow.printer_manager.borrow();
+            (0..printer_manager.len())
+                .filter_map(|printer_index| printer_manager.snapshot_at(printer_index))
+                .flat_map(|snapshot| {
+                    let printer_id = snapshot.id.clone();
+                    snapshot
+                        .slot_groups
+                        .into_iter()
+                        .flat_map(move |group| {
+                            let printer_id = printer_id.clone();
+                            group.slots.into_iter().filter_map(move |slot| {
+                                let spool_id = slot.spool_id.clone()?;
+                                if slot.consumed_since_load_g == 0.0 || slot.consumed_since_load_saved_g == slot.consumed_since_load_g {
+                                    return None;
+                                }
+                                Some(PendingPrinterConsumption {
+                                    printer_id: printer_id.clone(),
+                                    slot_id: slot.id,
+                                    spool_id,
+                                    consumed_since_load_g: slot.consumed_since_load_g,
+                                    consumed_since_load_saved_g: slot.consumed_since_load_saved_g,
+                                })
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        };
+
+        for pending in pending_consumption {
+            let store = view_model.borrow().store.clone();
+            if let Some(mut spool_rec) = store.get_spool_by_id(&pending.spool_id) {
+                let consumption_to_add_save = pending.consumed_since_load_g - pending.consumed_since_load_saved_g;
+                spool_rec.consumed_since_add += consumption_to_add_save;
+                spool_rec.consumed_since_weight += consumption_to_add_save;
+                info!(
+                    "Increase spool {} consumption by {:2}g to total so far {:2}g and since last weight to {:2}g",
+                    pending.spool_id, consumption_to_add_save, spool_rec.consumed_since_add, spool_rec.consumed_since_weight
+                );
+                match store.update_spool(spool_rec, None).await {
+                    Ok(_) => {
+                        if let Err(err) = view_model.borrow().printer_manager.borrow_mut().acknowledge_slot_consumption_saved_by_id(
+                            &pending.printer_id,
+                            &pending.slot_id,
+                            pending.consumed_since_load_g,
+                        ) {
+                            error!(
+                                "Error acknowledging consumption for printer {} slot {}: {:?}",
+                                pending.printer_id.as_str(),
+                                pending.slot_id.as_str(),
+                                err
+                            );
+                        }
                     }
-                    consumed_during_print_saved = tray.meta_info.consumed_since_load_saved;
-                    if consumed_during_print_saved == consumed_during_print {
-                        continue;
+                    Err(err) => {
+                        error!("Error updating consumption of spool {} : {err}", pending.spool_id);
                     }
                 }
-                let store = view_model.borrow().store.clone();
-                if let Some(mut spool_rec) = store.get_spool_by_id(&spool_id) {
-                    let consumption_to_add_save = consumed_during_print - consumed_during_print_saved;
-                    spool_rec.consumed_since_add += consumption_to_add_save;
-                    spool_rec.consumed_since_weight += consumption_to_add_save;
-                    info!(
-                        "Increase spool {} consumption by {:2}g to total so far {:2}g and since last weight to {:2}g",
-                        spool_id, consumption_to_add_save, spool_rec.consumed_since_add, spool_rec.consumed_since_weight
-                    );
-                    match store.update_spool(spool_rec, None).await {
-                        Ok(_) => {
-                            // update saved in tray
-                            let mut printer_borrow = printer.borrow_mut();
-                            printer_borrow.update_any_tray(tray_id, |tray| {
-                                tray.meta_info.consumed_since_load_saved = tray.meta_info.consumed_since_load
-                            });
-                        }
-                        Err(err) => {
-                            error!("Error updating consumption of spool {spool_id} : {err}");
-                        }
-                    }
-                } else {
-                    error!("While updating consume data spool_id not found");
-                }
+            } else {
+                error!("While updating consume data spool_id not found");
             }
         }
         Timer::after_secs(1).await;

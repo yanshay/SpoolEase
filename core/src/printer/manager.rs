@@ -13,7 +13,7 @@ use crate::bambu::BambuPrinter;
 use crate::store::Store;
 
 use super::{
-    PrinterCommand, PrinterDriver, PrinterError, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot,
+    PrinterCommand, PrinterDriver, PrinterError, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot, SlotId,
     bambu_adapter::BambuPrinterDriver, fake_driver::FakePrinterDriver,
 };
 
@@ -97,6 +97,19 @@ impl PrinterManager {
             .find(|printer| printer.id() == printer_id)
             .ok_or_else(|| PrinterError::PrinterUnavailable(format!("printer id {}", printer_id.as_str())))?
             .dispatch(command)
+    }
+
+    pub fn acknowledge_slot_consumption_saved_by_id(
+        &mut self,
+        printer_id: &PrinterId,
+        slot_id: &SlotId,
+        consumed_since_load_saved_g: f32,
+    ) -> PrinterResult<()> {
+        self.printers
+            .iter_mut()
+            .find(|printer| printer.id() == printer_id)
+            .ok_or_else(|| PrinterError::PrinterUnavailable(format!("printer id {}", printer_id.as_str())))?
+            .acknowledge_slot_consumption_saved(slot_id, consumed_since_load_saved_g)
     }
 
     pub fn subscribe_at(&mut self, index: usize, observer: alloc::rc::Weak<RefCell<dyn PrinterObserver>>) -> PrinterResult<()> {

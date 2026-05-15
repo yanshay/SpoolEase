@@ -24,7 +24,7 @@ use super::{
     MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange,
     PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament,
     PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot, SlotAssignMode, SlotGroupKind,
-    SlotGroupSnapshot, SlotId, SlotState,
+    SlotGroupSnapshot, SlotId, SlotState, PrinterSnapshotState,
 };
 
 type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
@@ -32,6 +32,7 @@ type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
 pub struct BambuPrinterDriver {
     id: PrinterId,
     printer: Rc<RefCell<BambuPrinter>>,
+    snapshot_state: PrinterSnapshotState,
     observers: PrinterObserverList,
     bridge_observer: Option<Rc<RefCell<dyn BambuPrinterObserver>>>,
     pending_dirty_state: Option<BambuPersistentDirtyState>,
@@ -39,17 +40,21 @@ pub struct BambuPrinterDriver {
 
 struct BambuPrinterEventBridge {
     printer_id: PrinterId,
+    snapshot_state: PrinterSnapshotState,
     observers: PrinterObserverList,
 }
 
 impl BambuPrinterDriver {
     pub fn new(printer: Rc<RefCell<BambuPrinter>>) -> Self {
-        let printer_borrow = printer.borrow();
+        let mut printer_borrow = printer.borrow_mut();
         let id = BambuPrinterConfig::printer_id_for_serial(&printer_borrow.printer_serial);
+        let snapshot_state = Rc::new(RefCell::new(Self::raw_snapshot_from_printer(&printer_borrow)));
+        printer_borrow.set_snapshot_state(snapshot_state.clone());
         drop(printer_borrow);
         Self {
             id,
             printer,
+            snapshot_state,
             observers: Rc::new(RefCell::new(Vec::new())),
             bridge_observer: None,
             pending_dirty_state: None,
@@ -61,6 +66,14 @@ impl BambuPrinterDriver {
     }
 
     pub fn snapshot_from_printer(printer: &BambuPrinter) -> PrinterSnapshot {
+        if let Some(snapshot_state) = printer.snapshot_state() {
+            return Self::sync_snapshot_state_from_printer(printer, &snapshot_state);
+        }
+
+        Self::raw_snapshot_from_printer(printer)
+    }
+
+    fn raw_snapshot_from_printer(printer: &BambuPrinter) -> PrinterSnapshot {
         PrinterSnapshot {
             id: BambuPrinterConfig::printer_id_for_serial(&printer.printer_serial),
             kind: PrinterDriverKind::Bambu,
@@ -71,6 +84,37 @@ impl BambuPrinterDriver {
             slot_groups: Self::slot_groups_from_printer(printer),
             print: Self::print_from_printer(printer),
             diagnostics: Self::diagnostics_from_printer(printer),
+        }
+    }
+
+    fn sync_snapshot_state_from_printer(printer: &BambuPrinter, snapshot_state: &PrinterSnapshotState) -> PrinterSnapshot {
+        let mut snapshot = Self::raw_snapshot_from_printer(printer);
+        Self::overlay_consumption_fields_from_state(&mut snapshot, snapshot_state);
+        *snapshot_state.borrow_mut() = snapshot.clone();
+        snapshot
+    }
+
+    fn replace_snapshot_state_from_printer(printer: &BambuPrinter, snapshot_state: &PrinterSnapshotState) -> PrinterSnapshot {
+        let snapshot = Self::raw_snapshot_from_printer(printer);
+        *snapshot_state.borrow_mut() = snapshot.clone();
+        snapshot
+    }
+
+    fn overlay_consumption_fields_from_state(snapshot: &mut PrinterSnapshot, snapshot_state: &PrinterSnapshotState) {
+        let state = snapshot_state.borrow();
+        for slot in snapshot.slot_groups.iter_mut().flat_map(|group| group.slots.iter_mut()) {
+            let Some(state_slot) = state
+                .slot_groups
+                .iter()
+                .flat_map(|group| group.slots.iter())
+                .find(|state_slot| state_slot.id == slot.id)
+            else {
+                continue;
+            };
+            slot.spool_id = state_slot.spool_id.clone();
+            slot.consumed_since_load_g = state_slot.consumed_since_load_g;
+            slot.consumed_since_load_saved_g = state_slot.consumed_since_load_saved_g;
+            slot.consumed_since_weight_g = state_slot.consumed_since_weight_g;
         }
     }
 
@@ -108,13 +152,12 @@ impl BambuPrinterDriver {
             PrinterCommand::ClearSlot { slot_id } => {
                 let tray_id = Self::tray_id_from_slot_id(&slot_id)?;
                 printer.reset_tray(tray_id);
+                printer.clear_snapshot_slot_consumption(tray_id as usize);
                 Ok(())
             }
             PrinterCommand::UnassignSpoolFromSlot { slot_id } => {
                 let tray_id = Self::tray_id_from_slot_id(&slot_id)?;
-                printer.update_any_tray(tray_id as usize, |tray| {
-                    tray.meta_info.spool_id = None;
-                });
+                printer.unassign_snapshot_slot_spool(tray_id as usize);
                 Ok(())
             }
             PrinterCommand::AddPressureAdvance(_profile) => Err(PrinterError::UnsupportedCommand("add_pressure_advance".to_string())),
@@ -251,6 +294,7 @@ impl BambuPrinterDriver {
             filament: Self::filament_from_bambu(&tray.filament),
             spool_id: tray.meta_info.spool_id.clone(),
             consumed_since_load_g: tray.meta_info.consumed_since_load,
+            consumed_since_load_saved_g: tray.meta_info.consumed_since_load_saved,
             consumed_since_weight_g: tray.meta_info.consumed_since_weight,
             used_in_print: tray.meta_info.used_in_print,
             pressure_advance_value,
@@ -482,7 +526,10 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
     ) {
         self.notify(PrinterEventKind::SnapshotChanged {
             change: PrinterChange::Slots,
-            snapshot: Box::new(BambuPrinterDriver::snapshot_from_printer(bambu_printer)),
+            snapshot: Box::new(BambuPrinterDriver::sync_snapshot_state_from_printer(
+                bambu_printer,
+                &self.snapshot_state,
+            )),
         });
 
         let mut changes = Vec::new();
@@ -495,7 +542,9 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
                     changes.push(MaterialSlotPresenceChange {
                         slot_id: BambuPrinterDriver::slot_id_from_tray_id(tray_id as i32),
                         change: MaterialSlotPresenceChangeKind::Inserted,
-                        spool_id: bambu_printer.ams_trays().get(tray_id).and_then(|tray| tray.meta_info.spool_id.clone()),
+                        spool_id: bambu_printer
+                            .snapshot_slot_spool_id(tray_id)
+                            .or_else(|| bambu_printer.ams_trays().get(tray_id).and_then(|tray| tray.meta_info.spool_id.clone())),
                     });
                 }
             }
@@ -550,13 +599,25 @@ impl PrinterDriver for BambuPrinterDriver {
         Self::capabilities_from_printer(&self.printer.borrow())
     }
 
+    fn snapshot_state(&self) -> PrinterSnapshotState {
+        self.snapshot_state.clone()
+    }
+
     fn snapshot(&self) -> PrinterSnapshot {
-        Self::snapshot_from_printer(&self.printer.borrow())
+        Self::sync_snapshot_state_from_printer(&self.printer.borrow(), &self.snapshot_state)
     }
 
     fn dispatch(&mut self, command: PrinterCommand) -> PrinterResult<()> {
         let mut printer = self.printer.borrow_mut();
         Self::dispatch_to_printer(&mut printer, command)
+    }
+
+    fn acknowledge_slot_consumption_saved(&mut self, slot_id: &SlotId, consumed_since_load_saved_g: f32) -> PrinterResult<()> {
+        let tray_id = Self::tray_id_from_slot_id(slot_id)?;
+        self.printer
+            .borrow_mut()
+            .acknowledge_snapshot_slot_consumption_saved(tray_id as usize, consumed_since_load_saved_g);
+        Ok(())
     }
 
     fn subscribe(&mut self, observer: Weak<RefCell<dyn PrinterObserver>>) {
@@ -570,6 +631,7 @@ impl PrinterDriver for BambuPrinterDriver {
 
         let bridge_observer: Rc<RefCell<dyn BambuPrinterObserver>> = Rc::new(RefCell::new(BambuPrinterEventBridge {
             printer_id: self.id.clone(),
+            snapshot_state: self.snapshot_state.clone(),
             observers: self.observers.clone(),
         }));
         let bridge_observer_weak = Rc::downgrade(&bridge_observer);
@@ -587,7 +649,9 @@ impl PrinterDriver for BambuPrinterDriver {
     }
 
     fn load_persistent_state(&mut self, state_json: &str, store: &Rc<Store>) -> Result<(), String> {
-        self.printer.borrow_mut().load_printer_persistent_state_str(state_json, store)
+        self.printer.borrow_mut().load_printer_persistent_state_str(state_json, store)?;
+        Self::replace_snapshot_state_from_printer(&self.printer.borrow(), &self.snapshot_state);
+        Ok(())
     }
 
     fn prepare_persistent_state_store(&mut self) -> Result<Option<PrinterPersistentStatePayload>, String> {

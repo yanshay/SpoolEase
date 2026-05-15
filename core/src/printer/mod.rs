@@ -136,12 +136,16 @@ pub struct MaterialSlotSnapshot {
     pub filament: PrinterFilament,
     pub spool_id: Option<String>,
     pub consumed_since_load_g: f32,
+    #[serde(default)]
+    pub consumed_since_load_saved_g: f32,
     pub consumed_since_weight_g: f32,
     pub used_in_print: bool,
     pub pressure_advance_value: String,
     pub pressure_advance_meta: String,
     pub driver_data: DriverData,
 }
+
+pub type PrinterSnapshotState = Rc<RefCell<PrinterSnapshot>>;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GenericPrinterPersistentState {
@@ -158,8 +162,18 @@ pub struct GenericSlotPersistentState {
     pub filament: PrinterFilament,
     pub spool_id: Option<String>,
     pub consumed_since_load_g: f32,
+    #[serde(default)]
+    pub consumed_since_load_saved_g: f32,
     pub consumed_since_weight_g: f32,
     pub used_in_print: bool,
+}
+
+pub fn slot_in_snapshot_mut<'a>(snapshot: &'a mut PrinterSnapshot, slot_id: &SlotId) -> Option<&'a mut MaterialSlotSnapshot> {
+    snapshot
+        .slot_groups
+        .iter_mut()
+        .flat_map(|group| group.slots.iter_mut())
+        .find(|slot| slot.id == *slot_id)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -314,10 +328,18 @@ pub trait PrinterDriver {
     fn kind(&self) -> PrinterDriverKind;
     fn display_name(&self) -> String;
     fn capabilities(&self) -> PrinterCapabilities;
+    fn snapshot_state(&self) -> PrinterSnapshotState;
     fn snapshot(&self) -> PrinterSnapshot;
     fn dispatch(&mut self, command: PrinterCommand) -> PrinterResult<()>;
     fn subscribe(&mut self, observer: Weak<RefCell<dyn PrinterObserver>>);
     fn start(&mut self, _framework: Rc<RefCell<Framework>>) {}
+    fn acknowledge_slot_consumption_saved(&mut self, slot_id: &SlotId, consumed_since_load_saved_g: f32) -> PrinterResult<()> {
+        let snapshot_state = self.snapshot_state();
+        let mut snapshot = snapshot_state.borrow_mut();
+        let slot = slot_in_snapshot_mut(&mut snapshot, slot_id).ok_or_else(|| PrinterError::SlotNotFound(slot_id.clone()))?;
+        slot.consumed_since_load_saved_g = consumed_since_load_saved_g;
+        Ok(())
+    }
     fn persistent_state_path(&self) -> Option<String> {
         None
     }

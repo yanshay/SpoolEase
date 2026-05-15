@@ -24,6 +24,7 @@ use crate::bambu::tray::{Tray, TrayBits};
 use crate::view_model::StoreStateRequestChannel;
 use crate::{
     app_config::{BambuPrinterConfig, PrinterMode, UseAmsScan},
+    printer::PrinterSnapshotState,
     ssdp::SSDPPubSubChannel,
 };
 use alloc::{
@@ -172,6 +173,7 @@ pub struct BambuPrinter {
     pub subtask_name: Option<String>,
     pub stg_cur: Option<i32>,
     pub hms: Option<Vec<bambu_api::Hms>>,
+    snapshot_state: Option<PrinterSnapshotState>,
 }
 
 pub trait BambuPrinterObserver {
@@ -431,7 +433,16 @@ impl BambuPrinter {
             subtask_name: None,
             stg_cur: None,
             hms: None,
+            snapshot_state: None,
         }
+    }
+
+    pub fn set_snapshot_state(&mut self, snapshot_state: PrinterSnapshotState) {
+        self.snapshot_state = Some(snapshot_state);
+    }
+
+    pub fn snapshot_state(&self) -> Option<PrinterSnapshotState> {
+        self.snapshot_state.clone()
     }
 
     pub fn model(&self) -> PrinterModel {
@@ -497,6 +508,7 @@ impl BambuPrinter {
         *self = Self {
             observers: self.observers.clone(),
             bambu_model: self.bambu_model.clone(),
+            snapshot_state: self.snapshot_state.clone(),
             ..empty
         };
         self.restart_printer.signal(1);
