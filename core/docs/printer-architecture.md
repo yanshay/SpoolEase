@@ -1211,7 +1211,7 @@ Current migration status:
 - [done] Default printer selection stores generic `printer_id` and converts old Bambu serial defaults.
 - [done] `static/config.html` has a printer type selector for Bambu Lab and Fake Non-Bambu.
 - [done] Fake printer config can be persisted by DTO/model shape and `config.html`.
-- [partial] Fake runtime driver exists, appears in web status, and is selectable in the console. Slint has a first generic slot-group view for non-Bambu snapshots with capability-gated assign material, set spool ID, reset, and untag slot operations, but slot persistence is not wired yet.
+- [done] Fake runtime driver exists, appears in web status, is selectable in the console, uses the shared slot-group UI, supports capability-gated slot operations, and persists generic slot state.
 
 Printer ID policy:
 
@@ -1501,14 +1501,14 @@ Current migration status:
 - [not done] `ViewModel` still uses direct Bambu access for many unreworked flows.
 - [not done] `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` is still the primary printer-facing field for those unreworked flows.
 
-### Phase 4: Route Commands Through Generic Printer Commands [partial]
+### Phase 4: Route Commands Through Generic Printer Commands [done]
 
 Refactor these paths:
 
 - [done] `ui_untag_slot` dispatches `PrinterCommand::UnassignSpoolFromSlot`.
 - [done] `ui_reset_slot` dispatches `PrinterCommand::ClearSlot`.
-- [done] `set_staging_to_tray_direct` dispatches `PrinterCommand::AssignMaterialToSlot` through `PrinterManager`.
-- [done] `configure_tray_with_spool_async` dispatches `PrinterCommand::AssignMaterialToSlot` through `PrinterManager`.
+- [done] `set_staging_to_slot` / `set_staging_to_tray_direct` dispatch `PrinterCommand::AssignMaterialToSlot` through `PrinterManager`.
+- [done] `configure_slot_with_spool_async` routes by generic printer ID and slot ID, then dispatches `PrinterCommand::AssignMaterialToSlot` through `PrinterManager`.
 - [done] web `/api/printer-command` dispatches `PrinterCommand::PrintControl` through `PrinterManager`.
 
 Additional read-path migration:
@@ -1573,7 +1573,7 @@ Acceptance criteria:
 - Bambu printer status displays correctly.
 - Non-Bambu fake driver status can display.
 
-### Phase 8: Generic Configuration and State for New Drivers [partial]
+### Phase 8: Generic Configuration and State for New Drivers [done]
 
 Introduce driver-kind config.
 
@@ -1589,7 +1589,7 @@ Acceptance criteria:
 - [done] New fake/non-Bambu config can be persisted by DTO/model shape and `config.html`.
 - [done] Common printer-state scheduling can load/save driver-provided persistent state paths without changing Bambu's existing state format.
 
-### Phase 9: Add Fake Non-Bambu Driver [partial]
+### Phase 9: Add Fake Non-Bambu Driver [done]
 
 Before Snapmaker, add a fake driver with arbitrary writable slots.
 
@@ -1620,6 +1620,17 @@ Acceptance criteria:
 - Driver can configure printer material slots from SpoolEase inventory.
 - Driver-specific connection/configuration is isolated.
 - Unsupported capabilities are not shown or are disabled in UI/client.
+
+### Phase 11: Generic Pressure Advance / K Management [not started]
+
+Move pressure-advance management out of Bambu-specific web/ViewModel paths when there is a real second driver need.
+
+Acceptance criteria:
+
+- Pressure-advance query/add APIs route through generic printer capability and driver interfaces.
+- Bambu calibration internals remain inside the Bambu driver/adapter.
+- Unsupported printers do not expose pressure-advance actions.
+- Slot pressure-advance display continues to use generic snapshot fields.
 
 ## Risks
 
@@ -1731,6 +1742,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, generic `PrinterManager` storage, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan events, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a basic fake non-Bambu driver visible in web status, console-safe selection of generic printers, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, standard circular slot-card UI for Bambu and Fake, backend-driven primary/external slot groups, opaque string slot IDs for main Slint slot actions, common driver-owned printer-state persistence scheduling, Fake generic slot-state persistence, driver-provided slot/group display names, and explicit slot pressure-advance display fields.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, generic `PrinterManager` storage, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan events, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a basic fake non-Bambu driver visible in web status, console-safe selection of generic printers, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, standard circular slot-card UI for Bambu and Fake, backend-driven primary/external slot groups, opaque string slot IDs for main Slint slot actions, common driver-owned printer-state persistence scheduling, Fake generic slot-state persistence, driver-provided slot/group display names, explicit slot pressure-advance display fields, and generic async configure-slot-with-spool routing by printer ID plus slot ID.
 
 Still not done: full `PrinterManager` ownership replacement, tray/snapshot event bridge, generic consumption reporting, paginated/scrollable dynamic Slint slot groups for large topologies, and real non-Bambu driver.

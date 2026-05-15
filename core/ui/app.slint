@@ -205,7 +205,6 @@ export global AppBackend {
     pure callback storage-available-positions(rack-id: int, bay: int, shelf: int) -> int;
     pure callback storage-available-containers(rack-id: int, bay: int, shelf: int, position: int) -> int;
     pure callback storage-location-str(rack-id: int, bay: int, shelf: int, position: int, container: int) -> string;
-    callback unload-slot-tag(tray-id: int, spool-id: string);
     pure callback location-str-to-location(location-str: string) -> Location;
     callback load-staging(spool-id: string) -> string; // returns error if not found
     callback ensure-circle-checkerboard(diameter: int, offset-x: int, offset-y: int);
@@ -637,12 +636,6 @@ export global AppState {
         self.user-message-type = StatusType.Success;
     }
 
-    public function tray-update-failed(printer: string, configured-entity: string, err-txt: string) {
-        self.control-state = ControlState.PostAction;
-        self.user-message = "Failed to Configure\n\{configured-entity}\n\{err-txt}";
-        self.user-message-type = StatusType.Error;
-    }
-
     public function slot-operation-failed(operation: string, configured-entity: string, err-txt: string) {
         self.control-state = ControlState.PostAction;
         self.user-message = "Failed to " + operation + "\n\{configured-entity}\n\{err-txt}";
@@ -655,12 +648,12 @@ export global AppState {
         self.user-message-type = StatusType.Success;
     }
 
-    public function tray-update-succeeded(printer: int, configured-entity: string, tray-id: int) {
+    public function slot-update-succeeded(operation: string, configured-entity: string, slot-id: string, printer: int) {
         self.control-state = ControlState.PostAction;
-        self.user-message = "Configured Successfully\n\{configured-entity}";
+        self.user-message = operation + " Succeeded\n\{configured-entity}";
         self.user-message-type = StatusType.Success;
-        start-highlight-tray(tray-id);
-        if printer != self.curr-printer {
+        start-highlight-slot(slot-id);
+        if printer >= 0 && printer != self.curr-printer {
             self.set-later-curr-printer(printer)
         }
     }

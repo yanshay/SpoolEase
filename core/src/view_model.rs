@@ -1242,6 +1242,27 @@ impl ViewModel {
         Some((current_printer, manager_index, snapshot))
     }
 
+    fn printer_snapshot_by_id(&self, printer_id: &PrinterId) -> Option<(usize, printer_domain::PrinterSnapshot)> {
+        let printer_manager = self.printer_manager.borrow();
+        let manager_index = printer_manager.index_by_id(printer_id)?;
+        let snapshot = printer_manager.snapshot_at(manager_index)?;
+        Some((manager_index, snapshot))
+    }
+
+    fn ui_index_for_manager_index(&self, manager_index: usize) -> Option<i32> {
+        self.ui_printer_manager_indexes
+            .iter()
+            .position(|index| *index == manager_index)
+            .map(|index| index as i32)
+    }
+
+    fn ui_index_for_bambu_index(&self, bambu_index: usize) -> Option<i32> {
+        self.ui_printer_bambu_indexes
+            .iter()
+            .position(|index| *index == Some(bambu_index))
+            .map(|index| index as i32)
+    }
+
     fn slot_description_from_snapshot(snapshot: &printer_domain::PrinterSnapshot, slot_id: &str) -> String {
         snapshot
             .slot_groups
@@ -1548,12 +1569,13 @@ impl ViewModel {
         ui: &slint::Weak<crate::app::AppWindow>,
         tray_id: i32,
     ) {
-        let tray_id_for_ui = tray_id;
+        let slot_id = format!("bambu:{tray_id}");
+        let ui_index = self.ui_index_for_bambu_index(bambu_printer.printer_index).unwrap_or(-1);
         let full_slot_description = bambu_printer.full_slot_description(tray_id);
         let mut filament_staging = filament_staging.borrow_mut();
         if bambu_printer.printer_connectivity_ok != Some(true) {
-            ui.unwrap().global::<crate::app::AppState>().invoke_tray_update_failed(
-                bambu_printer.printer_selector_name.to_shared_string(),
+            ui.unwrap().global::<crate::app::AppState>().invoke_slot_operation_failed(
+                "Configure".into(),
                 full_slot_description.into(),
                 "Printer disconnected".to_shared_string(),
             );
@@ -1571,14 +1593,15 @@ impl ViewModel {
                 );
                 filament_staging.clear();
                 ui.unwrap().global::<crate::app::AppState>().invoke_empty_spool_staging();
-                ui.unwrap().global::<crate::app::AppState>().invoke_tray_update_succeeded(
-                    bambu_printer.printer_index as i32,
+                ui.unwrap().global::<crate::app::AppState>().invoke_slot_update_succeeded(
+                    "Configure".into(),
                     full_slot_description.into(),
-                    tray_id_for_ui,
+                    slot_id.into(),
+                    ui_index,
                 );
             } else {
-                ui.unwrap().global::<crate::app::AppState>().invoke_tray_update_failed(
-                    bambu_printer.printer_selector_name.to_shared_string(),
+                ui.unwrap().global::<crate::app::AppState>().invoke_slot_operation_failed(
+                    "Configure".into(),
                     full_slot_description.into(),
                     slint::format!("Spool {} Missing Required Information", full_spool_rec.spool_rec.id),
                 );
@@ -1994,79 +2017,16 @@ impl ViewModel {
     }
 
     fn ui_configure_slot_with_spool_id(&self, slot_id: &str, spool_id: &str) {
-        if let Some(tray_id) = Self::bambu_tray_id_from_slot_id(&SlotId::new(slot_id))
-            && self.selected_ui_bambu_index().is_some()
-        {
-            let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureTrayWithSpool {
-                printer_index: None,
-                tray_id,
-                spool_id: spool_id.to_string(),
-                only_spool_id: false,
-            });
-            return;
-        }
-
-        let ui_borrow = self.ui_weak.unwrap();
-        let ui = ui_borrow.global::<crate::app::AppState>();
-        let Some((_current_printer, manager_index, snapshot)) = self.selected_printer_snapshot() else {
+        let Some((_current_printer, _manager_index, snapshot)) = self.selected_printer_snapshot() else {
             error!("No selected printer snapshot for slot reconfigure");
             return;
         };
-        let full_slot_description = Self::slot_description_from_snapshot(&snapshot, slot_id);
-
-        if !snapshot.connected {
-            ui.invoke_slot_operation_failed(
-                "Configure".into(),
-                full_slot_description.to_shared_string(),
-                "Printer disconnected".into(),
-            );
-            return;
-        }
-        if !(snapshot.capabilities.material_slot_assign && snapshot.capabilities.material_slot_set_spool_id) {
-            ui.invoke_slot_operation_failed(
-                "Configure".into(),
-                full_slot_description.to_shared_string(),
-                "Material assignment unsupported".into(),
-            );
-            return;
-        }
-        let Some(spool_rec) = self.store.get_spool_by_id(spool_id) else {
-            ui.invoke_slot_operation_failed("Configure".into(), full_slot_description.to_shared_string(), "Spool not found".into());
-            return;
-        };
-        let full_spool_rec = FullSpoolRecord {
-            spool_rec,
-            spool_rec_ext: SpoolRecordExt::default(),
-        };
-        let Some(filament_info) = self.get_filament_info(&full_spool_rec.spool_rec.slicer_filament, Some(&full_spool_rec.spool_rec.material_type))
-        else {
-            ui.invoke_slot_operation_failed(
-                "Configure".into(),
-                full_slot_description.to_shared_string(),
-                slint::format!("Spool {} Missing Required Information", full_spool_rec.spool_rec.id),
-            );
-            return;
-        };
-
-        let dispatch_result = self.printer_manager.borrow_mut().dispatch_at(
-            manager_index,
-            PrinterCommand::AssignMaterialToSlot {
-                slot_id: SlotId::new(slot_id),
-                spool: full_spool_rec,
-                temps: FilamentTemps {
-                    nozzle_min_c: Some(filament_info.nozzle_temp_low as u32),
-                    nozzle_max_c: Some(filament_info.nozzle_temp_high as u32),
-                },
-                mode: SlotAssignMode::WritePrinterMaterial,
-            },
-        );
-        match dispatch_result {
-            Ok(()) => {
-                self.update_slot_groups_from_selected_printer();
-                ui.invoke_slot_operation_succeeded("Configure".into(), full_slot_description.to_shared_string());
-            }
-            Err(err) => ui.invoke_slot_operation_failed("Configure".into(), full_slot_description.to_shared_string(), slint::format!("{err:?}")),
-        }
+        let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureSlotWithSpool {
+            printer_id: snapshot.id,
+            slot_id: SlotId::new(slot_id),
+            spool_id: spool_id.to_string(),
+            only_spool_id: false,
+        });
     }
     fn ui_term_info(&self, text: &str) {
         self._terminal_view_model.borrow_mut().on_add_text(text);
@@ -3350,13 +3310,34 @@ impl ViewModel {
         }
     }
 
-    async fn configure_tray_with_spool_async(
-        view_model: Rc<RefCell<ViewModel>>,
-        printer_index: Option<usize>,
-        tray_id: i32,
-        spool_id: String,
-        only_spool_id: bool,
-    ) {
+    async fn configure_slot_with_spool_async(view_model: Rc<RefCell<ViewModel>>, printer_id: PrinterId, slot_id: SlotId, spool_id: String, only_spool_id: bool) {
+        let (manager_index, snapshot) = match view_model.borrow().printer_snapshot_by_id(&printer_id) {
+            Some(snapshot) => snapshot,
+            None => {
+                error!("Printer {} not found when trying to configure slot {}", printer_id.as_str(), slot_id.as_str());
+                view_model.borrow().message_box(
+                    "Configure Slot Notice",
+                    &format!("Printer {} Not Found", printer_id.as_str()),
+                    "",
+                    crate::app::StatusType::Error,
+                    0,
+                );
+                return;
+            }
+        };
+        let full_slot_description = Self::slot_description_from_snapshot(&snapshot, slot_id.as_str());
+        let ui = view_model.borrow().ui_weak.unwrap();
+        let ui_app_state = ui.global::<crate::app::AppState>();
+
+        if !snapshot.connected {
+            ui_app_state.invoke_slot_operation_failed("Configure".into(), full_slot_description.into(), "Printer disconnected".into());
+            return;
+        }
+        if !(snapshot.capabilities.material_slot_assign && snapshot.capabilities.material_slot_set_spool_id) {
+            ui_app_state.invoke_slot_operation_failed("Configure".into(), full_slot_description.into(), "Material assignment unsupported".into());
+            return;
+        }
+
         let store = view_model.borrow().store.clone();
         if let Some(spool_rec) = store.get_spool_by_id(&spool_id) {
             let mut full_spool_rec = FullSpoolRecord {
@@ -3385,48 +3366,64 @@ impl ViewModel {
                 .borrow()
                 .get_filament_info(&full_spool_rec.spool_rec.slicer_filament, Some(&full_spool_rec.spool_rec.material_type));
             if let Some(filament_info) = filament_info {
-                let view_model_borrow = view_model.borrow();
-                let bambu_printer = match printer_index {
-                    None => view_model_borrow.bambu_printer_model.clone(),
-                    Some(printer_index) => view_model_borrow.bambu_printer_model.printers.get(printer_index).unwrap().clone(),
+                let mode = if only_spool_id {
+                    SlotAssignMode::SpoolIdOnly
+                } else {
+                    SlotAssignMode::WritePrinterMaterial
                 };
-                let mut bambu_printer_mut = bambu_printer.borrow_mut();
-                view_model.borrow().set_tray_filament_via_manager(
-                    &mut bambu_printer_mut,
-                    tray_id,
-                    &full_spool_rec,
-                    filament_info.nozzle_temp_low as u32,
-                    filament_info.nozzle_temp_high as u32,
-                    only_spool_id,
+                let dispatch_result = view_model.borrow().printer_manager.borrow_mut().dispatch_by_id(
+                    &printer_id,
+                    PrinterCommand::AssignMaterialToSlot {
+                        slot_id: slot_id.clone(),
+                        spool: full_spool_rec.clone(),
+                        temps: FilamentTemps {
+                            nozzle_min_c: Some(filament_info.nozzle_temp_low as u32),
+                            nozzle_max_c: Some(filament_info.nozzle_temp_high as u32),
+                        },
+                        mode,
+                    },
                 );
-
-                let view_model_borrow = view_model.borrow();
-                let tray_id_for_ui = tray_id;
-                let full_slot_description = bambu_printer_mut.full_slot_description(tray_id);
-                view_model_borrow
-                    .ui_weak
-                    .unwrap()
-                    .global::<crate::app::AppState>()
-                    .invoke_tray_update_succeeded(bambu_printer_mut.printer_index as i32, full_slot_description.into(), tray_id_for_ui);
+                match dispatch_result {
+                    Ok(()) => {
+                        if !full_spool_rec.spool_rec.actual_location.is_empty() {
+                            let mut spool_rec = Box::new(full_spool_rec.spool_rec.clone());
+                            spool_rec.actual_location = String::new();
+                            let _ = view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box: None });
+                        }
+                        let selected_manager_index = {
+                            let view_model_borrow = view_model.borrow();
+                            view_model_borrow
+                                .selected_ui_index()
+                                .and_then(|index| view_model_borrow.ui_printer_manager_indexes.get(index).copied())
+                        };
+                        if selected_manager_index == Some(manager_index) {
+                            view_model.borrow().update_slot_groups_from_selected_printer();
+                        }
+                        let target_ui_index = view_model.borrow().ui_index_for_manager_index(manager_index).unwrap_or(-1);
+                        ui_app_state.invoke_slot_update_succeeded(
+                            "Configure".into(),
+                            full_slot_description.into(),
+                            slot_id.as_str().into(),
+                            target_ui_index,
+                        );
+                    }
+                    Err(err) => ui_app_state.invoke_slot_operation_failed(
+                        "Configure".into(),
+                        full_slot_description.into(),
+                        slint::format!("{err:?}"),
+                    ),
+                }
             } else {
                 error!("Failed to resolve filament temps for spool {spool_id}");
-                view_model.borrow().message_box(
-                    "Configure Slot Notice",
-                    &format!("Spool {spool_id} Missing Required Information"),
-                    "",
-                    crate::app::StatusType::Error,
-                    0,
+                ui_app_state.invoke_slot_operation_failed(
+                    "Configure".into(),
+                    full_slot_description.into(),
+                    slint::format!("Spool {spool_id} Missing Required Information"),
                 );
             }
         } else {
-            error!("Spool {spool_id} not found when trying to configure slot {tray_id}");
-            view_model.borrow().message_box(
-                "Configure Slot Notice",
-                &format!("Spool {spool_id} Not Found"),
-                "",
-                crate::app::StatusType::Error,
-                0,
-            );
+            error!("Spool {spool_id} not found when trying to configure slot {}", slot_id.as_str());
+            ui_app_state.invoke_slot_operation_failed("Configure".into(), full_slot_description.into(), format!("Spool {spool_id} Not Found").into());
         }
     }
 
@@ -3662,28 +3659,19 @@ impl ViewModel {
             error!("Tag scan event for unknown printer {}", printer_id.as_str());
             return;
         };
-        let Some(tray_id) = Self::bambu_tray_id_from_slot_id(slot_id) else {
-            error!("Tag scan event for unsupported slot id {}", slot_id.as_str());
-            return;
-        };
-
         if let Some(spool_id) = self.store.get_spool_id_by_tag_id(tag_id) {
             info!(
                 "[{}] Tag is registered, setting slot's spool-id{}",
                 printer_index + 1,
                 if only_spool_id { "" } else { " and configuring slot material/color/k" }
             );
-            let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureTrayWithSpool {
-                printer_index: Some(printer_index),
-                tray_id,
+            let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureSlotWithSpool {
+                printer_id: printer_id.clone(),
+                slot_id: slot_id.clone(),
                 spool_id,
                 only_spool_id,
             });
         }
-    }
-
-    fn bambu_tray_id_from_slot_id(slot_id: &SlotId) -> Option<i32> {
-        slot_id.as_str().strip_prefix("bambu:").unwrap_or(slot_id.as_str()).parse().ok()
     }
 
     fn slot_sets_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) -> Vec<SlotSet> {
@@ -3836,9 +3824,9 @@ impl BambuPrinterObserver for ViewModel {
                     // this is not done to external, but less critical because external shows color when spool-id is set even when filament not loaded (ext is empty) so won't confuse user
                     let tray = &bambu_printer.ams_trays()[only_monitored_tray];
                     if let Some(spool_id) = &tray.meta_info.spool_id {
-                        let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureTrayWithSpool {
-                            printer_index: None,
-                            tray_id: only_monitored_tray as i32,
+                        let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureSlotWithSpool {
+                            printer_id: BambuPrinterConfig::printer_id_for_serial(&bambu_printer.printer_serial),
+                            slot_id: SlotId::new(format!("bambu:{only_monitored_tray}")),
                             spool_id: spool_id.clone(),
                             only_spool_id: false,
                         });
@@ -4992,9 +4980,9 @@ enum AppAsyncTaskRequest {
         spool_rec: Box<SpoolRecord>,
         message_box: Option<MessageBox>,
     },
-    ConfigureTrayWithSpool {
-        printer_index: Option<usize>,
-        tray_id: i32,
+    ConfigureSlotWithSpool {
+        printer_id: PrinterId,
+        slot_id: SlotId,
         spool_id: String,
         only_spool_id: bool,
     },
@@ -5046,12 +5034,12 @@ pub async fn app_async_task(view_model: Rc<RefCell<ViewModel>>) {
             AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box } => {
                 ViewModel::update_spool_rec_async(view_model.clone(), spool_rec, message_box).await
             }
-            AppAsyncTaskRequest::ConfigureTrayWithSpool {
-                printer_index,
-                tray_id,
+            AppAsyncTaskRequest::ConfigureSlotWithSpool {
+                printer_id,
+                slot_id,
                 spool_id,
                 only_spool_id,
-            } => ViewModel::configure_tray_with_spool_async(view_model.clone(), printer_index, tray_id, spool_id, only_spool_id).await,
+            } => ViewModel::configure_slot_with_spool_async(view_model.clone(), printer_id, slot_id, spool_id, only_spool_id).await,
             AppAsyncTaskRequest::ImportDefinitionTagToInventory {
                 tag_definition_type,
                 tag_definition_info,
