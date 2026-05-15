@@ -10,9 +10,10 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{spool_record::FullSpoolRecord, store::Store};
 use framework::framework::Framework;
@@ -130,28 +131,113 @@ pub struct MaterialSlotSnapshot {
     pub pressure_advance_meta: String,
 }
 
-pub type PrinterSnapshotState = Rc<RefCell<PrinterSnapshot>>;
+pub type PrinterSnapshotState = Rc<PrinterSnapshotStateInner>;
+
+#[derive(Debug)]
+pub struct PrinterSnapshotStateInner {
+    snapshot: RefCell<PrinterSnapshot>,
+    dirty: Cell<bool>,
+    pending_store_dirty: Cell<bool>,
+}
+
+impl PrinterSnapshotStateInner {
+    pub fn new(snapshot: PrinterSnapshot) -> Self {
+        Self {
+            snapshot: RefCell::new(snapshot),
+            dirty: Cell::new(false),
+            pending_store_dirty: Cell::new(false),
+        }
+    }
+
+    pub fn clone_snapshot(&self) -> PrinterSnapshot {
+        self.snapshot.borrow().clone()
+    }
+
+    pub fn replace(&self, snapshot: PrinterSnapshot, mark_dirty: bool) {
+        let mut current = self.snapshot.borrow_mut();
+        if *current != snapshot {
+            *current = snapshot;
+            if mark_dirty {
+                self.dirty.set(true);
+            }
+        }
+    }
+
+    pub fn replace_loaded(&self, mut snapshot: PrinterSnapshot) {
+        sanitize_loaded_snapshot(&mut snapshot);
+        *self.snapshot.borrow_mut() = snapshot;
+        self.dirty.set(false);
+        self.pending_store_dirty.set(false);
+    }
+
+    pub fn update<F>(&self, mark_dirty: bool, f: F)
+    where
+        F: FnOnce(&mut PrinterSnapshot),
+    {
+        f(&mut self.snapshot.borrow_mut());
+        if mark_dirty {
+            self.dirty.set(true);
+        }
+    }
+
+    pub fn try_update<E, F>(&self, mark_dirty: bool, f: F) -> Result<(), E>
+    where
+        F: FnOnce(&mut PrinterSnapshot) -> Result<(), E>,
+    {
+        f(&mut self.snapshot.borrow_mut())?;
+        if mark_dirty {
+            self.dirty.set(true);
+        }
+        Ok(())
+    }
+
+    pub fn mark_dirty(&self) {
+        self.dirty.set(true);
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.dirty.get()
+    }
+
+    pub fn begin_store(&self) -> bool {
+        let was_dirty = self.dirty.replace(false);
+        if was_dirty {
+            self.pending_store_dirty.set(true);
+        }
+        was_dirty
+    }
+
+    pub fn store_succeeded(&self) {
+        self.pending_store_dirty.set(false);
+    }
+
+    pub fn store_failed(&self) {
+        if self.pending_store_dirty.replace(false) {
+            self.dirty.set(true);
+        }
+    }
+}
+
+pub fn sanitize_loaded_snapshot(snapshot: &mut PrinterSnapshot) {
+    snapshot.connected = false;
+    snapshot.print.remaining_minutes = None;
+    for group in &mut snapshot.slot_groups {
+        group.temperature_c = None;
+        group.humidity_percent = None;
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GenericPrinterPersistentState {
+pub struct PrinterStateFile {
     pub version: u32,
     pub printer_id: PrinterId,
     pub driver_kind: PrinterDriverKind,
-    pub slots: Vec<GenericSlotPersistentState>,
+    pub generic: PrinterSnapshot,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub driver_private: Option<Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct GenericSlotPersistentState {
-    pub slot_id: SlotId,
-    pub state: SlotState,
-    pub filament: PrinterFilament,
-    pub spool_id: Option<String>,
-    pub consumed_since_load_g: f32,
-    #[serde(default)]
-    pub consumed_since_load_saved_g: f32,
-    pub consumed_since_weight_g: f32,
-    pub used_in_print: bool,
-}
+pub const PRINTER_STATE_FILE_VERSION: u32 = 1;
 
 pub fn slot_in_snapshot_mut<'a>(snapshot: &'a mut PrinterSnapshot, slot_id: &SlotId) -> Option<&'a mut MaterialSlotSnapshot> {
     snapshot
@@ -304,22 +390,27 @@ pub trait PrinterDriver {
     fn start(&mut self, _framework: Rc<RefCell<Framework>>) {}
     fn acknowledge_slot_consumption_saved(&mut self, slot_id: &SlotId, consumed_since_load_saved_g: f32) -> PrinterResult<()> {
         let snapshot_state = self.snapshot_state();
-        let mut snapshot = snapshot_state.borrow_mut();
-        let slot = slot_in_snapshot_mut(&mut snapshot, slot_id).ok_or_else(|| PrinterError::SlotNotFound(slot_id.clone()))?;
-        slot.consumed_since_load_saved_g = consumed_since_load_saved_g;
-        Ok(())
+        snapshot_state
+            .try_update(true, |snapshot| {
+                let slot = slot_in_snapshot_mut(snapshot, slot_id).ok_or_else(|| PrinterError::SlotNotFound(slot_id.clone()))?;
+                slot.consumed_since_load_saved_g = consumed_since_load_saved_g;
+                Ok(())
+            })
     }
     fn persistent_state_path(&self) -> Option<String> {
         None
     }
-    fn load_persistent_state(&mut self, _state_json: &str, _store: &Rc<Store>) -> Result<(), String> {
+    fn private_state_dirty(&self) -> bool {
+        false
+    }
+    fn load_private_state(&mut self, _state: Option<Value>, _store: &Rc<Store>) -> Result<(), String> {
         Ok(())
     }
-    fn prepare_persistent_state_store(&mut self) -> Result<Option<PrinterPersistentStatePayload>, String> {
+    fn prepare_private_state_store(&mut self) -> Result<Option<Value>, String> {
         Ok(None)
     }
-    fn persistent_state_store_succeeded(&mut self) {}
-    fn restore_persistent_state_after_failed_store(&mut self) {}
+    fn private_state_store_succeeded(&mut self) {}
+    fn restore_private_state_after_failed_store(&mut self) {}
 }
 
 pub type PrinterResult<T> = Result<T, PrinterError>;

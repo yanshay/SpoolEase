@@ -8,6 +8,7 @@ use embassy_time::Timer;
 use framework::{debug, error, info, term_info};
 use framework::{prelude::Framework, term_error};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{
     bambu::{BambuPrinter, tray::Tray},
@@ -51,35 +52,28 @@ pub struct BambuPersistentDirtyState {
 }
 
 impl BambuPrinter {
-    pub fn load_printer_persistent_state_str(&mut self, state_str: &str, store: &Rc<Store>) -> Result<(), String> {
-        if state_str.trim().is_empty() {
-            return Err(format!("[{}] Loaded empty state file", self.printer_number));
-        }
-
-        match serde_json::from_str::<PrinterPersistentState>(state_str) {
+    pub fn load_printer_private_state_value(&mut self, state: Value, store: &Rc<Store>) -> Result<(), String> {
+        match serde_json::from_value::<PrinterPersistentState<'static>>(state) {
             Ok(printer_state) => {
                 self.init_printer_persistent_state(printer_state, store);
                 Ok(())
             }
             Err(err) => {
-                error!("[{}] Failed to parse printer state: {}", self.printer_number, err);
-                error!("[{}] Printer state state file content: {state_str}", self.printer_number);
+                error!("[{}] Failed to parse printer private state: {}", self.printer_number, err);
                 Err(format!(
-                    "[{}] Failed to Parse Printer State File (Check Terminal for More Info)",
+                    "[{}] Failed to Parse Printer Private State (Check Terminal for More Info)",
                     self.printer_number
                 ))
             }
         }
     }
 
-    pub fn prepare_printer_persistent_state_store(&mut self) -> Option<(String, BambuPersistentDirtyState)> {
-        if self.auto_restore_k && self.pending_k_restore_sequence {
-            // don't change store until restoring k is done
-            return None;
-        }
+    pub fn printer_persistent_state_store_blocked(&self) -> bool {
+        self.auto_restore_k && self.pending_k_restore_sequence
+    }
 
-        let ams_trays_dirty = self.ams_trays_dirty.iter().any(|&v| v);
-        if !(ams_trays_dirty
+    pub fn printer_persistent_state_dirty(&self) -> bool {
+        self.ams_trays_dirty.iter().any(|&v| v)
             || self.virt_trays_dirty
             || self.extruders_dirty
             || self.ams_exist_bits_dirty
@@ -88,27 +82,11 @@ impl BambuPrinter {
             || self.calibrations_dirty
             || self.printer_name_dirty
             || self.force_store_state
-            || self.relevant_extruder_state_dirty)
-        {
-            return None;
-        }
+            || self.relevant_extruder_state_dirty
+    }
 
-        debug!(
-            "[{}] Dirty status: AMS slots({}), Ext slots({}), Extruders({}), AmsExists: ({}), Tray Exists: ({}), Try Read Done ({}), Calibrations ({}), Printer Name ({}), Relevant Extruder State ({}), Forced Store ({})",
-            self.printer_number,
-            ams_trays_dirty,
-            self.virt_trays_dirty,
-            self.extruders_dirty,
-            self.ams_exist_bits_dirty,
-            self.tray_exist_bits_dirty,
-            self.tray_read_done_bits_dirty,
-            self.calibrations_dirty,
-            self.printer_name_dirty,
-            self.relevant_extruder_state_dirty,
-            self.force_store_state,
-        );
-
-        let printer_state = PrinterPersistentState {
+    fn printer_persistent_state(&self) -> PrinterPersistentState<'_> {
+        PrinterPersistentState {
             ams_trays: Cow::Borrowed(self.ams_trays()),
             virt_tray: None,
             virt_trays: Some(Cow::Borrowed(self.virt_trays())),
@@ -120,11 +98,40 @@ impl BambuPrinter {
             printer_name: self.inner_printer_name.clone(),
             extruders: Some(Cow::Borrowed(&self.inner_extruders)),
             extruder_state: self.inner_extruder_state,
+        }
+    }
+
+    pub fn prepare_printer_private_state_store(&mut self) -> Result<Option<(Value, Option<BambuPersistentDirtyState>)>, String> {
+        if self.printer_persistent_state_store_blocked() {
+            return Ok(None);
+        }
+
+        let private_dirty = self.printer_persistent_state_dirty();
+        let state = serde_json::to_value(self.printer_persistent_state())
+            .map_err(|err| format!("Failed to serialize Bambu private printer state: {err}"))?;
+        let dirty_state = if private_dirty {
+            debug!(
+                "[{}] Dirty status: AMS slots({}), Ext slots({}), Extruders({}), AmsExists: ({}), Tray Exists: ({}), Try Read Done ({}), Calibrations ({}), Printer Name ({}), Relevant Extruder State ({}), Forced Store ({})",
+                self.printer_number,
+                self.ams_trays_dirty.iter().any(|&v| v),
+                self.virt_trays_dirty,
+                self.extruders_dirty,
+                self.ams_exist_bits_dirty,
+                self.tray_exist_bits_dirty,
+                self.tray_read_done_bits_dirty,
+                self.calibrations_dirty,
+                self.printer_name_dirty,
+                self.relevant_extruder_state_dirty,
+                self.force_store_state,
+            );
+            let dirty_state = self.printer_persistent_dirty_state();
+            self.clear_printer_persistent_dirty_state();
+            Some(dirty_state)
+        } else {
+            None
         };
-        let printer_state_str = serde_json::to_string(&printer_state).unwrap();
-        let dirty_state = self.printer_persistent_dirty_state();
-        self.clear_printer_persistent_dirty_state();
-        Some((printer_state_str, dirty_state))
+
+        Ok(Some((state, dirty_state)))
     }
 
     pub fn restore_printer_persistent_dirty_state(&mut self, dirty_state: BambuPersistentDirtyState) {
@@ -400,7 +407,7 @@ impl BambuPrinter {
         format!("/state/{file_name}.{file_ext}/{file}")
     }
 
-    pub fn init_printer_persistent_state(&mut self, mut state: PrinterPersistentState, store: &Rc<Store>) {
+    pub fn init_printer_persistent_state(&mut self, mut state: PrinterPersistentState, _store: &Rc<Store>) {
         self.inner_ams_trays = core::mem::take(state.ams_trays.to_mut());
         self.inner_ams_trays.resize(24, Tray::default());
         if let Some(mut virt_trays) = state.virt_trays {
@@ -435,50 +442,5 @@ impl BambuPrinter {
             }
         }
 
-        // this is for upgrading tray from using the old tag_info to the id.
-        // It happens only until the first state store takes place again, because then the old tag_info is not serialized and the id will be there
-        for tray_id in (0..self.ams_trays().len()).chain(core::iter::once(254)) {
-            let old_id = self.get_any_tray(tray_id).meta_info.old_tag_info.as_ref().and_then(|v| v.id.clone());
-            if let Some(old_id) = old_id {
-                self.update_any_tray(tray_id, |v| v.meta_info.spool_id = Some(old_id));
-                self.force_store_state = true;
-            }
-        }
-        // Some of this section (not all) can be potentially removed in the future since state consume_since_weight should be available and updated
-        // This is only for transition time where the there was no consumed_since_weight in the metainfo for correct display calculation
-        // The removal of non existing ID's need to stay
-        for tray_id in (0..self.ams_trays().len()).chain([254, 255]) {
-            if self.get_any_tray(tray_id).meta_info.consumed_since_weight == 0.0
-                && let Some(spool_id) = self.get_any_tray(tray_id).meta_info.spool_id.as_ref()
-            {
-                let spool_record = store.get_spool_by_id(spool_id.as_str());
-                if let Some(spool_record) = spool_record {
-                    self.update_any_tray(tray_id, |tray| tray.meta_info.consumed_since_weight = spool_record.consumed_since_weight);
-                } else {
-                    self.update_any_tray(tray_id, |tray| tray.meta_info.spool_id = None);
-                }
-            }
-
-            // if self.get_any_tray(tray_id).meta_info.consumed_since_weight == 0.0 {
-            //     if let Some(tag_id) = self.get_any_tray(tray_id).meta_info.tag_info.as_ref().and_then(|v| v.tag_id.clone()) {
-            //         let spool_record = store.get_spool_by_tag_id(&tag_id);
-            //         if let Some(spool_record) = spool_record {
-            //             self.update_any_tray(tray_id, |tray| tray.meta_info.consumed_since_weight = spool_record.consumed_since_weight);
-            //         }
-            //     }
-            // }
-        }
-        // for tray in self.inner_ams_trays.iter_mut().chain(core::iter::once(&mut self.inner_virt_tray)) {
-        //     if let Some(tag_info) = &tray.meta_info.tag_info {
-        //         if tray.meta_info.consumed_since_weight == 0.0 {
-        //             if let Some(tag_id) = &tag_info.tag_id {
-        //                 let spool_record = store.get_spool_by_tag_id(tag_id);
-        //                 if let Some(spool_record) = spool_record {
-        //                     tray.meta_info.consumed_since_weight = spool_record.consumed_since_weight;
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
     }
 }

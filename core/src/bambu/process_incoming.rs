@@ -31,7 +31,7 @@ impl BambuPrinter {
         let new_tray = self.get_updated_tray(Some(v_tray), external_tray_id);
         if let Some(new_tray) = new_tray {
             let removed_tag = if old_tray.state != TrayState::Empty && new_tray.state == TrayState::Empty {
-                self.snapshot_slot_spool_id(external_tray_id as usize).or(old_tray.meta_info.spool_id)
+                self.snapshot_slot_spool_id(external_tray_id as usize)
             } else {
                 None
             };
@@ -285,9 +285,7 @@ impl BambuPrinter {
 
                 if curr_vt_tray_detailed_ready_state != TrayState::Empty && new_vt_tray_detailed_ready_state == TrayState::Empty {
                     let mut vt_tray = self.virt_trays()[extruder_id as usize].clone();
-                    let spool_id = self
-                        .snapshot_slot_spool_id(external_tray_id as usize)
-                        .or_else(|| vt_tray.meta_info.spool_id.take());
+                    let spool_id = self.snapshot_slot_spool_id(external_tray_id as usize);
                     vt_tray.meta_info = TrayMetaInfo::default();
                     self.set_virt_tray(extruder_id, vt_tray);
                     self.clear_snapshot_slot_consumption(external_tray_id as usize);
@@ -470,10 +468,10 @@ impl BambuPrinter {
             let new_tray = self.get_updated_tray(source_tray, tray_id as i32);
             if let Some(mut new_tray) = new_tray {
                 change_made = true;
-                let prev_tray = self.swap_ams_tray(tray_id, &mut new_tray);
+                self.swap_ams_tray(tray_id, &mut new_tray);
 
                 if spool_removed {
-                    let prev_spool_id = self.snapshot_slot_spool_id(tray_id).or_else(|| prev_tray.meta_info.spool_id.clone());
+                    let prev_spool_id = self.snapshot_slot_spool_id(tray_id);
                     self.clear_snapshot_slot_consumption(tray_id);
                     if let Some(prev_spool_id) = prev_spool_id {
                         // Before there was a tag and spool removed, add it to the list
@@ -719,7 +717,7 @@ impl BambuPrinter {
                     // we remember historical color, K, etc (which the printer also remembers, just doesn't report)
                     let mut new_tray = old_tray.clone();
                     new_tray.state = TrayState::Empty;
-                    new_tray.meta_info = TrayMetaInfo::default(); // if spool is removed, erase tag info and consume information
+                    new_tray.meta_info = TrayMetaInfo::default(); // if spool is removed, reset Bambu-private tray metadata
                     Some(new_tray)
                 }
             } else {

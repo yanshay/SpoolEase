@@ -289,17 +289,12 @@ pub enum TrayState {
 - `cali_idx`
 - flattened `TrayMetaInfo`
 
-`TrayMetaInfo` contains generic-looking application metadata embedded inside Bambu tray state:
+`TrayMetaInfo` now contains only Bambu-private tray metadata:
 
-- `spool_id`
 - `old_tag_info` for migration
-- `consumed_since_load`
-- `consumed_since_load_saved`
-- `consumed_since_weight`
-- `used_in_print`
 - `waiting_for_tag_uid`
 
-This mix is important for persistence planning. `spool_id` and consumption counters are generic app concepts, but they currently live inside Bambu-specific persisted state.
+`spool_id`, consumption counters, and `used_in_print` are generic app concepts and now live only in `PrinterSnapshot` state. Bambu tray metadata is no longer a source of truth for these fields.
 
 ### Incoming Report Compatibility
 
@@ -387,9 +382,12 @@ Many mutation commands are skipped while `is_locked()` is true. This behavior mu
 
 ### Bambu Persistence
 
-`src/bambu/printer_state.rs` persists Bambu state to SD card under paths derived from serial:
+`src/bambu/printer_state.rs` defines Bambu private restart state. The shared printer-state scheduler stores it inside the per-printer `driver_private` section at the startup path derived from serial:
 
 - `/state/{file_name}.{file_ext}/startup.jsn`
+
+Bambu print resume state remains separate under the same serial-derived directory:
+
 - `/state/{file_name}.{file_ext}/print.jsn`
 - `/state/{file_name}.{file_ext}/print.csv`
 - `/state/{file_name}.{file_ext}/print.ci0`
@@ -413,11 +411,10 @@ Compatibility behavior:
 
 - Legacy single virtual tray is migrated into `virt_trays[0]`.
 - Legacy `nozzle_diameter` is restored into extruder 0.
-- Old `tag_info` is migrated into `spool_id`.
 - Tray vector is resized to 24.
-- Missing spool IDs are cleared if no longer in inventory.
+- Missing generic spool IDs are cleared by the generic `PrinterSnapshot` load path if no longer in inventory.
 
-This should remain unchanged in the first phase.
+Generic slot assignment and consumption fields are no longer stored in Bambu tray metadata.
 
 ### Bambu Print Tracking
 
@@ -724,12 +721,8 @@ Driver state policy:
 - Fake and future simple drivers should treat `PrinterSnapshot` as their primary state.
 - Bambu keeps its existing protocol/tray/G-code/calibration internals and generates most snapshot fields from those internals.
 - Bambu-specific fields such as AMS bits, raw `Tray`, `cali_idx`, `k_from_tray`, and print-analysis bookkeeping remain private to Bambu.
-
-Current Bambu exception:
-
-- Bambu uses the shared snapshot state as source of truth for slot consumption bookkeeping.
-- The mandatory shared fields are `spool_id`, `consumed_since_load_g`, `consumed_since_load_saved_g`, and `consumed_since_weight_g`.
-- Bambu mirrors those fields back into legacy tray metadata only for persistence and compatibility while the old Bambu state file remains in use.
+- Generic slot fields such as `spool_id`, `consumed_since_load_g`, `consumed_since_load_saved_g`, `consumed_since_weight_g`, and `used_in_print` are stored in the shared snapshot state, not in Bambu tray metadata.
+- The snapshot state handle owns generic dirty tracking and supports store begin/success/failure recovery.
 
 Generic consumption storage now reads printer snapshots and acknowledges saved high-water marks through `PrinterManager`, instead of iterating Bambu trays directly.
 
@@ -916,9 +909,9 @@ pub struct MaterialSlotSnapshot {
     pub state: SlotState,
     pub filament: PrinterFilament,
     pub spool_id: Option<String>,
-    pub consumed_since_load: f32,
-    pub consumed_since_load_saved: f32,
-    pub consumed_since_weight: f32,
+    pub consumed_since_load_g: f32,
+    pub consumed_since_load_saved_g: f32,
+    pub consumed_since_weight_g: f32,
     pub used_in_print: bool,
     pub pressure_advance_value: String,
     pub pressure_advance_meta: String,
@@ -1111,85 +1104,41 @@ Bambu leakage to tolerate short-term:
 - `SpoolRecordExt.k_info`
 - Bambu origin data.
 
-### Existing Bambu Printer State
+### Bambu Printer State
 
-Keep current Bambu state files unchanged at first.
+Bambu persistence now uses the same one-file envelope as other restart-state-capable printer drivers while preserving Bambu private internals.
 
-Reasons:
+Current Bambu behavior:
 
-- They encode delicate compatibility and migration behavior.
-- They persist Bambu-specific trays, bitfields, extruders, calibration, and print resume state.
-- They include generic-looking slot assignment and consumption data embedded in `TrayMetaInfo`.
-- Changing them first creates high migration risk before the architecture has proven itself.
+- The state path is still derived from the Bambu serial by `BambuPrinter::printer_state_file_path()`.
+- The generic section stores the full `PrinterSnapshot`.
+- The driver-private section stores Bambu trays, AMS bits, extruders, calibration, printer name, and related private state as opaque JSON.
+- Bambu print-project resume state remains separate because it is print-tracking runtime state, not the printer restart-state envelope.
+- Old standalone Bambu restart-state file content is not treated as a compatibility contract for this migration; bad/old reads should fail cleanly rather than panic.
 
-Short-term approach:
+### Generic Printer State
 
-```text
-BambuPrinterDriver
-  -> reads/writes existing Bambu state exactly as today
-  -> exposes generic snapshots from Bambu state
-```
+All restart-state-capable drivers now use a generic printer app state file.
 
-Current implementation keeps the existing Bambu state path and JSON content unchanged. The generic scheduler asks the Bambu driver for its state path, but the path is still derived from the Bambu serial by the existing `BambuPrinter::printer_state_file_path()` logic.
-
-### New Generic Printer State
-
-For new drivers, introduce a generic printer app state file.
-
-The common persistence layer owns scheduling and file handling: SD-card checks, load timing, periodic dirty saves, write verification, retries, and path-collision checks. Drivers own stable identity, the exact state path, the state content, dirty tracking, export, and import.
+The common persistence layer owns scheduling and file handling: SD-card checks, load timing, periodic dirty saves, write verification, retries, path-collision checks, generic snapshot load/store, and generic dirty recovery. Drivers own stable identity, the exact state path, and optional driver-private JSON import/export.
 
 The state path must not depend on UI order, runtime array index, or printer number. For Bambu the stable identity remains the printer serial. For Fake the stable identity is the configured `unique_id` through `fake_printer_{unique_id}`.
 
 Conceptual shape:
 
 ```rust
-pub struct StoredPrinterState {
+pub struct PrinterStateFile {
     pub version: u32,
-    pub printer_id: String,
+    pub printer_id: PrinterId,
     pub driver_kind: PrinterDriverKind,
-    pub generic: GenericPrinterState,
-    pub driver_state: DriverSpecificState,
-}
-
-pub struct GenericPrinterState {
-    pub slots: Vec<StoredSlotState>,
-}
-
-pub struct StoredSlotState {
-    pub slot_id: String,
-    pub spool_id: Option<String>,
-    pub consumed_since_load: f32,
-    pub consumed_since_weight: f32,
-    pub last_assigned_material: Option<StoredMaterialAssignment>,
+    pub generic: PrinterSnapshot,
+    pub driver_private: Option<serde_json::Value>,
 }
 ```
 
-Driver-specific state can be an enum:
+Volatile fields are sanitized on load: printer connectivity, group temperature/humidity, and print remaining time. Missing spool IDs are cleared during generic state load and mark the snapshot dirty so the corrected state can be persisted.
 
-```rust
-pub enum DriverSpecificState {
-    None,
-    BambuLegacy,
-    Snapmaker(SnapmakerState),
-    Moonraker(MoonrakerState),
-}
-```
-
-For Bambu, do not use this immediately except possibly as a wrapper marker pointing to legacy state.
-
-Current Fake implementation uses the generic slot state shape and stores it under a driver-owned FAT 8.3 path like `/state/<8-char-id>.fak/startup.jsn`. The `<8-char-id>` is a deterministic short name derived from the stable Fake printer ID, and the `.fak` extension is owned by the Fake driver.
-
-### Future Bambu Migration Option
-
-Only after the generic layer is stable, consider moving generic slot fields out of Bambu `TrayMetaInfo`:
-
-- `spool_id`
-- `consumed_since_load`
-- `consumed_since_load_saved`
-- `consumed_since_weight`
-- `used_in_print`
-
-This is optional. If legacy Bambu persistence remains stable and well-contained, there may be no need to migrate it.
+Current Fake implementation stores only the generic snapshot under a driver-owned FAT 8.3 path like `/state/<8-char-id>.fak/startup.jsn`. The `<8-char-id>` is a deterministic short name derived from the stable Fake printer ID, and the `.fak` extension is owned by the Fake driver.
 
 ## Configuration Architecture
 
@@ -1640,7 +1589,7 @@ Acceptance criteria:
 - [done] Bambu config is stored as driver-specific `BambuPrinterConfig`.
 - [done] Default printer selection works by derived generic printer ID.
 - [done] New fake/non-Bambu config can be persisted by DTO/model shape and `config.html`.
-- [done] Common printer-state scheduling can load/save driver-provided persistent state paths without changing Bambu's existing state format.
+- [done] Common printer-state scheduling loads/saves one state file per printer with a full generic `PrinterSnapshot` plus optional driver-private JSON.
 
 ### Phase 9: Add Fake Non-Bambu Driver [done]
 
@@ -1659,7 +1608,7 @@ Acceptance criteria:
 - [done] Fake printer initializes through generic `PrinterManager`, starts a virtual-printer runtime task, appears in web status, and appears in the console printer selector with a generic slot view.
 - [done] Fake slots are writable through `PrinterCommand::AssignMaterialToSlot`, including a Slint path to assign staging spool to a fake slot; commands are queued to the virtual runtime and reflected back via `PrinterEventKind::SnapshotChanged`.
 - [done] Fake slots can be reset and unassigned from Slint through capability-gated generic slot operations.
-- [done] Slot-spool/material state persists through generic slot persistence.
+- [done] Slot-spool/material state persists through the generic `PrinterSnapshot` state file.
 - [done] Fake printer uses shared `PrinterSnapshot` state as its primary slot/material state.
 - [done] Bambu still works.
 
@@ -1698,7 +1647,7 @@ The generic event layer should avoid passing mutable printer references into obs
 
 ### Persistence Migration
 
-Changing Bambu state schema too early is risky. Keep it unchanged until generic architecture is proven.
+Restart-state persistence now writes the generic/private envelope. Old standalone Bambu restart-state content is not guaranteed to load; failures should be reported cleanly and must not panic. Bambu print-project resume persistence is separate and should stay intact.
 
 ### Slint Rewrite Size
 
@@ -1798,6 +1747,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, adapter-owned Bambu generic event bridge, generic `PrinterManager` storage, single-pass active-printer initialization, short generic printer-number log labels, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan/snapshot-refresh events with boxed snapshot payloads, generic material-slot presence events for physical insert/remove transitions, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a fake/demo non-Bambu virtual printer runtime visible in web status, console-safe selection of generic printers, generic `PrinterObserver` subscription through `PrinterManager`, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, standard circular slot-card UI for Bambu and Fake, backend-driven primary/external slot groups, opaque string slot IDs for main Slint slot actions, common driver-owned printer-state persistence scheduling, Fake generic slot-state persistence, Fake `PrinterSnapshot`-backed state, mandatory driver snapshot-state handles, Bambu snapshot-backed consumption fields, generic snapshot-based consumption storage with high-water acknowledgement, driver-provided slot/group display names, explicit slot pressure-advance display fields, and generic async configure-slot-with-spool routing by printer ID plus slot ID.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, adapter-owned Bambu generic event bridge, generic `PrinterManager` storage, single-pass active-printer initialization, short generic printer-number log labels, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan/snapshot-refresh events with boxed snapshot payloads, generic material-slot presence events for physical insert/remove transitions, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a fake/demo non-Bambu virtual printer runtime visible in web status, console-safe selection of generic printers, generic `PrinterObserver` subscription through `PrinterManager`, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, standard circular slot-card UI for Bambu and Fake, backend-driven primary/external slot groups, opaque string slot IDs for main Slint slot actions, one-file generic/private printer restart-state persistence, Fake `PrinterSnapshot`-backed state, mandatory driver snapshot-state handles with dirty tracking, Bambu snapshot-backed spool/consumption/used-in-print fields, generic snapshot-based consumption storage with high-water acknowledgement, driver-provided slot/group display names, explicit slot pressure-advance display fields, and generic async configure-slot-with-spool routing by printer ID plus slot ID.
 
 Still not done: full `PrinterManager` ownership replacement, standalone generic consumption events, and paginated/scrollable dynamic Slint slot groups for large topologies. First real non-Bambu driver work is deferred until explicit user instruction.

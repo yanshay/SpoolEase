@@ -49,7 +49,7 @@ use crate::bambu::bambu_print::PrintProject;
 use crate::bambu::calibration::{KExtruder, KInfo, KNozzleDiameter, KNozzleId, KPrinter};
 use crate::bambu::{
     SpoolId,
-    tray::{Tray, TrayBits},
+    tray::TrayBits,
 };
 use crate::filament_staging::StagingOrigin;
 use crate::printer::{
@@ -2417,23 +2417,6 @@ impl ViewModel {
         });
     }
 
-    fn weight_display(&self, tray: &Tray) -> SharedString {
-        if let Some(weight_left) = self.weight_left(tray) {
-            slint::format!("{:.1}g", weight_left)
-        } else if tray.meta_info.consumed_since_load != 0.0 {
-            slint::format!("-{:.1}g", tray.meta_info.consumed_since_load)
-        } else {
-            SharedString::new()
-        }
-    }
-
-    fn weight_left(&self, tray: &Tray) -> Option<f32> {
-        // OPT: don'e access spool_rec, cache required data in meta_info / cache all spool_rec and update on changes in store using events
-        let spool_id = tray.meta_info.spool_id.as_ref()?;
-        let spool = self.store.get_spool_by_id(spool_id)?;
-        self.weight_left_spool(&spool, Some(tray.meta_info.consumed_since_weight))
-    }
-
     fn weight_left_spool(&self, spool: &SpoolRecord, consumed_since_weight_override: Option<f32>) -> Option<f32> {
         let mut weight_left = None;
         let weight_current = spool.weight_current?;
@@ -3542,35 +3525,25 @@ impl ViewModel {
         // spool_id,
         // location: A1 / B3 /... or Ext
         let mut locations = HashMap::new();
-        let num_of_printers = self.bambu_printer_model.printers.len();
-        for printer in &self.bambu_printer_model.printers {
-            let printer_borrow = printer.borrow();
-            for tray_id in (0..printer_borrow.ams_trays().len()).chain([254, 255]) {
-                // TODO: need to fix for H2 Series, deal with two external spools
-                if let Some(spool_id) = &printer_borrow.get_any_tray(tray_id).meta_info.spool_id {
-                    let (ams_id, slot_id) = BambuPrinter::get_ams_and_slot_id(tray_id);
-                    let tray_name = match ams_id {
-                        0..=3 => {
-                            format!("{}{}", (b'A' + ams_id as u8) as char, slot_id + 1)
-                        }
-                        128..135 => {
-                            format!("HT-{}", (b'A' + (ams_id as u8 - 128)) as char)
-                        }
-                        255 => {
-                            if printer_borrow.num_extruders() == 1 {
-                                "Ext".to_string()
-                            } else {
-                                "Ext Right".to_string()
-                            }
-                        }
-                        254 => "Ext Left".to_string(),
-                        _ => String::new(),
-                    };
-                    if num_of_printers > 1 {
-                        locations.insert(spool_id.clone(), format!("{} @ {}", tray_name, printer_borrow.printer_name()));
-                    } else {
-                        locations.insert(spool_id.clone(), format!("{} @ Printer", tray_name));
-                    }
+        let printer_manager = self.printer_manager.borrow();
+        let num_of_printers = printer_manager.len();
+        for printer_index in 0..num_of_printers {
+            let Some(snapshot) = printer_manager.snapshot_at(printer_index) else {
+                continue;
+            };
+            for slot in snapshot.slot_groups.iter().flat_map(|group| group.slots.iter()) {
+                let Some(spool_id) = &slot.spool_id else {
+                    continue;
+                };
+                let slot_name = if slot.short_name.is_empty() {
+                    slot.display_name.as_str()
+                } else {
+                    slot.short_name.as_str()
+                };
+                if num_of_printers > 1 {
+                    locations.insert(spool_id.clone(), format!("{} @ {}", slot_name, snapshot.name));
+                } else {
+                    locations.insert(spool_id.clone(), format!("{} @ Printer", slot_name));
                 }
             }
         }
@@ -3910,21 +3883,6 @@ impl ViewModel {
         self.weight_left_spool(&spool, Some(slot.consumed_since_weight_g))
     }
 
-    #[allow(dead_code)]
-    fn slot_str(&self, printer_borrow: &core::cell::Ref<'_, BambuPrinter>, slot_index: usize, slot: &Tray) -> String {
-        // state, material, color, k, spool_id, weight_display
-        let slot_str = format!(
-            "{:?},{},{},{},{},{},{}",
-            slot.state,
-            slot.filament.tray_type_str(),
-            &slot.filament.tray_color_str(),
-            &printer_borrow.get_tray_resolved_k_value(slot, slot_index as i32),
-            slot.meta_info.spool_id.as_deref().unwrap_or(""),
-            self.weight_display(slot),
-            i32::from(slot.meta_info.used_in_print),
-        );
-        slot_str
-    }
 }
 
 impl printer_domain::PrinterObserver for ViewModel {
@@ -4584,6 +4542,30 @@ fn validate_persistent_printer_state_path(view_model: &Rc<RefCell<ViewModel>>, m
     Ok(())
 }
 
+fn bad_persistent_printer_state_path(path: &str) -> String {
+    let last_slash = path.rfind('/').unwrap_or_default();
+    if let Some(last_dot) = path.rfind('.')
+        && last_dot > last_slash
+    {
+        return format!("{}.bad", &path[..last_dot]);
+    }
+    format!("{path}.bad")
+}
+
+async fn quarantine_bad_persistent_printer_state(framework: &Rc<RefCell<Framework>>, path: &str, state_str: &str) {
+    let bad_path = bad_persistent_printer_state_path(path);
+    let file_store = framework.borrow().file_store();
+    let mut file_store = file_store.lock().await;
+    match file_store.create_write_file_str(&bad_path, state_str).await {
+        Ok(()) => {
+            if let Err(err) = file_store.delete_file(path).await {
+                error!("Failed to delete bad printer state file {path}: {err}");
+            }
+        }
+        Err(err) => error!("Failed to write bad printer state backup {bad_path}: {err}"),
+    }
+}
+
 async fn load_persistent_printer_state(
     framework: &Rc<RefCell<Framework>>,
     view_model: &Rc<RefCell<ViewModel>>,
@@ -4629,6 +4611,11 @@ async fn load_persistent_printer_state(
             continue;
         }
 
+        if let Err(err) = serde_json::from_str::<printer_domain::PrinterStateFile>(&state_str) {
+            quarantine_bad_persistent_printer_state(framework, &path, &state_str).await;
+            return Err(format!("Failed to parse printer state: {err}"));
+        }
+
         view_model
             .borrow()
             .printer_manager
@@ -4663,9 +4650,11 @@ async fn restore_bambu_print_project_states(framework: &Rc<RefCell<Framework>>, 
     let num_of_printers = view_model.borrow().bambu_printer_model.printers.len();
     for printer_index in 0..num_of_printers {
         let printer = view_model.borrow().bambu_printer_model.printers[printer_index].clone();
-        if printer.borrow().dummy_printer() || printer.borrow().printer_name().to_lowercase() == "simulator" {
-            info!("[{}] Printer Simulator - skipping print project restore", printer.borrow().printer_number);
+        if printer.borrow().dummy_printer() {
             continue;
+        } else if printer.borrow().printer_name().to_lowercase() == "simulator" {
+            // info!("[{}] Printer Simulator - skipping print project restore", printer.borrow().printer_number);
+            // continue;
         }
 
         info!("[{}] Checking for print project resume state", printer.borrow().printer_number);

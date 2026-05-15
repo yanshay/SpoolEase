@@ -25,21 +25,8 @@ pub struct TrayBits {
 // IMPORTANT: Don't change names, will hurt persistence
 //            When adding new fields include serde(default)
 pub struct TrayMetaInfo {
-    pub spool_id: Option<SpoolId>,
     #[serde(rename = "tag_info", skip_serializing)]
     pub old_tag_info: Option<TagInformationV1>, // calibration for nozzles
-    #[serde(default)]
-    pub consumed_since_load: f32,
-    #[serde(default)]
-    pub consumed_since_load_saved: f32,
-    #[serde(default)]
-    pub consumed_since_weight: f32,
-
-    // fields which are not going to be stored as state should not be considered in partialeq since that's what decides if to save state or not
-    #[derivative(PartialEq = "ignore")]
-    #[serde(skip)]
-    #[serde(default)]
-    pub used_in_print: bool,
     #[derivative(PartialEq = "ignore")]
     #[serde(skip)]
     #[serde(default)]
@@ -103,19 +90,22 @@ impl BambuPrinter {
             return false;
         };
         let slot_id = Self::slot_id_from_tray_index(index);
-        let mut snapshot = snapshot_state.borrow_mut();
-        let Some(slot) = slot_in_snapshot_mut(&mut snapshot, &slot_id) else {
-            return false;
-        };
-        f(slot);
-        true
+        snapshot_state
+            .try_update(true, |snapshot| {
+                let Some(slot) = slot_in_snapshot_mut(snapshot, &slot_id) else {
+                    return Err(());
+                };
+                f(slot);
+                Ok(())
+            })
+            .is_ok()
     }
 
     pub fn snapshot_slot_spool_id(&self, index: usize) -> Option<SpoolId> {
         let snapshot_state = self.snapshot_state()?;
         let slot_id = Self::slot_id_from_tray_index(index);
         snapshot_state
-            .borrow()
+            .clone_snapshot()
             .slot_groups
             .iter()
             .flat_map(|group| group.slots.iter())
@@ -130,17 +120,11 @@ impl BambuPrinter {
             slot.consumed_since_load_saved_g = 0.0;
             slot.consumed_since_weight_g = 0.0;
         });
-        self.update_any_tray(index, |tray| {
-            tray.meta_info = TrayMetaInfo::default();
-        });
     }
 
     pub fn unassign_snapshot_slot_spool(&mut self, index: usize) {
         self.update_snapshot_slot(index, |slot| {
             slot.spool_id = None;
-        });
-        self.update_any_tray(index, |tray| {
-            tray.meta_info.spool_id = None;
         });
     }
 
@@ -148,24 +132,33 @@ impl BambuPrinter {
         self.update_snapshot_slot(index, |slot| {
             slot.consumed_since_load_saved_g = consumed_since_load_saved_g;
         });
-        self.update_any_tray(index, |tray| {
-            tray.meta_info.consumed_since_load_saved = consumed_since_load_saved_g;
-        });
     }
 
     pub fn add_snapshot_slot_consumption(&mut self, index: usize, consumed_g: f32) -> Option<f32> {
         let mut consumed_since_load = None;
-        if self.update_snapshot_slot(index, |slot| {
+        self.update_snapshot_slot(index, |slot| {
             slot.consumed_since_load_g += consumed_g;
             slot.consumed_since_weight_g += consumed_g;
             consumed_since_load = Some(slot.consumed_since_load_g);
-        }) {
-            self.update_any_tray(index, |tray| {
-                tray.meta_info.consumed_since_load += consumed_g;
-                tray.meta_info.consumed_since_weight += consumed_g;
-            });
-        }
+        });
         consumed_since_load
+    }
+
+    pub fn clear_snapshot_slots_used_in_print(&mut self) {
+        let Some(snapshot_state) = self.snapshot_state() else {
+            return;
+        };
+        snapshot_state.update(true, |snapshot| {
+            for slot in snapshot.slot_groups.iter_mut().flat_map(|group| group.slots.iter_mut()) {
+                slot.used_in_print = false;
+            }
+        });
+    }
+
+    pub fn set_snapshot_slot_used_in_print(&mut self, index: usize, used_in_print: bool) {
+        self.update_snapshot_slot(index, |slot| {
+            slot.used_in_print = used_in_print;
+        });
     }
 
     pub fn tray_exist_bits(&self) -> &Option<u32> {
@@ -414,11 +407,6 @@ impl BambuPrinter {
             slot.consumed_since_load_g = 0.0;
             slot.consumed_since_load_saved_g = 0.0;
             slot.consumed_since_weight_g = consumed_since_weight;
-        });
-        self.update_any_tray(tray_id, |tray| {
-            tray.meta_info = TrayMetaInfo::default();
-            tray.meta_info.spool_id = Some(spool_id);
-            tray.meta_info.consumed_since_weight = consumed_since_weight;
         });
     }
 

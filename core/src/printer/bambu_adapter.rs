@@ -7,6 +7,7 @@ use alloc::{
 };
 use core::cell::RefCell;
 use hashbrown::HashMap;
+use serde_json::Value;
 
 use crate::app_config::BambuPrinterConfig;
 use crate::bambu::{
@@ -22,8 +23,8 @@ use crate::store::Store;
 use super::{
     FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind, MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand,
     PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent,
-    PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult,
-    PrinterSnapshot, PrinterSnapshotState, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult, PrinterSnapshot, PrinterSnapshotState,
+    PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
 };
 
 type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
@@ -47,7 +48,7 @@ impl BambuPrinterDriver {
     pub fn new(printer: Rc<RefCell<BambuPrinter>>) -> Self {
         let mut printer_borrow = printer.borrow_mut();
         let id = BambuPrinterConfig::printer_id_for_serial(&printer_borrow.printer_serial);
-        let snapshot_state = Rc::new(RefCell::new(Self::raw_snapshot_from_printer(&printer_borrow)));
+        let snapshot_state = Rc::new(PrinterSnapshotStateInner::new(Self::raw_snapshot_from_printer(&printer_borrow)));
         printer_borrow.set_snapshot_state(snapshot_state.clone());
         drop(printer_borrow);
         Self {
@@ -86,19 +87,12 @@ impl BambuPrinterDriver {
 
     fn sync_snapshot_state_from_printer(printer: &BambuPrinter, snapshot_state: &PrinterSnapshotState) -> PrinterSnapshot {
         let mut snapshot = Self::raw_snapshot_from_printer(printer);
-        Self::overlay_consumption_fields_from_state(&mut snapshot, snapshot_state);
-        *snapshot_state.borrow_mut() = snapshot.clone();
+        Self::overlay_generic_fields_from_state(&mut snapshot, &snapshot_state.clone_snapshot());
+        snapshot_state.replace(snapshot.clone(), false);
         snapshot
     }
 
-    fn replace_snapshot_state_from_printer(printer: &BambuPrinter, snapshot_state: &PrinterSnapshotState) -> PrinterSnapshot {
-        let snapshot = Self::raw_snapshot_from_printer(printer);
-        *snapshot_state.borrow_mut() = snapshot.clone();
-        snapshot
-    }
-
-    fn overlay_consumption_fields_from_state(snapshot: &mut PrinterSnapshot, snapshot_state: &PrinterSnapshotState) {
-        let state = snapshot_state.borrow();
+    fn overlay_generic_fields_from_state(snapshot: &mut PrinterSnapshot, state: &PrinterSnapshot) {
         for slot in snapshot.slot_groups.iter_mut().flat_map(|group| group.slots.iter_mut()) {
             let Some(state_slot) = state
                 .slot_groups
@@ -112,6 +106,7 @@ impl BambuPrinterDriver {
             slot.consumed_since_load_g = state_slot.consumed_since_load_g;
             slot.consumed_since_load_saved_g = state_slot.consumed_since_load_saved_g;
             slot.consumed_since_weight_g = state_slot.consumed_since_weight_g;
+            slot.used_in_print = state_slot.used_in_print;
         }
     }
 
@@ -266,11 +261,11 @@ impl BambuPrinterDriver {
             short_name: Self::slot_short_name_from_tray_id(tray_id),
             state: Self::slot_state_from_bambu(tray.state),
             filament: Self::filament_from_bambu(&tray.filament),
-            spool_id: tray.meta_info.spool_id.clone(),
-            consumed_since_load_g: tray.meta_info.consumed_since_load,
-            consumed_since_load_saved_g: tray.meta_info.consumed_since_load_saved,
-            consumed_since_weight_g: tray.meta_info.consumed_since_weight,
-            used_in_print: tray.meta_info.used_in_print,
+            spool_id: None,
+            consumed_since_load_g: 0.0,
+            consumed_since_load_saved_g: 0.0,
+            consumed_since_weight_g: 0.0,
+            used_in_print: false,
             pressure_advance_value,
             pressure_advance_meta,
         }
@@ -455,10 +450,7 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
     ) {
         self.notify(PrinterEventKind::SnapshotChanged {
             change: PrinterChange::Slots,
-            snapshot: Box::new(BambuPrinterDriver::sync_snapshot_state_from_printer(
-                bambu_printer,
-                &self.snapshot_state,
-            )),
+            snapshot: Box::new(BambuPrinterDriver::sync_snapshot_state_from_printer(bambu_printer, &self.snapshot_state)),
         });
 
         let mut changes = Vec::new();
@@ -471,9 +463,7 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
                     changes.push(MaterialSlotPresenceChange {
                         slot_id: BambuPrinterDriver::slot_id_from_tray_id(tray_id as i32),
                         change: MaterialSlotPresenceChangeKind::Inserted,
-                        spool_id: bambu_printer
-                            .snapshot_slot_spool_id(tray_id)
-                            .or_else(|| bambu_printer.ams_trays().get(tray_id).and_then(|tray| tray.meta_info.spool_id.clone())),
+                        spool_id: bambu_printer.snapshot_slot_spool_id(tray_id),
                     });
                 }
             }
@@ -570,39 +560,48 @@ impl PrinterDriver for BambuPrinterDriver {
 
     fn persistent_state_path(&self) -> Option<String> {
         let printer = self.printer.borrow();
-        if printer.dummy_printer() || printer.printer_name().to_lowercase() == "simulator" {
+        if printer.dummy_printer() {
             None
+        } else if printer.printer_name().to_lowercase() == "simulator" {
+            // None
+            Some(BambuPrinter::printer_state_file_path(&printer.printer_serial))
         } else {
             Some(BambuPrinter::printer_state_file_path(&printer.printer_serial))
         }
     }
 
-    fn load_persistent_state(&mut self, state_json: &str, store: &Rc<Store>) -> Result<(), String> {
-        self.printer.borrow_mut().load_printer_persistent_state_str(state_json, store)?;
-        Self::replace_snapshot_state_from_printer(&self.printer.borrow(), &self.snapshot_state);
-        Ok(())
+    fn private_state_dirty(&self) -> bool {
+        let printer = self.printer.borrow();
+        printer.printer_persistent_state_store_blocked() || printer.printer_persistent_state_dirty()
     }
 
-    fn prepare_persistent_state_store(&mut self) -> Result<Option<PrinterPersistentStatePayload>, String> {
+    fn load_private_state(&mut self, state: Option<Value>, store: &Rc<Store>) -> Result<(), String> {
+        let Some(state) = state else {
+            return Ok(());
+        };
+        self.printer.borrow_mut().load_printer_private_state_value(state, store)
+    }
+
+    fn prepare_private_state_store(&mut self) -> Result<Option<Value>, String> {
         let mut printer = self.printer.borrow_mut();
-        if printer.dummy_printer() || printer.printer_name().to_lowercase() == "simulator" {
+
+        if printer.dummy_printer() {
             return Ok(None);
+        } else if printer.printer_name().to_lowercase() == "simulator" {
+            // return Ok(None);
         }
-        let Some((contents, dirty_state)) = printer.prepare_printer_persistent_state_store() else {
+        let Some((state, dirty_state)) = printer.prepare_printer_private_state_store()? else {
             return Ok(None);
         };
-        self.pending_dirty_state = Some(dirty_state);
-        Ok(Some(PrinterPersistentStatePayload {
-            path: BambuPrinter::printer_state_file_path(&printer.printer_serial),
-            contents,
-        }))
+        self.pending_dirty_state = dirty_state;
+        Ok(Some(state))
     }
 
-    fn persistent_state_store_succeeded(&mut self) {
+    fn private_state_store_succeeded(&mut self) {
         self.pending_dirty_state = None;
     }
 
-    fn restore_persistent_state_after_failed_store(&mut self) {
+    fn restore_private_state_after_failed_store(&mut self) {
         if let Some(dirty_state) = self.pending_dirty_state.take() {
             self.printer.borrow_mut().restore_printer_persistent_dirty_state(dirty_state);
         }

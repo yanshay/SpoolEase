@@ -205,7 +205,7 @@ impl BambuPrinter {
                 self.publish_payload(payload);
             }
 
-            // Deal with meta information - spool_id, consumed_since_weight, etc.
+            // Record the app-level slot assignment in the generic snapshot state.
 
             self.set_tray_spool_rec(tray_id as usize, &full_spool_rec.spool_rec);
 

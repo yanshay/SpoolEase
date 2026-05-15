@@ -10,14 +10,13 @@ use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel};
 use embassy_time::Timer;
 
 use crate::app_config::FakePrinterConfig;
-use crate::store::Store;
-use framework::{debug, error, framework::Framework, info, prelude::*};
+use framework::{error, framework::Framework, info, prelude::*};
 
 use super::{
-    GenericPrinterPersistentState, GenericSlotPersistentState, MaterialSlotSnapshot, PressureAdvanceCapability, PrintSnapshot, PrintState,
-    PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind,
-    PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot,
-    PrinterSnapshotState, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
+    MaterialSlotSnapshot, PressureAdvanceCapability, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand,
+    PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId,
+    PrinterObserver, PrinterResult, PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind,
+    SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
 };
 
 type FakePrinterCommandChannel = Channel<NoopRawMutex, PrinterCommand, 5>;
@@ -33,8 +32,6 @@ struct FakePrinterRuntime {
     id: PrinterId,
     printer_number: usize,
     state_path: String,
-    state_dirty: bool,
-    state_dirty_reasons: Vec<String>,
     state: PrinterSnapshotState,
     observers: Vec<Weak<RefCell<dyn PrinterObserver>>>,
 }
@@ -90,9 +87,7 @@ impl FakePrinterRuntime {
             id,
             printer_number,
             state_path,
-            state_dirty: false,
-            state_dirty_reasons: Vec::new(),
-            state: Rc::new(RefCell::new(snapshot)),
+            state: Rc::new(PrinterSnapshotStateInner::new(snapshot)),
             observers: Vec::new(),
         }
     }
@@ -141,7 +136,7 @@ impl FakePrinterRuntime {
         let slot_index = raw_slot_id.parse::<usize>().map_err(|_| PrinterError::SlotNotFound(slot_id.clone()))?;
         let slot_count = self
             .state
-            .borrow()
+            .clone_snapshot()
             .slot_groups
             .iter()
             .flat_map(|group| group.slots.iter())
@@ -157,10 +152,11 @@ impl FakePrinterRuntime {
     where
         F: FnOnce(&mut MaterialSlotSnapshot),
     {
-        let mut state = self.state.borrow_mut();
-        let slot = slot_in_snapshot_mut(&mut state, slot_id).ok_or_else(|| PrinterError::SlotNotFound(slot_id.clone()))?;
-        f(slot);
-        Ok(())
+        self.state.try_update(true, |state| {
+            let slot = slot_in_snapshot_mut(state, slot_id).ok_or_else(|| PrinterError::SlotNotFound(slot_id.clone()))?;
+            f(slot);
+            Ok(())
+        })
     }
 
     fn validate_command(&self, command: &PrinterCommand) -> PrinterResult<()> {
@@ -176,7 +172,7 @@ impl FakePrinterRuntime {
     }
 
     fn snapshot(&self) -> PrinterSnapshot {
-        self.state.borrow().clone()
+        self.state.clone_snapshot()
     }
 
     fn dispatch_command(&mut self, command: PrinterCommand) -> PrinterResult<Option<PrinterEvent>> {
@@ -201,7 +197,6 @@ impl FakePrinterRuntime {
                         });
                     }
                 })?;
-                self.mark_state_dirty(format!("assign slot {}", slot_id.as_str()));
                 Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
             }
             PrinterCommand::ClearSlot { slot_id } => {
@@ -214,14 +209,12 @@ impl FakePrinterRuntime {
                     slot.consumed_since_weight_g = 0.0;
                     slot.used_in_print = false;
                 })?;
-                self.mark_state_dirty(format!("clear slot {}", slot_id.as_str()));
                 Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
             }
             PrinterCommand::UnassignSpoolFromSlot { slot_id } => {
                 self.update_slot(&slot_id, |slot| {
                     slot.spool_id = None;
                 })?;
-                self.mark_state_dirty(format!("unassign spool from slot {}", slot_id.as_str()));
                 Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
             }
             PrinterCommand::PrintControl(_) => Err(PrinterError::UnsupportedCommand("print_control".to_string())),
@@ -238,102 +231,6 @@ impl FakePrinterRuntime {
                 snapshot: Box::new(self.snapshot()),
             },
         }
-    }
-
-    fn mark_state_dirty(&mut self, reason: impl ToString) {
-        let reason = reason.to_string();
-        self.state_dirty = true;
-        if !self.state_dirty_reasons.iter().any(|existing| existing == &reason) {
-            self.state_dirty_reasons.push(reason);
-        }
-    }
-
-    fn persistent_slot_state(slot: &MaterialSlotSnapshot) -> GenericSlotPersistentState {
-        GenericSlotPersistentState {
-            slot_id: slot.id.clone(),
-            state: slot.state,
-            filament: slot.filament.clone(),
-            spool_id: slot.spool_id.clone(),
-            consumed_since_load_g: slot.consumed_since_load_g,
-            consumed_since_load_saved_g: slot.consumed_since_load_saved_g,
-            consumed_since_weight_g: slot.consumed_since_weight_g,
-            used_in_print: slot.used_in_print,
-        }
-    }
-
-    fn load_persistent_state(&mut self, state_json: &str, store: &Rc<Store>) -> Result<(), String> {
-        let state =
-            serde_json::from_str::<GenericPrinterPersistentState>(state_json).map_err(|err| format!("Failed to parse fake printer state: {err}"))?;
-        if state.version != 1 {
-            return Err(format!("Unsupported fake printer state version {}", state.version));
-        }
-        if state.printer_id != self.id {
-            return Err(format!("State file belongs to {}, not {}", state.printer_id.as_str(), self.id.as_str()));
-        }
-        if state.driver_kind != PrinterDriverKind::Fake {
-            return Err(format!("State file has unexpected driver kind {:?}", state.driver_kind));
-        }
-
-        for stored_slot in state.slots {
-            let missing_spool = stored_slot
-                .spool_id
-                .as_ref()
-                .is_some_and(|spool_id| store.get_spool_by_id(spool_id).is_none());
-            let update_result = self.update_slot(&stored_slot.slot_id, |slot| {
-                slot.state = stored_slot.state;
-                slot.filament = stored_slot.filament;
-                slot.spool_id = if missing_spool { None } else { stored_slot.spool_id };
-                slot.consumed_since_load_g = stored_slot.consumed_since_load_g;
-                slot.consumed_since_load_saved_g = stored_slot.consumed_since_load_saved_g;
-                slot.consumed_since_weight_g = stored_slot.consumed_since_weight_g;
-                slot.used_in_print = stored_slot.used_in_print;
-            });
-            if update_result.is_err() {
-                continue;
-            }
-            if missing_spool {
-                self.mark_state_dirty(format!("removed missing spool from slot {}", stored_slot.slot_id.as_str()));
-            }
-        }
-        Ok(())
-    }
-
-    fn prepare_persistent_state_store(&mut self) -> Result<Option<PrinterPersistentStatePayload>, String> {
-        if !self.state_dirty {
-            return Ok(None);
-        }
-
-        debug!(
-            "[{}] Dirty status: Fake slots({}), Reasons({})",
-            self.printer_number,
-            self.state_dirty,
-            if self.state_dirty_reasons.is_empty() {
-                "unknown".to_string()
-            } else {
-                self.state_dirty_reasons.join(", ")
-            }
-        );
-
-        let state = GenericPrinterPersistentState {
-            version: 1,
-            printer_id: self.id.clone(),
-            driver_kind: PrinterDriverKind::Fake,
-            slots: self
-                .state
-                .borrow()
-                .slot_groups
-                .iter()
-                .flat_map(|group| group.slots.iter())
-                .map(Self::persistent_slot_state)
-                .collect(),
-        };
-        let contents = serde_json::to_string(&state).map_err(|err| format!("Failed to serialize fake printer state: {err}"))?;
-        self.state_dirty = false;
-        self.state_dirty_reasons.clear();
-        Ok(Some(PrinterPersistentStatePayload {
-            path: self.state_path.clone(),
-            contents,
-        }))
     }
 }
 
@@ -360,7 +257,7 @@ impl PrinterDriver for FakePrinterDriver {
     }
 
     fn display_name(&self) -> String {
-        self.runtime.borrow().state.borrow().name.clone()
+        self.runtime.borrow().state.clone_snapshot().name
     }
 
     fn capabilities(&self) -> PrinterCapabilities {
@@ -373,15 +270,6 @@ impl PrinterDriver for FakePrinterDriver {
 
     fn snapshot(&self) -> PrinterSnapshot {
         self.runtime.borrow().snapshot()
-    }
-
-    fn acknowledge_slot_consumption_saved(&mut self, slot_id: &SlotId, consumed_since_load_saved_g: f32) -> PrinterResult<()> {
-        let mut runtime = self.runtime.borrow_mut();
-        runtime.update_slot(slot_id, |slot| {
-            slot.consumed_since_load_saved_g = consumed_since_load_saved_g;
-        })?;
-        runtime.mark_state_dirty(format!("acknowledge consumption for slot {}", slot_id.as_str()));
-        Ok(())
     }
 
     fn dispatch(&mut self, command: PrinterCommand) -> PrinterResult<()> {
@@ -409,18 +297,6 @@ impl PrinterDriver for FakePrinterDriver {
 
     fn persistent_state_path(&self) -> Option<String> {
         Some(self.runtime.borrow().state_path.clone())
-    }
-
-    fn load_persistent_state(&mut self, state_json: &str, store: &Rc<Store>) -> Result<(), String> {
-        self.runtime.borrow_mut().load_persistent_state(state_json, store)
-    }
-
-    fn prepare_persistent_state_store(&mut self) -> Result<Option<PrinterPersistentStatePayload>, String> {
-        self.runtime.borrow_mut().prepare_persistent_state_store()
-    }
-
-    fn restore_persistent_state_after_failed_store(&mut self) {
-        self.runtime.borrow_mut().mark_state_dirty("previous store failed");
     }
 }
 
