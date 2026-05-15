@@ -648,8 +648,7 @@ impl ViewModel {
             Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), selected_printer);
         });
 
-        if has_configured_bambu_printers {
-            // if only dummy printer, no point in tasks running
+        if self.printer_manager.borrow().len() > 0 {
             self.framework
                 .borrow()
                 .spawner
@@ -659,7 +658,9 @@ impl ViewModel {
                     self.store.clone(),
                 ))
                 .ok();
+        }
 
+        if has_configured_bambu_printers {
             self.framework
                 .borrow()
                 .spawner
@@ -4623,6 +4624,213 @@ pub enum StoreStateRequest {
 
 pub type StoreStateRequestChannel = Channel<NoopRawMutex, StoreStateRequest, 5>;
 
+fn validate_persistent_printer_state_path(
+    view_model: &Rc<RefCell<ViewModel>>,
+    manager_index: usize,
+    path: &str,
+) -> Result<(), String> {
+    if !path.starts_with("/state/") || path.contains("..") || path.contains("//") {
+        return Err(format!("Invalid printer state path {path}"));
+    }
+
+    let duplicate = {
+        let view_model_borrow = view_model.borrow();
+        view_model_borrow
+            .printer_manager
+            .borrow()
+            .persistent_state_paths()
+            .into_iter()
+            .find(|(other_index, _printer_id, other_path)| *other_index != manager_index && other_path == path)
+    };
+    if let Some((_other_index, other_printer_id, _path)) = duplicate {
+        return Err(format!(
+            "Printer state path {path} is also used by {}",
+            other_printer_id.as_str()
+        ));
+    }
+
+    Ok(())
+}
+
+async fn load_persistent_printer_state(
+    framework: &Rc<RefCell<Framework>>,
+    view_model: &Rc<RefCell<ViewModel>>,
+    store: &Rc<Store>,
+    manager_index: usize,
+) -> Result<bool, String> {
+    let (printer_id, path) = {
+        let view_model_borrow = view_model.borrow();
+        let printer_manager = view_model_borrow.printer_manager.borrow();
+        let Some(printer_id) = printer_manager.id_at(manager_index) else {
+            return Err(format!("Unknown printer index {manager_index}"));
+        };
+        let Some(path) = printer_manager.persistent_state_path_at(manager_index) else {
+            return Ok(false);
+        };
+        (printer_id, path)
+    };
+    validate_persistent_printer_state_path(view_model, manager_index, &path)?;
+
+    let mut err_str = String::new();
+    for trial in 1..=3 {
+        let state_str = {
+            let file_store = framework.borrow().file_store();
+            let mut file_store = file_store.lock().await;
+            match file_store.read_file_str(&path).await {
+                Ok(state_str) => state_str,
+                Err(err) => {
+                    term_error!(
+                        "[{}] Can't read printer state file (ok, if first printer run) {} : {}",
+                        printer_id.as_str(),
+                        path,
+                        err
+                    );
+                    return Ok(false);
+                }
+            }
+        };
+
+        if state_str.trim().is_empty() {
+            err_str = format!("[{}] Loaded empty state file {path} in trial {trial}", printer_id.as_str());
+            term_error!("{err_str}");
+            Timer::after_millis(250).await;
+            continue;
+        }
+
+        view_model
+            .borrow()
+            .printer_manager
+            .borrow_mut()
+            .load_persistent_state_at(manager_index, &state_str, store)?;
+        term_info!("[{}] Restored printer state from SDCard", printer_id.as_str());
+        return Ok(true);
+    }
+
+    Err(err_str)
+}
+
+fn refresh_selected_printer_after_state_restore(view_model: &Rc<RefCell<ViewModel>>, manager_index: usize) {
+    let selected_manager_index = {
+        let view_model_borrow = view_model.borrow();
+        view_model_borrow
+            .selected_ui_index()
+            .and_then(|ui_index| view_model_borrow.ui_printer_manager_indexes.get(ui_index).copied())
+    };
+    if selected_manager_index != Some(manager_index) {
+        return;
+    }
+
+    view_model.borrow().update_slot_groups_from_selected_printer();
+    if let Some(bambu_index) = view_model.borrow().selected_ui_bambu_index() {
+        let printer = view_model.borrow().bambu_printer_model.printers[bambu_index].clone();
+        view_model.borrow().update_ui_from_printer(&printer.borrow());
+    }
+}
+
+async fn restore_bambu_print_project_states(framework: &Rc<RefCell<Framework>>, view_model: &Rc<RefCell<ViewModel>>) {
+    let num_of_printers = view_model.borrow().bambu_printer_model.printers.len();
+    for printer_index in 0..num_of_printers {
+        let printer = view_model.borrow().bambu_printer_model.printers[printer_index].clone();
+        if printer.borrow().dummy_printer() || printer.borrow().printer_name().to_lowercase() == "simulator" {
+            info!("[{}] Printer Simulator - skipping print project restore", printer.borrow().printer_number);
+            continue;
+        }
+
+        info!("[{}] Checking for print project resume state", printer.borrow().printer_number);
+        match BambuPrinter::load_print_project_state(framework, &printer).await {
+            Ok(found_print_project_state) => {
+                if !found_print_project_state {
+                    info!("[{}] Print project resume state not found", printer.borrow().printer_number);
+                    let _ = BambuPrinter::delete_print_project_state(framework, &printer).await;
+                }
+            }
+            Err(err) => {
+                error!("{err} - Print tracking can't be resumed");
+                let _ = BambuPrinter::delete_print_project_state(framework, &printer).await;
+                view_model.borrow().message_box(
+                    "Restore Running Print State Notice",
+                    &err,
+                    "Print Tracking Can't be Resumed",
+                    crate::app::StatusType::Error,
+                    0,
+                );
+            }
+        }
+
+        if Some(printer_index) == view_model.borrow().selected_ui_bambu_index() {
+            view_model.borrow().update_ui_from_printer(&printer.borrow());
+        }
+    }
+}
+
+fn restore_persistent_printer_dirty_state(view_model: &Rc<RefCell<ViewModel>>, manager_index: usize) {
+    if let Err(err) = view_model
+        .borrow()
+        .printer_manager
+        .borrow_mut()
+        .restore_persistent_state_after_failed_store_at(manager_index)
+    {
+        error!("Failed to restore printer dirty state after store failure: {err}");
+    }
+}
+
+async fn store_persistent_printer_state(
+    framework: &Rc<RefCell<Framework>>,
+    view_model: &Rc<RefCell<ViewModel>>,
+    manager_index: usize,
+) -> Result<bool, String> {
+    let payload = view_model
+        .borrow()
+        .printer_manager
+        .borrow_mut()
+        .prepare_persistent_state_store_at(manager_index)?;
+    let Some(payload) = payload else {
+        return Ok(false);
+    };
+
+    if let Err(err) = validate_persistent_printer_state_path(view_model, manager_index, &payload.path) {
+        restore_persistent_printer_dirty_state(view_model, manager_index);
+        return Err(err);
+    }
+    if payload.contents.trim().is_empty() {
+        restore_persistent_printer_dirty_state(view_model, manager_index);
+        return Err(format!("Printer state to store is empty for {}", payload.path));
+    }
+
+    info!("Storing printer state to {}", payload.path);
+    let file_store = framework.borrow().file_store();
+    let mut file_store = file_store.lock().await;
+    match file_store.create_write_file_str(&payload.path, &payload.contents).await {
+        Ok(_) => match file_store.read_file_str(&payload.path).await {
+            Ok(verify_read_str) => {
+                if verify_read_str == payload.contents {
+                    info!("Store state verification passed for {}", payload.path);
+                    view_model
+                        .borrow()
+                        .printer_manager
+                        .borrow_mut()
+                        .persistent_state_store_succeeded_at(manager_index)?;
+                    Ok(true)
+                } else {
+                    restore_persistent_printer_dirty_state(view_model, manager_index);
+                    error!("During store state verification read data differ from written data for {}", payload.path);
+                    Err(String::from("Verification of state store failed"))
+                }
+            }
+            Err(err) => {
+                restore_persistent_printer_dirty_state(view_model, manager_index);
+                error!("Failed to verify store printer restart state {} : {err}", payload.path);
+                Err(format!("Error reading state store to verify : {err}"))
+            }
+        },
+        Err(err) => {
+            restore_persistent_printer_dirty_state(view_model, manager_index);
+            error!("Failed to store printer restart state {} : {err}", payload.path);
+            Err(format!("Error storing state : {err}"))
+        }
+    }
+}
+
 // #[embassy_executor::task] // up to two printers in parallel
 pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework>>, view_model: Rc<RefCell<ViewModel>>, store: Rc<Store>) {
     info!("store_state_task started");
@@ -4634,45 +4842,25 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
             return;
         }
     }
-    let num_of_printers = view_model.borrow().bambu_printer_model.printers.len();
-    term_info!("Restoring printer(s) state");
-    for printer_index in 0..num_of_printers {
-        let printer = view_model.borrow().bambu_printer_model.printers[printer_index].clone();
-        if printer.borrow().printer_name().to_lowercase() == "simulator" {
-            info!("[{}] Printer Simulator - skipping restore state", printer.borrow().printer_number);
-            continue;
-        }
-        if let Err(err) = BambuPrinter::load_printer_state(&framework, &printer, &store).await {
-            view_model
-                .borrow()
-                .message_box("Restore Print State Notice", &err, "", crate::app::StatusType::Error, 0);
-        }
-        info!("[{}] Checking for print project resume state", printer.borrow().printer_number);
-        match BambuPrinter::load_print_project_state(&framework, &printer).await {
-            Ok(found_print_project_state) => {
-                if !found_print_project_state {
-                    info!("[{}] Print project resume state not found", printer.borrow().printer_number);
-                    let _ = BambuPrinter::delete_print_project_state(&framework, &printer).await;
-                }
-            }
-            Err(err) => {
-                error!("{err} - Print tracking can't be resumed");
-                let _ = BambuPrinter::delete_print_project_state(&framework, &printer).await;
-                view_model.borrow().message_box(
-                    "Restore Running Print State Notice",
-                    &err,
-                    "Print Tracking Can't be Resumed",
-                    crate::app::StatusType::Error,
-                    0,
-                );
-            }
-        }
+    while !store.is_initialized() {
+        Timer::after_millis(100).await;
+    }
+    Timer::after_millis(250).await;
 
-        let current_selected_printer = view_model.borrow().selected_ui_bambu_index();
-        if Some(printer_index) == current_selected_printer {
-            view_model.borrow().update_ui_from_printer(&printer.borrow());
+    let num_of_printers = view_model.borrow().printer_manager.borrow().len();
+    if num_of_printers == 0 {
+        return;
+    }
+
+    term_info!("Restoring printer(s) state");
+    for manager_index in 0..num_of_printers {
+        match load_persistent_printer_state(&framework, &view_model, &store, manager_index).await {
+            Ok(true) => refresh_selected_printer_after_state_restore(&view_model, manager_index),
+            Ok(false) => {}
+            Err(err) => view_model.borrow().message_box("Restore Print State Notice", &err, "", crate::app::StatusType::Error, 0),
         }
     }
+    restore_bambu_print_project_states(&framework, &view_model).await;
 
     let mut printer_index = 0;
     let delay_time = max(1000u64, (3000 / num_of_printers) as u64); // want every printer to save every 3 seconds, and not all together
@@ -4718,10 +4906,9 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
             Err(_) => {
                 // Time expired
                 if printer_index < num_of_printers {
-                    let printer = view_model.borrow().bambu_printer_model.printers[printer_index].clone();
                     let num_retries = 3;
                     for retry in 1..=num_retries {
-                        match BambuPrinter::store_printer_state(&framework, &printer, &view_model).await {
+                        match store_persistent_printer_state(&framework, &view_model, printer_index).await {
                             Ok(_) => break,
                             Err(err) => {
                                 if retry == num_retries {
@@ -4734,7 +4921,7 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
                                     );
                                     error!(
                                         "[{}] Failed all retries trying to store printer restart state : {err}",
-                                        printer.borrow().printer_number
+                                        printer_index + 1
                                     );
                                 }
                             }

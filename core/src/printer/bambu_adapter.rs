@@ -11,20 +11,23 @@ use crate::bambu::{
     BambuPrinter, NozzleType,
     bambu_api::{GcodeState, PrintCommand as BambuPrintCommand},
     filament::Filament as BambuFilament,
+    printer_state::BambuPersistentDirtyState,
     tray::{Tray, TrayState as BambuTrayState},
 };
+use crate::store::Store;
 
 use super::{
     DiagnosticSeverity, DriverData, DriverDataField, ExtruderSnapshot, FilamentTemps, MaterialSlotSnapshot, PressureAdvanceCapability,
     PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind,
-    PrinterError, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult, PrinterSnapshot, SlotAssignMode, SlotGroupKind,
-    SlotGroupSnapshot, SlotId, SlotState,
+    PrinterError, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot,
+    SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
 };
 
 pub struct BambuPrinterDriver {
     id: PrinterId,
     printer: Rc<RefCell<BambuPrinter>>,
     observers: Vec<Weak<RefCell<dyn PrinterObserver>>>,
+    pending_dirty_state: Option<BambuPersistentDirtyState>,
 }
 
 impl BambuPrinterDriver {
@@ -34,6 +37,7 @@ impl BambuPrinterDriver {
             id,
             printer,
             observers: Vec::new(),
+            pending_dirty_state: None,
         }
     }
 
@@ -404,5 +408,43 @@ impl PrinterDriver for BambuPrinterDriver {
 
     fn subscribe(&mut self, observer: Weak<RefCell<dyn PrinterObserver>>) {
         self.observers.push(observer);
+    }
+
+    fn persistent_state_path(&self) -> Option<String> {
+        let printer = self.printer.borrow();
+        if printer.dummy_printer() || printer.printer_name().to_lowercase() == "simulator" {
+            None
+        } else {
+            Some(BambuPrinter::printer_state_file_path(&printer.printer_serial))
+        }
+    }
+
+    fn load_persistent_state(&mut self, state_json: &str, store: &Rc<Store>) -> Result<(), String> {
+        self.printer.borrow_mut().load_printer_persistent_state_str(state_json, store)
+    }
+
+    fn prepare_persistent_state_store(&mut self) -> Result<Option<PrinterPersistentStatePayload>, String> {
+        let mut printer = self.printer.borrow_mut();
+        if printer.dummy_printer() || printer.printer_name().to_lowercase() == "simulator" {
+            return Ok(None);
+        }
+        let Some((contents, dirty_state)) = printer.prepare_printer_persistent_state_store() else {
+            return Ok(None);
+        };
+        self.pending_dirty_state = Some(dirty_state);
+        Ok(Some(PrinterPersistentStatePayload {
+            path: BambuPrinter::printer_state_file_path(&printer.printer_serial),
+            contents,
+        }))
+    }
+
+    fn persistent_state_store_succeeded(&mut self) {
+        self.pending_dirty_state = None;
+    }
+
+    fn restore_persistent_state_after_failed_store(&mut self) {
+        if let Some(dirty_state) = self.pending_dirty_state.take() {
+            self.printer.borrow_mut().restore_printer_persistent_dirty_state(dirty_state);
+        }
     }
 }

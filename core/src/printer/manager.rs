@@ -9,10 +9,11 @@ use core::cell::RefCell;
 
 use crate::app_config::FakePrinterConfig;
 use crate::bambu::BambuPrinter;
+use crate::store::Store;
 
 use super::{
-    PrinterCommand, PrinterDriver, PrinterError, PrinterId, PrinterResult, PrinterSnapshot, bambu_adapter::BambuPrinterDriver,
-    fake_driver::FakePrinterDriver,
+    PrinterCommand, PrinterDriver, PrinterError, PrinterId, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot,
+    bambu_adapter::BambuPrinterDriver, fake_driver::FakePrinterDriver,
 };
 
 #[derive(Default)]
@@ -90,5 +91,47 @@ impl PrinterManager {
 
     pub fn dispatch_bambu_printer(&mut self, printer: &mut BambuPrinter, command: PrinterCommand) -> PrinterResult<()> {
         BambuPrinterDriver::dispatch_to_printer(printer, command)
+    }
+
+    pub fn persistent_state_path_at(&self, index: usize) -> Option<String> {
+        self.printers.get(index).and_then(|printer| printer.persistent_state_path())
+    }
+
+    pub fn persistent_state_paths(&self) -> Vec<(usize, PrinterId, String)> {
+        self.printers
+            .iter()
+            .enumerate()
+            .filter_map(|(index, printer)| printer.persistent_state_path().map(|path| (index, printer.id().clone(), path)))
+            .collect()
+    }
+
+    pub fn load_persistent_state_at(&mut self, index: usize, state_json: &str, store: &Rc<Store>) -> Result<(), String> {
+        self.printers
+            .get_mut(index)
+            .ok_or_else(|| format!("printer index {index}"))?
+            .load_persistent_state(state_json, store)
+    }
+
+    pub fn prepare_persistent_state_store_at(&mut self, index: usize) -> Result<Option<PrinterPersistentStatePayload>, String> {
+        self.printers
+            .get_mut(index)
+            .ok_or_else(|| format!("printer index {index}"))?
+            .prepare_persistent_state_store()
+    }
+
+    pub fn persistent_state_store_succeeded_at(&mut self, index: usize) -> Result<(), String> {
+        self.printers
+            .get_mut(index)
+            .ok_or_else(|| format!("printer index {index}"))?
+            .persistent_state_store_succeeded();
+        Ok(())
+    }
+
+    pub fn restore_persistent_state_after_failed_store_at(&mut self, index: usize) -> Result<(), String> {
+        self.printers
+            .get_mut(index)
+            .ok_or_else(|| format!("printer index {index}"))?
+            .restore_persistent_state_after_failed_store();
+        Ok(())
     }
 }

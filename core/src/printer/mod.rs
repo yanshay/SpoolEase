@@ -5,7 +5,7 @@ pub mod fake_driver;
 pub mod manager;
 
 use alloc::{
-    rc::Weak,
+    rc::{Rc, Weak},
     string::{String, ToString},
     vec::Vec,
 };
@@ -13,7 +13,7 @@ use core::cell::RefCell;
 
 use serde::{Deserialize, Serialize};
 
-use crate::spool_record::FullSpoolRecord;
+use crate::{spool_record::FullSpoolRecord, store::Store};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct PrinterId(pub String);
@@ -134,6 +134,31 @@ pub struct MaterialSlotSnapshot {
     pub consumed_since_weight_g: f32,
     pub used_in_print: bool,
     pub driver_data: DriverData,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GenericPrinterPersistentState {
+    pub version: u32,
+    pub printer_id: PrinterId,
+    pub driver_kind: PrinterDriverKind,
+    pub slots: Vec<GenericSlotPersistentState>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GenericSlotPersistentState {
+    pub slot_id: SlotId,
+    pub state: SlotState,
+    pub filament: PrinterFilament,
+    pub spool_id: Option<String>,
+    pub consumed_since_load_g: f32,
+    pub consumed_since_weight_g: f32,
+    pub used_in_print: bool,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrinterPersistentStatePayload {
+    pub path: String,
+    pub contents: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -285,6 +310,17 @@ pub trait PrinterDriver {
     fn snapshot(&self) -> PrinterSnapshot;
     fn dispatch(&mut self, command: PrinterCommand) -> PrinterResult<()>;
     fn subscribe(&mut self, observer: Weak<RefCell<dyn PrinterObserver>>);
+    fn persistent_state_path(&self) -> Option<String> {
+        None
+    }
+    fn load_persistent_state(&mut self, _state_json: &str, _store: &Rc<Store>) -> Result<(), String> {
+        Ok(())
+    }
+    fn prepare_persistent_state_store(&mut self) -> Result<Option<PrinterPersistentStatePayload>, String> {
+        Ok(None)
+    }
+    fn persistent_state_store_succeeded(&mut self) {}
+    fn restore_persistent_state_after_failed_store(&mut self) {}
 }
 
 pub type PrinterResult<T> = Result<T, PrinterError>;

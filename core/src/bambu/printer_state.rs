@@ -37,7 +37,139 @@ pub struct PrinterPersistentState<'a> {
     pub extruder_state: Option<i32>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct BambuPersistentDirtyState {
+    virt_trays_dirty: bool,
+    ams_trays_dirty: [bool; 24],
+    extruders_dirty: bool,
+    ams_exist_bits_dirty: bool,
+    tray_exist_bits_dirty: bool,
+    tray_read_done_bits_dirty: bool,
+    calibrations_dirty: bool,
+    printer_name_dirty: bool,
+    relevant_extruder_state_dirty: bool,
+}
+
 impl BambuPrinter {
+    pub fn load_printer_persistent_state_str(&mut self, state_str: &str, store: &Rc<Store>) -> Result<(), String> {
+        if state_str.trim().is_empty() {
+            return Err(format!("[{}] Loaded empty state file", self.printer_number));
+        }
+
+        match serde_json::from_str::<PrinterPersistentState>(state_str) {
+            Ok(printer_state) => {
+                self.init_printer_persistent_state(printer_state, store);
+                Ok(())
+            }
+            Err(err) => {
+                error!("[{}] Failed to parse printer state: {}", self.printer_number, err);
+                error!("[{}] Printer state state file content: {state_str}", self.printer_number);
+                Err(format!(
+                    "[{}] Failed to Parse Printer State File (Check Terminal for More Info)",
+                    self.printer_number
+                ))
+            }
+        }
+    }
+
+    pub fn prepare_printer_persistent_state_store(&mut self) -> Option<(String, BambuPersistentDirtyState)> {
+        if self.auto_restore_k && self.pending_k_restore_sequence {
+            // don't change store until restoring k is done
+            return None;
+        }
+
+        let ams_trays_dirty = self.ams_trays_dirty.iter().any(|&v| v);
+        if !(ams_trays_dirty
+            || self.virt_trays_dirty
+            || self.extruders_dirty
+            || self.ams_exist_bits_dirty
+            || self.tray_exist_bits_dirty
+            || self.tray_read_done_bits_dirty
+            || self.calibrations_dirty
+            || self.printer_name_dirty
+            || self.force_store_state
+            || self.relevant_extruder_state_dirty)
+        {
+            return None;
+        }
+
+        debug!(
+            "[{}] Dirty status: AMS slots({}), Ext slots({}), Extruders({}), AmsExists: ({}), Tray Exists: ({}), Try Read Done ({}), Calibrations ({}), Printer Name ({}), Relevant Extruder State ({}), Forced Store ({})",
+            self.printer_number,
+            ams_trays_dirty,
+            self.virt_trays_dirty,
+            self.extruders_dirty,
+            self.ams_exist_bits_dirty,
+            self.tray_exist_bits_dirty,
+            self.tray_read_done_bits_dirty,
+            self.calibrations_dirty,
+            self.printer_name_dirty,
+            self.relevant_extruder_state_dirty,
+            self.force_store_state,
+        );
+
+        let printer_state = PrinterPersistentState {
+            ams_trays: Cow::Borrowed(self.ams_trays()),
+            virt_tray: None,
+            virt_trays: Some(Cow::Borrowed(self.virt_trays())),
+            nozzle_diameter: None, // for backwards compatibility before dual extruder printer
+            ams_exist_bits: self.inner_ams_exist_bits,
+            tray_exist_bits: self.inner_tray_exist_bits,
+            tray_read_done_bits: self.inner_tray_read_done_bits,
+            calibrations: Cow::Borrowed(&self.calibrations),
+            printer_name: self.inner_printer_name.clone(),
+            extruders: Some(Cow::Borrowed(&self.inner_extruders)),
+            extruder_state: self.inner_extruder_state,
+        };
+        let printer_state_str = serde_json::to_string(&printer_state).unwrap();
+        let dirty_state = self.printer_persistent_dirty_state();
+        self.clear_printer_persistent_dirty_state();
+        Some((printer_state_str, dirty_state))
+    }
+
+    pub fn restore_printer_persistent_dirty_state(&mut self, dirty_state: BambuPersistentDirtyState) {
+        self.virt_trays_dirty |= dirty_state.virt_trays_dirty;
+        for (current, previous) in self.ams_trays_dirty.iter_mut().zip(&dirty_state.ams_trays_dirty) {
+            *current |= *previous;
+        }
+        self.extruders_dirty |= dirty_state.extruders_dirty;
+        self.ams_exist_bits_dirty |= dirty_state.ams_exist_bits_dirty;
+        self.tray_exist_bits_dirty |= dirty_state.tray_exist_bits_dirty;
+        self.tray_read_done_bits_dirty |= dirty_state.tray_read_done_bits_dirty;
+        self.calibrations_dirty |= dirty_state.calibrations_dirty;
+        self.printer_name_dirty |= dirty_state.printer_name_dirty;
+        self.relevant_extruder_state_dirty |= dirty_state.relevant_extruder_state_dirty;
+        self.force_store_state = true; // be conservative in case a dirty source was missed
+    }
+
+    fn printer_persistent_dirty_state(&self) -> BambuPersistentDirtyState {
+        BambuPersistentDirtyState {
+            virt_trays_dirty: self.virt_trays_dirty,
+            ams_trays_dirty: self.ams_trays_dirty,
+            extruders_dirty: self.extruders_dirty,
+            ams_exist_bits_dirty: self.ams_exist_bits_dirty,
+            tray_exist_bits_dirty: self.tray_exist_bits_dirty,
+            tray_read_done_bits_dirty: self.tray_read_done_bits_dirty,
+            calibrations_dirty: self.calibrations_dirty,
+            printer_name_dirty: self.printer_name_dirty,
+            relevant_extruder_state_dirty: self.relevant_extruder_state_dirty,
+        }
+    }
+
+    fn clear_printer_persistent_dirty_state(&mut self) {
+        self.ams_trays_dirty.fill(false);
+        self.virt_trays_dirty = false;
+        self.extruders_dirty = false;
+        self.ams_exist_bits_dirty = false;
+        self.tray_exist_bits_dirty = false;
+        self.tray_read_done_bits_dirty = false;
+        self.calibrations_dirty = false;
+        self.printer_name_dirty = false;
+        self.force_store_state = false;
+        self.relevant_extruder_state_dirty = false;
+    }
+
+    #[allow(dead_code)]
     pub async fn load_printer_state(
         framework: &Rc<RefCell<Framework>>,
         printer: &Rc<RefCell<BambuPrinter>>,
@@ -98,6 +230,7 @@ impl BambuPrinter {
     }
 
     // Ok(true) - saved, Ok(false) nothing to save
+    #[allow(dead_code)]
     pub async fn store_printer_state(
         framework: &Rc<RefCell<Framework>>,
         printer: &Rc<RefCell<BambuPrinter>>,
