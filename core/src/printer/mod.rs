@@ -14,6 +14,7 @@ use core::cell::RefCell;
 use serde::{Deserialize, Serialize};
 
 use crate::{spool_record::FullSpoolRecord, store::Store};
+use framework::framework::Framework;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub struct PrinterId(pub String);
@@ -314,6 +315,7 @@ pub trait PrinterDriver {
     fn snapshot(&self) -> PrinterSnapshot;
     fn dispatch(&mut self, command: PrinterCommand) -> PrinterResult<()>;
     fn subscribe(&mut self, observer: Weak<RefCell<dyn PrinterObserver>>);
+    fn start(&mut self, _framework: Rc<RefCell<Framework>>) {}
     fn persistent_state_path(&self) -> Option<String> {
         None
     }

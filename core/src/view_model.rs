@@ -555,6 +555,15 @@ impl ViewModel {
                             let trait_for_bambu_printer_weak: Weak<RefCell<dyn bambu::BambuPrinterObserver>> =
                                 Rc::downgrade(&trait_for_bambu_printer_rc);
                             bambu_printer_model.borrow_mut().subscribe(trait_for_bambu_printer_weak);
+
+                            let trait_for_printer_rc: Rc<RefCell<dyn printer_domain::PrinterObserver>> = view_model_rc.clone();
+                            let trait_for_printer_weak: Weak<RefCell<dyn printer_domain::PrinterObserver>> = Rc::downgrade(&trait_for_printer_rc);
+                            if let Err(err) = self.printer_manager.borrow_mut().subscribe_at(manager_index, trait_for_printer_weak) {
+                                error!("Failed to subscribe generic printer observer: {err:?}");
+                            }
+                        }
+                        if let Err(err) = self.printer_manager.borrow_mut().start_at(manager_index, self.framework.clone()) {
+                            error!("Failed to start generic printer runtime: {err:?}");
                         }
                     }
                     printer_index += 1; // index is increased only if printer is added to array
@@ -576,6 +585,16 @@ impl ViewModel {
                 self.printer_manager
                     .borrow_mut()
                     .add_fake_printer(printer_config.name.clone(), fake_config);
+                if let Some(view_model_rc) = &self.view_model {
+                    let trait_for_printer_rc: Rc<RefCell<dyn printer_domain::PrinterObserver>> = view_model_rc.clone();
+                    let trait_for_printer_weak: Weak<RefCell<dyn printer_domain::PrinterObserver>> = Rc::downgrade(&trait_for_printer_rc);
+                    if let Err(err) = self.printer_manager.borrow_mut().subscribe_at(manager_index, trait_for_printer_weak) {
+                        error!("Failed to subscribe generic printer observer: {err:?}");
+                    }
+                }
+                if let Err(err) = self.printer_manager.borrow_mut().start_at(manager_index, self.framework.clone()) {
+                    error!("Failed to start generic printer runtime: {err:?}");
+                }
                 let capabilities = self
                     .printer_manager
                     .borrow()

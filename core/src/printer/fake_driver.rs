@@ -5,19 +5,29 @@ use alloc::{
     vec::Vec,
 };
 use core::cell::RefCell;
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel};
 
 use crate::app_config::FakePrinterConfig;
 use crate::store::Store;
-use framework::debug;
+use framework::{debug, error, framework::Framework, info, prelude::*};
 
 use super::{
     DriverData, ExtruderSnapshot, GenericPrinterPersistentState, GenericSlotPersistentState, MaterialSlotSnapshot, PressureAdvanceCapability,
     PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError,
-    PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot, SlotAssignMode,
-    SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    PrinterEvent, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot,
+    SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
 };
 
+type FakePrinterCommandChannel = Channel<NoopRawMutex, PrinterCommand, 5>;
+
 pub struct FakePrinterDriver {
+    id: PrinterId,
+    runtime: Rc<RefCell<FakePrinterRuntime>>,
+    command_channel: Rc<FakePrinterCommandChannel>,
+    task_started: bool,
+}
+
+struct FakePrinterRuntime {
     id: PrinterId,
     name: String,
     state_path: String,
@@ -27,8 +37,8 @@ pub struct FakePrinterDriver {
     observers: Vec<Weak<RefCell<dyn PrinterObserver>>>,
 }
 
-impl FakePrinterDriver {
-    pub fn new(name: Option<String>, config: &FakePrinterConfig) -> Self {
+impl FakePrinterRuntime {
+    fn new(name: Option<String>, config: &FakePrinterConfig) -> Self {
         let id = config
             .printer_id()
             .unwrap_or_else(|_| FakePrinterConfig::printer_id_for_unique_id("invalid"));
@@ -63,6 +73,24 @@ impl FakePrinterDriver {
         }
     }
 
+    fn capabilities() -> PrinterCapabilities {
+        PrinterCapabilities {
+            material_slot_read: true,
+            material_slot_write: true,
+            material_slot_assign: true,
+            material_slot_set_spool_id: true,
+            material_slot_clear: true,
+            material_slot_unassign_spool: true,
+            print_status_read: true,
+            print_control: false,
+            consumption_tracking: false,
+            printer_tag_scan: false,
+            print_file_fetch: false,
+            persistent_slot_state: true,
+            pressure_advance: PressureAdvanceCapability::Unsupported,
+        }
+    }
+
     fn state_path_for_printer_id(printer_id: &PrinterId) -> String {
         format!("/state/{}.fak/startup.jsn", Self::short_state_basename(printer_id.as_str()))
     }
@@ -83,76 +111,30 @@ impl FakePrinterDriver {
         name
     }
 
-    fn slot_mut(&mut self, slot_id: &SlotId) -> PrinterResult<&mut MaterialSlotSnapshot> {
+    fn slot_index(&self, slot_id: &SlotId) -> PrinterResult<usize> {
         let raw_slot_id = slot_id.as_str().strip_prefix("fake:").unwrap_or(slot_id.as_str());
         let slot_index = raw_slot_id.parse::<usize>().map_err(|_| PrinterError::SlotNotFound(slot_id.clone()))?;
-        self.slots.get_mut(slot_index).ok_or_else(|| PrinterError::SlotNotFound(slot_id.clone()))
-    }
-
-    fn notify_slots_changed(&mut self) {
-        let event = super::PrinterEvent::SnapshotChanged {
-            printer_id: self.id.clone(),
-            change: PrinterChange::Slots,
-        };
-        self.observers.retain(|observer| {
-            if let Some(observer) = observer.upgrade() {
-                observer.borrow_mut().on_printer_event(event.clone());
-                true
-            } else {
-                false
-            }
-        });
-    }
-
-    fn mark_state_dirty(&mut self, reason: impl ToString) {
-        let reason = reason.to_string();
-        self.state_dirty = true;
-        if !self.state_dirty_reasons.iter().any(|existing| existing == &reason) {
-            self.state_dirty_reasons.push(reason);
+        if slot_index < self.slots.len() {
+            Ok(slot_index)
+        } else {
+            Err(PrinterError::SlotNotFound(slot_id.clone()))
         }
     }
 
-    fn persistent_slot_state(slot: &MaterialSlotSnapshot) -> GenericSlotPersistentState {
-        GenericSlotPersistentState {
-            slot_id: slot.id.clone(),
-            state: slot.state,
-            filament: slot.filament.clone(),
-            spool_id: slot.spool_id.clone(),
-            consumed_since_load_g: slot.consumed_since_load_g,
-            consumed_since_weight_g: slot.consumed_since_weight_g,
-            used_in_print: slot.used_in_print,
-        }
-    }
-}
-
-impl PrinterDriver for FakePrinterDriver {
-    fn id(&self) -> &PrinterId {
-        &self.id
+    fn slot_mut(&mut self, slot_id: &SlotId) -> PrinterResult<&mut MaterialSlotSnapshot> {
+        let slot_index = self.slot_index(slot_id)?;
+        Ok(&mut self.slots[slot_index])
     }
 
-    fn kind(&self) -> PrinterDriverKind {
-        PrinterDriverKind::Fake
-    }
-
-    fn display_name(&self) -> String {
-        self.name.clone()
-    }
-
-    fn capabilities(&self) -> PrinterCapabilities {
-        PrinterCapabilities {
-            material_slot_read: true,
-            material_slot_write: true,
-            material_slot_assign: true,
-            material_slot_set_spool_id: true,
-            material_slot_clear: true,
-            material_slot_unassign_spool: true,
-            print_status_read: true,
-            print_control: false,
-            consumption_tracking: false,
-            printer_tag_scan: false,
-            print_file_fetch: false,
-            persistent_slot_state: true,
-            pressure_advance: PressureAdvanceCapability::Unsupported,
+    fn validate_command(&self, command: &PrinterCommand) -> PrinterResult<()> {
+        match command {
+            PrinterCommand::Refresh => Ok(()),
+            PrinterCommand::AssignMaterialToSlot { slot_id, .. }
+            | PrinterCommand::ClearSlot { slot_id }
+            | PrinterCommand::UnassignSpoolFromSlot { slot_id } => self.slot_index(slot_id).map(|_| ()),
+            PrinterCommand::PrintControl(_) => Err(PrinterError::UnsupportedCommand("print_control".to_string())),
+            PrinterCommand::AddPressureAdvance(_) => Err(PrinterError::UnsupportedCommand("add_pressure_advance".to_string())),
+            PrinterCommand::DriverSpecific(command) => Err(PrinterError::UnsupportedCommand(command.name.clone())),
         }
     }
 
@@ -162,7 +144,7 @@ impl PrinterDriver for FakePrinterDriver {
             kind: PrinterDriverKind::Fake,
             name: self.name.clone(),
             connected: true,
-            capabilities: self.capabilities(),
+            capabilities: Self::capabilities(),
             extruders: alloc::vec![ExtruderSnapshot {
                 id: 0,
                 name: "Toolhead".into(),
@@ -191,9 +173,9 @@ impl PrinterDriver for FakePrinterDriver {
         }
     }
 
-    fn dispatch(&mut self, command: PrinterCommand) -> PrinterResult<()> {
+    fn dispatch_command(&mut self, command: PrinterCommand) -> PrinterResult<Option<PrinterEvent>> {
         match command {
-            PrinterCommand::Refresh => Ok(()),
+            PrinterCommand::Refresh => Ok(Some(self.snapshot_changed(PrinterChange::All))),
             PrinterCommand::AssignMaterialToSlot { slot_id, spool, temps, mode } => {
                 let slot = self.slot_mut(&slot_id)?;
                 slot.spool_id = Some(spool.spool_rec.id.clone());
@@ -210,8 +192,7 @@ impl PrinterDriver for FakePrinterDriver {
                     });
                 }
                 self.mark_state_dirty(format!("assign slot {}", slot_id.as_str()));
-                self.notify_slots_changed();
-                Ok(())
+                Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
             }
             PrinterCommand::ClearSlot { slot_id } => {
                 let slot = self.slot_mut(&slot_id)?;
@@ -222,14 +203,12 @@ impl PrinterDriver for FakePrinterDriver {
                 slot.consumed_since_weight_g = 0.0;
                 slot.used_in_print = false;
                 self.mark_state_dirty(format!("clear slot {}", slot_id.as_str()));
-                self.notify_slots_changed();
-                Ok(())
+                Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
             }
             PrinterCommand::UnassignSpoolFromSlot { slot_id } => {
                 self.slot_mut(&slot_id)?.spool_id = None;
                 self.mark_state_dirty(format!("unassign spool from slot {}", slot_id.as_str()));
-                self.notify_slots_changed();
-                Ok(())
+                Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
             }
             PrinterCommand::PrintControl(_) => Err(PrinterError::UnsupportedCommand("print_control".to_string())),
             PrinterCommand::AddPressureAdvance(_) => Err(PrinterError::UnsupportedCommand("add_pressure_advance".to_string())),
@@ -237,12 +216,31 @@ impl PrinterDriver for FakePrinterDriver {
         }
     }
 
-    fn subscribe(&mut self, observer: Weak<RefCell<dyn PrinterObserver>>) {
-        self.observers.push(observer);
+    fn snapshot_changed(&self, change: PrinterChange) -> PrinterEvent {
+        PrinterEvent::SnapshotChanged {
+            printer_id: self.id.clone(),
+            change,
+        }
     }
 
-    fn persistent_state_path(&self) -> Option<String> {
-        Some(self.state_path.clone())
+    fn mark_state_dirty(&mut self, reason: impl ToString) {
+        let reason = reason.to_string();
+        self.state_dirty = true;
+        if !self.state_dirty_reasons.iter().any(|existing| existing == &reason) {
+            self.state_dirty_reasons.push(reason);
+        }
+    }
+
+    fn persistent_slot_state(slot: &MaterialSlotSnapshot) -> GenericSlotPersistentState {
+        GenericSlotPersistentState {
+            slot_id: slot.id.clone(),
+            state: slot.state,
+            filament: slot.filament.clone(),
+            spool_id: slot.spool_id.clone(),
+            consumed_since_load_g: slot.consumed_since_load_g,
+            consumed_since_weight_g: slot.consumed_since_weight_g,
+            used_in_print: slot.used_in_print,
+        }
     }
 
     fn load_persistent_state(&mut self, state_json: &str, store: &Rc<Store>) -> Result<(), String> {
@@ -309,8 +307,115 @@ impl PrinterDriver for FakePrinterDriver {
             contents,
         }))
     }
+}
+
+impl FakePrinterDriver {
+    pub fn new(name: Option<String>, config: &FakePrinterConfig) -> Self {
+        let runtime = Rc::new(RefCell::new(FakePrinterRuntime::new(name, config)));
+        let id = runtime.borrow().id.clone();
+        Self {
+            id,
+            runtime,
+            command_channel: Rc::new(FakePrinterCommandChannel::new()),
+            task_started: false,
+        }
+    }
+}
+
+impl PrinterDriver for FakePrinterDriver {
+    fn id(&self) -> &PrinterId {
+        &self.id
+    }
+
+    fn kind(&self) -> PrinterDriverKind {
+        PrinterDriverKind::Fake
+    }
+
+    fn display_name(&self) -> String {
+        self.runtime.borrow().name.clone()
+    }
+
+    fn capabilities(&self) -> PrinterCapabilities {
+        FakePrinterRuntime::capabilities()
+    }
+
+    fn snapshot(&self) -> PrinterSnapshot {
+        self.runtime.borrow().snapshot()
+    }
+
+    fn dispatch(&mut self, command: PrinterCommand) -> PrinterResult<()> {
+        self.runtime.borrow().validate_command(&command)?;
+        self.command_channel
+            .try_send(command)
+            .map_err(|err| PrinterError::DriverError(format!("Failed to queue fake printer command: {err:?}")))
+    }
+
+    fn subscribe(&mut self, observer: Weak<RefCell<dyn PrinterObserver>>) {
+        self.runtime.borrow_mut().observers.push(observer);
+    }
+
+    fn start(&mut self, framework: Rc<RefCell<Framework>>) {
+        if self.task_started {
+            return;
+        }
+        self.task_started = true;
+        framework
+            .borrow()
+            .spawner
+            .spawn_heap(fake_printer_task(self.runtime.clone(), self.command_channel.clone()))
+            .ok();
+    }
+
+    fn persistent_state_path(&self) -> Option<String> {
+        Some(self.runtime.borrow().state_path.clone())
+    }
+
+    fn load_persistent_state(&mut self, state_json: &str, store: &Rc<Store>) -> Result<(), String> {
+        self.runtime.borrow_mut().load_persistent_state(state_json, store)
+    }
+
+    fn prepare_persistent_state_store(&mut self) -> Result<Option<PrinterPersistentStatePayload>, String> {
+        self.runtime.borrow_mut().prepare_persistent_state_store()
+    }
 
     fn restore_persistent_state_after_failed_store(&mut self) {
-        self.mark_state_dirty("previous store failed");
+        self.runtime.borrow_mut().mark_state_dirty("previous store failed");
+    }
+}
+
+fn notify_runtime_observers(runtime: &Rc<RefCell<FakePrinterRuntime>>, event: PrinterEvent) {
+    let observers = runtime.borrow().observers.clone();
+    let mut has_dead_observer = false;
+
+    for weak_observer in observers {
+        if let Some(observer) = weak_observer.upgrade() {
+            observer.borrow_mut().on_printer_event(event.clone());
+        } else {
+            has_dead_observer = true;
+        }
+    }
+
+    if has_dead_observer {
+        runtime.borrow_mut().observers.retain(|observer| observer.upgrade().is_some());
+    }
+}
+
+async fn fake_printer_task(runtime: Rc<RefCell<FakePrinterRuntime>>, command_channel: Rc<FakePrinterCommandChannel>) {
+    let printer_id = runtime.borrow().id.clone();
+    info!("[{}] Fake printer runtime task started", printer_id.as_str());
+    let receiver = command_channel.receiver();
+
+    loop {
+        let command = receiver.receive().await;
+        let event = {
+            let mut runtime = runtime.borrow_mut();
+            runtime.dispatch_command(command)
+        };
+
+        match event {
+            Ok(Some(event)) => notify_runtime_observers(&runtime, event),
+            Ok(None) => {}
+            Err(err) => error!("[{}] Fake printer command failed: {err:?}", printer_id.as_str()),
+        }
     }
 }

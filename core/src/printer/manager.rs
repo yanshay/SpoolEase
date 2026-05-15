@@ -6,13 +6,14 @@ use alloc::{
     vec::Vec,
 };
 use core::cell::RefCell;
+use framework::framework::Framework;
 
 use crate::app_config::FakePrinterConfig;
 use crate::bambu::BambuPrinter;
 use crate::store::Store;
 
 use super::{
-    PrinterCommand, PrinterDriver, PrinterError, PrinterId, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot,
+    PrinterCommand, PrinterDriver, PrinterError, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot,
     bambu_adapter::BambuPrinterDriver, fake_driver::FakePrinterDriver,
 };
 
@@ -91,6 +92,22 @@ impl PrinterManager {
 
     pub fn dispatch_bambu_printer(&mut self, printer: &mut BambuPrinter, command: PrinterCommand) -> PrinterResult<()> {
         BambuPrinterDriver::dispatch_to_printer(printer, command)
+    }
+
+    pub fn subscribe_at(&mut self, index: usize, observer: alloc::rc::Weak<RefCell<dyn PrinterObserver>>) -> PrinterResult<()> {
+        self.printers
+            .get_mut(index)
+            .ok_or_else(|| PrinterError::PrinterUnavailable(format!("printer index {index}")))?
+            .subscribe(observer);
+        Ok(())
+    }
+
+    pub fn start_at(&mut self, index: usize, framework: Rc<RefCell<Framework>>) -> PrinterResult<()> {
+        self.printers
+            .get_mut(index)
+            .ok_or_else(|| PrinterError::PrinterUnavailable(format!("printer index {index}")))?
+            .start(framework);
+        Ok(())
     }
 
     pub fn persistent_state_path_at(&self, index: usize) -> Option<String> {
