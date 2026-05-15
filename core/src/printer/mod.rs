@@ -5,6 +5,7 @@ pub mod fake_driver;
 pub mod manager;
 
 use alloc::{
+    boxed::Box,
     rc::{Rc, Weak},
     string::{String, ToString},
     vec::Vec,
@@ -341,33 +342,34 @@ pub enum PrinterError {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum PrinterEvent {
+pub struct PrinterEvent {
+    pub printer_id: PrinterId,
+    pub kind: PrinterEventKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PrinterEventKind {
     ConnectivityChanged {
-        printer_id: PrinterId,
         connected: bool,
     },
     SnapshotChanged {
-        printer_id: PrinterId,
         change: PrinterChange,
+        snapshot: Box<PrinterSnapshot>,
     },
     SlotTagScanned {
-        printer_id: PrinterId,
         slot_id: SlotId,
         tag_id: String,
         only_spool_id: bool,
     },
     SlotConsumptionReported {
-        printer_id: PrinterId,
         slot_id: SlotId,
         grams: f32,
         source: ConsumptionSource,
     },
     PrintFileAnalysisRequested {
-        printer_id: PrinterId,
         request: PrintFileAnalysisRequest,
     },
     PrintFileAnalysisCanceled {
-        printer_id: PrinterId,
         job_number: i32,
     },
 }

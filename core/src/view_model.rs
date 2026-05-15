@@ -52,8 +52,8 @@ use crate::bambu::{
 };
 use crate::filament_staging::StagingOrigin;
 use crate::printer::{
-    self as printer_domain, FilamentTemps, PrintControlCommand, PrinterChange, PrinterCommand, PrinterEvent, PrinterId, SlotAssignMode, SlotId,
-    manager::PrinterManager,
+    self as printer_domain, FilamentTemps, PrintControlCommand, PrinterChange, PrinterCommand, PrinterEvent, PrinterEventKind, PrinterId,
+    SlotAssignMode, SlotId, manager::PrinterManager,
 };
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
@@ -2507,13 +2507,13 @@ impl ViewModel {
 
         let printer_id = BambuPrinterConfig::printer_id_for_serial(&bambu_printer.printer_serial);
         let snapshot = printer_domain::bambu_adapter::BambuPrinterDriver::snapshot_from_printer(bambu_printer);
-        self.handle_printer_event_with_snapshot(
-            PrinterEvent::SnapshotChanged {
-                printer_id,
+        self.handle_printer_event(PrinterEvent {
+            printer_id,
+            kind: PrinterEventKind::SnapshotChanged {
                 change: PrinterChange::Slots,
+                snapshot: Box::new(snapshot),
             },
-            Some(&snapshot),
-        );
+        });
     }
 
     fn weight_display(&self, tray: &Tray) -> SharedString {
@@ -3333,11 +3333,21 @@ impl ViewModel {
         }
     }
 
-    async fn configure_slot_with_spool_async(view_model: Rc<RefCell<ViewModel>>, printer_id: PrinterId, slot_id: SlotId, spool_id: String, only_spool_id: bool) {
+    async fn configure_slot_with_spool_async(
+        view_model: Rc<RefCell<ViewModel>>,
+        printer_id: PrinterId,
+        slot_id: SlotId,
+        spool_id: String,
+        only_spool_id: bool,
+    ) {
         let (manager_index, snapshot) = match view_model.borrow().printer_snapshot_by_id(&printer_id) {
             Some(snapshot) => snapshot,
             None => {
-                error!("Printer {} not found when trying to configure slot {}", printer_id.as_str(), slot_id.as_str());
+                error!(
+                    "Printer {} not found when trying to configure slot {}",
+                    printer_id.as_str(),
+                    slot_id.as_str()
+                );
                 view_model.borrow().message_box(
                     "Configure Slot Notice",
                     &format!("Printer {} Not Found", printer_id.as_str()),
@@ -3411,7 +3421,10 @@ impl ViewModel {
                         if !full_spool_rec.spool_rec.actual_location.is_empty() {
                             let mut spool_rec = Box::new(full_spool_rec.spool_rec.clone());
                             spool_rec.actual_location = String::new();
-                            let _ = view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box: None });
+                            let _ = view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec {
+                                spool_rec,
+                                message_box: None,
+                            });
                         }
                         let selected_manager_index = {
                             let view_model_borrow = view_model.borrow();
@@ -3430,11 +3443,9 @@ impl ViewModel {
                             target_ui_index,
                         );
                     }
-                    Err(err) => ui_app_state.invoke_slot_operation_failed(
-                        "Configure".into(),
-                        full_slot_description.into(),
-                        slint::format!("{err:?}"),
-                    ),
+                    Err(err) => {
+                        ui_app_state.invoke_slot_operation_failed("Configure".into(), full_slot_description.into(), slint::format!("{err:?}"))
+                    }
                 }
             } else {
                 error!("Failed to resolve filament temps for spool {spool_id}");
@@ -3446,7 +3457,11 @@ impl ViewModel {
             }
         } else {
             error!("Spool {spool_id} not found when trying to configure slot {}", slot_id.as_str());
-            ui_app_state.invoke_slot_operation_failed("Configure".into(), full_slot_description.into(), format!("Spool {spool_id} Not Found").into());
+            ui_app_state.invoke_slot_operation_failed(
+                "Configure".into(),
+                full_slot_description.into(),
+                format!("Spool {spool_id} Not Found").into(),
+            );
         }
     }
 
@@ -3651,15 +3666,11 @@ impl ViewModel {
     }
 
     fn handle_printer_event(&self, event: PrinterEvent) {
-        self.handle_printer_event_with_snapshot(event, None);
-    }
-
-    fn handle_printer_event_with_snapshot(&self, event: PrinterEvent, snapshot: Option<&printer_domain::PrinterSnapshot>) {
-        match event {
-            PrinterEvent::ConnectivityChanged { printer_id, connected } => self.handle_printer_connectivity_changed(&printer_id, connected),
-            PrinterEvent::SnapshotChanged { printer_id, change } => self.handle_printer_snapshot_changed(&printer_id, &change, snapshot),
-            PrinterEvent::SlotTagScanned {
-                printer_id,
+        let PrinterEvent { printer_id, kind } = event;
+        match kind {
+            PrinterEventKind::ConnectivityChanged { connected } => self.handle_printer_connectivity_changed(&printer_id, connected),
+            PrinterEventKind::SnapshotChanged { change, snapshot } => self.handle_printer_snapshot_changed(&printer_id, &change, snapshot.as_ref()),
+            PrinterEventKind::SlotTagScanned {
                 slot_id,
                 tag_id,
                 only_spool_id,
@@ -3668,7 +3679,7 @@ impl ViewModel {
         }
     }
 
-    fn handle_printer_snapshot_changed(&self, printer_id: &PrinterId, change: &PrinterChange, snapshot: Option<&printer_domain::PrinterSnapshot>) {
+    fn handle_printer_snapshot_changed(&self, printer_id: &PrinterId, change: &PrinterChange, snapshot: &printer_domain::PrinterSnapshot) {
         if !matches!(change, PrinterChange::All | PrinterChange::Slots | PrinterChange::Slot(_)) {
             return;
         }
@@ -3681,15 +3692,7 @@ impl ViewModel {
             return;
         }
 
-        if let Some(snapshot) = snapshot {
-            self.update_slot_groups_from_snapshot(snapshot);
-            return;
-        }
-
-        let snapshot = self.printer_manager.borrow().snapshot_at(manager_index);
-        if let Some(snapshot) = &snapshot {
-            self.update_slot_groups_from_snapshot(snapshot);
-        }
+        self.update_slot_groups_from_snapshot(snapshot);
     }
 
     fn handle_printer_connectivity_changed(&self, printer_id: &PrinterId, connected: bool) {
@@ -3848,10 +3851,6 @@ impl BambuPrinterObserver for ViewModel {
         removed_tags: &HashMap<usize, SpoolId>,
     ) {
         // note - accepting bambu_printer rather than taking from self, because it's already borrowed and another borrow will panic
-        if Some(bambu_printer.printer_index) == self.selected_ui_bambu_index() {
-            self.update_ui_from_printer(bambu_printer);
-        }
-
         if let Some(new_trays_monitored_bits) = new_trays_bits.tray_exist_bits {
             let prev_trays_monitored_bits = prev_trays_bits.tray_exist_bits.unwrap_or(0);
             let mut trays_monitored_loaded = Vec::new();
@@ -3926,11 +3925,6 @@ impl BambuPrinterObserver for ViewModel {
         } else {
             term_info!("[{}] Printer disconnected", bambu_printer.printer_number);
         }
-
-        self.handle_printer_event(PrinterEvent::ConnectivityChanged {
-            printer_id: BambuPrinterConfig::printer_id_for_serial(&bambu_printer.printer_serial),
-            connected: status,
-        });
     }
 
     fn on_request_gcode_analysis(&mut self, printer: &mut BambuPrinter, print_project: &PrintProject) -> i32 {
@@ -4035,18 +4029,7 @@ impl BambuPrinterObserver for ViewModel {
         }
     }
 
-    fn on_tag_scanned(&self, printer_index: usize, tray_id: i32, tag_id: &str, only_spool_id: bool) {
-        let Some(printer_id) = self.printer_manager.borrow().id_at(printer_index) else {
-            error!("Tag scan event for unknown printer index {printer_index}");
-            return;
-        };
-        self.handle_printer_event(PrinterEvent::SlotTagScanned {
-            printer_id,
-            slot_id: SlotId::new(format!("bambu:{tray_id}")),
-            tag_id: tag_id.to_string(),
-            only_spool_id,
-        });
-    }
+    fn on_tag_scanned(&self, _printer_index: usize, _tray_id: i32, _tag_id: &str, _only_spool_id: bool) {}
 }
 
 // TODO:

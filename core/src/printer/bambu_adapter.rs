@@ -1,33 +1,44 @@
 use alloc::{
+    boxed::Box,
     format,
     rc::{Rc, Weak},
     string::{String, ToString},
     vec::Vec,
 };
 use core::cell::RefCell;
+use hashbrown::HashMap;
 
 use crate::app_config::BambuPrinterConfig;
 use crate::bambu::{
-    BambuPrinter, NozzleType,
+    BambuPrinter, BambuPrinterObserver, NozzleType, SpoolId,
     bambu_api::{GcodeState, PrintCommand as BambuPrintCommand},
+    bambu_print::PrintProject,
     filament::Filament as BambuFilament,
     printer_state::BambuPersistentDirtyState,
-    tray::{Tray, TrayState as BambuTrayState},
+    tray::{Tray, TrayBits, TrayState as BambuTrayState},
 };
 use crate::store::Store;
 
 use super::{
     DiagnosticSeverity, DriverData, ExtruderSnapshot, FilamentTemps, MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand,
-    PrintSnapshot, PrintState, PrinterCapabilities, PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError,
-    PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot, SlotAssignMode,
-    SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError,
+    PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult,
+    PrinterSnapshot, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
 };
+
+type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
 
 pub struct BambuPrinterDriver {
     id: PrinterId,
     printer: Rc<RefCell<BambuPrinter>>,
-    observers: Vec<Weak<RefCell<dyn PrinterObserver>>>,
+    observers: PrinterObserverList,
+    bridge_observer: Option<Rc<RefCell<dyn BambuPrinterObserver>>>,
     pending_dirty_state: Option<BambuPersistentDirtyState>,
+}
+
+struct BambuPrinterEventBridge {
+    printer_id: PrinterId,
+    observers: PrinterObserverList,
 }
 
 impl BambuPrinterDriver {
@@ -36,7 +47,8 @@ impl BambuPrinterDriver {
         Self {
             id,
             printer,
-            observers: Vec::new(),
+            observers: Rc::new(RefCell::new(Vec::new())),
+            bridge_observer: None,
             pending_dirty_state: None,
         }
     }
@@ -425,6 +437,68 @@ impl BambuPrinterDriver {
     fn driver_data_for_slot(_printer: &BambuPrinter, _tray_id: i32, _tray: &Tray) -> DriverData {
         DriverData::default()
     }
+
+    fn notify_observers(observers: &PrinterObserverList, event: PrinterEvent) {
+        let observer_list = observers.borrow().clone();
+        let mut has_dead_observer = false;
+
+        for weak_observer in observer_list {
+            if let Some(observer) = weak_observer.upgrade() {
+                observer.borrow_mut().on_printer_event(event.clone());
+            } else {
+                has_dead_observer = true;
+            }
+        }
+
+        if has_dead_observer {
+            observers.borrow_mut().retain(|observer| observer.upgrade().is_some());
+        }
+    }
+}
+
+impl BambuPrinterEventBridge {
+    fn notify(&self, kind: PrinterEventKind) {
+        BambuPrinterDriver::notify_observers(
+            &self.observers,
+            PrinterEvent {
+                printer_id: self.printer_id.clone(),
+                kind,
+            },
+        );
+    }
+}
+
+impl BambuPrinterObserver for BambuPrinterEventBridge {
+    fn on_trays_update(
+        &mut self,
+        bambu_printer: &mut BambuPrinter,
+        _prev_tray_bits: &TrayBits,
+        _new_tray_bits: &TrayBits,
+        _removed_tags: &HashMap<usize, SpoolId>,
+    ) {
+        self.notify(PrinterEventKind::SnapshotChanged {
+            change: PrinterChange::Slots,
+            snapshot: Box::new(BambuPrinterDriver::snapshot_from_printer(bambu_printer)),
+        });
+    }
+
+    fn on_printer_connect_status(&self, _bambu_printer: &mut BambuPrinter, status: bool) {
+        self.notify(PrinterEventKind::ConnectivityChanged { connected: status });
+    }
+
+    fn on_request_gcode_analysis(&mut self, _bambu_printer: &mut BambuPrinter, _print_project: &PrintProject) -> i32 {
+        0
+    }
+
+    fn on_cancel_gcode_analysis(&mut self, _job_number: i32) {}
+
+    fn on_tag_scanned(&self, _printer_index: usize, tray_id: i32, tag_id: &str, only_spool_id: bool) {
+        self.notify(PrinterEventKind::SlotTagScanned {
+            slot_id: SlotId::new(format!("bambu:{tray_id}")),
+            tag_id: tag_id.to_string(),
+            only_spool_id,
+        });
+    }
 }
 
 impl PrinterDriver for BambuPrinterDriver {
@@ -454,7 +528,21 @@ impl PrinterDriver for BambuPrinterDriver {
     }
 
     fn subscribe(&mut self, observer: Weak<RefCell<dyn PrinterObserver>>) {
-        self.observers.push(observer);
+        self.observers.borrow_mut().push(observer);
+    }
+
+    fn start(&mut self, _framework: Rc<RefCell<framework::framework::Framework>>) {
+        if self.bridge_observer.is_some() {
+            return;
+        }
+
+        let bridge_observer: Rc<RefCell<dyn BambuPrinterObserver>> = Rc::new(RefCell::new(BambuPrinterEventBridge {
+            printer_id: self.id.clone(),
+            observers: self.observers.clone(),
+        }));
+        let bridge_observer_weak = Rc::downgrade(&bridge_observer);
+        self.printer.borrow_mut().subscribe(bridge_observer_weak);
+        self.bridge_observer = Some(bridge_observer);
     }
 
     fn persistent_state_path(&self) -> Option<String> {

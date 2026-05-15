@@ -1,4 +1,5 @@
 use alloc::{
+    boxed::Box,
     format,
     rc::{Rc, Weak},
     string::{String, ToString},
@@ -6,6 +7,7 @@ use alloc::{
 };
 use core::cell::RefCell;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel};
+use embassy_time::Timer;
 
 use crate::app_config::FakePrinterConfig;
 use crate::store::Store;
@@ -14,8 +16,8 @@ use framework::{debug, error, framework::Framework, info, prelude::*};
 use super::{
     DriverData, ExtruderSnapshot, GenericPrinterPersistentState, GenericSlotPersistentState, MaterialSlotSnapshot, PressureAdvanceCapability,
     PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError,
-    PrinterEvent, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot,
-    SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult,
+    PrinterSnapshot, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
 };
 
 type FakePrinterCommandChannel = Channel<NoopRawMutex, PrinterCommand, 5>;
@@ -217,9 +219,12 @@ impl FakePrinterRuntime {
     }
 
     fn snapshot_changed(&self, change: PrinterChange) -> PrinterEvent {
-        PrinterEvent::SnapshotChanged {
+        PrinterEvent {
             printer_id: self.id.clone(),
-            change,
+            kind: PrinterEventKind::SnapshotChanged {
+                change,
+                snapshot: Box::new(self.snapshot()),
+            },
         }
     }
 
@@ -407,6 +412,7 @@ async fn fake_printer_task(runtime: Rc<RefCell<FakePrinterRuntime>>, command_cha
 
     loop {
         let command = receiver.receive().await;
+        Timer::after_millis(500).await;
         let event = {
             let mut runtime = runtime.borrow_mut();
             runtime.dispatch_command(command)
