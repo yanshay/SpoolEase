@@ -20,10 +20,11 @@ use crate::bambu::{
 use crate::store::Store;
 
 use super::{
-    DiagnosticSeverity, DriverData, ExtruderSnapshot, FilamentTemps, MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand,
-    PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError,
-    PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult,
-    PrinterSnapshot, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    DiagnosticSeverity, DriverData, ExtruderSnapshot, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind,
+    MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange,
+    PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament,
+    PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot, SlotAssignMode, SlotGroupKind,
+    SlotGroupSnapshot, SlotId, SlotState,
 };
 
 type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
@@ -127,6 +128,7 @@ impl BambuPrinterDriver {
             material_slot_set_spool_id: true,
             material_slot_clear: true,
             material_slot_unassign_spool: true,
+            material_slot_presence_notify: true,
             print_status_read: true,
             print_control: true,
             consumption_tracking: printer.track_print_consume,
@@ -472,14 +474,42 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
     fn on_trays_update(
         &mut self,
         bambu_printer: &mut BambuPrinter,
-        _prev_tray_bits: &TrayBits,
-        _new_tray_bits: &TrayBits,
-        _removed_tags: &HashMap<usize, SpoolId>,
+        prev_tray_bits: &TrayBits,
+        new_tray_bits: &TrayBits,
+        removed_tags: &HashMap<usize, SpoolId>,
     ) {
         self.notify(PrinterEventKind::SnapshotChanged {
             change: PrinterChange::Slots,
             snapshot: Box::new(BambuPrinterDriver::snapshot_from_printer(bambu_printer)),
         });
+
+        let mut changes = Vec::new();
+        if let Some(new_tray_exist_bits) = new_tray_bits.tray_exist_bits {
+            let prev_tray_exist_bits = prev_tray_bits.tray_exist_bits.unwrap_or_default();
+            for tray_id in 0..bambu_printer.ams_trays().len() {
+                let prev_exists = ((prev_tray_exist_bits >> tray_id) & 0x01) != 0;
+                let new_exists = ((new_tray_exist_bits >> tray_id) & 0x01) != 0;
+                if !prev_exists && new_exists {
+                    changes.push(MaterialSlotPresenceChange {
+                        slot_id: BambuPrinterDriver::slot_id_from_tray_id(tray_id as i32),
+                        change: MaterialSlotPresenceChangeKind::Inserted,
+                        spool_id: bambu_printer.ams_trays().get(tray_id).and_then(|tray| tray.meta_info.spool_id.clone()),
+                    });
+                }
+            }
+        }
+
+        for (tray_id, spool_id) in removed_tags {
+            changes.push(MaterialSlotPresenceChange {
+                slot_id: BambuPrinterDriver::slot_id_from_tray_id(*tray_id as i32),
+                change: MaterialSlotPresenceChangeKind::Removed,
+                spool_id: Some(spool_id.clone()),
+            });
+        }
+
+        if !changes.is_empty() {
+            self.notify(PrinterEventKind::MaterialSlotPresenceChanged { changes });
+        }
     }
 
     fn on_printer_connect_status(&self, _bambu_printer: &mut BambuPrinter, status: bool) {

@@ -757,6 +757,7 @@ Likely generic capabilities:
 - `MaterialSlotSetSpoolId`
 - `MaterialSlotClear`
 - `MaterialSlotUnassignSpool`
+- `MaterialSlotPresenceNotify`
 - `PrintStatusRead`
 - `PrintControl`
 - `ConsumptionTracking`
@@ -775,6 +776,7 @@ pub struct PrinterCapabilities {
     pub material_slot_set_spool_id: bool,
     pub material_slot_clear: bool,
     pub material_slot_unassign_spool: bool,
+    pub material_slot_presence_notify: bool,
     pub print_status_read: bool,
     pub print_control: bool,
     pub consumption_tracking: bool,
@@ -994,6 +996,9 @@ pub enum PrinterEventKind {
         tag_id: String,
         only_spool_id: bool,
     },
+    MaterialSlotPresenceChanged {
+        changes: Vec<MaterialSlotPresenceChange>,
+    },
     SlotConsumptionReported {
         slot_id: SlotId,
         grams: f32,
@@ -1006,11 +1011,22 @@ pub enum PrinterEventKind {
         job_number: i32,
     },
 }
+
+pub struct MaterialSlotPresenceChange {
+    pub slot_id: SlotId,
+    pub change: MaterialSlotPresenceChangeKind,
+    pub spool_id: Option<String>,
+}
+
+pub enum MaterialSlotPresenceChangeKind {
+    Inserted,
+    Removed,
+}
 ```
 
 `PrinterEvent` is an envelope. The source printer ID is stored once on the envelope and event-specific data is stored in `PrinterEventKind`. Snapshot events carry a boxed `PrinterSnapshot`; handlers must use that snapshot instead of synchronously re-querying the source driver through `PrinterManager`.
 
-Bambu now bridges its existing `BambuPrinterObserver` through an adapter-owned `BambuPrinterEventBridge`. Tray/snapshot refresh routes through `PrinterEventKind::SnapshotChanged`; the bridge builds the snapshot from the already-borrowed `BambuPrinter` to avoid a `RefCell` re-borrow through `PrinterManager` during the callback. `ViewModel` still implements `BambuPrinterObserver` temporarily for Bambu-only side effects, but it no longer forwards generic tray/connect/tag events from that direct observer.
+Bambu now bridges its existing `BambuPrinterObserver` through an adapter-owned `BambuPrinterEventBridge`. Tray/snapshot refresh routes through `PrinterEventKind::SnapshotChanged`; the bridge builds the snapshot from the already-borrowed `BambuPrinter` to avoid a `RefCell` re-borrow through `PrinterManager` during the callback. The same bridge emits `MaterialSlotPresenceChanged` batches for physical spool insertion/removal transitions. `ViewModel` handles those presence batches by enqueueing application async work before it configures slots or updates staging, so it does not dispatch back into a printer while Bambu is still notifying observers.
 
 The Fake driver is now a virtual/demo printer runtime rather than a purely synchronous in-memory mock. `PrinterCommand` dispatch queues work to the driver's runtime task, the task waits briefly to make the asynchronous update visible, mutates virtual printer state, and then emits generic `PrinterEventKind::SnapshotChanged` to subscribed `PrinterObserver`s. This keeps command execution closer to real networked printer drivers and avoids observer callbacks from inside a mutable `PrinterManager` dispatch borrow.
 
@@ -1542,8 +1558,10 @@ Refactor `ViewModel` to handle generic events:
 - [done] `PrinterEvent` is a source-printer envelope with event-specific `PrinterEventKind` payloads.
 - [done] `SnapshotChanged` events carry `Box<PrinterSnapshot>`, and `ViewModel` consumes the event snapshot instead of re-querying the source printer.
 - [done] `BambuPrinterDriver::start(...)` installs an adapter-owned `BambuPrinterEventBridge` that converts Bambu tray/connect/tag callbacks into generic printer events.
-- [done] `ViewModel` no longer forwards generic tray/connect/tag events from its direct `BambuPrinterObserver` implementation.
-- [not done] `ViewModel` still uses direct `BambuPrinterObserver` subscription for temporary Bambu-only side effects such as staging-on-insert, unload-to-staging, and G-code analysis dispatch.
+- [done] Bambu physical spool insertion/removal transitions route through generic `PrinterEventKind::MaterialSlotPresenceChanged` batches.
+- [done] Staging-on-insert, configure-existing-spool-on-insert, unload-to-staging, and connect/disconnect terminal logs are handled from generic printer events.
+- [done] `ViewModel` no longer forwards or handles tray/connect/tag behavior from its direct `BambuPrinterObserver` implementation.
+- [not done] `ViewModel` still uses direct `BambuPrinterObserver` subscription for G-code analysis request/cancel dispatch.
 - [not done] Consumption reporting is not bridged yet.
 - [not done] G-code analysis request/cancel remains Bambu-specific and should not become a required generic printer event.
 
@@ -1753,6 +1771,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, adapter-owned Bambu generic event bridge, generic `PrinterManager` storage, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan/snapshot-refresh events with boxed snapshot payloads, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a fake/demo non-Bambu virtual printer runtime visible in web status, console-safe selection of generic printers, generic `PrinterObserver` subscription through `PrinterManager`, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, standard circular slot-card UI for Bambu and Fake, backend-driven primary/external slot groups, opaque string slot IDs for main Slint slot actions, common driver-owned printer-state persistence scheduling, Fake generic slot-state persistence, driver-provided slot/group display names, explicit slot pressure-advance display fields, and generic async configure-slot-with-spool routing by printer ID plus slot ID.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, adapter-owned Bambu generic event bridge, generic `PrinterManager` storage, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan/snapshot-refresh events with boxed snapshot payloads, generic material-slot presence events for physical insert/remove transitions, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a fake/demo non-Bambu virtual printer runtime visible in web status, console-safe selection of generic printers, generic `PrinterObserver` subscription through `PrinterManager`, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, standard circular slot-card UI for Bambu and Fake, backend-driven primary/external slot groups, opaque string slot IDs for main Slint slot actions, common driver-owned printer-state persistence scheduling, Fake generic slot-state persistence, driver-provided slot/group display names, explicit slot pressure-advance display fields, and generic async configure-slot-with-spool routing by printer ID plus slot ID.
 
 Still not done: full `PrinterManager` ownership replacement, generic consumption reporting, paginated/scrollable dynamic Slint slot groups for large topologies, and real non-Bambu driver.

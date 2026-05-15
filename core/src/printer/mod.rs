@@ -63,6 +63,7 @@ pub struct PrinterCapabilities {
     pub material_slot_set_spool_id: bool,            // Driver or SpoolEase state can associate a spool ID with a slot.
     pub material_slot_clear: bool,                   // Driver can clear/reset slot material and spool state.
     pub material_slot_unassign_spool: bool,          // Driver can remove only the spool association from a slot.
+    pub material_slot_presence_notify: bool,         // Driver can report physical spool insertion/removal per slot.
     pub print_status_read: bool,                     // Driver can report print/job state and progress.
     pub print_control: bool,                         // Driver can accept print control commands such as pause/resume/stop.
     pub consumption_tracking: bool,                  // Driver can report consumed filament by slot or spool.
@@ -361,6 +362,9 @@ pub enum PrinterEventKind {
         tag_id: String,
         only_spool_id: bool,
     },
+    MaterialSlotPresenceChanged {
+        changes: Vec<MaterialSlotPresenceChange>,
+    },
     SlotConsumptionReported {
         slot_id: SlotId,
         grams: f32,
@@ -372,6 +376,19 @@ pub enum PrinterEventKind {
     PrintFileAnalysisCanceled {
         job_number: i32,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MaterialSlotPresenceChange {
+    pub slot_id: SlotId,
+    pub change: MaterialSlotPresenceChangeKind,
+    pub spool_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MaterialSlotPresenceChangeKind {
+    Inserted,
+    Removed,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

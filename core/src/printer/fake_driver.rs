@@ -83,6 +83,7 @@ impl FakePrinterRuntime {
             material_slot_set_spool_id: true,
             material_slot_clear: true,
             material_slot_unassign_spool: true,
+            material_slot_presence_notify: false,
             print_status_read: true,
             print_control: false,
             consumption_tracking: false,

@@ -90,10 +90,6 @@ impl PrinterManager {
             .dispatch(command)
     }
 
-    pub fn dispatch_bambu_printer(&mut self, printer: &mut BambuPrinter, command: PrinterCommand) -> PrinterResult<()> {
-        BambuPrinterDriver::dispatch_to_printer(printer, command)
-    }
-
     pub fn subscribe_at(&mut self, index: usize, observer: alloc::rc::Weak<RefCell<dyn PrinterObserver>>) -> PrinterResult<()> {
         self.printers
             .get_mut(index)
