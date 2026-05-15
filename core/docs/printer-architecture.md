@@ -875,13 +875,13 @@ pub struct PrinterSnapshot {
     pub kind: PrinterDriverKind,
     pub name: String,
     pub connected: bool,
-    pub capabilities: PrinterCapabilities,
-    pub extruders: Vec<ExtruderSnapshot>,
+    pub num_extruders: u32,
     pub slot_groups: Vec<SlotGroupSnapshot>,
     pub print: PrintSnapshot,
-    pub diagnostics: Vec<PrinterDiagnostic>,
 }
 ```
+
+Capabilities are printer/driver metadata exposed by `PrinterDriver::capabilities()` and `PrinterManager`, not part of the state snapshot.
 
 Slot groups:
 
@@ -917,11 +917,11 @@ pub struct MaterialSlotSnapshot {
     pub filament: PrinterFilament,
     pub spool_id: Option<String>,
     pub consumed_since_load: f32,
+    pub consumed_since_load_saved: f32,
     pub consumed_since_weight: f32,
     pub used_in_print: bool,
     pub pressure_advance_value: String,
     pub pressure_advance_meta: String,
-    pub driver_data: SlotDriverData,
 }
 ```
 

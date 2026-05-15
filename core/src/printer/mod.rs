@@ -86,23 +86,9 @@ pub struct PrinterSnapshot {
     pub kind: PrinterDriverKind,
     pub name: String,
     pub connected: bool,
-    pub capabilities: PrinterCapabilities,
-    pub extruders: Vec<ExtruderSnapshot>,
+    pub num_extruders: u32,
     pub slot_groups: Vec<SlotGroupSnapshot>,
     pub print: PrintSnapshot,
-    pub diagnostics: Vec<PrinterDiagnostic>,
-}
-
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct ExtruderSnapshot {
-    pub id: u32,
-    pub name: String,
-    pub active: bool,
-    pub loaded_slot_id: Option<SlotId>,
-    pub nozzle_diameter_mm: Option<f32>,
-    pub nozzle_type: Option<String>,
-    pub temperature_c: Option<f32>,
-    pub target_temperature_c: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -142,7 +128,6 @@ pub struct MaterialSlotSnapshot {
     pub used_in_print: bool,
     pub pressure_advance_value: String,
     pub pressure_advance_meta: String,
-    pub driver_data: DriverData,
 }
 
 pub type PrinterSnapshotState = Rc<RefCell<PrinterSnapshot>>;
@@ -228,7 +213,6 @@ pub struct PrintSnapshot {
     pub remaining_minutes: Option<u32>,
     pub current_layer: Option<u32>,
     pub total_layers: Option<u32>,
-    pub active_slot_id: Option<SlotId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -243,21 +227,6 @@ pub enum PrintState {
     Finished,
     Failed,
     Canceled,
-}
-
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct PrinterDiagnostic {
-    pub severity: DiagnosticSeverity,
-    pub code: Option<String>,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum DiagnosticSeverity {
-    #[default]
-    Info,
-    Warning,
-    Error,
 }
 
 #[derive(Debug, Clone)]

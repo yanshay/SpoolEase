@@ -13,8 +13,8 @@ use crate::bambu::BambuPrinter;
 use crate::store::Store;
 
 use super::{
-    PrinterCommand, PrinterDriver, PrinterError, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot, SlotId,
-    bambu_adapter::BambuPrinterDriver, fake_driver::FakePrinterDriver,
+    PrinterCapabilities, PrinterCommand, PrinterDriver, PrinterError, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult,
+    PrinterSnapshot, SlotId, bambu_adapter::BambuPrinterDriver, fake_driver::FakePrinterDriver,
 };
 
 #[derive(Default)]
@@ -59,6 +59,10 @@ impl PrinterManager {
 
     pub fn snapshot_at(&self, index: usize) -> Option<PrinterSnapshot> {
         self.printers.get(index).map(|printer| printer.snapshot())
+    }
+
+    pub fn capabilities_at(&self, index: usize) -> Option<PrinterCapabilities> {
+        self.printers.get(index).map(|printer| printer.capabilities())
     }
 
     pub fn id_at(&self, index: usize) -> Option<PrinterId> {

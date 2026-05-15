@@ -517,8 +517,7 @@ impl ViewModel {
                             let capabilities = self
                                 .printer_manager
                                 .borrow()
-                                .snapshot_at(manager_index)
-                                .map(|snapshot| snapshot.capabilities)
+                                .capabilities_at(manager_index)
                                 .unwrap_or_default();
                             let printer = crate::app::Printer {
                                 can_assign_slot: capabilities.material_slot_assign,
@@ -577,8 +576,7 @@ impl ViewModel {
                     let capabilities = self
                         .printer_manager
                         .borrow()
-                        .snapshot_at(manager_index)
-                        .map(|snapshot| snapshot.capabilities)
+                        .capabilities_at(manager_index)
                         .unwrap_or_default();
                     if default_printer_ui_index.is_none() && Some(&fake_config.printer_id().unwrap().0) == configured_default_printer_id.as_ref() {
                         default_printer_ui_index = Some(available_printers.len());
@@ -1545,6 +1543,7 @@ impl ViewModel {
             error!("No selected printer snapshot for generic slot assignment");
             return;
         };
+        let capabilities = self.printer_manager.borrow().capabilities_at(manager_index).unwrap_or_default();
         let full_slot_description = Self::slot_description_from_snapshot(&snapshot, slot_id);
 
         if !snapshot.connected {
@@ -1555,7 +1554,7 @@ impl ViewModel {
             );
             return;
         }
-        if !snapshot.capabilities.material_slot_assign {
+        if !capabilities.material_slot_assign {
             ui.invoke_slot_operation_failed(
                 "Configure".into(),
                 full_slot_description.to_shared_string(),
@@ -1563,7 +1562,7 @@ impl ViewModel {
             );
             return;
         }
-        if !snapshot.capabilities.material_slot_set_spool_id {
+        if !capabilities.material_slot_set_spool_id {
             ui.invoke_slot_operation_failed(
                 "Configure".into(),
                 full_slot_description.to_shared_string(),
@@ -1692,6 +1691,7 @@ impl ViewModel {
             error!("No selected printer snapshot for generic slot operation");
             return;
         };
+        let capabilities = self.printer_manager.borrow().capabilities_at(manager_index).unwrap_or_default();
         let full_slot_description = Self::slot_description_from_snapshot(&snapshot, slot_id);
 
         if !snapshot.connected {
@@ -1702,7 +1702,7 @@ impl ViewModel {
             );
             return;
         }
-        if !supports(&snapshot.capabilities) {
+        if !supports(&capabilities) {
             ui.invoke_slot_operation_failed(
                 operation.into(),
                 full_slot_description.to_shared_string(),
@@ -3258,6 +3258,12 @@ impl ViewModel {
                 return;
             }
         };
+        let capabilities = view_model
+            .borrow()
+            .printer_manager
+            .borrow()
+            .capabilities_at(manager_index)
+            .unwrap_or_default();
         let full_slot_description = Self::slot_description_from_snapshot(&snapshot, slot_id.as_str());
         let ui = view_model.borrow().ui_weak.unwrap();
         let ui_app_state = ui.global::<crate::app::AppState>();
@@ -3266,7 +3272,7 @@ impl ViewModel {
             ui_app_state.invoke_slot_operation_failed("Configure".into(), full_slot_description.into(), "Printer disconnected".into());
             return;
         }
-        if !(snapshot.capabilities.material_slot_assign && snapshot.capabilities.material_slot_set_spool_id) {
+        if !(capabilities.material_slot_assign && capabilities.material_slot_set_spool_id) {
             ui_app_state.invoke_slot_operation_failed("Configure".into(), full_slot_description.into(), "Material assignment unsupported".into());
             return;
         }
@@ -3377,6 +3383,12 @@ impl ViewModel {
                 return;
             }
         };
+        let capabilities = view_model
+            .borrow()
+            .printer_manager
+            .borrow()
+            .capabilities_at(manager_index)
+            .unwrap_or_default();
         let full_slot_description = Self::slot_description_from_snapshot(&snapshot, slot_id.as_str());
         let ui = view_model.borrow().ui_weak.unwrap();
         let ui_app_state = ui.global::<crate::app::AppState>();
@@ -3385,7 +3397,7 @@ impl ViewModel {
             ui_app_state.invoke_slot_operation_failed("Configure".into(), full_slot_description.into(), "Printer disconnected".into());
             return;
         }
-        if !(snapshot.capabilities.material_slot_assign && snapshot.capabilities.material_slot_set_spool_id) {
+        if !(capabilities.material_slot_assign && capabilities.material_slot_set_spool_id) {
             ui_app_state.invoke_slot_operation_failed("Configure".into(), full_slot_description.into(), "Material assignment unsupported".into());
             return;
         }
@@ -3700,7 +3712,7 @@ impl ViewModel {
                             .map(|vs| vs.iter().map(|v| (v.attr.unwrap_or(0), v.code.unwrap_or(0))).collect())
                     })
                     .unwrap_or_default(),
-                num_extruders: snapshot.extruders.len() as u32,
+                num_extruders: snapshot.num_extruders,
                 slots_sets,
             };
             printers_info.push(printer_info);

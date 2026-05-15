@@ -14,10 +14,10 @@ use crate::store::Store;
 use framework::{debug, error, framework::Framework, info, prelude::*};
 
 use super::{
-    DriverData, ExtruderSnapshot, GenericPrinterPersistentState, GenericSlotPersistentState, MaterialSlotSnapshot, PressureAdvanceCapability,
-    PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError,
-    PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult,
-    PrinterSnapshot, PrinterSnapshotState, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
+    GenericPrinterPersistentState, GenericSlotPersistentState, MaterialSlotSnapshot, PressureAdvanceCapability, PrintSnapshot, PrintState,
+    PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind,
+    PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot,
+    PrinterSnapshotState, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
 };
 
 type FakePrinterCommandChannel = Channel<NoopRawMutex, PrinterCommand, 5>;
@@ -61,7 +61,6 @@ impl FakePrinterRuntime {
                 used_in_print: false,
                 pressure_advance_value: String::new(),
                 pressure_advance_meta: String::new(),
-                driver_data: DriverData::default(),
             })
             .collect();
 
@@ -70,17 +69,7 @@ impl FakePrinterRuntime {
             kind: PrinterDriverKind::Fake,
             name,
             connected: true,
-            capabilities: Self::capabilities(),
-            extruders: alloc::vec![ExtruderSnapshot {
-                id: 0,
-                name: "Toolhead".into(),
-                active: true,
-                loaded_slot_id: None,
-                nozzle_diameter_mm: None,
-                nozzle_type: None,
-                temperature_c: None,
-                target_temperature_c: None,
-            }],
+            num_extruders: 1,
             slot_groups: alloc::vec![SlotGroupSnapshot {
                 id: "fake:slots".into(),
                 name: "Fake Slots".into(),
@@ -95,7 +84,6 @@ impl FakePrinterRuntime {
                 state: PrintState::Idle,
                 ..PrintSnapshot::default()
             },
-            diagnostics: Vec::<PrinterDiagnostic>::new(),
         };
 
         Self {

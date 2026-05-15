@@ -10,7 +10,7 @@ use hashbrown::HashMap;
 
 use crate::app_config::BambuPrinterConfig;
 use crate::bambu::{
-    BambuPrinter, BambuPrinterObserver, NozzleType, SpoolId,
+    BambuPrinter, BambuPrinterObserver, SpoolId,
     bambu_api::{GcodeState, PrintCommand as BambuPrintCommand},
     bambu_print::PrintProject,
     filament::Filament as BambuFilament,
@@ -20,11 +20,10 @@ use crate::bambu::{
 use crate::store::Store;
 
 use super::{
-    DiagnosticSeverity, DriverData, ExtruderSnapshot, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind,
-    MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange,
-    PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament,
-    PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot, SlotAssignMode, SlotGroupKind,
-    SlotGroupSnapshot, SlotId, SlotState, PrinterSnapshotState,
+    FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind, MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand,
+    PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent,
+    PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult,
+    PrinterSnapshot, PrinterSnapshotState, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
 };
 
 type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
@@ -79,11 +78,9 @@ impl BambuPrinterDriver {
             kind: PrinterDriverKind::Bambu,
             name: printer.printer_name().clone(),
             connected: printer.printer_connectivity_ok.unwrap_or_default(),
-            capabilities: Self::capabilities_from_printer(printer),
-            extruders: Self::extruders_from_printer(printer),
+            num_extruders: printer.num_extruders(),
             slot_groups: Self::slot_groups_from_printer(printer),
             print: Self::print_from_printer(printer),
-            diagnostics: Self::diagnostics_from_printer(printer),
         }
     }
 
@@ -184,29 +181,6 @@ impl BambuPrinterDriver {
         }
     }
 
-    fn extruders_from_printer(printer: &BambuPrinter) -> Vec<ExtruderSnapshot> {
-        let active_extruder = Self::active_extruder(printer);
-        let active_slot_id = printer.get_tray_active().map(Self::slot_id_from_tray_id);
-        let mut extruders = Vec::new();
-
-        for extruder_id in 0..printer.num_extruders().min(2) {
-            let extruder = printer.get_extruder(extruder_id);
-            let active = active_extruder == Some(extruder_id as usize);
-            extruders.push(ExtruderSnapshot {
-                id: extruder.id,
-                name: format!("Extruder {}", extruder.id + 1),
-                active,
-                loaded_slot_id: if active { active_slot_id.clone() } else { None },
-                nozzle_diameter_mm: extruder.diameter.as_ref().and_then(|diameter| diameter.parse::<f32>().ok()),
-                nozzle_type: extruder.nozzle_type_code().map(Self::nozzle_type_name),
-                temperature_c: None,
-                target_temperature_c: None,
-            });
-        }
-
-        extruders
-    }
-
     fn slot_groups_from_printer(printer: &BambuPrinter) -> Vec<SlotGroupSnapshot> {
         let mut groups = Vec::new();
 
@@ -299,7 +273,6 @@ impl BambuPrinterDriver {
             used_in_print: tray.meta_info.used_in_print,
             pressure_advance_value,
             pressure_advance_meta,
-            driver_data: Self::driver_data_for_slot(printer, tray_id, tray),
         }
     }
 
@@ -355,40 +328,7 @@ impl BambuPrinterDriver {
             remaining_minutes: Self::non_negative_u32(printer.mc_remaining_time),
             current_layer: Self::non_negative_u32(printer.layer_num),
             total_layers: Self::non_negative_u32(printer.total_layer_num),
-            active_slot_id: printer.get_tray_active().map(Self::slot_id_from_tray_id),
         }
-    }
-
-    fn diagnostics_from_printer(printer: &BambuPrinter) -> Vec<PrinterDiagnostic> {
-        let mut diagnostics = Vec::new();
-
-        if let Some(print_error) = printer.print_error {
-            diagnostics.push(PrinterDiagnostic {
-                severity: DiagnosticSeverity::Error,
-                code: Some(format!("print_error:{print_error}")),
-                message: format!("Bambu print error {print_error}"),
-            });
-        }
-
-        if let Some(hms_errors) = &printer.hms {
-            for hms in hms_errors {
-                let attr = hms.attr.unwrap_or_default();
-                let code = hms.code.unwrap_or_default();
-                diagnostics.push(PrinterDiagnostic {
-                    severity: DiagnosticSeverity::Error,
-                    code: Some(format!("hms:{attr}:{code}")),
-                    message: format!("Bambu HMS error {attr}:{code}"),
-                });
-            }
-        }
-
-        diagnostics
-    }
-
-    fn active_extruder(printer: &BambuPrinter) -> Option<usize> {
-        let extruder_state = printer.extruder_state().as_ref().copied().unwrap_or_default();
-        let extruder_index = (extruder_state >> 4 & 0xF) as usize;
-        if extruder_index <= 1 { Some(extruder_index) } else { None }
     }
 
     fn ams_list(mut ams_exist_bits: u32) -> Vec<i32> {
@@ -463,13 +403,6 @@ impl BambuPrinterDriver {
         }
     }
 
-    fn nozzle_type_name(nozzle_type: NozzleType) -> String {
-        match nozzle_type {
-            NozzleType::Standard => "standard".to_string(),
-            NozzleType::HighFlow => "high_flow".to_string(),
-        }
-    }
-
     fn non_zero_u32(value: u32) -> Option<u32> {
         if value == 0 { None } else { Some(value) }
     }
@@ -480,10 +413,6 @@ impl BambuPrinterDriver {
 
     fn percent(value: Option<i32>) -> Option<u8> {
         value.and_then(|value| if (0..=100).contains(&value) { Some(value as u8) } else { None })
-    }
-
-    fn driver_data_for_slot(_printer: &BambuPrinter, _tray_id: i32, _tray: &Tray) -> DriverData {
-        DriverData::default()
     }
 
     fn notify_observers(observers: &PrinterObserverList, event: PrinterEvent) {
