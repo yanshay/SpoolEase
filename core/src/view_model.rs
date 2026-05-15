@@ -52,7 +52,7 @@ use crate::bambu::{
 };
 use crate::filament_staging::StagingOrigin;
 use crate::printer::{
-    self as printer_domain, FilamentTemps, PrintControlCommand, PrinterCommand, PrinterEvent, PrinterId, SlotAssignMode, SlotId,
+    self as printer_domain, FilamentTemps, PrintControlCommand, PrinterChange, PrinterCommand, PrinterEvent, PrinterId, SlotAssignMode, SlotId,
     manager::PrinterManager,
 };
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
@@ -1230,6 +1230,11 @@ impl ViewModel {
     fn selected_ui_index(&self) -> Option<usize> {
         let current_printer = self.ui_weak.unwrap().global::<crate::app::AppState>().get_curr_printer();
         (current_printer >= 0).then_some(current_printer as usize)
+    }
+
+    fn selected_manager_index(&self) -> Option<usize> {
+        self.selected_ui_index()
+            .and_then(|index| self.ui_printer_manager_indexes.get(index).copied())
     }
 
     fn selected_printer_snapshot(&self) -> Option<(i32, usize, printer_domain::PrinterSnapshot)> {
@@ -2481,16 +2486,15 @@ impl ViewModel {
         // note - accepting bambu_printer rather than taking from self, because it may be called during callback on_trays_update,
         // and that's taking place when it's already borrowed and another borrow will panic
 
-        let Some(current_selected_printer) = self.selected_ui_bambu_index() else {
-            return;
-        };
-        if bambu_printer.printer_index != current_selected_printer {
-            warn!("Internal Error: Requested to update UI for non active printer");
-            return;
-        }
-
+        let printer_id = BambuPrinterConfig::printer_id_for_serial(&bambu_printer.printer_serial);
         let snapshot = printer_domain::bambu_adapter::BambuPrinterDriver::snapshot_from_printer(bambu_printer);
-        self.update_slot_groups_from_snapshot(&snapshot);
+        self.handle_printer_event_with_snapshot(
+            PrinterEvent::SnapshotChanged {
+                printer_id,
+                change: PrinterChange::Slots,
+            },
+            Some(&snapshot),
+        );
     }
 
     fn weight_display(&self, tray: &Tray) -> SharedString {
@@ -3628,8 +3632,13 @@ impl ViewModel {
     }
 
     fn handle_printer_event(&self, event: PrinterEvent) {
+        self.handle_printer_event_with_snapshot(event, None);
+    }
+
+    fn handle_printer_event_with_snapshot(&self, event: PrinterEvent, snapshot: Option<&printer_domain::PrinterSnapshot>) {
         match event {
             PrinterEvent::ConnectivityChanged { printer_id, connected } => self.handle_printer_connectivity_changed(&printer_id, connected),
+            PrinterEvent::SnapshotChanged { printer_id, change } => self.handle_printer_snapshot_changed(&printer_id, &change, snapshot),
             PrinterEvent::SlotTagScanned {
                 printer_id,
                 slot_id,
@@ -3640,18 +3649,49 @@ impl ViewModel {
         }
     }
 
+    fn handle_printer_snapshot_changed(&self, printer_id: &PrinterId, change: &PrinterChange, snapshot: Option<&printer_domain::PrinterSnapshot>) {
+        if !matches!(change, PrinterChange::All | PrinterChange::Slots | PrinterChange::Slot(_)) {
+            return;
+        }
+
+        let Some(manager_index) = self.printer_manager.borrow().index_by_id(printer_id) else {
+            error!("Snapshot event for unknown printer {}", printer_id.as_str());
+            return;
+        };
+        if self.selected_manager_index() != Some(manager_index) {
+            return;
+        }
+
+        if let Some(snapshot) = snapshot {
+            self.update_slot_groups_from_snapshot(snapshot);
+            return;
+        }
+
+        let snapshot = self.printer_manager.borrow().snapshot_at(manager_index);
+        if let Some(snapshot) = &snapshot {
+            self.update_slot_groups_from_snapshot(snapshot);
+        }
+    }
+
     fn handle_printer_connectivity_changed(&self, printer_id: &PrinterId, connected: bool) {
-        let Some(printer_index) = self.printer_manager.borrow().index_by_id(printer_id) else {
+        let Some(manager_index) = self.printer_manager.borrow().index_by_id(printer_id) else {
             error!("Connectivity event for unknown printer {}", printer_id.as_str());
+            return;
+        };
+        let Some(ui_index) = self.ui_index_for_manager_index(manager_index) else {
+            error!("Connectivity event for printer without UI row {}", printer_id.as_str());
             return;
         };
 
         let ui_borrow = self.ui_weak.unwrap();
         let ui = ui_borrow.global::<crate::app::AppState>();
         let ui_printers = ui.get_available_printers();
-        let mut printer_row = ui_printers.row_data(printer_index).unwrap();
+        let Some(mut printer_row) = ui_printers.row_data(ui_index as usize) else {
+            error!("Connectivity event for missing UI row {}", ui_index);
+            return;
+        };
         printer_row.connected = connected;
-        ui_printers.set_row_data(printer_index, printer_row);
+        ui_printers.set_row_data(ui_index as usize, printer_row);
     }
 
     fn handle_slot_tag_scanned(&self, printer_id: &PrinterId, slot_id: &SlotId, tag_id: &str, only_spool_id: bool) {
@@ -3771,6 +3811,12 @@ impl ViewModel {
             i32::from(slot.meta_info.used_in_print),
         );
         slot_str
+    }
+}
+
+impl printer_domain::PrinterObserver for ViewModel {
+    fn on_printer_event(&mut self, event: PrinterEvent) {
+        self.handle_printer_event(event);
     }
 }
 
