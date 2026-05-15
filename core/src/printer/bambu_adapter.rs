@@ -17,10 +17,10 @@ use crate::bambu::{
 use crate::store::Store;
 
 use super::{
-    DiagnosticSeverity, DriverData, DriverDataField, ExtruderSnapshot, FilamentTemps, MaterialSlotSnapshot, PressureAdvanceCapability,
-    PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind,
-    PrinterError, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot,
-    SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    DiagnosticSeverity, DriverData, ExtruderSnapshot, FilamentTemps, MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand,
+    PrintSnapshot, PrintState, PrinterCapabilities, PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError,
+    PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot, SlotAssignMode,
+    SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
 };
 
 pub struct BambuPrinterDriver {
@@ -170,6 +170,7 @@ impl BambuPrinterDriver {
                 groups.push(SlotGroupSnapshot {
                     id: format!("bambu:group:{ams_index}"),
                     name: printer.ams_name(ams_index as usize),
+                    short_name: printer.ams_name(ams_index as usize),
                     kind: SlotGroupKind::InternalChanger,
                     extruder: ams_info.map(|info| info.extruder),
                     temperature_c: ams_info.and_then(|info| info.temp),
@@ -191,6 +192,7 @@ impl BambuPrinterDriver {
         SlotGroupSnapshot {
             id: format!("bambu:external:{tray_id}"),
             name: Self::external_group_name(printer, extruder),
+            short_name: Self::external_group_short_name(printer, extruder),
             kind: SlotGroupKind::External,
             extruder: Some(extruder),
             temperature_c: None,
@@ -213,18 +215,72 @@ impl BambuPrinterDriver {
         }
     }
 
+    fn external_group_short_name(printer: &BambuPrinter, extruder: u32) -> String {
+        if printer.num_extruders() == 1 {
+            "Ext".into()
+        } else if extruder == 1 {
+            "Ext-L".into()
+        } else {
+            "Ext-R".into()
+        }
+    }
+
     fn slot_from_tray(printer: &BambuPrinter, tray_id: i32, tray: &Tray) -> MaterialSlotSnapshot {
+        let (pressure_advance_value, pressure_advance_meta) = Self::pressure_advance_from_tray(printer, tray_id, tray);
         MaterialSlotSnapshot {
             id: Self::slot_id_from_tray_id(tray_id),
             display_name: printer.full_slot_description(tray_id),
+            short_name: Self::slot_short_name_from_tray_id(tray_id),
             state: Self::slot_state_from_bambu(tray.state),
             filament: Self::filament_from_bambu(&tray.filament),
             spool_id: tray.meta_info.spool_id.clone(),
             consumed_since_load_g: tray.meta_info.consumed_since_load,
             consumed_since_weight_g: tray.meta_info.consumed_since_weight,
             used_in_print: tray.meta_info.used_in_print,
+            pressure_advance_value,
+            pressure_advance_meta,
             driver_data: Self::driver_data_for_slot(printer, tray_id, tray),
         }
+    }
+
+    fn slot_short_name_from_tray_id(tray_id: i32) -> String {
+        match tray_id {
+            255 => "Ext-R".to_string(),
+            254 => "Ext-L".to_string(),
+            0..=15 => {
+                let ams_letter = (b'A' + (tray_id / 4) as u8) as char;
+                format!("{ams_letter}{}", tray_id % 4 + 1)
+            }
+            16..=23 => format!("HT-{}", tray_id - 15),
+            _ => tray_id.to_string(),
+        }
+    }
+
+    fn pressure_advance_from_tray(printer: &BambuPrinter, tray_id: i32, tray: &Tray) -> (String, String) {
+        let value = printer.get_tray_resolved_k_value(tray, tray_id);
+        let meta = Self::pressure_advance_meta_from_tray(printer, tray_id, tray).unwrap_or_default();
+        (value, meta)
+    }
+
+    fn pressure_advance_meta_from_tray(printer: &BambuPrinter, tray_id: i32, tray: &Tray) -> Option<String> {
+        let cali_idx = tray.cali_idx?;
+        if cali_idx == -1 || cali_idx == 0 {
+            return None;
+        }
+        let extruder = printer.get_extruder_for_tray(tray_id).ok()?;
+        let nozzle_diameter = extruder.diameter.as_deref()?;
+        let nozzle_type = extruder.nozzle_type_code()?;
+
+        printer
+            .calibrations
+            .iter()
+            .find(|calibration| {
+                calibration.extruder == extruder.id as i32
+                    && calibration.diameter == nozzle_diameter
+                    && calibration.nozzle_type_code() == nozzle_type
+                    && calibration.cali_idx == cali_idx
+            })
+            .map(|calibration| calibration.name.clone())
     }
 
     fn print_from_printer(printer: &BambuPrinter) -> PrintSnapshot {
@@ -366,17 +422,8 @@ impl BambuPrinterDriver {
         value.and_then(|value| if (0..=100).contains(&value) { Some(value as u8) } else { None })
     }
 
-    fn driver_data_for_slot(printer: &BambuPrinter, tray_id: i32, tray: &Tray) -> DriverData {
-        let mut fields = Vec::new();
-        fields.push(DriverDataField {
-            key: "bambu_tray_id".to_string(),
-            value: tray_id.to_string(),
-        });
-        fields.push(DriverDataField {
-            key: "bambu_resolved_k".to_string(),
-            value: printer.get_tray_resolved_k_value(tray, tray_id),
-        });
-        DriverData { fields }
+    fn driver_data_for_slot(_printer: &BambuPrinter, _tray_id: i32, _tray: &Tray) -> DriverData {
+        DriverData::default()
     }
 }
 

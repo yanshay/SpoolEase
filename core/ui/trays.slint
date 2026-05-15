@@ -300,7 +300,7 @@ component Spool inherits Rectangle {
             height: 20px;
             horizontal-alignment: center;
             font-size: 20px;
-            text: has-known-color ? "K " + slot.k : "";
+            text: has-known-color && slot.k != "" ? "K " + slot.k : "";
             color: has-known-color ? Utils.contrasting_color(root.outer-display-color[0]) : Utils.contrasting_color(root.background);
         }
     }

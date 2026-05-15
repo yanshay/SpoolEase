@@ -39,6 +39,7 @@ export struct UiSlot {
   spool-has-alpha: bool,
   spool-colors: [color],
   k: string,
+  k-meta: string,
   tagged: bool,
   weight-display: string,
   used-in-print: bool,
@@ -48,6 +49,7 @@ export struct UiSlot {
 export struct UiSlotGroup {
   id: string,
   name: string,
+  short-name: string,
   kind: UiSlotGroupKind,
   slots: [UiSlot],
 }
@@ -97,6 +99,7 @@ export struct UiSlotDisplay {
   temp-min: int,
   temp-max: int,
   pa: string,
+  pa-meta: string,
   consumed-since-loaded: float,
   available-in-spool: float,
 }

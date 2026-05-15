@@ -12,9 +12,9 @@ use framework::debug;
 
 use super::{
     DriverData, ExtruderSnapshot, GenericPrinterPersistentState, GenericSlotPersistentState, MaterialSlotSnapshot, PressureAdvanceCapability,
-    PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind,
-    PrinterError, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot,
-    SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDiagnostic, PrinterDriver, PrinterDriverKind, PrinterError,
+    PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot, SlotAssignMode,
+    SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
 };
 
 pub struct FakePrinterDriver {
@@ -39,12 +39,15 @@ impl FakePrinterDriver {
             .map(|index| MaterialSlotSnapshot {
                 id: SlotId::new(format!("fake:{index}")),
                 display_name: format!("Slot {}", index + 1),
+                short_name: format!("Slot {}", index + 1),
                 state: SlotState::Empty,
                 filament: PrinterFilament::Unknown,
                 spool_id: None,
                 consumed_since_load_g: 0.0,
                 consumed_since_weight_g: 0.0,
                 used_in_print: false,
+                pressure_advance_value: String::new(),
+                pressure_advance_meta: String::new(),
                 driver_data: DriverData::default(),
             })
             .collect();
@@ -173,6 +176,7 @@ impl PrinterDriver for FakePrinterDriver {
             slot_groups: alloc::vec![SlotGroupSnapshot {
                 id: "fake:slots".into(),
                 name: "Fake Slots".into(),
+                short_name: "Fake".into(),
                 kind: SlotGroupKind::Virtual,
                 extruder: Some(0),
                 temperature_c: None,
@@ -242,17 +246,13 @@ impl PrinterDriver for FakePrinterDriver {
     }
 
     fn load_persistent_state(&mut self, state_json: &str, store: &Rc<Store>) -> Result<(), String> {
-        let state = serde_json::from_str::<GenericPrinterPersistentState>(state_json)
-            .map_err(|err| format!("Failed to parse fake printer state: {err}"))?;
+        let state =
+            serde_json::from_str::<GenericPrinterPersistentState>(state_json).map_err(|err| format!("Failed to parse fake printer state: {err}"))?;
         if state.version != 1 {
             return Err(format!("Unsupported fake printer state version {}", state.version));
         }
         if state.printer_id != self.id {
-            return Err(format!(
-                "State file belongs to {}, not {}",
-                state.printer_id.as_str(),
-                self.id.as_str()
-            ));
+            return Err(format!("State file belongs to {}, not {}", state.printer_id.as_str(), self.id.as_str()));
         }
         if state.driver_kind != PrinterDriverKind::Fake {
             return Err(format!("State file has unexpected driver kind {:?}", state.driver_kind));

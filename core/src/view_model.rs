@@ -46,12 +46,10 @@ use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota
 use crate::bambu::bambu_api::{GcodeState, PrintCommand as BambuPrintCommand};
 use crate::bambu::bambu_print::PrintProject;
 use crate::bambu::calibration::{KExtruder, KInfo, KNozzleDiameter, KNozzleId, KPrinter};
-use crate::bambu::filament::Filament;
 use crate::bambu::{
     SpoolId,
     tray::{Tray, TrayBits},
 };
-use crate::color_utils::get_color_name;
 use crate::filament_staging::StagingOrigin;
 use crate::printer::{
     self as printer_domain, FilamentTemps, PrintControlCommand, PrinterCommand, PrinterEvent, PrinterId, SlotAssignMode, SlotId,
@@ -554,7 +552,8 @@ impl ViewModel {
                         // but selected printer should be considered as to what to update in the UI
                         if let Some(view_model_rc) = &self.view_model {
                             let trait_for_bambu_printer_rc: Rc<RefCell<dyn bambu::BambuPrinterObserver>> = view_model_rc.clone();
-                            let trait_for_bambu_printer_weak: Weak<RefCell<dyn bambu::BambuPrinterObserver>> = Rc::downgrade(&trait_for_bambu_printer_rc);
+                            let trait_for_bambu_printer_weak: Weak<RefCell<dyn bambu::BambuPrinterObserver>> =
+                                Rc::downgrade(&trait_for_bambu_printer_rc);
                             bambu_printer_model.borrow_mut().subscribe(trait_for_bambu_printer_weak);
                         }
                     }
@@ -1311,6 +1310,7 @@ impl ViewModel {
             id: group.id.to_shared_string(),
             kind: Self::ui_slot_group_kind(group.kind),
             name: group.name.to_shared_string(),
+            short_name: group.short_name.to_shared_string(),
             slots: slint::ModelRc::from(Rc::new(slint::VecModel::from(slots))),
         }
     }
@@ -1351,7 +1351,12 @@ impl ViewModel {
 
         UiSlot {
             id: slot.id.as_str().to_shared_string(),
-            name: Self::ui_slot_name_from_snapshot(slot).to_shared_string(),
+            name: if slot.short_name.is_empty() {
+                slot.display_name.as_str()
+            } else {
+                slot.short_name.as_str()
+            }
+            .to_shared_string(),
             state: Self::ui_slot_state_from_slot_state(slot.state),
             state_label: Self::slot_state_label(slot.state).into(),
             filament: UiFilament {
@@ -1362,21 +1367,12 @@ impl ViewModel {
             filament_has_alpha,
             spool_has_alpha,
             spool_colors: Self::ui_color_model(spool_colors),
-            k: Self::driver_data_value(&slot.driver_data, "bambu_resolved_k")
-                .unwrap_or("-1.0")
-                .to_shared_string(),
+            k: slot.pressure_advance_value.to_shared_string(),
+            k_meta: slot.pressure_advance_meta.to_shared_string(),
             tagged: slot.spool_id.is_some(),
             weight_display: self.weight_display_snapshot(slot).to_shared_string(),
             used_in_print: slot.used_in_print,
             spool_id: slot.spool_id.as_deref().unwrap_or_default().to_shared_string(),
-        }
-    }
-
-    fn ui_slot_name_from_snapshot(slot: &printer_domain::MaterialSlotSnapshot) -> String {
-        if let Some(tray_id) = Self::bambu_tray_id_from_slot_snapshot(slot) {
-            Self::bambu_ui_slot_name(tray_id)
-        } else {
-            slot.display_name.clone()
         }
     }
 
@@ -1389,25 +1385,6 @@ impl ViewModel {
 
     fn ui_color_model(colors: Vec<slint::Color>) -> slint::ModelRc<slint::Color> {
         slint::ModelRc::from(Rc::new(slint::VecModel::from(colors)))
-    }
-
-    fn bambu_tray_id_from_slot_snapshot(slot: &printer_domain::MaterialSlotSnapshot) -> Option<i32> {
-        Self::driver_data_value(&slot.driver_data, "bambu_tray_id")
-            .and_then(|tray_id| tray_id.parse().ok())
-            .or_else(|| Self::bambu_tray_id_from_slot_id(&slot.id))
-    }
-
-    fn bambu_ui_slot_name(tray_id: i32) -> String {
-        match tray_id {
-            255 => "Ext-R".to_string(),
-            254 => "Ext-L".to_string(),
-            0..=15 => {
-                let ams_letter = (b'A' + (tray_id / 4) as u8) as char;
-                format!("{ams_letter}{}", tray_id % 4 + 1)
-            }
-            16..=23 => format!("HT-{}", tray_id - 15),
-            _ => tray_id.to_string(),
-        }
     }
 
     fn ui_slot_group_kind(kind: printer_domain::SlotGroupKind) -> UiSlotGroupKind {
@@ -1680,7 +1657,10 @@ impl ViewModel {
                 if !full_spool_rec.spool_rec.actual_location.is_empty() {
                     let mut spool_rec = Box::new(full_spool_rec.spool_rec.clone());
                     spool_rec.actual_location = String::new();
-                    let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box: None });
+                    let _ = self.dispatch_async_task(AppAsyncTaskRequest::UpdateSpoolRec {
+                        spool_rec,
+                        message_box: None,
+                    });
                 }
                 self.filament_staging.borrow_mut().clear();
                 ui.invoke_empty_spool_staging();
@@ -1688,11 +1668,7 @@ impl ViewModel {
                 ui.invoke_slot_operation_succeeded("Configure".into(), full_slot_description.to_shared_string());
             }
             Err(err) => {
-                ui.invoke_slot_operation_failed(
-                    "Configure".into(),
-                    full_slot_description.to_shared_string(),
-                    slint::format!("{err:?}"),
-                );
+                ui.invoke_slot_operation_failed("Configure".into(), full_slot_description.to_shared_string(), slint::format!("{err:?}"));
             }
         }
     }
@@ -1790,11 +1766,7 @@ impl ViewModel {
                 ui.invoke_slot_operation_succeeded(operation.into(), full_slot_description.to_shared_string());
             }
             Err(err) => {
-                ui.invoke_slot_operation_failed(
-                    operation.into(),
-                    full_slot_description.to_shared_string(),
-                    slint::format!("{err:?}"),
-                );
+                ui.invoke_slot_operation_failed(operation.into(), full_slot_description.to_shared_string(), slint::format!("{err:?}"));
             }
         }
     }
@@ -2043,7 +2015,11 @@ impl ViewModel {
         let full_slot_description = Self::slot_description_from_snapshot(&snapshot, slot_id);
 
         if !snapshot.connected {
-            ui.invoke_slot_operation_failed("Configure".into(), full_slot_description.to_shared_string(), "Printer disconnected".into());
+            ui.invoke_slot_operation_failed(
+                "Configure".into(),
+                full_slot_description.to_shared_string(),
+                "Printer disconnected".into(),
+            );
             return;
         }
         if !(snapshot.capabilities.material_slot_assign && snapshot.capabilities.material_slot_set_spool_id) {
@@ -2089,11 +2065,7 @@ impl ViewModel {
                 self.update_slot_groups_from_selected_printer();
                 ui.invoke_slot_operation_succeeded("Configure".into(), full_slot_description.to_shared_string());
             }
-            Err(err) => ui.invoke_slot_operation_failed(
-                "Configure".into(),
-                full_slot_description.to_shared_string(),
-                slint::format!("{err:?}"),
-            ),
+            Err(err) => ui.invoke_slot_operation_failed("Configure".into(), full_slot_description.to_shared_string(), slint::format!("{err:?}")),
         }
     }
     fn ui_term_info(&self, text: &str) {
@@ -2228,12 +2200,6 @@ impl ViewModel {
     }
 
     fn ui_get_slot_display(&self, slot_id: &str) -> UiSlotDisplay {
-        if let Some(tray_id) = Self::bambu_tray_id_from_slot_id(&SlotId::new(slot_id))
-            && self.selected_ui_bambu_index().is_some()
-        {
-            return self.ui_get_bambu_slot_display(tray_id);
-        }
-
         let Some((_current_printer, _manager_index, snapshot)) = self.selected_printer_snapshot() else {
             return UiSlotDisplay::default();
         };
@@ -2251,30 +2217,7 @@ impl ViewModel {
 
     fn ui_get_slot_display_from_snapshot(&self, slot: &printer_domain::MaterialSlotSnapshot) -> UiSlotDisplay {
         let (filament_title, slicer_name, color_code, temp_min, temp_max) = match &slot.filament {
-            printer_domain::PrinterFilament::Known(filament) => {
-                let material = if filament.material_type.is_empty() {
-                    filament.slicer_filament.as_str()
-                } else {
-                    filament.material_type.as_str()
-                };
-                let slicer_name = self
-                    .get_filament_info(&filament.slicer_filament, Some(material))
-                    .map(|info| {
-                        slint::format!(
-                            "{}{}",
-                            info.slicer_name,
-                            if info.base_filament { " (base)" } else { "" }
-                        )
-                    })
-                    .unwrap_or_else(|| filament.slicer_filament.to_shared_string());
-                (
-                    material.to_shared_string(),
-                    slicer_name,
-                    filament.color_codes.join(";").to_shared_string(),
-                    filament.temps.nozzle_min_c.unwrap_or_default() as i32,
-                    filament.temps.nozzle_max_c.unwrap_or_default() as i32,
-                )
-            }
+            printer_domain::PrinterFilament::Known(filament) => self.ui_slot_filament_display(filament),
             printer_domain::PrinterFilament::Unknown => Default::default(),
         };
 
@@ -2286,119 +2229,85 @@ impl ViewModel {
             slicer_name,
             temp_max,
             temp_min,
-            pa: Self::driver_data_value(&slot.driver_data, "bambu_resolved_k")
-                .unwrap_or_default()
-                .to_shared_string(),
+            pa: slot.pressure_advance_value.to_shared_string(),
+            pa_meta: slot.pressure_advance_meta.to_shared_string(),
         }
     }
 
-    fn ui_get_bambu_slot_display(&self, tray_id: i32) -> UiSlotDisplay {
-        let printer_borrow = self.bambu_printer_model.borrow();
-        let tray = printer_borrow.get_any_tray(tray_id as usize);
-        let color_code = if let Filament::Known(filament) = &tray.filament {
-            SharedString::from(filament.tray_color.join(";"))
+    fn ui_slot_filament_display(&self, filament: &printer_domain::PrinterFilamentInfo) -> (SharedString, SharedString, SharedString, i32, i32) {
+        let material = if filament.material_type.is_empty() {
+            filament.slicer_filament.as_str()
         } else {
-            SharedString::new()
+            filament.material_type.as_str()
         };
-        let (slicer_name, temp_min, temp_max, material) = if let Filament::Known(filament) = &tray.filament {
-            if let Some(filament_info) = self.get_filament_info(&filament.tray_info_idx, Some(&filament.tray_type)) {
-                (
-                    slint::format!(
-                        "{}{}",
-                        filament_info.slicer_name,
-                        if filament_info.base_filament { " (base)" } else { "" }
-                    ),
-                    filament_info.nozzle_temp_low,
-                    filament_info.nozzle_temp_high,
-                    filament.tray_type.as_str(),
-                )
-            } else {
-                (SharedString::new(), 0, 0, filament.tray_type.as_str())
-            }
+        let (slicer_name, temp_min, temp_max) = if let Some(filament_info) = self.get_filament_info(&filament.slicer_filament, Some(material)) {
+            (
+                slint::format!(
+                    "{}{}",
+                    filament_info.slicer_name,
+                    if filament_info.base_filament { " (base)" } else { "" }
+                ),
+                filament_info.nozzle_temp_low,
+                filament_info.nozzle_temp_high,
+            )
         } else {
-            (SharedString::new(), 0, 0, "")
+            (
+                filament.slicer_filament.to_shared_string(),
+                filament.temps.nozzle_min_c.unwrap_or_default() as i32,
+                filament.temps.nozzle_max_c.unwrap_or_default() as i32,
+            )
         };
-
-        let _color_name = if color_code.len() >= 6 {
-            let color = u32::from_str_radix(&color_code[..6], 16).unwrap() + 0xFF000000; // the plus 0xFF at the end is fo add alpha
-            let color = slint::Color::from_argb_encoded(color);
-            let color_name_info = get_color_name(color.red(), color.green(), color.blue());
-            color_name_info.0
-        } else {
-            ""
-        };
-
         let brand = if !slicer_name.is_empty() {
-            get_brand_from_text(slicer_name.as_str()).unwrap_or("")
+            if filament.brand.is_empty() {
+                get_brand_from_text(slicer_name.as_str()).unwrap_or("")
+            } else {
+                filament.brand.as_str()
+            }
         } else {
             ""
         };
-
-        let color_name = {
-            if brand == "Bambu"
-                && let Filament::Known(filament) = &tray.filament
-            {
-                let mut colors_rgba_for_compare = filament.tray_color.clone();
-                colors_rgba_for_compare.sort();
-                let colors_rgba_for_compare: Vec<&str> = colors_rgba_for_compare.iter().map(|s| s.as_str()).collect();
-                BAMBU_COLOR_NAMES
-                    .lines()
-                    .find_map(|line| {
-                        let mut s = line.split(',');
-                        let id = s.next()?;
-                        if id != filament.tray_info_idx {
-                            return None;
-                        }
-
-                        let colors = s.next()?;
-                        // make sure lists are exactly the same (except for order)
-                        let mut color_name_colors: Vec<&str> = colors.split('/').collect();
-                        color_name_colors.sort();
-
-                        let full_match = colors_rgba_for_compare == color_name_colors;
-
-                        if !full_match {
-                            return None;
-                        }
-
-                        let name = s.next()?;
-                        let code = s.next()?;
-                        Some(format!(" {name} ({code})"))
-                    })
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            }
+        let color_name = if !filament.color_name.is_empty() {
+            format!(" {}", filament.color_name)
+        } else if brand == "Bambu" {
+            Self::bambu_filament_color_name(&filament.slicer_filament, &filament.color_codes)
+        } else {
+            String::new()
         };
-
         let filament_title = format!("{brand} {material}{color_name}").trim().to_shared_string();
-        // let filament_title = format!("{brand} {material}").trim().to_shared_string();
-        let available_in_spool = self.weight_left(tray).unwrap_or_default();
-
-        let pa = match tray.cali_idx {
-            Some(-1) | Some(0) | None => {
-                slint::format!("({})", tray.k_from_tray.unwrap_or(0.02))
-            }
-            Some(cali_idx) => {
-                let (k_value, profile_name) = printer_borrow
-                    .calibrations
-                    .iter()
-                    .find(|c| c.cali_idx == cali_idx)
-                    .map_or(("(0.02)", ""), |c| (c.k_value.as_str(), c.name.as_str()));
-                slint::format!("{k_value}, {profile_name}")
-            }
-        };
-
-        UiSlotDisplay {
-            available_in_spool,
-            color_code,
-            consumed_since_loaded: tray.meta_info.consumed_since_load,
+        (
             filament_title,
             slicer_name,
-            temp_max,
+            filament.color_codes.join(";").to_shared_string(),
             temp_min,
-            pa,
-        }
+            temp_max,
+        )
+    }
+
+    fn bambu_filament_color_name(slicer_filament: &str, color_codes: &[String]) -> String {
+        let mut colors_rgba_for_compare = color_codes.iter().map(|s| s.as_str()).collect::<Vec<_>>();
+        colors_rgba_for_compare.sort();
+        BAMBU_COLOR_NAMES
+            .lines()
+            .find_map(|line| {
+                let mut s = line.split(',');
+                let id = s.next()?;
+                if id != slicer_filament {
+                    return None;
+                }
+
+                let colors = s.next()?;
+                let mut color_name_colors = colors.split('/').collect::<Vec<_>>();
+                color_name_colors.sort();
+
+                if colors_rgba_for_compare != color_name_colors {
+                    return None;
+                }
+
+                let name = s.next()?;
+                let code = s.next()?;
+                Some(format!(" {name} ({code})"))
+            })
+            .unwrap_or_default()
     }
 
     fn ui_get_spool_tag_definition_display(
@@ -3778,13 +3687,12 @@ impl ViewModel {
     }
 
     fn slot_sets_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) -> Vec<SlotSet> {
-        let num_extruders = snapshot.extruders.len() as u32;
         snapshot
             .slot_groups
             .iter()
             .map(|group| SlotSet {
                 kind: Self::legacy_slot_group_kind(group.kind),
-                name: Self::legacy_slot_group_name(group, num_extruders),
+                name: group.name.clone(),
                 extruder: group.extruder.unwrap_or_default(),
                 slots: group.slots.iter().map(|slot| self.slot_snapshot_str(slot)).collect(),
                 temp: group.temperature_c,
@@ -3800,35 +3708,17 @@ impl ViewModel {
         }
     }
 
-    fn legacy_slot_group_name(group: &printer_domain::SlotGroupSnapshot, num_extruders: u32) -> String {
-        if group.kind != printer_domain::SlotGroupKind::External {
-            return group.name.clone();
-        }
-
-        if num_extruders == 2 {
-            if group.extruder == Some(1) {
-                "Ext Left".to_string()
-            } else {
-                "Ext Right".to_string()
-            }
-        } else {
-            "Ext".to_string()
-        }
-    }
-
     fn slot_snapshot_str(&self, slot: &printer_domain::MaterialSlotSnapshot) -> String {
         let (material, color) = match &slot.filament {
             printer_domain::PrinterFilament::Known(filament_info) => (filament_info.material_type.as_str(), filament_info.color_codes.join(";")),
             printer_domain::PrinterFilament::Unknown => ("", String::new()),
         };
-        let k_value = Self::driver_data_value(&slot.driver_data, "bambu_resolved_k").unwrap_or("");
-
         format!(
             "{},{},{},{},{},{},{}",
             Self::legacy_slot_state(slot.state),
             material,
             color,
-            k_value,
+            slot.pressure_advance_value.as_str(),
             slot.spool_id.as_deref().unwrap_or(""),
             self.weight_display_snapshot(slot),
             i32::from(slot.used_in_print),
@@ -3863,10 +3753,6 @@ impl ViewModel {
         }
     }
 
-    fn driver_data_value<'a>(driver_data: &'a printer_domain::DriverData, key: &str) -> Option<&'a str> {
-        driver_data.fields.iter().find(|field| field.key == key).map(|field| field.value.as_str())
-    }
-
     fn weight_display_snapshot(&self, slot: &printer_domain::MaterialSlotSnapshot) -> String {
         if let Some(weight_left) = self.weight_left_snapshot(slot) {
             format!("{:.1}g", weight_left)
@@ -3898,7 +3784,6 @@ impl ViewModel {
         );
         slot_str
     }
-
 }
 
 impl BambuPrinterObserver for ViewModel {
@@ -4624,11 +4509,7 @@ pub enum StoreStateRequest {
 
 pub type StoreStateRequestChannel = Channel<NoopRawMutex, StoreStateRequest, 5>;
 
-fn validate_persistent_printer_state_path(
-    view_model: &Rc<RefCell<ViewModel>>,
-    manager_index: usize,
-    path: &str,
-) -> Result<(), String> {
+fn validate_persistent_printer_state_path(view_model: &Rc<RefCell<ViewModel>>, manager_index: usize, path: &str) -> Result<(), String> {
     if !path.starts_with("/state/") || path.contains("..") || path.contains("//") {
         return Err(format!("Invalid printer state path {path}"));
     }
@@ -4643,10 +4524,7 @@ fn validate_persistent_printer_state_path(
             .find(|(other_index, _printer_id, other_path)| *other_index != manager_index && other_path == path)
     };
     if let Some((_other_index, other_printer_id, _path)) = duplicate {
-        return Err(format!(
-            "Printer state path {path} is also used by {}",
-            other_printer_id.as_str()
-        ));
+        return Err(format!("Printer state path {path} is also used by {}", other_printer_id.as_str()));
     }
 
     Ok(())
@@ -4857,7 +4735,9 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
         match load_persistent_printer_state(&framework, &view_model, &store, manager_index).await {
             Ok(true) => refresh_selected_printer_after_state_restore(&view_model, manager_index),
             Ok(false) => {}
-            Err(err) => view_model.borrow().message_box("Restore Print State Notice", &err, "", crate::app::StatusType::Error, 0),
+            Err(err) => view_model
+                .borrow()
+                .message_box("Restore Print State Notice", &err, "", crate::app::StatusType::Error, 0),
         }
     }
     restore_bambu_print_project_states(&framework, &view_model).await;
@@ -4919,10 +4799,7 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
                                         crate::app::StatusType::Error,
                                         0,
                                     );
-                                    error!(
-                                        "[{}] Failed all retries trying to store printer restart state : {err}",
-                                        printer_index + 1
-                                    );
+                                    error!("[{}] Failed all retries trying to store printer restart state : {err}", printer_index + 1);
                                 }
                             }
                         }

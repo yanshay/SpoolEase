@@ -55,18 +55,18 @@ pub enum PrinterDriverKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct PrinterCapabilities {
-    pub material_slot_read: bool,            // Driver can report material slot groups, slots, and their state.
-    pub material_slot_write: bool,           // Driver supports at least one material slot mutation command.
-    pub material_slot_assign: bool,          // Driver can write material/profile data to a slot.
-    pub material_slot_set_spool_id: bool,    // Driver or SpoolEase state can associate a spool ID with a slot.
-    pub material_slot_clear: bool,           // Driver can clear/reset slot material and spool state.
-    pub material_slot_unassign_spool: bool,  // Driver can remove only the spool association from a slot.
-    pub print_status_read: bool,             // Driver can report print/job state and progress.
-    pub print_control: bool,                 // Driver can accept print control commands such as pause/resume/stop.
-    pub consumption_tracking: bool,          // Driver can report consumed filament by slot or spool.
-    pub printer_tag_scan: bool,              // Driver can report tag scans that happen inside the printer.
-    pub print_file_fetch: bool,              // Driver can fetch or provide print files for analysis.
-    pub persistent_slot_state: bool,         // Slot state survives restart or can be restored by the driver.
+    pub material_slot_read: bool,                    // Driver can report material slot groups, slots, and their state.
+    pub material_slot_write: bool,                   // Driver supports at least one material slot mutation command.
+    pub material_slot_assign: bool,                  // Driver can write material/profile data to a slot.
+    pub material_slot_set_spool_id: bool,            // Driver or SpoolEase state can associate a spool ID with a slot.
+    pub material_slot_clear: bool,                   // Driver can clear/reset slot material and spool state.
+    pub material_slot_unassign_spool: bool,          // Driver can remove only the spool association from a slot.
+    pub print_status_read: bool,                     // Driver can report print/job state and progress.
+    pub print_control: bool,                         // Driver can accept print control commands such as pause/resume/stop.
+    pub consumption_tracking: bool,                  // Driver can report consumed filament by slot or spool.
+    pub printer_tag_scan: bool,                      // Driver can report tag scans that happen inside the printer.
+    pub print_file_fetch: bool,                      // Driver can fetch or provide print files for analysis.
+    pub persistent_slot_state: bool,                 // Slot state survives restart or can be restored by the driver.
     pub pressure_advance: PressureAdvanceCapability, // Driver supports pressure advance/K-factor management.
 }
 
@@ -106,6 +106,7 @@ pub struct ExtruderSnapshot {
 pub struct SlotGroupSnapshot {
     pub id: String,
     pub name: String,
+    pub short_name: String,
     pub kind: SlotGroupKind,
     pub extruder: Option<u32>,
     pub temperature_c: Option<f32>,
@@ -127,12 +128,15 @@ pub enum SlotGroupKind {
 pub struct MaterialSlotSnapshot {
     pub id: SlotId,
     pub display_name: String,
+    pub short_name: String,
     pub state: SlotState,
     pub filament: PrinterFilament,
     pub spool_id: Option<String>,
     pub consumed_since_load_g: f32,
     pub consumed_since_weight_g: f32,
     pub used_in_print: bool,
+    pub pressure_advance_value: String,
+    pub pressure_advance_meta: String,
     pub driver_data: DriverData,
 }
 

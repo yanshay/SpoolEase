@@ -15,6 +15,7 @@ mod app;
 mod app_config;
 mod app_ota;
 mod bambu;
+#[allow(dead_code)]
 mod color_utils;
 mod csvdb;
 mod filament_staging;

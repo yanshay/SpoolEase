@@ -868,6 +868,7 @@ Slot groups:
 pub struct SlotGroupSnapshot {
     pub id: String,
     pub name: String,
+    pub short_name: String,
     pub kind: SlotGroupKind,
     pub extruder: Option<u32>,
     pub temp: Option<f32>,
@@ -890,12 +891,15 @@ Slots:
 pub struct MaterialSlotSnapshot {
     pub id: SlotId,
     pub display_name: String,
+    pub short_name: String,
     pub state: SlotState,
     pub filament: PrinterFilament,
     pub spool_id: Option<String>,
     pub consumed_since_load: f32,
     pub consumed_since_weight: f32,
     pub used_in_print: bool,
+    pub pressure_advance_value: String,
+    pub pressure_advance_meta: String,
     pub driver_data: SlotDriverData,
 }
 ```
@@ -914,7 +918,7 @@ Bambu can use stable IDs such as:
 - `bambu:254`
 - `bambu:255`
 
-or simply `0`, `1`, `254`, `255` inside the Bambu adapter. The UI should not rely on their numeric meaning.
+or simply `0`, `1`, `254`, `255` inside the Bambu adapter. The UI should not rely on their numeric meaning. UI-facing labels must come from `display_name`, `short_name`, group `name`, and group `short_name`.
 
 ### Printer Commands
 
@@ -1727,6 +1731,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, generic `PrinterManager` storage, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan events, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a basic fake non-Bambu driver visible in web status, console-safe selection of generic printers, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, standard circular slot-card UI for Bambu and Fake, backend-driven primary/external slot groups, opaque string slot IDs for main Slint slot actions, common driver-owned printer-state persistence scheduling, and Fake generic slot-state persistence.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, generic `PrinterManager` storage, `/api/printers-status` read projection through `PrinterManager` while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan events, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a basic fake non-Bambu driver visible in web status, console-safe selection of generic printers, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, standard circular slot-card UI for Bambu and Fake, backend-driven primary/external slot groups, opaque string slot IDs for main Slint slot actions, common driver-owned printer-state persistence scheduling, Fake generic slot-state persistence, driver-provided slot/group display names, and explicit slot pressure-advance display fields.
 
 Still not done: full `PrinterManager` ownership replacement, tray/snapshot event bridge, generic consumption reporting, paginated/scrollable dynamic Slint slot groups for large topologies, and real non-Bambu driver.
