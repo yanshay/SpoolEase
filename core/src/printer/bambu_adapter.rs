@@ -6,6 +6,7 @@ use alloc::{
     vec::Vec,
 };
 use core::cell::RefCell;
+use framework::error;
 use hashbrown::HashMap;
 use serde_json::Value;
 
@@ -24,7 +25,7 @@ use super::{
     FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind, MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand,
     PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent,
     PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult, PrinterSnapshot, PrinterSnapshotState,
-    PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
 };
 
 type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
@@ -498,6 +499,32 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
             tag_id: tag_id.to_string(),
             only_spool_id,
         });
+    }
+
+    fn on_slot_consumption_reported(&mut self, _printer_index: usize, tray_id: i32, grams: f32) {
+        if grams == 0.0 {
+            return;
+        }
+        if grams < 0.0 || !grams.is_finite() {
+            error!("Invalid consumption amount from Bambu tray {tray_id}: {grams}");
+            return;
+        }
+
+        let slot_id = BambuPrinterDriver::slot_id_from_tray_id(tray_id);
+        if self
+            .snapshot_state
+            .try_update(true, |snapshot| {
+                let Some(slot) = slot_in_snapshot_mut(snapshot, &slot_id) else {
+                    return Err(());
+                };
+                slot.consumed_since_load_g += grams;
+                slot.consumed_since_weight_g += grams;
+                Ok(())
+            })
+            .is_err()
+        {
+            error!("Missing snapshot slot for consumed Bambu tray {tray_id}");
+        }
     }
 }
 

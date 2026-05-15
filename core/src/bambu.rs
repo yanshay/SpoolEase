@@ -188,6 +188,7 @@ pub trait BambuPrinterObserver {
     fn on_request_gcode_analysis(&mut self, bambu_printer: &mut BambuPrinter, print_project: &PrintProject) -> i32;
     fn on_cancel_gcode_analysis(&mut self, job_number: i32);
     fn on_tag_scanned(&self, printer_index: usize, tray_id: i32, tag_id: &str, only_spool_id: bool);
+    fn on_slot_consumption_reported(&mut self, _printer_index: usize, _tray_id: i32, _grams: f32) {}
 }
 
 // Special access to trays fields for dirty tracking
@@ -551,6 +552,14 @@ impl BambuPrinter {
         for weak_observer in observers.iter_mut() {
             let observer = weak_observer.upgrade().unwrap();
             observer.borrow_mut().on_tag_scanned(self.printer_index, tray_id, tag_id, only_spool_id);
+        }
+    }
+
+    pub fn notify_slot_consumption_reported(&mut self, tray_id: i32, grams: f32) {
+        let mut observers = self.observers.clone(); // to avoid two references - can probably optimize in various ways
+        for weak_observer in observers.iter_mut() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_slot_consumption_reported(self.printer_index, tray_id, grams);
         }
     }
 

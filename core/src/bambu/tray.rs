@@ -134,16 +134,6 @@ impl BambuPrinter {
         });
     }
 
-    pub fn add_snapshot_slot_consumption(&mut self, index: usize, consumed_g: f32) -> Option<f32> {
-        let mut consumed_since_load = None;
-        self.update_snapshot_slot(index, |slot| {
-            slot.consumed_since_load_g += consumed_g;
-            slot.consumed_since_weight_g += consumed_g;
-            consumed_since_load = Some(slot.consumed_since_load_g);
-        });
-        consumed_since_load
-    }
-
     pub fn clear_snapshot_slots_used_in_print(&mut self) {
         let Some(snapshot_state) = self.snapshot_state() else {
             return;

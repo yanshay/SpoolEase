@@ -447,11 +447,6 @@ pub enum PrinterEventKind {
     MaterialSlotPresenceChanged {
         changes: Vec<MaterialSlotPresenceChange>,
     },
-    SlotConsumptionReported {
-        slot_id: SlotId,
-        grams: f32,
-        source: ConsumptionSource,
-    },
     PrintFileAnalysisRequested {
         request: PrintFileAnalysisRequest,
     },
@@ -481,14 +476,6 @@ pub enum PrinterChange {
     Slot(SlotId),
     Print,
     Diagnostics,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ConsumptionSource {
-    DriverTelemetry,
-    PrintFileAnalysis,
-    Manual,
-    Other(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

@@ -491,18 +491,14 @@ impl BambuPrinter {
                         if usage_entry.layer < up_to_layer_num || up_to_layer_num == -1 {
                             // comparing with previous layer - to consume all previous layers in case of skip
                             if let Some(usage_entry_tray_id) = print_project.get_ams_mapping_tray_id(usage_entry.gcode_filament_id) {
-                                if let Some(consumed_since_load) = self.add_snapshot_slot_consumption(usage_entry_tray_id as usize, usage_entry.weight_g) {
-                                    debug!(
-                                        "[{}] Print project consumed entry {} on layer change : {:.2}g, from filament at slot {} to a session total of {:.2}g",
-                                        printer_log_id,
-                                        print_project.consume_index(),
-                                        usage_entry.weight_g,
-                                        usage_entry_tray_id,
-                                        consumed_since_load
-                                    );
-                                } else {
-                                    error!("[{printer_log_id}] Missing snapshot slot for consumed tray {usage_entry_tray_id}");
-                                }
+                                self.notify_slot_consumption_reported(usage_entry_tray_id, usage_entry.weight_g);
+                                debug!(
+                                    "[{}] Print project consumed entry {} on layer change : {:.2}g, from filament at slot {}",
+                                    printer_log_id,
+                                    print_project.consume_index(),
+                                    usage_entry.weight_g,
+                                    usage_entry_tray_id,
+                                );
                             } else {
                                 error!(
                                     "[{}] Internal Error? No AMS slot for gcode filament id {}",
@@ -532,18 +528,14 @@ impl BambuPrinter {
                             && self.get_tray_active() == Some(usage_entry_tray_id)
                             && (0..self.ams_trays().len() as i32).contains(&usage_entry_tray_id)
                         {
-                            if let Some(consumed_since_load) = self.add_snapshot_slot_consumption(usage_entry_tray_id as usize, usage_entry.weight_g) {
-                                    debug!(
-                                        "[{}] Print project consumed entry {} on filament change : {:.2}g, from filament at slot {} to a session total of {:.2}g",
-                                        printer_log_id,
-                                        print_project.consume_index(),
-                                        usage_entry.weight_g,
-                                        usage_entry_tray_id,
-                                        consumed_since_load
-                                    );
-                            } else {
-                                error!("[{printer_log_id}] Missing snapshot slot for consumed tray {usage_entry_tray_id}");
-                            }
+                            self.notify_slot_consumption_reported(usage_entry_tray_id, usage_entry.weight_g);
+                            debug!(
+                                "[{}] Print project consumed entry {} on filament change : {:.2}g, from filament at slot {}",
+                                printer_log_id,
+                                print_project.consume_index(),
+                                usage_entry.weight_g,
+                                usage_entry_tray_id,
+                            );
                             print_project.set_not_store_consume_index(print_project.consume_index() + 1);
                             consumed = true;
                             print_project.need_consume = false;
