@@ -494,7 +494,9 @@ impl ViewModel {
                         term_info!("[{}] Skipping fake printer with invalid config", printer_number);
                         continue;
                     }
-                    self.printer_manager.borrow_mut().add_fake_printer(printer_config.name.clone(), fake_config);
+                    self.printer_manager
+                        .borrow_mut()
+                        .add_fake_printer(printer_config.name.clone(), fake_config);
                     if let Some(view_model_rc) = &self.view_model {
                         let trait_for_printer_rc: Rc<RefCell<dyn printer_domain::PrinterObserver>> = view_model_rc.clone();
                         let trait_for_printer_weak: Weak<RefCell<dyn printer_domain::PrinterObserver>> = Rc::downgrade(&trait_for_printer_rc);
@@ -2973,12 +2975,7 @@ impl ViewModel {
                     view_model.borrow().update_slot_groups_from_selected_printer();
                 }
                 let target_ui_index = view_model.borrow().ui_index_for_manager_index(manager_index).unwrap_or(-1);
-                    ui_app_state.invoke_slot_update_succeeded(
-                        "Configure".into(),
-                        full_slot_description.into(),
-                        slot_id.as_str().into(),
-                        target_ui_index,
-                    );
+                ui_app_state.invoke_slot_update_succeeded("Configure".into(), full_slot_description.into(), slot_id.as_str().into(), target_ui_index);
             }
             Err(err) => {
                 ui_app_state.invoke_slot_operation_failed("Configure".into(), full_slot_description.into(), slint::format!("{err:?}"));
@@ -3433,7 +3430,6 @@ impl ViewModel {
         let spool = self.store.get_spool_by_id(spool_id)?;
         self.weight_left_spool(&spool, Some(slot.consumed_since_weight_g))
     }
-
 }
 
 impl printer_domain::PrinterObserver for ViewModel {
@@ -4090,7 +4086,10 @@ async fn store_persistent_printer_state(
                     Ok(true)
                 } else {
                     restore_persistent_printer_dirty_state(view_model, manager_index);
-                    error!("[{printer_number}] During store state verification read data differ from written data for {}", payload.path);
+                    error!(
+                        "[{printer_number}] During store state verification read data differ from written data for {}",
+                        payload.path
+                    );
                     Err(String::from("Verification of state store failed"))
                 }
             }

@@ -13,10 +13,9 @@ use crate::bambu::BambuPrinter;
 use crate::store::Store;
 
 use super::{
-    DriverSpecificQuery, DriverSpecificQueryResult, PRINTER_STATE_FILE_VERSION, PrinterCapabilities, PrinterCommand, PrinterDriver,
-    PrinterError, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterRuntimePersistenceFuture,
-    PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterStateFile, SlotId, bambu_adapter::BambuPrinterDriver,
-    fake_driver::FakePrinterDriver, sanitize_loaded_snapshot,
+    DriverSpecificQuery, DriverSpecificQueryResult, PRINTER_STATE_FILE_VERSION, PrinterCapabilities, PrinterCommand, PrinterDriver, PrinterError,
+    PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind,
+    PrinterSnapshot, PrinterStateFile, SlotId, bambu_adapter::BambuPrinterDriver, fake_driver::FakePrinterDriver, sanitize_loaded_snapshot,
 };
 
 #[derive(Default)]

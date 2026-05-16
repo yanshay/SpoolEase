@@ -13,10 +13,10 @@ use crate::app_config::FakePrinterConfig;
 use framework::{error, framework::Framework, info, prelude::*};
 
 use super::{
-    MaterialSlotSnapshot, PressureAdvanceCapability, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand,
-    PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId,
-    PrinterObserver, PrinterResult, PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind,
-    SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
+    MaterialSlotSnapshot, PressureAdvanceCapability, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver,
+    PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult,
+    PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    slot_in_snapshot_mut,
 };
 
 type FakePrinterCommandChannel = Channel<NoopRawMutex, PrinterCommand, 5>;

@@ -40,8 +40,8 @@ use crate::app_config::{
     AiProviderAvailability, AiProviderId, AppConfig, BambuPrinterConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, FakePrinterConfig,
     PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
 };
-use crate::bambu::calibration::KInfo;
 use crate::bambu::bambu_api::PrintCommand;
+use crate::bambu::calibration::KInfo;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
 use crate::store::{BackupMeta, FileMeta, Store};
@@ -219,13 +219,11 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     let command_name = command.get_command().to_string();
 
                     match state.0.view_model.borrow().request_printer_command(&printer_serial, command) {
-                        Ok(()) => {
-                            GenericResponse {
-                                text: format!("Sent {command_name} command to printer {printer_serial}"),
-                                error: None,
-                            }
-                            .encrypt(&key.borrow())
+                        Ok(()) => GenericResponse {
+                            text: format!("Sent {command_name} command to printer {printer_serial}"),
+                            error: None,
                         }
+                        .encrypt(&key.borrow()),
                         Err(err) => GenericResponse {
                             text: "Printer not found".to_string(),
                             error: Some(err),
@@ -753,32 +751,25 @@ impl AppWithStateBuilder for NestedAppBuilder {
                             .encrypt(&key.borrow()),
                             Err(err) => {
                                 error!("Failed to store dashboard configuration: {err}");
-                                DashboardConfigDTO {
-                                    dashboard_config_json: None,
-                                }
-                                .encrypt(&key.borrow())
+                                DashboardConfigDTO { dashboard_config_json: None }.encrypt(&key.borrow())
                             }
                         },
-                        None => DashboardConfigDTO {
-                            dashboard_config_json: None,
-                        }
-                        .encrypt(&key.borrow()),
+                        None => DashboardConfigDTO { dashboard_config_json: None }.encrypt(&key.borrow()),
                     }
                 },
             )
-            .get(async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>| {
-                let store = state.store;
-                match store.get_dashboard_config_json().await {
-                    Ok(dashboard_config_json) => DashboardConfigDTO { dashboard_config_json }.encrypt(&key.borrow()),
-                    Err(err) => {
-                        error!("Failed to load dashboard configuration: {err}");
-                        DashboardConfigDTO {
-                            dashboard_config_json: None,
+            .get(
+                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>| {
+                    let store = state.store;
+                    match store.get_dashboard_config_json().await {
+                        Ok(dashboard_config_json) => DashboardConfigDTO { dashboard_config_json }.encrypt(&key.borrow()),
+                        Err(err) => {
+                            error!("Failed to load dashboard configuration: {err}");
+                            DashboardConfigDTO { dashboard_config_json: None }.encrypt(&key.borrow())
                         }
-                        .encrypt(&key.borrow())
                     }
-                }
-            }),
+                },
+            ),
         );
 
         let router = router.route(

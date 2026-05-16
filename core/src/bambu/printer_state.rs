@@ -107,8 +107,8 @@ impl BambuPrinter {
         }
 
         let private_dirty = self.printer_persistent_state_dirty();
-        let state = serde_json::to_value(self.printer_persistent_state())
-            .map_err(|err| format!("Failed to serialize Bambu private printer state: {err}"))?;
+        let state =
+            serde_json::to_value(self.printer_persistent_state()).map_err(|err| format!("Failed to serialize Bambu private printer state: {err}"))?;
         let dirty_state = if private_dirty {
             debug!(
                 "[{}] Dirty status: AMS slots({}), Ext slots({}), Extruders({}), AmsExists: ({}), Tray Exists: ({}), Try Read Done ({}), Calibrations ({}), Printer Name ({}), Relevant Extruder State ({}), Forced Store ({})",
@@ -441,6 +441,5 @@ impl BambuPrinter {
                 self.inner_printer_name = state.printer_name.clone();
             }
         }
-
     }
 }

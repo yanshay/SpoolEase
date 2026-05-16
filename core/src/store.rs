@@ -734,10 +734,7 @@ impl Store {
         let file_store = self.framework.borrow().file_store();
         let mut file_store = file_store.lock().await;
 
-        match file_store
-            .create_write_file_str("/store/dashbord.jsn", dashboard_config_json)
-            .await
-        {
+        match file_store.create_write_file_str("/store/dashbord.jsn", dashboard_config_json).await {
             Ok(_) => {
                 info!("Stored dashboard configuration to /store/dashbord.jsn");
                 Ok(())
@@ -1029,7 +1026,6 @@ pub trait StoreObserver {
     fn on_tag_removed(&self);
     // fn on_read_spool_record_ext(&mut self, result: Result<SpoolRecordExt, String>);
 }
-
 
 fn spool_rec_ext_file_path(ext_rec_id: &str) -> Result<String, StoreError> {
     if let Ok(id_num) = ext_rec_id.parse::<i32>() {

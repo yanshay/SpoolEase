@@ -19,9 +19,7 @@ use crate::bambu::{
     BambuPrinter, BambuPrinterObserver, SpoolId,
     bambu_api::{GcodeState, PrintCommand as BambuPrintCommand},
     bambu_print::PrintProject,
-    driver_specific::{
-        BambuAddPressureAdvance, BambuDriverCommand, BambuDriverQuery, BambuDriverQueryResult, BambuPressureAdvanceEntry,
-    },
+    driver_specific::{BambuAddPressureAdvance, BambuDriverCommand, BambuDriverQuery, BambuDriverQueryResult, BambuPressureAdvanceEntry},
     filament::Filament as BambuFilament,
     printer_state::BambuPersistentDirtyState,
     tray::{Tray, TrayBits, TrayState as BambuTrayState},
@@ -29,12 +27,11 @@ use crate::bambu::{
 use crate::store::Store;
 
 use super::{
-    DriverSpecificCommand, DriverSpecificQuery, DriverSpecificQueryResult, FilamentTemps, MaterialSlotPresenceChange,
-    MaterialSlotPresenceChangeKind, MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand, PrintSnapshot, PrintState,
-    PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind,
-    PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult, PrinterRuntimePersistenceFuture,
-    PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind,
-    SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
+    DriverSpecificCommand, DriverSpecificQuery, DriverSpecificQueryResult, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind,
+    MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange,
+    PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId,
+    PrinterObserver, PrinterResult, PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterSnapshotState,
+    PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
 };
 
 type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
