@@ -18,7 +18,6 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 use hashbrown::HashMap;
 use ndef_rs::NdefMessage;
 use serde::{Deserialize, Serialize};
-use shared::gcode_analysis_task::FilamentUsage;
 use shared::settings::{
     OTA_DOMAIN_DEBUG, OTA_DOMAIN_STABLE, OTA_DOMAIN_UNSTABLE, OTA_TLS_CERTIFICATE, SCALE_DEBUG_OTA_PATH, SCALE_STABLE_OTA_PATH,
     SCALE_UNSTABLE_OTA_PATH,
@@ -3801,22 +3800,6 @@ impl SpoolScaleObserver for ViewModel {
 
     fn on_button_pressed(&mut self, scale_weight: ScaleWeight) -> Option<bool> {
         self.update_spool_weight_from_button(scale_weight)
-    }
-
-    fn on_gcode_analysis(&mut self, job_number: i32, printer_index: usize, _gcode_analysis: FilamentUsage) {
-        debug!("Ignoring gcode analysis job {job_number} from Scale for printer index {printer_index}; console now runs Bambu analysis directly");
-    }
-
-    fn on_gcode_analysis_failed(&mut self, job_number: i32, printer_index: usize) {
-        debug!("Ignoring failed gcode analysis job {job_number} from Scale for printer index {printer_index}");
-    }
-
-    fn on_gcode_analysis_canceled(&mut self, job_number: i32, printer_index: usize) {
-        debug!("Ignoring canceled gcode analysis job {job_number} from Scale for printer index {printer_index}");
-    }
-
-    fn on_gcode_analysis_completed(&mut self, job_number: i32, printer_index: usize) {
-        debug!("Ignoring completed gcode analysis job {job_number} from Scale for printer index {printer_index}");
     }
 
     fn on_scale_version(&mut self, scale_version: &str) {

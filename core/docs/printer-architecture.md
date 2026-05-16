@@ -606,15 +606,15 @@ Target:
 
 Coupling:
 
-- Remote scale protocol includes gcode analysis requests with `printer_index`.
-- `GcodeAnalysisRequest` contains Bambu-specific fields such as serial, access code, FTPS details, and filename rules.
-- Console/Bambu no longer dispatches G-code analysis to the scale; the old scale queued path is retained for compatibility until a protocol cleanup.
+- The shared scale protocol still contains the legacy bidirectional G-code analysis messages so existing scale firmware and older console versions can continue to interoperate.
+- For this console version, scale-based G-code analysis is obsolete: console no longer sends G-code analysis requests/notifications to the scale and no longer routes G-code analysis results back from the scale.
+- The legacy request type contains `printer_index` and Bambu-specific `GcodeAnalysisRequest` fields, so it should not be used for new generic printer work.
 
 Target:
 
 - Keep scale weight and NFC generic.
-- Treat remote gcode analysis as legacy scale protocol unless it is explicitly needed again.
-- Version the scale protocol before changing non-compatible gcode request types.
+- Keep remote scale G-code analysis disabled in current console code unless it is explicitly needed again.
+- Version the scale protocol before removing or replacing the legacy G-code analysis messages.
 
 ## Current UI and API Coupling
 
@@ -1775,4 +1775,11 @@ If context is limited, read these files next:
 
 Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, adapter-owned Bambu generic event bridge, generic `PrinterManager` storage, single-pass active-printer initialization, short generic printer-number log labels, `/api/printers-status` read projection through `PrinterManager` snapshots only while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan/snapshot-refresh events with boxed snapshot payloads, generic material-slot presence events for physical insert/remove transitions, adapter-applied generic snapshot consumption updates, adapter-owned Bambu G-code analysis dispatch with one console task per request, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a fake/demo non-Bambu virtual printer runtime visible in web status, console-safe selection of generic printers, generic `PrinterObserver` subscription through `PrinterManager`, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, standard circular slot-card UI for Bambu and Fake, backend-driven primary/external slot groups, opaque string slot IDs for main Slint slot actions, one-file generic/private printer restart-state persistence, Fake `PrinterSnapshot`-backed state, mandatory driver snapshot-state handles with dirty tracking, Bambu snapshot-backed spool/consumption/used-in-print/status fields, generic snapshot-based consumption storage with high-water acknowledgement, driver-provided slot/group display names, explicit slot pressure-advance display fields, generic async configure-slot-with-spool routing by printer ID plus slot ID, Bambu print-project persistence routed through driver runtime hooks, and removal of legacy SpoolEase V1 tag/K import support.
 
-Still not done: full `PrinterManager` ownership replacement, legacy scale G-code analysis protocol cleanup, and paginated/scrollable dynamic Slint slot groups for large topologies. First real non-Bambu driver work is deferred until explicit user instruction.
+Still not done: full `PrinterManager` ownership replacement and paginated/scrollable dynamic Slint slot groups for large topologies. First real non-Bambu driver work is deferred until explicit user instruction.
+
+## Potential Future Cleanups
+
+- Slot IDs are currently driver-prefixed, e.g. `bambu:255` and `fake:0`, even though command routing already has printer/driver context.
+- A future cleanup can make slot IDs local to the driver, e.g. `255` and `0`, removing prefix formatting/parsing and reducing snapshot size.
+- No backward compatibility is needed for persisted state unless explicitly requested.
+- Slot group IDs are also driver-prefixed, e.g. `bambu:group:0` and `fake:slots`; review these separately because they are UI/model grouping identifiers, not command targets.

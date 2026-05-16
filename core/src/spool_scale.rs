@@ -25,10 +25,10 @@ use embedded_io_async::Write;
 use framework::{debug, error, framework_web_app::encrypt, info, mk_static, prelude::*, term_error, term_info, utils::random_u32, warn};
 use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};
-use shared::{
-    gcode_analysis_task::{FilamentUsage, GcodeAnalysisNotification, GcodeAnalysisRequest},
-    scale::{ConsoleToScale, OtaProgressUpdate, ScaleToConsole},
-};
+use shared::scale::{ConsoleToScale, OtaProgressUpdate, ScaleToConsole};
+// Legacy scale-side G-code analysis path is obsolete in this console version.
+// Reference only; the shared protocol remains for older consoles and scale firmware.
+// use shared::gcode_analysis_task::{FilamentUsage, GcodeAnalysisNotification, GcodeAnalysisRequest};
 
 use crate::{app_config::AppConfig, ssdp::SSDPPubSubChannel};
 
@@ -63,10 +63,11 @@ pub trait SpoolScaleObserver {
     fn on_tag_status(&mut self, status: &shared::spool_tag::Status);
     fn on_pn532_status(&mut self, status: bool);
     fn on_button_pressed(&mut self, scale_weight: ScaleWeight) -> Option<bool>;
-    fn on_gcode_analysis(&mut self, job_number: i32, printer_index: usize, gcode_analysis: FilamentUsage);
-    fn on_gcode_analysis_failed(&mut self, job_number: i32, printer_index: usize);
-    fn on_gcode_analysis_canceled(&mut self, job_number: i32, printer_index: usize);
-    fn on_gcode_analysis_completed(&mut self, job_number: i32, printer_index: usize);
+    // Legacy scale-side G-code analysis observer callbacks:
+    // fn on_gcode_analysis(&mut self, job_number: i32, printer_index: usize, gcode_analysis: FilamentUsage);
+    // fn on_gcode_analysis_failed(&mut self, job_number: i32, printer_index: usize);
+    // fn on_gcode_analysis_canceled(&mut self, job_number: i32, printer_index: usize);
+    // fn on_gcode_analysis_completed(&mut self, job_number: i32, printer_index: usize);
     fn on_scale_version(&mut self, scale_version: &str);
     fn on_ota_progress_update(&mut self, update: OtaProgressUpdate);
 }
@@ -86,17 +87,18 @@ impl SpoolScale {
             .unwrap_or_else(|e| error!("Failed sending button response request to scale {e:?}"));
     }
 
-    #[allow(dead_code)]
-    pub fn request_gcode_analysis(&self, gcode_analysis_request: GcodeAnalysisRequest) -> Result<(), String> {
-        if let Err(err) = self
-            .console_to_scale
-            .try_send(ConsoleToScale::RequestGcodeAnalysis { gcode_analysis_request })
-        {
-            Err(format!("Failed sending request_gcode_analysis to scale {err:?}"))
-        } else {
-            Ok(())
-        }
-    }
+    // Legacy console-to-scale G-code analysis request:
+    // #[allow(dead_code)]
+    // pub fn request_gcode_analysis(&self, gcode_analysis_request: GcodeAnalysisRequest) -> Result<(), String> {
+    //     if let Err(err) = self
+    //         .console_to_scale
+    //         .try_send(ConsoleToScale::RequestGcodeAnalysis { gcode_analysis_request })
+    //     {
+    //         Err(format!("Failed sending request_gcode_analysis to scale {err:?}"))
+    //     } else {
+    //         Ok(())
+    //     }
+    // }
 
     pub fn read_tag(&self) -> Result<(), String> {
         if let Err(err) = self.console_to_scale.try_send(ConsoleToScale::ReadTag) {
@@ -128,23 +130,24 @@ impl SpoolScale {
     #[allow(dead_code)]
     pub fn emulate_tag(&self, url: &str) -> Result<(), String> {
         if let Err(err) = self.console_to_scale.try_send(ConsoleToScale::EmulateTag { url: url.to_string() }) {
-            Err(format!("Failed sending request_gcode_analysis to scale {err:?}"))
+            Err(format!("Failed sending emulate_tag to scale {err:?}"))
         } else {
             Ok(())
         }
     }
 
-    #[allow(dead_code)]
-    pub fn gcode_analysis_notify(&self, gcode_analysis_notification: GcodeAnalysisNotification) -> Result<(), String> {
-        if let Err(err) = self
-            .console_to_scale
-            .try_send(ConsoleToScale::GcodeAnalysisNotify { gcode_analysis_notification })
-        {
-            Err(format!("Failed sending gcode_analysis_notify to scale {err:?}"))
-        } else {
-            Ok(())
-        }
-    }
+    // Legacy console-to-scale G-code analysis notification:
+    // #[allow(dead_code)]
+    // pub fn gcode_analysis_notify(&self, gcode_analysis_notification: GcodeAnalysisNotification) -> Result<(), String> {
+    //     if let Err(err) = self
+    //         .console_to_scale
+    //         .try_send(ConsoleToScale::GcodeAnalysisNotify { gcode_analysis_notification })
+    //     {
+    //         Err(format!("Failed sending gcode_analysis_notify to scale {err:?}"))
+    //     } else {
+    //         Ok(())
+    //     }
+    // }
 
     pub fn update_firmware(&self, ota_domain: &str, ota_path: &str, ota_toml_filename: &str, ota_cert: &str) -> Result<(), String> {
         if let Err(err) = self.console_to_scale.try_send(ConsoleToScale::UpdateFirmware {
@@ -210,26 +213,28 @@ impl SpoolScale {
                 ScaleToConsole::ButtonPressed => {
                     self.notify_button_pressed();
                 }
-                ScaleToConsole::GcodeAnalysis {
-                    job_number,
-                    printer_index,
-                    filament_usage_csv,
-                } => {
-                    self.notify_gcode_analysis(job_number, printer_index, filament_usage_csv);
-                }
-                ScaleToConsole::GcodeAnalysisFailed { job_number, printer_index } => {
-                    self.notify_gcode_analysis_failed(job_number, printer_index);
-                }
-                ScaleToConsole::GcodeAnalysisCanceled { job_number, printer_index } => {
-                    self.notify_gcode_analysis_canceled(job_number, printer_index);
-                }
-                ScaleToConsole::GcodeAnalysisCompleted { job_number, printer_index } => {
-                    self.notify_gcode_analysis_completed(job_number, printer_index);
-                }
+                // Legacy scale-to-console G-code analysis routing:
+                // ScaleToConsole::GcodeAnalysis {
+                //     job_number,
+                //     printer_index,
+                //     filament_usage_csv,
+                // } => {
+                //     self.notify_gcode_analysis(job_number, printer_index, filament_usage_csv);
+                // }
+                // ScaleToConsole::GcodeAnalysisFailed { job_number, printer_index } => {
+                //     self.notify_gcode_analysis_failed(job_number, printer_index);
+                // }
+                // ScaleToConsole::GcodeAnalysisCanceled { job_number, printer_index } => {
+                //     self.notify_gcode_analysis_canceled(job_number, printer_index);
+                // }
+                // ScaleToConsole::GcodeAnalysisCompleted { job_number, printer_index } => {
+                //     self.notify_gcode_analysis_completed(job_number, printer_index);
+                // }
                 ScaleToConsole::ScaleVersion { version } => {
                     self.notify_scale_version(&version);
                 }
                 ScaleToConsole::OtaProgressUpdate(update) => self.notify_ota_progress_update(&update),
+                _ => {}
             }
         } else {
             warn!(
@@ -328,60 +333,63 @@ impl SpoolScale {
             }
         }
     }
-    pub fn notify_gcode_analysis(&mut self, job_number: i32, printer_index: usize, filament_usage_csv: String) {
-        // Optimized to create only as many clones as required (in case of several observers)
-        if self.observers.is_empty() {
-            return;
-        }
-        // let num_records = filament_usage_csv.lines().count();
-        // let mut data = Vec::<FilamentUsageEntry>::with_capacity(num_records);
-        // let mut csv_parser = serde_csv_core::Reader::<16>::new(); // 16 is max field size
-        // for line in filament_usage_csv.lines() {
-        //     match csv_parser.deserialize(line.as_bytes()) {
-        //         Ok(v) => {
-        //             data.push(v.0);
-        //         }
-        //         Err(err) => {
-        //             error!("Internal error deserializing FilamentUsageEntry : {err}");
-        //             return;
-        //         }
-        //     }
-        // }
-        let filament_usage = match FilamentUsage::from_csv(&filament_usage_csv) {
-            Ok(v) => v,
-            Err(err) => {
-                error!("Internal error deserializing FilamentUsageEntry : {err}");
-                return;
-            }
-        };
 
-        if let Some((last, rest)) = self.observers.split_last() {
-            for weak_observer in rest.iter() {
-                let observer = weak_observer.upgrade().unwrap();
-                observer.borrow_mut().on_gcode_analysis(job_number, printer_index, filament_usage.clone());
-            }
-            let observer = last.upgrade().unwrap();
-            observer.borrow_mut().on_gcode_analysis(job_number, printer_index, filament_usage);
-        }
-    }
-    pub fn notify_gcode_analysis_failed(&self, job_number: i32, printer_index: usize) {
-        for weak_observer in self.observers.iter() {
-            let observer = weak_observer.upgrade().unwrap();
-            observer.borrow_mut().on_gcode_analysis_failed(job_number, printer_index);
-        }
-    }
-    pub fn notify_gcode_analysis_canceled(&self, job_number: i32, printer_index: usize) {
-        for weak_observer in self.observers.iter() {
-            let observer = weak_observer.upgrade().unwrap();
-            observer.borrow_mut().on_gcode_analysis_canceled(job_number, printer_index);
-        }
-    }
-    pub fn notify_gcode_analysis_completed(&self, job_number: i32, printer_index: usize) {
-        for weak_observer in self.observers.iter() {
-            let observer = weak_observer.upgrade().unwrap();
-            observer.borrow_mut().on_gcode_analysis_completed(job_number, printer_index);
-        }
-    }
+    // Legacy scale-to-console G-code analysis observer fan-out:
+    // pub fn notify_gcode_analysis(&mut self, job_number: i32, printer_index: usize, filament_usage_csv: String) {
+    //     // Optimized to create only as many clones as required (in case of several observers)
+    //     if self.observers.is_empty() {
+    //         return;
+    //     }
+    //     // let num_records = filament_usage_csv.lines().count();
+    //     // let mut data = Vec::<FilamentUsageEntry>::with_capacity(num_records);
+    //     // let mut csv_parser = serde_csv_core::Reader::<16>::new(); // 16 is max field size
+    //     // for line in filament_usage_csv.lines() {
+    //     //     match csv_parser.deserialize(line.as_bytes()) {
+    //     //         Ok(v) => {
+    //     //             data.push(v.0);
+    //     //         }
+    //     //         Err(err) => {
+    //     //             error!("Internal error deserializing FilamentUsageEntry : {err}");
+    //     //             return;
+    //     //         }
+    //     //     }
+    //     // }
+    //     let filament_usage = match FilamentUsage::from_csv(&filament_usage_csv) {
+    //         Ok(v) => v,
+    //         Err(err) => {
+    //             error!("Internal error deserializing FilamentUsageEntry : {err}");
+    //             return;
+    //         }
+    //     };
+    //
+    //     if let Some((last, rest)) = self.observers.split_last() {
+    //         for weak_observer in rest.iter() {
+    //             let observer = weak_observer.upgrade().unwrap();
+    //             observer.borrow_mut().on_gcode_analysis(job_number, printer_index, filament_usage.clone());
+    //         }
+    //         let observer = last.upgrade().unwrap();
+    //         observer.borrow_mut().on_gcode_analysis(job_number, printer_index, filament_usage);
+    //     }
+    // }
+    // pub fn notify_gcode_analysis_failed(&self, job_number: i32, printer_index: usize) {
+    //     for weak_observer in self.observers.iter() {
+    //         let observer = weak_observer.upgrade().unwrap();
+    //         observer.borrow_mut().on_gcode_analysis_failed(job_number, printer_index);
+    //     }
+    // }
+    // pub fn notify_gcode_analysis_canceled(&self, job_number: i32, printer_index: usize) {
+    //     for weak_observer in self.observers.iter() {
+    //         let observer = weak_observer.upgrade().unwrap();
+    //         observer.borrow_mut().on_gcode_analysis_canceled(job_number, printer_index);
+    //     }
+    // }
+    // pub fn notify_gcode_analysis_completed(&self, job_number: i32, printer_index: usize) {
+    //     for weak_observer in self.observers.iter() {
+    //         let observer = weak_observer.upgrade().unwrap();
+    //         observer.borrow_mut().on_gcode_analysis_completed(job_number, printer_index);
+    //     }
+    // }
+
     pub fn notify_scale_version(&self, scale_version: &str) {
         for weak_observer in self.observers.iter() {
             let observer = weak_observer.upgrade().unwrap();
@@ -514,7 +522,7 @@ pub async fn spool_scale_task(
 
     let mut first_connect = true;
     let mut connect_error_counter = 0;
-    let mut conn_buf = alloc::vec![0_u8; 128*1024]; // large size for gcode_analysis
+    let mut conn_buf = alloc::vec![0_u8; 128*1024]; // TODO: large size for gcode_analysis (not required that long any longer since g-code analysis not using scale, don't remove comment)
     'connect_loop: loop {
         Framework::wait_for_wifi(&framework).await;
         if first_connect {
@@ -757,9 +765,11 @@ pub async fn spool_scale_task(
                     let json_res = serde_json::to_string(&console_to_scale);
                     match json_res {
                         Ok(mut json) => {
-                            if matches!(console_to_scale, ConsoleToScale::RequestGcodeAnalysis { .. })
-                                || matches!(console_to_scale, ConsoleToScale::UpdateFirmware { .. })
-                            {
+                            // Legacy G-code analysis requests were encrypted like firmware updates:
+                            // if matches!(console_to_scale, ConsoleToScale::RequestGcodeAnalysis { .. })
+                            //     || matches!(console_to_scale, ConsoleToScale::UpdateFirmware { .. })
+                            // {
+                            if matches!(console_to_scale, ConsoleToScale::UpdateFirmware { .. }) {
                                 let key = &app_config.borrow().scale_encryption_key.borrow();
                                 json = if key.is_empty() {
                                     term_error!("Empty SpoolScale Security Key configured in Console , can't send message to scale");
