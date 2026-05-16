@@ -19,8 +19,8 @@ use crate::{
         protocol::clean_message_bytes_to_log,
         tray::{Tray, TrayBits, TrayMetaInfo, TrayState},
     },
+    printer::PrinterRuntimePersistenceRequestKind,
     settings::MAX_NUM_PRINTERS,
-    view_model,
 };
 
 impl BambuPrinter {
@@ -564,11 +564,7 @@ impl BambuPrinter {
                                 self.printer_number, loaded_project_id, project_id
                             );
                             self.loaded_print_project = None;
-                            let _ = self
-                                .store_state_request_channel
-                                .try_send(view_model::StoreStateRequest::DeletePrintProject {
-                                    printer_index: self.printer_index,
-                                });
+                            self.queue_runtime_persistence_request(PrinterRuntimePersistenceRequestKind::DeletePrintProject);
                         }
                     } else {
                         warn!(
@@ -582,11 +578,7 @@ impl BambuPrinter {
                         self.printer_number, loaded_project_id
                     );
                     self.loaded_print_project = None;
-                    let _ = self
-                        .store_state_request_channel
-                        .try_send(view_model::StoreStateRequest::DeletePrintProject {
-                            printer_index: self.printer_index,
-                        });
+                    self.queue_runtime_persistence_request(PrinterRuntimePersistenceRequestKind::DeletePrintProject);
                 }
             }
         }

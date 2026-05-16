@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use shared::{
     gcode_analysis::FilamentUsageEntry,
     gcode_analysis_task::{Fetch3mf, FilamentUsage},
-    utils::channel_send,
 };
 
 use crate::{
@@ -21,7 +20,7 @@ use crate::{
         BambuPrinter,
         bambu_api::{AmsMapping2Entry, GcodeState, PrintData},
     },
-    view_model::StoreStateRequest,
+    printer::PrinterRuntimePersistenceRequestKind,
 };
 
 const EXTRA_DEBUG: bool = false;
@@ -133,13 +132,9 @@ impl PrintProject {
     }
     pub(super) fn store_consume_index(&mut self, printer: &BambuPrinter) {
         self.consume_store_counter += 1;
-        channel_send(
-            &printer.store_state_request_channel,
-            StoreStateRequest::StoreConsumeIndex {
-                printer_index: printer.printer_index,
-                consume_store_counter: self.consume_store_counter,
-            },
-        );
+        printer.queue_runtime_persistence_request(PrinterRuntimePersistenceRequestKind::StoreConsumeIndex {
+            consume_store_counter: self.consume_store_counter,
+        });
     }
     pub(super) fn consume_index(&self) -> i32 {
         self.inner_consume_index
@@ -185,12 +180,7 @@ impl PrintProject {
 impl BambuPrinter {
     #[allow(non_snake_case)]
     pub fn process_print_message__project_file(&mut self, print: &PrintData) -> bool {
-        channel_send(
-            &self.store_state_request_channel,
-            StoreStateRequest::DeletePrintProject {
-                printer_index: self.printer_index,
-            },
-        );
+        self.queue_runtime_persistence_request(PrinterRuntimePersistenceRequestKind::DeletePrintProject);
 
         let mut changed = false;
         let printer_log_id = self.printer_number;
@@ -454,12 +444,7 @@ impl BambuPrinter {
         // need to do it here because above we used 'take()' to get curr_print_project and only in here in previous line we gave it back
         if gcode_state_change && [GcodeState::FAILED, GcodeState::FINISH].contains(&new_gcode_state) {
             self.curr_print_project = None;
-            channel_send(
-                &self.store_state_request_channel,
-                StoreStateRequest::DeletePrintProject {
-                    printer_index: self.printer_index,
-                },
-            );
+            self.queue_runtime_persistence_request(PrinterRuntimePersistenceRequestKind::DeletePrintProject);
 
             self.clear_snapshot_slots_used_in_print();
         }
@@ -502,8 +487,7 @@ impl BambuPrinter {
                             } else {
                                 error!(
                                     "[{}] Internal Error? No AMS slot for gcode filament id {}",
-                                    printer_log_id,
-                                    usage_entry.gcode_filament_id
+                                    printer_log_id, usage_entry.gcode_filament_id
                                 );
                             }
                             print_project.set_not_store_consume_index(print_project.consume_index() + 1);
@@ -626,12 +610,7 @@ impl BambuPrinter {
             if curr_print_project.consume_index() == -1 {
                 curr_print_project.set_not_store_consume_index(0);
             }
-            channel_send(
-                &self.store_state_request_channel,
-                StoreStateRequest::StorePrintProject {
-                    printer_index: self.printer_index,
-                },
-            );
+            self.queue_runtime_persistence_request(PrinterRuntimePersistenceRequestKind::StorePrintProject);
         } else {
             error!("Internal Error setting gcode analysis to printer index {}", self.printer_index);
         }
@@ -761,7 +740,10 @@ impl BambuPrinter {
                     return Err(err_str);
                 }
             } else {
-                let err_str = format!("[{}] Internal Error: store_print_project_state called without curr_print_project", printer_log_id);
+                let err_str = format!(
+                    "[{}] Internal Error: store_print_project_state called without curr_print_project",
+                    printer_log_id
+                );
                 error!("{err_str}");
                 return Err(err_str);
             }

@@ -14,8 +14,8 @@ use crate::store::Store;
 
 use super::{
     PRINTER_STATE_FILE_VERSION, PrinterCapabilities, PrinterCommand, PrinterDriver, PrinterError, PrinterId, PrinterObserver,
-    PrinterPersistentStatePayload, PrinterResult, PrinterSnapshot, PrinterStateFile, SlotId, bambu_adapter::BambuPrinterDriver,
-    fake_driver::FakePrinterDriver,
+    PrinterPersistentStatePayload, PrinterResult, PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind, PrinterSnapshot,
+    PrinterStateFile, SlotId, bambu_adapter::BambuPrinterDriver, fake_driver::FakePrinterDriver,
 };
 
 #[derive(Default)]
@@ -231,6 +231,29 @@ impl PrinterManager {
         driver.snapshot_state().store_failed();
         driver.restore_private_state_after_failed_store();
         Ok(())
+    }
+
+    pub fn prepare_runtime_state_restore_at(
+        &mut self,
+        index: usize,
+        framework: Rc<RefCell<Framework>>,
+    ) -> Result<Option<PrinterRuntimePersistenceFuture>, String> {
+        let driver = self.printers.get_mut(index).ok_or_else(|| format!("printer index {index}"))?;
+        Ok(driver.restore_runtime_state(framework))
+    }
+
+    pub fn prepare_runtime_persistence_request_by_id(
+        &mut self,
+        printer_id: &PrinterId,
+        framework: Rc<RefCell<Framework>>,
+        request: PrinterRuntimePersistenceRequestKind,
+    ) -> Result<Option<PrinterRuntimePersistenceFuture>, String> {
+        let driver = self
+            .printers
+            .iter_mut()
+            .find(|printer| printer.id() == printer_id)
+            .ok_or_else(|| format!("printer id {}", printer_id.as_str()))?;
+        Ok(driver.handle_runtime_persistence_request(framework, request))
     }
 
     fn clear_missing_spool_ids(snapshot: &mut PrinterSnapshot, store: &Rc<Store>) -> bool {

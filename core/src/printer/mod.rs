@@ -10,8 +10,13 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use core::cell::{Cell, RefCell};
+use core::{
+    cell::{Cell, RefCell},
+    future::Future,
+    pin::Pin,
+};
 
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -375,6 +380,22 @@ pub struct DriverDataField {
     pub value: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrinterRuntimePersistenceRequest {
+    pub printer_id: PrinterId,
+    pub kind: PrinterRuntimePersistenceRequestKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrinterRuntimePersistenceRequestKind {
+    StorePrintProject,
+    StoreConsumeIndex { consume_store_counter: i32 },
+    DeletePrintProject,
+}
+
+pub type PrinterRuntimePersistenceRequestChannel = Channel<NoopRawMutex, PrinterRuntimePersistenceRequest, 5>;
+pub type PrinterRuntimePersistenceFuture = Pin<Box<dyn Future<Output = Result<(), String>>>>;
+
 pub trait PrinterObserver {
     fn on_printer_event(&mut self, event: PrinterEvent);
 }
@@ -391,12 +412,11 @@ pub trait PrinterDriver {
     fn start(&mut self, _framework: Rc<RefCell<Framework>>) {}
     fn acknowledge_slot_consumption_saved(&mut self, slot_id: &SlotId, consumed_since_load_saved_g: f32) -> PrinterResult<()> {
         let snapshot_state = self.snapshot_state();
-        snapshot_state
-            .try_update(true, |snapshot| {
-                let slot = slot_in_snapshot_mut(snapshot, slot_id).ok_or_else(|| PrinterError::SlotNotFound(slot_id.clone()))?;
-                slot.consumed_since_load_saved_g = consumed_since_load_saved_g;
-                Ok(())
-            })
+        snapshot_state.try_update(true, |snapshot| {
+            let slot = slot_in_snapshot_mut(snapshot, slot_id).ok_or_else(|| PrinterError::SlotNotFound(slot_id.clone()))?;
+            slot.consumed_since_load_saved_g = consumed_since_load_saved_g;
+            Ok(())
+        })
     }
     fn persistent_state_path(&self) -> Option<String> {
         None
@@ -412,6 +432,16 @@ pub trait PrinterDriver {
     }
     fn private_state_store_succeeded(&mut self) {}
     fn restore_private_state_after_failed_store(&mut self) {}
+    fn restore_runtime_state(&mut self, _framework: Rc<RefCell<Framework>>) -> Option<PrinterRuntimePersistenceFuture> {
+        None
+    }
+    fn handle_runtime_persistence_request(
+        &mut self,
+        _framework: Rc<RefCell<Framework>>,
+        _request: PrinterRuntimePersistenceRequestKind,
+    ) -> Option<PrinterRuntimePersistenceFuture> {
+        None
+    }
 }
 
 pub type PrinterResult<T> = Result<T, PrinterError>;
@@ -433,27 +463,12 @@ pub struct PrinterEvent {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PrinterEventKind {
-    ConnectivityChanged {
-        connected: bool,
-    },
-    SnapshotChanged {
-        change: PrinterChange,
-        snapshot: Box<PrinterSnapshot>,
-    },
-    SlotTagScanned {
-        slot_id: SlotId,
-        tag_id: String,
-        only_spool_id: bool,
-    },
-    MaterialSlotPresenceChanged {
-        changes: Vec<MaterialSlotPresenceChange>,
-    },
-    PrintFileAnalysisRequested {
-        request: PrintFileAnalysisRequest,
-    },
-    PrintFileAnalysisCanceled {
-        job_number: i32,
-    },
+    ConnectivityChanged { connected: bool },
+    SnapshotChanged { change: PrinterChange, snapshot: Box<PrinterSnapshot> },
+    SlotTagScanned { slot_id: SlotId, tag_id: String, only_spool_id: bool },
+    MaterialSlotPresenceChanged { changes: Vec<MaterialSlotPresenceChange> },
+    PrintFileAnalysisRequested { request: PrintFileAnalysisRequest },
+    PrintFileAnalysisCanceled { job_number: i32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

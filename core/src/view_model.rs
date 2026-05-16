@@ -44,7 +44,8 @@ use crate::bambu::bambu_api::{GcodeState, PrintCommand as BambuPrintCommand};
 use crate::filament_staging::StagingOrigin;
 use crate::printer::{
     self as printer_domain, DriverCommand, DriverData, DriverDataField, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind,
-    PrintControlCommand, PrinterChange, PrinterCommand, PrinterEvent, PrinterEventKind, PrinterId, SlotAssignMode, SlotId, manager::PrinterManager,
+    PrintControlCommand, PrinterChange, PrinterCommand, PrinterEvent, PrinterEventKind, PrinterId, PrinterRuntimePersistenceRequestChannel,
+    PrinterRuntimePersistenceRequestKind, SlotAssignMode, SlotId, manager::PrinterManager,
 };
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
@@ -175,7 +176,7 @@ pub struct ViewModel {
     ssdp_pub_sub: &'static SSDPPubSubChannel,
     app_async_tasks_channel: Rc<AppAsyncTasksChannel>,
     pub recently_added_spool_id: Option<String>,
-    store_state_request_channel: Rc<StoreStateRequestChannel>,
+    runtime_persistence_request_channel: Rc<PrinterRuntimePersistenceRequestChannel>,
     pub app_ota_request_channel: Rc<AppOtaRequestChannel>,
     pub scale_version: Option<String>,
 }
@@ -403,7 +404,7 @@ impl ViewModel {
             ssdp_pub_sub,
             app_async_tasks_channel,
             recently_added_spool_id: None,
-            store_state_request_channel: Rc::new(StoreStateRequestChannel::new()),
+            runtime_persistence_request_channel: Rc::new(PrinterRuntimePersistenceRequestChannel::new()),
             app_ota_request_channel: Rc::new(AppOtaRequestChannel::new()),
             scale_version: None,
         };
@@ -479,7 +480,7 @@ impl ViewModel {
                         bambu_config,
                         self.app_config.clone(),
                         self.ssdp_pub_sub,
-                        self.store_state_request_channel.clone(),
+                        self.runtime_persistence_request_channel.clone(),
                     ) {
                         Ok(bambu_printer_model) => {
                             let bambu_index = self.bambu_printer_model.printers.len();
@@ -583,7 +584,7 @@ impl ViewModel {
                 bambu_config,
                 self.app_config.clone(),
                 self.ssdp_pub_sub,
-                self.store_state_request_channel.clone(),
+                self.runtime_persistence_request_channel.clone(),
             ) {
                 Ok(bambu_printer_model) => {
                     self.bambu_printer_model.printers.push(bambu_printer_model);
@@ -4019,15 +4020,6 @@ fn decode_csv_field(s: &str) -> String {
     }
 }
 
-#[derive(Debug)]
-pub enum StoreStateRequest {
-    StorePrintProject { printer_index: usize },
-    StoreConsumeIndex { printer_index: usize, consume_store_counter: i32 },
-    DeletePrintProject { printer_index: usize },
-}
-
-pub type StoreStateRequestChannel = Channel<NoopRawMutex, StoreStateRequest, 5>;
-
 fn validate_persistent_printer_state_path(view_model: &Rc<RefCell<ViewModel>>, manager_index: usize, path: &str) -> Result<(), String> {
     if !path.starts_with("/state/") || path.contains("..") || path.contains("//") {
         return Err(format!("Invalid printer state path {path}"));
@@ -4153,40 +4145,28 @@ fn refresh_selected_printer_after_state_restore(view_model: &Rc<RefCell<ViewMode
     }
 }
 
-async fn restore_bambu_print_project_states(framework: &Rc<RefCell<Framework>>, view_model: &Rc<RefCell<ViewModel>>) {
-    let num_of_printers = view_model.borrow().bambu_printer_model.printers.len();
-    for printer_index in 0..num_of_printers {
-        let printer = view_model.borrow().bambu_printer_model.printers[printer_index].clone();
-        if printer.borrow().dummy_printer() {
-            continue;
-        } else if printer.borrow().printer_name().to_lowercase() == "simulator" {
-            // info!("[{}] Printer Simulator - skipping print project restore", printer.borrow().printer_number);
-            // continue;
-        }
-
-        info!("[{}] Checking for print project resume state", printer.borrow().printer_number);
-        match BambuPrinter::load_print_project_state(framework, &printer).await {
-            Ok(found_print_project_state) => {
-                if !found_print_project_state {
-                    info!("[{}] Print project resume state not found", printer.borrow().printer_number);
-                    let _ = BambuPrinter::delete_print_project_state(framework, &printer).await;
-                }
-            }
-            Err(err) => {
-                error!("{err} - Print tracking can't be resumed");
-                let _ = BambuPrinter::delete_print_project_state(framework, &printer).await;
-                view_model.borrow().message_box(
+async fn restore_printer_runtime_states(framework: &Rc<RefCell<Framework>>, view_model: &Rc<RefCell<ViewModel>>, num_of_printers: usize) {
+    for manager_index in 0..num_of_printers {
+        let restore_future = {
+            view_model
+                .borrow()
+                .printer_manager
+                .borrow_mut()
+                .prepare_runtime_state_restore_at(manager_index, framework.clone())
+        };
+        match restore_future {
+            Ok(Some(restore_future)) => match restore_future.await {
+                Ok(()) => refresh_selected_printer_after_state_restore(view_model, manager_index),
+                Err(err) => view_model.borrow().message_box(
                     "Restore Running Print State Notice",
                     &err,
                     "Print Tracking Can't be Resumed",
                     crate::app::StatusType::Error,
                     0,
-                );
-            }
-        }
-
-        if Some(printer_index) == view_model.borrow().selected_ui_bambu_index() {
-            view_model.borrow().update_ui_from_printer(&printer.borrow());
+                ),
+            },
+            Ok(None) => {}
+            Err(err) => error!("Error preparing printer runtime state restore: {err}"),
         }
     }
 }
@@ -4265,6 +4245,16 @@ async fn store_persistent_printer_state(
     }
 }
 
+fn runtime_persistence_error_text(request_kind: PrinterRuntimePersistenceRequestKind) -> Option<&'static str> {
+    match request_kind {
+        PrinterRuntimePersistenceRequestKind::StorePrintProject => Some("SpoolEase Will Not be Able to Resume Tracking if Restarted"),
+        PrinterRuntimePersistenceRequestKind::StoreConsumeIndex { .. } => {
+            Some("If This Error Repeats, SpoolEase Will Not be Able to Resume Tracking if Restarted")
+        }
+        PrinterRuntimePersistenceRequestKind::DeletePrintProject => None,
+    }
+}
+
 // #[embassy_executor::task] // up to two printers in parallel
 pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework>>, view_model: Rc<RefCell<ViewModel>>, store: Rc<Store>) {
     info!("store_state_task started");
@@ -4296,49 +4286,38 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
                 .message_box("Restore Print State Notice", &err, "", crate::app::StatusType::Error, 0),
         }
     }
-    restore_bambu_print_project_states(&framework, &view_model).await;
+    restore_printer_runtime_states(&framework, &view_model, num_of_printers).await;
 
     let mut printer_index = 0;
     let delay_time = max(1000u64, (3000 / num_of_printers) as u64); // want every printer to save every 3 seconds, and not all together
-    let store_state_request_channel = view_model.borrow().store_state_request_channel.clone();
-    let receiver = store_state_request_channel.receiver();
+    let runtime_persistence_request_channel = view_model.borrow().runtime_persistence_request_channel.clone();
+    let receiver = runtime_persistence_request_channel.receiver();
     loop {
         // Timer::after_millis(delay_time).await;
         match with_timeout(Duration::from_millis(delay_time), receiver.receive()).await {
-            Ok(request) => match request {
-                StoreStateRequest::StorePrintProject { printer_index } => {
-                    let printer = view_model.borrow().bambu_printer_model.printers[printer_index].clone();
-                    if let Err(err) = BambuPrinter::store_print_project_state(&framework, &printer).await {
-                        view_model.borrow().message_box(
-                            "Print Tracking Notice",
-                            &err,
-                            "SpoolEase Will Not be Able to Resume Tracking if Restarted",
-                            crate::app::StatusType::Error,
-                            0,
-                        );
-                        let _ = BambuPrinter::delete_print_project_state(&framework, &printer).await;
+            Ok(request) => {
+                let request_kind = request.kind;
+                let persistence_future = {
+                    view_model
+                        .borrow()
+                        .printer_manager
+                        .borrow_mut()
+                        .prepare_runtime_persistence_request_by_id(&request.printer_id, framework.clone(), request_kind)
+                };
+                match persistence_future {
+                    Ok(Some(persistence_future)) => {
+                        if let Err(err) = persistence_future.await
+                            && let Some(text2) = runtime_persistence_error_text(request_kind)
+                        {
+                            view_model
+                                .borrow()
+                                .message_box("Print Tracking Notice", &err, text2, crate::app::StatusType::Error, 0);
+                        }
                     }
+                    Ok(None) => {}
+                    Err(err) => error!("Error preparing printer runtime persistence request: {err}"),
                 }
-                StoreStateRequest::StoreConsumeIndex {
-                    printer_index,
-                    consume_store_counter,
-                } => {
-                    let printer = view_model.borrow().bambu_printer_model.printers[printer_index].clone();
-                    if let Err(err) = BambuPrinter::store_consume_index_state(&framework, &printer, consume_store_counter).await {
-                        view_model.borrow().message_box(
-                            "Print Tracking Notice",
-                            &err,
-                            "If This Error Repeats, SpoolEase Will Not be Able to Resume Tracking if Restarted",
-                            crate::app::StatusType::Error,
-                            0,
-                        );
-                    }
-                }
-                StoreStateRequest::DeletePrintProject { printer_index } => {
-                    let printer = view_model.borrow().bambu_printer_model.printers[printer_index].clone();
-                    let _ = BambuPrinter::delete_print_project_state(&framework, &printer).await;
-                }
-            },
+            }
             Err(_) => {
                 // Time expired
                 if printer_index < num_of_printers {

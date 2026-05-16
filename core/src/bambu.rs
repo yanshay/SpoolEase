@@ -21,10 +21,11 @@ use crate::bambu::mqtt::{ReadPacketsPubSub, WritePacketsChannel, restartable_mqt
 use crate::bambu::process_incoming::incoming_messages_task;
 use crate::bambu::protocol::ProtocolState;
 use crate::bambu::tray::{Tray, TrayBits};
-use crate::view_model::StoreStateRequestChannel;
 use crate::{
     app_config::{BambuPrinterConfig, PrinterMode, UseAmsScan},
-    printer::PrinterSnapshotState,
+    printer::{
+        PrinterRuntimePersistenceRequest, PrinterRuntimePersistenceRequestChannel, PrinterRuntimePersistenceRequestKind, PrinterSnapshotState,
+    },
     ssdp::SSDPPubSubChannel,
 };
 use alloc::{
@@ -40,6 +41,7 @@ use embassy_time::Timer;
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use shared::gcode_analysis_task::Fetch3mf;
+use shared::utils::channel_send;
 
 use framework::prelude::*;
 
@@ -159,7 +161,7 @@ pub struct BambuPrinter {
     tray_now: [i32; 2],
     tray_pre: [i32; 2],
     pub locked_mode: Option<bool>, // None, unknown, treat as unlocked, false - dev mode, true - locked
-    store_state_request_channel: Rc<StoreStateRequestChannel>,
+    runtime_persistence_request_channel: Rc<PrinterRuntimePersistenceRequestChannel>,
     pub ams_info: Vec<AmsInfo>,
     pub gcode_state: GcodeState,
     pub layer_num: Option<i32>,
@@ -304,7 +306,7 @@ impl BambuPrinter {
         app_config: Rc<RefCell<AppConfig>>,
         restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
         log_filter: log::LevelFilter,
-        store_state_request_channel: Rc<StoreStateRequestChannel>,
+        runtime_persistence_request_channel: Rc<PrinterRuntimePersistenceRequestChannel>,
     ) -> Rc<RefCell<BambuPrinter>> {
         let myself = Self::internal_new(
             printer_number,
@@ -323,7 +325,7 @@ impl BambuPrinter {
             app_config,
             restart_printer,
             log_filter,
-            store_state_request_channel,
+            runtime_persistence_request_channel,
         );
         let myself_rc = Rc::new(RefCell::new(myself));
         myself_rc.borrow_mut().bambu_model = Some(myself_rc.clone());
@@ -347,7 +349,7 @@ impl BambuPrinter {
         app_config: Rc<RefCell<AppConfig>>,
         restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
         log_filter: log::LevelFilter,
-        store_state_request_channel: Rc<StoreStateRequestChannel>,
+        runtime_persistence_request_channel: Rc<PrinterRuntimePersistenceRequestChannel>,
     ) -> Self {
         // Define a user oriented name for selection
         let printer_selector_name = if let Some(printer_name) = &printer_config_name {
@@ -412,7 +414,7 @@ impl BambuPrinter {
                 PrinterMode::DevOrOldFirmware => Some(false),
                 PrinterMode::Cloud => Some(true),
             },
-            store_state_request_channel,
+            runtime_persistence_request_channel,
             ams_info: alloc::vec![AmsInfo::default();14], // 0..3: standard ams, 4..11: 128..135 (HT), 12: 254 (external - left?), 13: 255 (external - right?)
             gcode_state: GcodeState::Unknown,
             layer_num: None,
@@ -494,7 +496,7 @@ impl BambuPrinter {
             self.app_config.clone(),
             self.restart_printer.clone(),
             self.log_filter,
-            self.store_state_request_channel.clone(),
+            self.runtime_persistence_request_channel.clone(),
         );
         *self = Self {
             observers: self.observers.clone(),
@@ -571,6 +573,16 @@ impl BambuPrinter {
         // tray_id: 0..15 (4xAMS), 16..23 (8 AMS-HT), 254, 255
         Ok(self.get_extruder(self.get_extruder_id_for_tray(tray_id)?))
     }
+
+    pub fn queue_runtime_persistence_request(&self, kind: PrinterRuntimePersistenceRequestKind) {
+        channel_send(
+            &self.runtime_persistence_request_channel,
+            PrinterRuntimePersistenceRequest {
+                printer_id: BambuPrinterConfig::printer_id_for_serial(&self.printer_serial),
+                kind,
+            },
+        );
+    }
 }
 
 pub type SpoolId = String;
@@ -579,6 +591,7 @@ fn default_printer_name() -> String {
     String::from("Unknown")
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn init(
     framework: Rc<RefCell<Framework>>,
     printer_number: usize, // number of printer in user's configuration,
@@ -587,7 +600,7 @@ pub fn init(
     printer_config: &BambuPrinterConfig,
     app_config: Rc<RefCell<AppConfig>>,
     ssdp_pub_sub: &'static SSDPPubSubChannel,
-    store_state_request_channel: Rc<StoreStateRequestChannel>,
+    runtime_persistence_request_channel: Rc<PrinterRuntimePersistenceRequestChannel>,
 ) -> Result<Rc<RefCell<BambuPrinter>>, String> {
     let spawner = framework.borrow().spawner;
     let printer_serial = if let Some(printer_serial) = &printer_config.serial {
@@ -639,7 +652,7 @@ pub fn init(
         app_config.clone(),
         restart_printer.clone(),
         log_filter,
-        store_state_request_channel,
+        runtime_persistence_request_channel,
     );
 
     spawner

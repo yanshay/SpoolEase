@@ -27,10 +27,10 @@ use crate::store::Store;
 
 use super::{
     DriverCommand, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind, MaterialSlotSnapshot, PressureAdvanceCapability,
-    PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError,
-    PrinterEvent,
-    PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult, PrinterSnapshot, PrinterSnapshotState,
-    PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
+    PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver, PrinterDriverKind,
+    PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult,
+    PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner,
+    SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
 };
 
 type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
@@ -490,12 +490,7 @@ impl BambuPrinterEventBridge {
         );
     }
 
-    fn build_gcode_analysis_request(
-        &self,
-        printer: &BambuPrinter,
-        print_project: &PrintProject,
-        job_number: i32,
-    ) -> GcodeAnalysisRequest {
+    fn build_gcode_analysis_request(&self, printer: &BambuPrinter, print_project: &PrintProject, job_number: i32) -> GcodeAnalysisRequest {
         let threemf_url = print_project.threemf_url.clone();
         let required_tls_slots = if printer.fetch_3mf == Fetch3mf::PrinterFtp
             || threemf_url.starts_with("file://")
@@ -719,6 +714,58 @@ impl PrinterDriver for BambuPrinterDriver {
             .borrow_mut()
             .acknowledge_snapshot_slot_consumption_saved(tray_id as usize, consumed_since_load_saved_g);
         Ok(())
+    }
+
+    fn restore_runtime_state(&mut self, framework: Rc<RefCell<framework::framework::Framework>>) -> Option<PrinterRuntimePersistenceFuture> {
+        let printer = self.printer.clone();
+        Some(Box::pin(async move {
+            if printer.borrow().dummy_printer() {
+                return Ok(());
+            }
+
+            let printer_number = printer.borrow().printer_number;
+            info!("[{printer_number}] Checking for print project resume state");
+            match BambuPrinter::load_print_project_state(&framework, &printer).await {
+                Ok(found_print_project_state) => {
+                    if !found_print_project_state {
+                        info!("[{printer_number}] Print project resume state not found");
+                        let _ = BambuPrinter::delete_print_project_state(&framework, &printer).await;
+                    }
+                    Ok(())
+                }
+                Err(err) => {
+                    error!("{err} - Print tracking can't be resumed");
+                    let _ = BambuPrinter::delete_print_project_state(&framework, &printer).await;
+                    Err(err)
+                }
+            }
+        }))
+    }
+
+    fn handle_runtime_persistence_request(
+        &mut self,
+        framework: Rc<RefCell<framework::framework::Framework>>,
+        request: PrinterRuntimePersistenceRequestKind,
+    ) -> Option<PrinterRuntimePersistenceFuture> {
+        let printer = self.printer.clone();
+        Some(Box::pin(async move {
+            match request {
+                PrinterRuntimePersistenceRequestKind::StorePrintProject => {
+                    let result = BambuPrinter::store_print_project_state(&framework, &printer).await;
+                    if result.is_err() {
+                        let _ = BambuPrinter::delete_print_project_state(&framework, &printer).await;
+                    }
+                    result
+                }
+                PrinterRuntimePersistenceRequestKind::StoreConsumeIndex { consume_store_counter } => {
+                    BambuPrinter::store_consume_index_state(&framework, &printer, consume_store_counter).await
+                }
+                PrinterRuntimePersistenceRequestKind::DeletePrintProject => {
+                    let _ = BambuPrinter::delete_print_project_state(&framework, &printer).await;
+                    Ok(())
+                }
+            }
+        }))
     }
 
     fn subscribe(&mut self, observer: Weak<RefCell<dyn PrinterObserver>>) {
