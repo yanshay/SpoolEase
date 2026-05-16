@@ -1502,6 +1502,7 @@ Refactor these paths:
 - [done] `set_staging_to_slot` / `set_staging_to_tray_direct` dispatch `PrinterCommand::AssignMaterialToSlot` through `PrinterManager`.
 - [done] `configure_slot_with_spool_async` routes by generic printer ID and slot ID, then dispatches `PrinterCommand::AssignMaterialToSlot` through `PrinterManager`.
 - [done] web `/api/printer-command` dispatches `PrinterCommand::PrintControl` through `PrinterManager`.
+- [done] web `/api/add-printer-pa` dispatches explicit Bambu driver command `bambu.add_pressure_advance` through `PrinterManager`.
 
 Additional read-path migration:
 
@@ -1533,6 +1534,7 @@ Refactor `ViewModel` to handle generic events:
 - [done] Staging-on-insert, configure-existing-spool-on-insert, unload-to-staging, and connect/disconnect terminal logs are handled from generic printer events.
 - [done] `ViewModel` no longer subscribes as a direct `BambuPrinterObserver`.
 - [done] Generic consumption storage reads snapshot slot consumption fields and acknowledges saved high-water marks through `PrinterManager`.
+- [done] Generic consumption storage starts based on the printer `consumption_tracking` capability.
 - [done] Bambu consumption increments route through the adapter bridge, which updates generic snapshot slot consumption counters directly.
 - [done] Bambu G-code analysis request/cancel/result dispatch is handled by the Bambu adapter bridge with one console task per request; `ViewModel` is no longer a direct `BambuPrinterObserver`.
 - [not done] Bambu still derives consumption from its internal G-code tracking; only the final slot/gram report is generic.

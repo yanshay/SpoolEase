@@ -648,7 +648,17 @@ impl ViewModel {
                 .ok();
         }
 
-        if initialized_bambu_printers {
+        let has_consumption_tracking = {
+            let printer_manager = self.printer_manager.borrow();
+            (0..printer_manager.len()).any(|printer_index| {
+                printer_manager
+                    .capabilities_at(printer_index)
+                    .unwrap_or_default()
+                    .consumption_tracking
+            })
+        };
+
+        if has_consumption_tracking {
             self.framework
                 .borrow()
                 .spawner
