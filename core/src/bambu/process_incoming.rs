@@ -433,7 +433,11 @@ impl BambuPrinter {
                     self.ams_info[ams_index].temp = Some(temp);
                 }
                 if let Some(ams_info) = ams.info {
-                    let extruder = (ams_info >> 8) & 0x0F;
+                    let mut extruder = (ams_info >> 8) & 0x0F;
+                    // TODO: TEMPORARY fix to track filament switcher
+                    if extruder == 0x0E {
+                        extruder = 0;
+                    }
                     self.ams_info[ams_index].extruder = extruder;
                 }
             }
