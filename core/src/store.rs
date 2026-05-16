@@ -19,14 +19,13 @@ use framework::{
     ntp::InstantExt,
     prelude::*,
     settings::{FILE_STORE_MAX_DIRS, FILE_STORE_MAX_FILES},
-    term_error, term_info, warn,
+    term_error, term_info,
 };
 
 use crate::{
     bambu::calibration::KInfo,
     csvdb::{CsvDb, CsvDbError},
     spools_storage::{StorageConfig, TagLocationRecord},
-    tag_v1::TagInformationV1,
     view_model::ViewModel,
 };
 
@@ -513,10 +512,6 @@ impl Store {
         }
         None
     }
-    pub fn get_spool_by_tag_id(&self, tag_id: &[u8]) -> Option<SpoolRecord> {
-        self.get_spool_by_hex_tag(&tag_id_hex(tag_id))
-    }
-
     #[allow(dead_code)]
     pub fn exists_hex_tag_id(&self, tag_id_hex: &str) -> bool {
         self.spool_tag_id_index.borrow().contains_key(tag_id_hex)
@@ -651,30 +646,7 @@ impl Store {
                 );
                 let mut spool_rec_ext = SpoolRecordExt::default();
                 match self.get_spool_ext_by_id(spool_id.as_str()).await {
-                    Ok(loaded_spool_rec_ext) => {
-                        spool_rec_ext = loaded_spool_rec_ext;
-                        if let Some(tag_desciptor) = &spool_rec_ext.tag {
-                            match TagInformationV1::from_v1_descriptor(tag_desciptor) {
-                                Ok(tag_info) => {
-                                    if !tag_info.calibrations.is_empty() {
-                                        let k_info = view_model.borrow().get_k_info_from_old_tag(&tag_info);
-                                        if let Some(k_info) = k_info {
-                                            info!("Upgrading spool {}, adding k_info {:?} to extended info", spool_id, k_info);
-                                            spool_rec_ext.k_info = Some(k_info);
-                                        }
-                                    }
-                                }
-                                Err(err) => {
-                                    error!("Error parsing tag descriptor for spool {}, ignoring : {err:?}", spool_id);
-                                    spool_issues.push_str(&format!("Error parsing tag descriptor for spool {spool_id}, ignoring : {err:?}\n"));
-                                    // Store anyway, since there were issues with old files that needs to be fixed
-                                }
-                            }
-                        } else {
-                            warn!("No tag descriptor found for spool {}, ignoring", spool_id);
-                            spool_issues.push_str(&format!("No tag descriptor found for spool {spool_id}, ignoring\n"));
-                        }
-                    }
+                    Ok(loaded_spool_rec_ext) => spool_rec_ext = loaded_spool_rec_ext,
                     Err(_err) => (),
                 }
                 // Store anyway, since there were issues with old files that needs to be fixed (writing small file on larger file leave extra in file)
@@ -1058,9 +1030,6 @@ pub trait StoreObserver {
     // fn on_read_spool_record_ext(&mut self, result: Result<SpoolRecordExt, String>);
 }
 
-fn tag_id_hex(tag_id: &[u8]) -> String {
-    hex::encode_upper(tag_id)
-}
 
 fn spool_rec_ext_file_path(ext_rec_id: &str) -> Result<String, StoreError> {
     if let Ok(id_num) = ext_rec_id.parse::<i32>() {

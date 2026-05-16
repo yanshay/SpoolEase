@@ -18,7 +18,6 @@ use embassy_time::{Duration, Timer, with_timeout};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use hashbrown::HashMap;
 use ndef_rs::NdefMessage;
-use ndef_rs::payload::UriPayload;
 use serde::{Deserialize, Serialize};
 use shared::gcode_analysis_task::{Fetch3mf, FilamentUsage};
 use shared::settings::{
@@ -42,7 +41,6 @@ use crate::app_config::{
 };
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
 use crate::bambu::bambu_api::{GcodeState, PrintCommand as BambuPrintCommand};
-use crate::bambu::calibration::{KExtruder, KInfo, KNozzleDiameter, KNozzleId, KPrinter};
 use crate::filament_staging::StagingOrigin;
 use crate::printer::{
     self as printer_domain, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind, PrintControlCommand, PrinterChange,
@@ -55,7 +53,6 @@ use crate::ssdp::{SSDPPubSubChannel, ssdp_task};
 use crate::store::{Store, StoreObserver, store_safe_time_now};
 
 use crate::tag_standards::{BAMBULAB_TAG_TYPE, BambuLabTag, OPENPRINTTAG_TAG_TYPE, OpenPrintTagTag};
-use crate::tag_v1::TagInformationV1;
 use crate::types::FilamentSupInfo;
 use crate::{
     app_config::AppConfig,
@@ -1035,16 +1032,6 @@ impl ViewModel {
             .global::<crate::app::AppBackend>()
             .on_can_link_tagged_spool_to_tag(move |spool_id| moved_view_model.borrow().ui_can_link_tagged_spool_to_tag(spool_id.as_str()));
 
-        let moved_view_model = self.view_model.as_ref().unwrap().clone();
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::AppBackend>()
-            .on_add_v1_tag_to_inventory(move |tag_id, tag, final_step| {
-                moved_view_model
-                    .borrow()
-                    .ui_add_v1_tag_to_inventory(tag_id.as_str(), tag.as_str(), final_step)
-            });
-
         let moved_view_model = self.view_model.clone().unwrap();
         ui_app_backend.on_import_definition_tag_to_inventory(move |tag_definition_type, tag_definition_info, empty_spool_weight, spool_is_full| {
             moved_view_model.borrow().ui_import_definition_tag_to_inventory(
@@ -1997,14 +1984,6 @@ impl ViewModel {
         }
     }
 
-    fn ui_add_v1_tag_to_inventory(&self, tag_id: &str, tag: &str, final_step: bool) {
-        let _ = self.dispatch_async_task(AppAsyncTaskRequest::ProcessV1TagRead {
-            tag_id: tag_id.to_string(),
-            tag: tag.to_string(),
-            final_step,
-        });
-    }
-
     fn ui_import_definition_tag_to_inventory(
         &self,
         tag_definition_type: &str,
@@ -2406,64 +2385,6 @@ impl ViewModel {
         weight_left
     }
 
-    pub fn get_k_info_from_old_tag(&self, tag_with_k: &TagInformationV1) -> Option<KInfo> {
-        if !tag_with_k.calibrations.is_empty() {
-            let calibration = tag_with_k.calibrations.iter().next().unwrap();
-            let diameter = calibration.0;
-            // because for security reasond in the tag the serial is hashed, can't reverse
-            // so need to run over all printers and search for a matching printer
-            let mut printer_found = None;
-            if !tag_with_k.calibrations_printer_uuid.is_empty() {
-                for printer in &self.bambu_printer_model.printers {
-                    let printer_borrow = printer.borrow();
-                    if printer_borrow.printer_uuid_to_encode == tag_with_k.calibrations_printer_uuid {
-                        printer_found = Some(printer.clone());
-                    }
-                }
-            }
-
-            if printer_found.is_none() && !tag_with_k.calibrations_printer_name.is_empty() {
-                for printer in &self.bambu_printer_model.printers {
-                    let printer_borrow = printer.borrow();
-                    if *printer_borrow.printer_name() == tag_with_k.calibrations_printer_name {
-                        printer_found = Some(printer.clone());
-                    }
-                }
-            }
-
-            if let Some(printer) = printer_found {
-                let printer_borrow = printer.borrow();
-                return Some(KInfo {
-                    printers: HashMap::from([(
-                        printer_borrow.printer_serial.clone(),
-                        KPrinter {
-                            extruders: HashMap::from([(
-                                0,
-                                KExtruder {
-                                    diameters: HashMap::from([(
-                                        diameter.clone(),
-                                        KNozzleDiameter {
-                                            nozzles: HashMap::from([(
-                                                "".to_string(),
-                                                KNozzleId {
-                                                    name: calibration.1.name.clone(),
-                                                    k_value: calibration.1.k_value.clone(),
-                                                    setting_id: calibration.1.setting_id.clone(),
-                                                    cali_idx: calibration.1.cali_idx,
-                                                },
-                                            )]),
-                                        },
-                                    )]),
-                                },
-                            )]),
-                        },
-                    )]),
-                });
-            }
-        }
-        None
-    }
-
     fn display_filament_staging_direct(&self, finish_operation: bool) {
         let filament_staging_borrow = self.filament_staging.borrow();
         if let Some(ui_spool_info) = self.tag_info_to_ui_spool_info_direct(filament_staging_borrow.full_spool_rec()) {
@@ -2571,191 +2492,6 @@ impl ViewModel {
             );
             Some(false)
             // TODO:  notify on GUI and on Scale Led
-        }
-    }
-
-    // returns false if needs to be processed as a standard tag, true if v1 whether error or not
-    pub fn process_v1_tag_read(&self, tag_uid: &[u8], tag: &str, _scanned_on_scale: bool) -> bool {
-        let ui = self.ui_weak.clone();
-        // TODO: When moving to no need to encode tag, displaying here in staging should only take place
-        // if there is data from store. All processing here will be only to import old tags not in store
-        if let Ok(tag_info) = TagInformationV1::from_v1_descriptor(tag) {
-            // we need to store tag on read in two cases:
-            // Tag with this tag_id is not in store  - for upgrading from non inventory release to inventory release
-            // Tag with this tag_id is in store, but w/o K there, and the tag has K - for upgrading from old tags with K to new K approach
-            // if let Some(mut tag_info) = tag_info_clone {
-            if self.store.exists_tag_id(tag_uid) {
-                return false;
-            }
-            if let Some(tag_id) = &tag_info.tag_id {
-                if let Some(spool_rec) = self.store.get_spool_by_tag_id(tag_id) {
-                    // tag-id is already in store
-                    // Note: this is a special case where the tag_id on the spool is different than the tag_uid,
-                    // should only happen in case of old bugs in uid or in case of copy of tags content
-                    ui.unwrap().global::<crate::app::AppState>().invoke_show_message_box(
-                        slint::format!("Tag {} Read Notice", spool_rec.id),
-                        "A Previous Version Tag Conflicting Tag-Id's".into(),
-                        "It May Require Re-Configuring".into(),
-                        crate::app::StatusType::Normal,
-                        0,
-                    );
-                    self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Scanned);
-                    self.filament_staging.borrow_mut().set_scanned_tag_id(Some(hex::encode_upper(tag_uid)));
-                    self.display_filament_staging(true);
-                } else {
-                    ui.unwrap()
-                        .global::<crate::app::AppState>()
-                        .invoke_new_v1_tag_scanned(hex::encode_upper(tag_uid).into(), tag.into());
-                }
-            } else {
-                error!("Error with scanned V1 tag - old tag read with no tag_id");
-                ui.unwrap()
-                    .global::<crate::app::AppState>()
-                    .invoke_read_tag_failed(SharedString::from("V1 Tag Missing Tag-ID"));
-            }
-            true
-        } else {
-            false
-        }
-    }
-
-    pub async fn process_v1_tag_read_async(view_model: Rc<RefCell<ViewModel>>, tag_id_hex: String, tag: String, final_step: bool) {
-        debug!("Received to process async read tag {tag}");
-
-        // TODO: Can there be here a flow that doesn't need to store a new tag?????
-        // I think not because if tag is available then not storing anything and not reaching here at all (to the async fn)
-
-        // Using the real tag uid to store and not the content of the tag in this case
-        if let Ok(tag_info) = TagInformationV1::from_v1_descriptor(&tag) {
-            // if let Some(_tag_info_tag_id) = &tag_info.tag_id {
-            // we need to store tag on read in two cases:
-            // Tag with this tag_id is not in store  - for upgrading from non inventory release to inventory release
-            // Tag with this tag_id is in store, but w/o K there, and the tag has K - for upgrading from old tags with K to new K approach
-            // if let Some(mut tag_info) = tag_info_clone {
-            let tag_id = match hex::decode(&tag_id_hex) {
-                Ok(tag_id) => tag_id,
-                Err(err) => {
-                    let ui = view_model.borrow().ui_weak.unwrap();
-                    let ui_app_state = ui.global::<crate::app::AppState>();
-                    error!("Error in v1 tag import flow converting tag uid (not in tag content) from hex : {err}");
-                    ui_app_state.invoke_show_message_box(
-                        "Tag Import Notice".into(),
-                        "Unexpected Internal Error".into(),
-                        "Bad Tag-Id to Store".into(),
-                        crate::app::StatusType::Error,
-                        0,
-                    );
-                    return;
-                }
-            };
-            let (spool_rec, need_to_store, tag_k_info) = {
-                let spool_rec = view_model.borrow().store.get_spool_by_tag_id(&tag_id);
-                let mut need_to_store = spool_rec.is_none();
-
-                let mut k_info = None;
-                if !tag_info.calibrations.is_empty() {
-                    let need_to_store_k = if let Some(spool_rec) = &spool_rec { !spool_rec.ext_has_k } else { true };
-                    need_to_store |= need_to_store_k;
-                    if need_to_store_k {
-                        k_info = view_model.borrow().get_k_info_from_old_tag(&tag_info);
-                    }
-                }
-                (spool_rec, need_to_store, k_info)
-            };
-
-            let store = view_model.borrow().store.clone();
-            if need_to_store {
-                let (res, spool_rec_id, spool_rec_ext) = if let Some(mut spool_rec) = spool_rec {
-                    // spool_rec already availble, need to only deal with storing K if exists
-                    // we know there's k_info here, because otherwise need_to_store wouldn't be true (wouldn't be a reason to store anything)
-                    spool_rec.ext_has_k = true;
-                    let spool_rec_id = spool_rec.id.clone();
-                    match store.update_spool(spool_rec, Some(Box::new(move |ext| ext.k_info = tag_k_info))).await {
-                        Ok(spool_rec_ext) => (Ok(()), spool_rec_id, spool_rec_ext),
-                        Err(e) => (Err(e), spool_rec_id, None),
-                    }
-                } else {
-                    // spool_rec not available, meaning a new record to add
-                    let mut new_spool_rec = tag_info.to_spool_rec();
-                    new_spool_rec.tag_id = vec![hex::encode_upper(&tag_id)]; // replace the tag_id with the real tag uid
-                    new_spool_rec.ext_has_k = tag_k_info.is_some();
-                    let new_spool_rec_ext = SpoolRecordExt {
-                        tag: Some(tag.clone()),
-                        k_info: tag_k_info,
-                        origin_data: Some(OriginData::SpoolEaseV1 { uid: tag_id_hex, url: tag }),
-                    };
-                    match store.add_spool(new_spool_rec.clone(), new_spool_rec_ext.clone()).await {
-                        Ok(new_spool_rec_id) => (Ok(()), new_spool_rec_id, Some(new_spool_rec_ext)),
-                        Err(e) => (Err(e), String::new(), Some(new_spool_rec_ext)),
-                    }
-                };
-
-                let ui = view_model.borrow().ui_weak.unwrap();
-                let ui_app_state = ui.global::<crate::app::AppState>();
-                let view_model_borrow = view_model.borrow();
-                match res {
-                    Ok(_) => {
-                        if let Some(spool_rec) = view_model_borrow.store.get_spool_by_id(&spool_rec_id) {
-                            view_model_borrow
-                                .filament_staging
-                                .borrow_mut()
-                                .set_spool_record(spool_rec, StagingOrigin::Scanned);
-                            view_model_borrow
-                                .filament_staging
-                                .borrow_mut()
-                                .set_scanned_tag_id(Some(hex::encode_upper(&tag_id)));
-                            if let Some(spool_rec_ext) = spool_rec_ext {
-                                view_model_borrow.filament_staging.borrow_mut().set_spool_record_ext(spool_rec_ext);
-                            }
-                            view_model.borrow().display_filament_staging(final_step);
-                            ui_app_state.invoke_add_v1_tag_to_inventory_status(SharedString::new(), spool_rec_id.to_shared_string());
-                        } else {
-                            ui_app_state.invoke_show_message_box(
-                                "Critical Store Notice".into(),
-                                "Unexpected Error".into(),
-                                "Failed to Get Spool After Storing It".into(),
-                                crate::app::StatusType::Error,
-                                -1,
-                            );
-                        }
-                    }
-                    Err(err) => {
-                        ui_app_state.invoke_show_message_box(
-                            "Critical Store Notice".into(),
-                            "Failed to store information from tag".into(),
-                            err.to_shared_string(),
-                            crate::app::StatusType::Error,
-                            -1,
-                        );
-                    }
-                }
-            } else if let Ok(spool_rec_ext) = store.get_spool_ext_by_id(&spool_rec.unwrap().id).await {
-                view_model.borrow().filament_staging.borrow_mut().set_spool_record_ext(spool_rec_ext);
-                view_model.borrow().display_filament_staging(true);
-            }
-            // } else {
-            //     let ui = view_model.borrow().ui_weak.unwrap();
-            //     let ui_app_state = ui.global::<crate::app::AppState>();
-            //     error!("Tag is missing tag id : {tag}");
-            //     ui_app_state.invoke_show_message_box(
-            //         "Old Tag Notice".into(),
-            //         "Tag is Missing Tag-Id".into(),
-            //         SharedString::new(),
-            //         crate::app::StatusType::Error,
-            //         -1,
-            //     );
-            // }
-        } else {
-            let ui = view_model.borrow().ui_weak.unwrap();
-            let ui_app_state = ui.global::<crate::app::AppState>();
-            error!("Cant parse tag descriptor {tag}");
-            ui_app_state.invoke_show_message_box(
-                "Old Tag Notice".into(),
-                "Cant Parse Tag Descriptor".into(),
-                SharedString::new(),
-                crate::app::StatusType::Error,
-                -1,
-            );
         }
     }
 
@@ -3813,9 +3549,6 @@ impl SpoolTagObserver for ViewModel {
                 ui.unwrap().global::<crate::app::AppState>().invoke_erasing_succeeded();
             }
             Status::ReadSuccess(read_result) => match read_result {
-                // TODO: For some reason SpoolV1 tags have precedence, not sure why.
-                // Probably becaue of the use if their internal written ID in case such exist, not sure it's good
-                // Need to remember the reason
                 spool_tag::ReadResult::TagInStore { uid } => {
                     // Handling of tag in store, same as below
                     debug!("Scanned Tag which is in store");
@@ -3830,31 +3563,6 @@ impl SpoolTagObserver for ViewModel {
                     }
                 }
                 spool_tag::ReadResult::NDEF { uid, message } => {
-                    if let Some(ndef_bytes) = message {
-                        match NdefMessage::decode(ndef_bytes) {
-                            Ok(ndef) => {
-                                for (record_num, record) in ndef.records().iter().enumerate() {
-                                    debug!("NDEF record #{record_num}, type {:?}", core::str::from_utf8(record.record_type()));
-
-                                    if core::str::from_utf8(record.record_type()) == Ok("U") {
-                                        match UriPayload::try_from(record) {
-                                            Ok(uri) => {
-                                                info!("Scanned Tag with URI : {}", uri.full_uri());
-                                                if record_num == 0 && self.process_v1_tag_read(uid, &uri.full_uri(), false) {
-                                                    return;
-                                                }
-                                            }
-                                            Err(err) => {
-                                                error!("Error decoding NDEF uri {err:?}");
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            Err(err) => error!("Error decoding NDEF data on tag {err:?}"),
-                        }
-                    }
-                    // not V1 tag
                     let hex_tag = hex::encode_upper(uid);
                     // Check if it is a known tag
                     if let Some(spool_rec) = self.store.get_spool_by_hex_tag(&hex_tag) {
@@ -4734,11 +4442,6 @@ enum UnlinkTagMode {
 
 #[derive(Debug, Clone)]
 enum AppAsyncTaskRequest {
-    ProcessV1TagRead {
-        tag_id: String,
-        tag: String,
-        final_step: bool,
-    },
     LinkTagToSpool {
         tag_id: String,
         tag_type: String,
@@ -4798,9 +4501,6 @@ pub async fn app_async_task(view_model: Rc<RefCell<ViewModel>>) {
 
     loop {
         match requests.receive().await {
-            AppAsyncTaskRequest::ProcessV1TagRead { tag_id, tag, final_step } => {
-                ViewModel::process_v1_tag_read_async(view_model.clone(), tag_id, tag, final_step).await
-            }
             AppAsyncTaskRequest::LinkTagToSpool {
                 tag_id,
                 tag_type,

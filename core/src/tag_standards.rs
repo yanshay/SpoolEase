@@ -19,7 +19,6 @@ use crate::{
 use serde_with::hex::Hex;
 use serde_with::serde_as;
 
-pub const SPOOLEASE_V1_TAG_TYPE: &str = "SpoolEaseV1";
 pub const BAMBULAB_TAG_TYPE: &str = "Bambu Lab";
 pub const OPENPRINTTAG_TAG_TYPE: &str = "OpenPrintTag";
 

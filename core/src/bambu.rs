@@ -34,7 +34,6 @@ use alloc::{
     vec::Vec,
 };
 use bambu_print::PrintProject;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use core::cell::RefCell;
 use embassy_net::Ipv4Address;
 use embassy_time::Timer;
@@ -125,7 +124,6 @@ pub struct BambuPrinter {
     pub printer_mode: PrinterMode,
     pub use_ams_scan: UseAmsScan,
     pub printer_ip: Ipv4Address,
-    pub printer_uuid_to_encode: String,
     pub printer_connectivity_ok: Option<bool>,
     protocol_state: ProtocolState,
     // inner_nozzle_diameter: Option<String>,
@@ -351,13 +349,6 @@ impl BambuPrinter {
         log_filter: log::LevelFilter,
         store_state_request_channel: Rc<StoreStateRequestChannel>,
     ) -> Self {
-        let array = printer_serial.as_bytes();
-        let key: &[u8; 16] = b"SpoolEaseIsGreat"; // doesn't really matter, just can't ever change
-        let hasher = siphasher::sip::SipHasher24::new_with_key(key);
-        let hashed_serial = hasher.hash(array);
-        let hashed_encoded_serial = URL_SAFE_NO_PAD.encode(hashed_serial.to_le_bytes());
-        let printer_uuid_to_encode = hashed_encoded_serial;
-
         // Define a user oriented name for selection
         let printer_selector_name = if let Some(printer_name) = &printer_config_name {
             printer_name.clone()
@@ -382,7 +373,6 @@ impl BambuPrinter {
             printer_mode,
             use_ams_scan,
             printer_ip: printer_ip.unwrap_or(Ipv4Address::new(0, 0, 0, 0)),
-            printer_uuid_to_encode,
             printer_connectivity_ok: None,
             protocol_state: ProtocolState::new(),
             // inner_nozzle_diameter: None,

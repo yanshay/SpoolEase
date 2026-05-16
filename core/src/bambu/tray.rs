@@ -9,7 +9,6 @@ use crate::{
     bambu::{BambuPrinter, SpoolId, filament::Filament},
     printer::{MaterialSlotSnapshot, SlotId, slot_in_snapshot_mut},
     spool_record::SpoolRecord,
-    tag_v1::TagInformationV1,
 };
 
 #[allow(dead_code)]
@@ -25,8 +24,6 @@ pub struct TrayBits {
 // IMPORTANT: Don't change names, will hurt persistence
 //            When adding new fields include serde(default)
 pub struct TrayMetaInfo {
-    #[serde(rename = "tag_info", skip_serializing)]
-    pub old_tag_info: Option<TagInformationV1>, // calibration for nozzles
     #[derivative(PartialEq = "ignore")]
     #[serde(skip)]
     #[serde(default)]

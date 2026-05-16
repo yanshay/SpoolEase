@@ -28,7 +28,6 @@ mod spools_storage;
 mod ssdp;
 mod store;
 mod tag_standards;
-mod tag_v1;
 mod types;
 mod utils;
 mod view_model;
