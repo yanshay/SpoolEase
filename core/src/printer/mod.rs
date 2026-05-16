@@ -177,6 +177,10 @@ impl PrinterSnapshotStateInner {
 
     pub fn replace_loaded(&self, mut snapshot: PrinterSnapshot) {
         sanitize_loaded_snapshot(&mut snapshot);
+        self.replace_loaded_sanitized(snapshot);
+    }
+
+    pub fn replace_loaded_sanitized(&self, snapshot: PrinterSnapshot) {
         *self.snapshot.borrow_mut() = snapshot;
         self.dirty.set(false);
         self.pending_store_dirty.set(false);
@@ -429,6 +433,7 @@ pub trait PrinterDriver {
     fn load_private_state(&mut self, _state: Option<Value>, _store: &Rc<Store>) -> Result<(), String> {
         Ok(())
     }
+    fn adjust_loaded_snapshot(&self, _snapshot: &mut PrinterSnapshot) {}
     fn prepare_private_state_store(&mut self) -> Result<Option<Value>, String> {
         Ok(None)
     }

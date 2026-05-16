@@ -16,7 +16,7 @@ use super::{
     DriverSpecificQuery, DriverSpecificQueryResult, PRINTER_STATE_FILE_VERSION, PrinterCapabilities, PrinterCommand, PrinterDriver,
     PrinterError, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterRuntimePersistenceFuture,
     PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterStateFile, SlotId, bambu_adapter::BambuPrinterDriver,
-    fake_driver::FakePrinterDriver,
+    fake_driver::FakePrinterDriver, sanitize_loaded_snapshot,
 };
 
 #[derive(Default)]
@@ -182,8 +182,10 @@ impl PrinterManager {
 
         let removed_missing_spools = Self::clear_missing_spool_ids(&mut state.generic, store);
         driver.load_private_state(state.driver_private.take(), store)?;
+        sanitize_loaded_snapshot(&mut state.generic);
+        driver.adjust_loaded_snapshot(&mut state.generic);
         let snapshot_state = driver.snapshot_state();
-        snapshot_state.replace_loaded(state.generic);
+        snapshot_state.replace_loaded_sanitized(state.generic);
         if removed_missing_spools {
             snapshot_state.mark_dirty();
         }

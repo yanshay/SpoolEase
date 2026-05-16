@@ -299,6 +299,10 @@ impl PrinterDriver for FakePrinterDriver {
     fn persistent_state_path(&self) -> Option<String> {
         Some(self.runtime.borrow().state_path.clone())
     }
+
+    fn adjust_loaded_snapshot(&self, snapshot: &mut PrinterSnapshot) {
+        snapshot.connected = true;
+    }
 }
 
 fn notify_runtime_observers(runtime: &Rc<RefCell<FakePrinterRuntime>>, event: PrinterEvent) {

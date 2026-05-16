@@ -106,7 +106,6 @@ component OperationSelectionStep inherits Rectangle {
                     text: "Configure from Staging";
                     clicked => {
                         AppBackend.set-staging-to-slot(slot.id);
-                        AppState.control-state = ControlState.Ready;
                     }
                 }
 

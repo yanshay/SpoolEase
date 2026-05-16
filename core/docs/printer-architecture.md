@@ -1156,7 +1156,7 @@ pub struct PrinterStateFile {
 }
 ```
 
-Volatile fields are sanitized on load: printer connectivity, group temperature/humidity, and print remaining time. Missing spool IDs are cleared during generic state load and mark the snapshot dirty so the corrected state can be persisted.
+Volatile fields are sanitized on load: printer connectivity, group temperature/humidity, and print remaining time. Drivers may adjust the sanitized loaded snapshot before it is installed; Fake uses this hook to remain connected because it has no external connectivity event. Missing spool IDs are cleared during generic state load and mark the snapshot dirty so the corrected state can be persisted.
 
 Current Fake implementation stores only the generic snapshot under a driver-owned FAT 8.3 path like `/state/<8-char-id>.fak/startup.jsn`. The `<8-char-id>` is a deterministic short name derived from the stable Fake printer ID, and the `.fak` extension is owned by the Fake driver.
 
