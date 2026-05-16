@@ -3301,7 +3301,7 @@ impl ViewModel {
             .printer_manager
             .borrow()
             .printer_number_by_id(printer_id)
-            .unwrap_or(ui_index as usize + 1);
+            .unwrap_or(manager_index + 1);
 
         if connected {
             term_info!(&"-".repeat(62));
@@ -3313,14 +3313,19 @@ impl ViewModel {
     }
 
     fn handle_slot_tag_scanned(&self, printer_id: &PrinterId, slot_id: &SlotId, tag_id: &str, only_spool_id: bool) {
-        let Some(printer_index) = self.printer_manager.borrow().index_by_id(printer_id) else {
+        let Some(manager_index) = self.printer_manager.borrow().index_by_id(printer_id) else {
             error!("Tag scan event for unknown printer {}", printer_id.as_str());
             return;
         };
         if let Some(spool_id) = self.store.get_spool_id_by_tag_id(tag_id) {
+            let printer_number = self
+                .printer_manager
+                .borrow()
+                .printer_number_at(manager_index)
+                .unwrap_or(manager_index + 1);
             info!(
                 "[{}] Tag is registered, setting slot's spool-id{}",
-                printer_index + 1,
+                printer_number,
                 if only_spool_id { "" } else { " and configuring slot material/color/k" }
             );
             let _ = self.dispatch_async_task(AppAsyncTaskRequest::ConfigureSlotWithSpool {
