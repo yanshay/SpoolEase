@@ -85,9 +85,15 @@ pub enum PressureAdvanceCapability {
 pub struct PrinterSnapshot {
     pub id: PrinterId,
     pub kind: PrinterDriverKind,
+    #[serde(default)]
+    pub identifier: String,
     pub name: String,
     pub connected: bool,
     pub num_extruders: u32,
+    #[serde(default)]
+    pub print_error_code: Option<i32>,
+    #[serde(default)]
+    pub system_error_codes: Vec<(i32, i32)>,
     pub slot_groups: Vec<SlotGroupSnapshot>,
     pub print: PrintSnapshot,
 }
@@ -220,7 +226,10 @@ impl PrinterSnapshotStateInner {
 
 pub fn sanitize_loaded_snapshot(snapshot: &mut PrinterSnapshot) {
     snapshot.connected = false;
+    snapshot.print.stage_code = None;
     snapshot.print.remaining_minutes = None;
+    snapshot.print_error_code = None;
+    snapshot.system_error_codes.clear();
     for group in &mut snapshot.slot_groups {
         group.temperature_c = None;
         group.humidity_percent = None;
@@ -299,6 +308,8 @@ pub struct PrintSnapshot {
     pub remaining_minutes: Option<u32>,
     pub current_layer: Option<u32>,
     pub total_layers: Option<u32>,
+    #[serde(default)]
+    pub stage_code: Option<i32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

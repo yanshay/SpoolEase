@@ -78,9 +78,16 @@ impl BambuPrinterDriver {
         PrinterSnapshot {
             id: BambuPrinterConfig::printer_id_for_serial(&printer.printer_serial),
             kind: PrinterDriverKind::Bambu,
+            identifier: printer.printer_serial.clone(),
             name: printer.printer_name().clone(),
             connected: printer.printer_connectivity_ok.unwrap_or_default(),
             num_extruders: printer.num_extruders(),
+            print_error_code: printer.print_error,
+            system_error_codes: printer
+                .hms
+                .as_ref()
+                .map(|errors| errors.iter().map(|error| (error.attr.unwrap_or(0), error.code.unwrap_or(0))).collect())
+                .unwrap_or_default(),
             slot_groups: Self::slot_groups_from_printer(printer),
             print: Self::print_from_printer(printer),
         }
@@ -324,6 +331,7 @@ impl BambuPrinterDriver {
             remaining_minutes: Self::non_negative_u32(printer.mc_remaining_time),
             current_layer: Self::non_negative_u32(printer.layer_num),
             total_layers: Self::non_negative_u32(printer.total_layer_num),
+            stage_code: printer.stg_cur,
         }
     }
 

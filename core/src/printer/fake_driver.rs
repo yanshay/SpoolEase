@@ -64,9 +64,12 @@ impl FakePrinterRuntime {
         let snapshot = PrinterSnapshot {
             id: id.clone(),
             kind: PrinterDriverKind::Fake,
+            identifier: config.unique_id.clone(),
             name,
             connected: true,
             num_extruders: 1,
+            print_error_code: None,
+            system_error_codes: Vec::new(),
             slot_groups: alloc::vec![SlotGroupSnapshot {
                 id: "fake:slots".into(),
                 name: "Fake Slots".into(),
