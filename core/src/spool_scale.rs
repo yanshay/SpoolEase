@@ -86,6 +86,7 @@ impl SpoolScale {
             .unwrap_or_else(|e| error!("Failed sending button response request to scale {e:?}"));
     }
 
+    #[allow(dead_code)]
     pub fn request_gcode_analysis(&self, gcode_analysis_request: GcodeAnalysisRequest) -> Result<(), String> {
         if let Err(err) = self
             .console_to_scale
@@ -133,6 +134,7 @@ impl SpoolScale {
         }
     }
 
+    #[allow(dead_code)]
     pub fn gcode_analysis_notify(&self, gcode_analysis_notification: GcodeAnalysisNotification) -> Result<(), String> {
         if let Err(err) = self
             .console_to_scale

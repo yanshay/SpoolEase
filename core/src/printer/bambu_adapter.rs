@@ -6,9 +6,13 @@ use alloc::{
     vec::Vec,
 };
 use core::cell::RefCell;
-use framework::error;
+use framework::{error, info, utils::SpawnerHeapExt};
 use hashbrown::HashMap;
 use serde_json::Value;
+use shared::gcode_analysis_task::{
+    Fetch3mf, FilamentUsage, GcodeAnalysisNotification, GcodeAnalysisNotificationChannel, GcodeAnalysisRequest, GcodeAnalyzerObserver,
+    fetch_gcode_analysis_once_task,
+};
 
 use crate::app_config::BambuPrinterConfig;
 use crate::bambu::{
@@ -41,8 +45,13 @@ pub struct BambuPrinterDriver {
 
 struct BambuPrinterEventBridge {
     printer_id: PrinterId,
+    printer: Rc<RefCell<BambuPrinter>>,
+    framework: Rc<RefCell<framework::framework::Framework>>,
     snapshot_state: PrinterSnapshotState,
     observers: PrinterObserverList,
+    gcode_analysis_notification_channel: Rc<GcodeAnalysisNotificationChannel>,
+    gcode_analysis_observer: Option<Weak<RefCell<dyn GcodeAnalyzerObserver>>>,
+    next_gcode_job_number: i32,
 }
 
 impl BambuPrinterDriver {
@@ -447,6 +456,62 @@ impl BambuPrinterEventBridge {
             },
         );
     }
+
+    fn build_gcode_analysis_request(
+        &self,
+        printer: &BambuPrinter,
+        print_project: &PrintProject,
+        job_number: i32,
+    ) -> GcodeAnalysisRequest {
+        let threemf_url = print_project.threemf_url.clone();
+        let required_tls_slots = if printer.fetch_3mf == Fetch3mf::PrinterFtp
+            || threemf_url.starts_with("file://")
+            || threemf_url.starts_with("ftp://")
+            || threemf_url.starts_with("brtc://")
+        {
+            match printer.model_series() {
+                crate::bambu::PrinterModelSeries::Unknown => 2,
+                crate::bambu::PrinterModelSeries::X1 => 2,
+                crate::bambu::PrinterModelSeries::P1 => 1,
+                crate::bambu::PrinterModelSeries::A1 => 1,
+                crate::bambu::PrinterModelSeries::H2 => 2,
+                crate::bambu::PrinterModelSeries::P2 => 2,
+                crate::bambu::PrinterModelSeries::X2 => 2,
+            }
+        } else {
+            1
+        };
+
+        let chars_to_replace_for_file = match printer.model_series() {
+            crate::bambu::PrinterModelSeries::P1 | crate::bambu::PrinterModelSeries::A1 => "!@#\'@/",
+            crate::bambu::PrinterModelSeries::X1
+            | crate::bambu::PrinterModelSeries::H2
+            | crate::bambu::PrinterModelSeries::P2
+            | crate::bambu::PrinterModelSeries::X2
+            | crate::bambu::PrinterModelSeries::Unknown => "/",
+        };
+
+        let threemf_ftp_filename: String = print_project
+            .subtask_name
+            .chars()
+            .map(|c| if chars_to_replace_for_file.contains(c) { '_' } else { c })
+            .collect();
+
+        GcodeAnalysisRequest {
+            fetch_3mf: printer.fetch_3mf,
+            ip: printer.printer_ip,
+            serial: printer.printer_serial.clone(),
+            access_code: printer.printer_access_code.clone(),
+            printer_number: printer.printer_number,
+            printer_index: printer.printer_index,
+            threemf_ftp_filename,
+            job_number,
+            threemf_url,
+            gcode_filename_in_3mf: print_project.gcode_filename_in_3mf.clone(),
+            ftp_memory_save: required_tls_slots == 1,
+            printer_selector_name: printer.printer_selector_name.clone(),
+        }
+    }
 }
 
 impl BambuPrinterObserver for BambuPrinterEventBridge {
@@ -495,11 +560,39 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
         self.notify(PrinterEventKind::ConnectivityChanged { connected: status });
     }
 
-    fn on_request_gcode_analysis(&mut self, _bambu_printer: &mut BambuPrinter, _print_project: &PrintProject) -> i32 {
-        0
+    fn on_request_gcode_analysis(&mut self, bambu_printer: &mut BambuPrinter, print_project: &PrintProject) -> i32 {
+        let Some(observer) = self.gcode_analysis_observer.clone() else {
+            error!("[{}] Gcode analysis observer is not initialized", bambu_printer.printer_number);
+            return 0;
+        };
+
+        self.next_gcode_job_number += 1;
+        let job_number = self.next_gcode_job_number;
+        let request = self.build_gcode_analysis_request(bambu_printer, print_project, job_number);
+        info!(
+            "[{}] Launching gcode analysis job {} for {} {}",
+            bambu_printer.printer_number, job_number, print_project.subtask_name, print_project.gcode_filename_in_3mf
+        );
+
+        match self.framework.borrow().spawner.spawn_heap(fetch_gcode_analysis_once_task(
+            self.framework.clone(),
+            self.gcode_analysis_notification_channel.clone(),
+            observer,
+            request,
+        )) {
+            Ok(()) => job_number,
+            Err(err) => {
+                error!("[{}] Failed to launch gcode analysis task: {err:?}", bambu_printer.printer_number);
+                0
+            }
+        }
     }
 
-    fn on_cancel_gcode_analysis(&mut self, _job_number: i32) {}
+    fn on_cancel_gcode_analysis(&mut self, job_number: i32) {
+        self.gcode_analysis_notification_channel
+            .immediate_publisher()
+            .publish_immediate(GcodeAnalysisNotification::Cancel { job_number });
+    }
 
     fn on_tag_scanned(&self, _printer_index: usize, tray_id: i32, tag_id: &str, only_spool_id: bool) {
         self.notify(PrinterEventKind::SlotTagScanned {
@@ -533,6 +626,27 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
         {
             error!("Missing snapshot slot for consumed Bambu tray {tray_id}");
         }
+    }
+}
+
+impl GcodeAnalyzerObserver for BambuPrinterEventBridge {
+    fn on_gcode_analysis(&mut self, job_number: i32, _printer_index: usize, filament_usage: FilamentUsage) {
+        self.printer.borrow_mut().set_gcode_analysis(job_number, filament_usage);
+    }
+
+    fn on_canceled(&mut self, job_number: i32, _printer_index: usize) {
+        let printer_log_id = self.printer.borrow().printer_number;
+        info!("[{printer_log_id}] Gcode analysis job {job_number} canceled before completion (print canceled?)");
+    }
+
+    fn on_failed(&mut self, job_number: i32, _printer_index: usize) {
+        let printer_log_id = self.printer.borrow().printer_number;
+        error!("[{printer_log_id}] Gcode analysis job {job_number} failed (exact error above?)");
+    }
+
+    fn on_completed(&mut self, job_number: i32, _printer_index: usize) {
+        let printer_log_id = self.printer.borrow().printer_number;
+        info!("[{printer_log_id}] Gcode analysis job {job_number} completed successfuly");
     }
 }
 
@@ -578,19 +692,28 @@ impl PrinterDriver for BambuPrinterDriver {
         self.observers.borrow_mut().push(observer);
     }
 
-    fn start(&mut self, _framework: Rc<RefCell<framework::framework::Framework>>) {
+    fn start(&mut self, framework: Rc<RefCell<framework::framework::Framework>>) {
         if self.bridge_observer.is_some() {
             return;
         }
 
-        let bridge_observer: Rc<RefCell<dyn BambuPrinterObserver>> = Rc::new(RefCell::new(BambuPrinterEventBridge {
+        let bridge_observer = Rc::new(RefCell::new(BambuPrinterEventBridge {
             printer_id: self.id.clone(),
+            printer: self.printer.clone(),
+            framework,
             snapshot_state: self.snapshot_state.clone(),
             observers: self.observers.clone(),
+            gcode_analysis_notification_channel: Rc::new(GcodeAnalysisNotificationChannel::new()),
+            gcode_analysis_observer: None,
+            next_gcode_job_number: 0,
         }));
-        let bridge_observer_weak = Rc::downgrade(&bridge_observer);
+        let gcode_analysis_observer: Rc<RefCell<dyn GcodeAnalyzerObserver>> = bridge_observer.clone();
+        bridge_observer.borrow_mut().gcode_analysis_observer = Some(Rc::downgrade(&gcode_analysis_observer));
+
+        let bambu_observer: Rc<RefCell<dyn BambuPrinterObserver>> = bridge_observer;
+        let bridge_observer_weak = Rc::downgrade(&bambu_observer);
         self.printer.borrow_mut().subscribe(bridge_observer_weak);
-        self.bridge_observer = Some(bridge_observer);
+        self.bridge_observer = Some(bambu_observer);
     }
 
     fn persistent_state_path(&self) -> Option<String> {

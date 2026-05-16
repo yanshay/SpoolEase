@@ -431,7 +431,7 @@ Current flow:
   - `ams_mapping`
   - `ams_mapping2`
   - `use_ams`
-- G-code analysis is requested through observers.
+- G-code analysis is requested through the Bambu adapter bridge, which launches one console analysis task per request.
 - Trays used in print are marked.
 - State changes, layer changes, tray changes, and finish/fail events trigger consumption logic.
 - Consumption maps gcode filament IDs to Bambu tray IDs.
@@ -450,7 +450,7 @@ Important boundary:
 - Keep G-code/3MF analysis under Bambu-specific code.
 - Do not require non-Bambu drivers to expose print files, G-code paths, layer telemetry, or Bambu-style AMS mappings.
 - The generic printer/application layer should receive consumption notifications, not analysis jobs.
-- If Bambu needs internal analysis events during migration, treat them as Bambu adapter internals or Bambu-specific extension events.
+- Bambu analysis request/cancel/result handling is adapter-owned. `ViewModel` is not in the normal G-code analysis flow.
 
 ### Bambu Calibration
 
@@ -608,11 +608,12 @@ Coupling:
 
 - Remote scale protocol includes gcode analysis requests with `printer_index`.
 - `GcodeAnalysisRequest` contains Bambu-specific fields such as serial, access code, FTPS details, and filename rules.
+- Console/Bambu no longer dispatches G-code analysis to the scale; the old scale queued path is retained for compatibility until a protocol cleanup.
 
 Target:
 
 - Keep scale weight and NFC generic.
-- Treat remote gcode analysis as a driver-owned optional helper.
+- Treat remote gcode analysis as legacy scale protocol unless it is explicitly needed again.
 - Version the scale protocol before changing non-compatible gcode request types.
 
 ## Current UI and API Coupling
@@ -1532,16 +1533,16 @@ Refactor `ViewModel` to handle generic events:
 - [done] `BambuPrinterDriver::start(...)` installs an adapter-owned `BambuPrinterEventBridge` that converts Bambu tray/connect/tag callbacks into generic printer events.
 - [done] Bambu physical spool insertion/removal transitions route through generic `PrinterEventKind::MaterialSlotPresenceChanged` batches.
 - [done] Staging-on-insert, configure-existing-spool-on-insert, unload-to-staging, and connect/disconnect terminal logs are handled from generic printer events.
-- [done] `ViewModel` no longer forwards or handles tray/connect/tag behavior from its direct `BambuPrinterObserver` implementation.
+- [done] `ViewModel` no longer subscribes as a direct `BambuPrinterObserver`.
 - [done] Generic consumption storage reads snapshot slot consumption fields and acknowledges saved high-water marks through `PrinterManager`.
 - [done] Bambu consumption increments route through the adapter bridge, which updates generic snapshot slot consumption counters directly.
-- [not done] `ViewModel` still uses direct `BambuPrinterObserver` subscription for G-code analysis request/cancel dispatch.
+- [done] Bambu G-code analysis request/cancel/result dispatch is handled by the Bambu adapter bridge with one console task per request; `ViewModel` is no longer a direct `BambuPrinterObserver`.
 - [not done] Bambu still derives consumption from its internal G-code tracking; only the final slot/gram report is generic.
-- [not done] G-code analysis request/cancel remains Bambu-specific and should not become a required generic printer event.
+- [not done] The scale protocol still contains legacy queued G-code analysis messages.
 
 Acceptance criteria:
 
-- `ViewModel` no longer implements product logic directly in `BambuPrinterObserver`, except inside a bridge.
+- `ViewModel` no longer implements `BambuPrinterObserver`; Bambu observer handling lives in the adapter bridge.
 - Bambu UI updates still work.
 
 ### Phase 6: Dynamic Slint Slot Groups [mostly done]
@@ -1723,7 +1724,7 @@ Files to avoid changing early unless necessary:
 ## Suggested Immediate Next Steps
 
 1. [not done] Add scrolling/pagination or another large-topology layout for generic slot groups.
-2. [partial] Continue generic consumption migration: storage and snapshot counters are generic, but Bambu still derives consumption from internal G-code tracking and direct G-code analysis callbacks.
+2. [partial] Continue generic consumption migration: storage and snapshot counters are generic, but Bambu still derives consumption from internal G-code tracking.
 3. [not done] Continue reducing direct `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` use where a migrated generic path exists.
 4. [deferred] Start the first real non-Bambu driver only after explicit user instruction.
 
@@ -1749,6 +1750,6 @@ If context is limited, read these files next:
 
 ## Current Status
 
-Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, adapter-owned Bambu generic event bridge, generic `PrinterManager` storage, single-pass active-printer initialization, short generic printer-number log labels, `/api/printers-status` read projection through `PrinterManager` snapshots only while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan/snapshot-refresh events with boxed snapshot payloads, generic material-slot presence events for physical insert/remove transitions, adapter-applied generic snapshot consumption updates, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a fake/demo non-Bambu virtual printer runtime visible in web status, console-safe selection of generic printers, generic `PrinterObserver` subscription through `PrinterManager`, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, standard circular slot-card UI for Bambu and Fake, backend-driven primary/external slot groups, opaque string slot IDs for main Slint slot actions, one-file generic/private printer restart-state persistence, Fake `PrinterSnapshot`-backed state, mandatory driver snapshot-state handles with dirty tracking, Bambu snapshot-backed spool/consumption/used-in-print/status fields, generic snapshot-based consumption storage with high-water acknowledgement, driver-provided slot/group display names, explicit slot pressure-advance display fields, and generic async configure-slot-with-spool routing by printer ID plus slot ID.
+Migration code has started. Completed work: generic printer domain types, Bambu snapshot/command adapter, adapter-owned Bambu generic event bridge, generic `PrinterManager` storage, single-pass active-printer initialization, short generic printer-number log labels, `/api/printers-status` read projection through `PrinterManager` snapshots only while preserving compact output, slot unassign/reset/configure paths through `PrinterCommand`, web `/api/printer-command` through `PrinterCommand::PrintControl`, generic event routing for connectivity/tag-scan/snapshot-refresh events with boxed snapshot payloads, generic material-slot presence events for physical insert/remove transitions, adapter-applied generic snapshot consumption updates, adapter-owned Bambu G-code analysis dispatch with one console task per request, driver-specific printer config with `BambuPrinterConfig` and `FakePrinterConfig`, generic derived default printer IDs, config UI driver-kind selection, explicit assign/set-spool-id/reset/untag slot capabilities, a fake/demo non-Bambu virtual printer runtime visible in web status, console-safe selection of generic printers, generic `PrinterObserver` subscription through `PrinterManager`, unified Slint `UiSlotGroup` / `UiSlot` rendering for Bambu and non-Bambu printers, standard circular slot-card UI for Bambu and Fake, backend-driven primary/external slot groups, opaque string slot IDs for main Slint slot actions, one-file generic/private printer restart-state persistence, Fake `PrinterSnapshot`-backed state, mandatory driver snapshot-state handles with dirty tracking, Bambu snapshot-backed spool/consumption/used-in-print/status fields, generic snapshot-based consumption storage with high-water acknowledgement, driver-provided slot/group display names, explicit slot pressure-advance display fields, and generic async configure-slot-with-spool routing by printer ID plus slot ID.
 
-Still not done: full `PrinterManager` ownership replacement, Bambu-specific G-code analysis request/cancel callback migration, and paginated/scrollable dynamic Slint slot groups for large topologies. First real non-Bambu driver work is deferred until explicit user instruction.
+Still not done: full `PrinterManager` ownership replacement, legacy scale G-code analysis protocol cleanup, and paginated/scrollable dynamic Slint slot groups for large topologies. First real non-Bambu driver work is deferred until explicit user instruction.

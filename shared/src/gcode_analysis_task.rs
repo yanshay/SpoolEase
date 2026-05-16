@@ -176,6 +176,74 @@ enum FetchSubtaskResult {
     Ok,
 }
 
+pub async fn fetch_gcode_analysis_once_task(
+    framework: Rc<RefCell<Framework>>,
+    notifications_channel: Rc<GcodeAnalysisNotificationChannel>,
+    observer: alloc::rc::Weak<RefCell<dyn GcodeAnalyzerObserver>>,
+    gcode_analysis_request: GcodeAnalysisRequest,
+) {
+    info!("Started one-shot fetch_gcode_analysis task");
+    run_gcode_analysis_request(framework, gcode_analysis_request, notifications_channel, observer).await;
+}
+
+async fn run_gcode_analysis_request(
+    framework: Rc<RefCell<Framework>>,
+    gcode_analysis_request: GcodeAnalysisRequest,
+    notifications_channel: Rc<GcodeAnalysisNotificationChannel>,
+    observer: alloc::rc::Weak<RefCell<dyn GcodeAnalyzerObserver>>,
+) {
+    let job_number = gcode_analysis_request.job_number;
+    let printer_index = gcode_analysis_request.printer_index;
+    let printer_log_id = gcode_analysis_request.printer_number;
+
+    info!("[{printer_log_id}] Received gcode analysis request");
+    let fetch_res = match gcode_analysis_request.fetch_3mf {
+        Fetch3mf::CloudHttp
+            if !(gcode_analysis_request.threemf_url.starts_with("file://")
+                || gcode_analysis_request.threemf_url.starts_with("ftp://")
+                || gcode_analysis_request.threemf_url.starts_with("brtc://")) =>
+        {
+            fetch_gcode_analysis_task_cloud_http(
+                framework.clone(),
+                gcode_analysis_request,
+                observer.clone(),
+                notifications_channel.clone(),
+            )
+            .await
+        }
+        _ => {
+            if gcode_analysis_request.fetch_3mf == Fetch3mf::CloudHttp {
+                info!("[{printer_log_id}] Configuration is to fetch 3mf file over HTTP, but file is from sdcard, so using to ftp");
+            }
+            fetch_gcode_analysis_task_printer_ftp(
+                framework.clone(),
+                gcode_analysis_request,
+                observer.clone(),
+                notifications_channel.clone(),
+            )
+            .await
+        }
+    };
+
+    match fetch_res {
+        FetchSubtaskResult::Failed => observer
+            .upgrade()
+            .unwrap()
+            .borrow_mut()
+            .on_failed(job_number, printer_index),
+        FetchSubtaskResult::Canceled => observer
+            .upgrade()
+            .unwrap()
+            .borrow_mut()
+            .on_canceled(job_number, printer_index),
+        FetchSubtaskResult::Ok => observer
+            .upgrade()
+            .unwrap()
+            .borrow_mut()
+            .on_completed(job_number, printer_index),
+    }
+}
+
 pub async fn fetch_gcode_analysis_task(
     framework: Rc<RefCell<Framework>>,
     requests_channel: Rc<GcodeAnalysisRequestChannel>,
@@ -193,58 +261,13 @@ pub async fn fetch_gcode_analysis_task(
         } else {
             receiver.receive().await
         };
-        let job_number = gcode_analysis_request.job_number;
-        let printer_index = gcode_analysis_request.printer_index;
-        let printer_log_id = printer_index;
-
-        info!("[{printer_log_id}] Received gcode analysis request");
-        let fetch_res = match gcode_analysis_request.fetch_3mf {
-            Fetch3mf::CloudHttp
-                if !(gcode_analysis_request.threemf_url.starts_with("file://")
-                    || gcode_analysis_request.threemf_url.starts_with("ftp://")
-                    || gcode_analysis_request.threemf_url.starts_with("brtc://")) =>
-            {
-                fetch_gcode_analysis_task_cloud_http(
-                    framework.clone(),
-                    gcode_analysis_request,
-                    observer.clone(),
-                    notifications_channel.clone(),
-                )
-                .await
-            }
-            _ => {
-                if gcode_analysis_request.fetch_3mf == Fetch3mf::CloudHttp {
-                    info!(
-                        "[{printer_log_id}] Configuration is to fetch 3mf file over HTTP, but file is from sdcard, so using to ftp"
-                    );
-                }
-                // ftp
-                fetch_gcode_analysis_task_printer_ftp(
-                    framework.clone(),
-                    gcode_analysis_request,
-                    observer.clone(),
-                    notifications_channel.clone(),
-                )
-                .await
-            }
-        };
-        match fetch_res {
-            FetchSubtaskResult::Failed => observer
-                .upgrade()
-                .unwrap()
-                .borrow_mut()
-                .on_failed(job_number, printer_index),
-            FetchSubtaskResult::Canceled => observer
-                .upgrade()
-                .unwrap()
-                .borrow_mut()
-                .on_canceled(job_number, printer_index),
-            FetchSubtaskResult::Ok => observer
-                .upgrade()
-                .unwrap()
-                .borrow_mut()
-                .on_completed(job_number, printer_index),
-        }
+        run_gcode_analysis_request(
+            framework.clone(),
+            gcode_analysis_request,
+            notifications_channel.clone(),
+            observer.clone(),
+        )
+        .await;
     }
 }
 
