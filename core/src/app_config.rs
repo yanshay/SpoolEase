@@ -145,13 +145,6 @@ impl PrinterConfig {
         }
     }
 
-    pub fn bambu_config(&self) -> Option<&BambuPrinterConfig> {
-        match &self.driver {
-            PrinterDriverConfig::Bambu(config) => Some(config),
-            _ => None,
-        }
-    }
-
     #[allow(dead_code)]
     pub fn fake_config(&self) -> Option<&FakePrinterConfig> {
         match &self.driver {

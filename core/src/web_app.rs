@@ -544,29 +544,28 @@ impl AppWithStateBuilder for NestedAppBuilder {
                       state: State<ConsoleAppState>,
                       get_printers_filament_pa: GetPrintersFilamentPaDTO| {
                     ready({
-                        let view_model_borrow = state.0.view_model.borrow_mut();
-                        let printers = &view_model_borrow.bambu_printer_model.printers;
-                        let printers_filament_pa = printers
-                            .iter()
-                            .map(|printer| {
+                        let printers_filament_pa = state
+                            .0
+                            .view_model
+                            .borrow()
+                            .get_printers_filament_pa(&get_printers_filament_pa.slicer_filament_code)
+                            .into_iter()
+                            .map(|(identifier, name, extruders, pressure_advance)| {
                                 (
-                                    printer.borrow().printer_serial.clone(),
+                                    identifier,
                                     PrinterEntry {
-                                        name: printer.borrow().printer_name().clone(),
-                                        extruders: printer.borrow().num_extruders(),
-                                        pressure_advance: printer
-                                            .borrow()
-                                            .calibrations
-                                            .iter()
-                                            .filter(|cal| cal.filament_id == get_printers_filament_pa.slicer_filament_code)
+                                        name,
+                                        extruders,
+                                        pressure_advance: pressure_advance
+                                            .into_iter()
                                             .map(|pa| PressureAdvanceEntry {
                                                 extruder: pa.extruder,
-                                                diameter: pa.diameter.clone(),
-                                                nozzle_id: pa.nozzle_id.clone(),
-                                                name: pa.name.clone(),
-                                                k_value: pa.k_value.clone(),
+                                                diameter: pa.diameter,
+                                                nozzle_id: pa.nozzle_id,
+                                                name: pa.name,
+                                                k_value: pa.k_value,
                                                 cali_idx: pa.cali_idx,
-                                                setting_id: pa.setting_id.clone(),
+                                                setting_id: pa.setting_id,
                                             })
                                             .collect::<Vec<_>>(),
                                     },

@@ -6,6 +6,7 @@ pub mod manager;
 
 use alloc::{
     boxed::Box,
+    format,
     rc::{Rc, Weak},
     string::{String, ToString},
     vec::Vec,
@@ -347,7 +348,7 @@ pub enum PrinterCommand {
     UnassignSpoolFromSlot {
         slot_id: SlotId,
     },
-    DriverSpecific(DriverCommand),
+    DriverSpecific(DriverSpecificCommand),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -363,21 +364,19 @@ pub enum SlotAssignMode {
     WritePrinterMaterial,
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct DriverCommand {
-    pub name: String,
-    pub data: DriverData,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DriverSpecificCommand {
+    Bambu(crate::bambu::driver_specific::BambuDriverCommand),
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct DriverData {
-    pub fields: Vec<DriverDataField>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DriverSpecificQuery {
+    Bambu(crate::bambu::driver_specific::BambuDriverQuery),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DriverDataField {
-    pub key: String,
-    pub value: String,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DriverSpecificQueryResult {
+    Bambu(crate::bambu::driver_specific::BambuDriverQueryResult),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -417,6 +416,9 @@ pub trait PrinterDriver {
             slot.consumed_since_load_saved_g = consumed_since_load_saved_g;
             Ok(())
         })
+    }
+    fn query_driver_specific(&self, query: DriverSpecificQuery) -> PrinterResult<DriverSpecificQueryResult> {
+        Err(PrinterError::UnsupportedCommand(format!("{query:?}")))
     }
     fn persistent_state_path(&self) -> Option<String> {
         None
@@ -499,5 +501,4 @@ pub struct PrintFileAnalysisRequest {
     pub job_number: i32,
     pub job_name: String,
     pub file_name: String,
-    pub driver_data: DriverData,
 }

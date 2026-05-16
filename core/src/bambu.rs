@@ -6,6 +6,7 @@ pub mod bambu_api;
 pub mod bambu_print;
 pub mod bambu_ssdp;
 pub mod calibration;
+pub mod driver_specific;
 pub mod filament;
 pub mod mqtt;
 pub mod outgoing;

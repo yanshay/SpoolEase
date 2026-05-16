@@ -121,7 +121,7 @@ This must become dynamic and slot-group driven before non-Bambu printers can be 
 
 ## Current Backend Architecture
 
-The current backend has one concrete printer implementation: Bambu Lab.
+The backend now has a generic printer layer with Bambu Lab and fake/demo driver implementations. Bambu remains the only real printer implementation.
 
 High-level flow:
 
@@ -129,18 +129,19 @@ High-level flow:
 main.rs
   -> app.rs
     -> ViewModel
-      -> BambuPrinter instances
+      -> PrinterManager
+        -> BambuPrinterDriver -> BambuPrinter instances
+        -> FakePrinterDriver
       -> Store inventory
       -> Slint AppState/AppBackend
       -> Web API state
       -> SpoolTag local NFC
       -> SpoolScale remote scale/NFC/gcode helper
-      -> G-code analysis jobs
 ```
 
 `ViewModel` is the central orchestrator. It owns or coordinates nearly every domain:
 
-- Printer instances through `bambu_printer_model: SelectedPrinter`.
+- Printer instances through `PrinterManager`.
 - Inventory through `Store`.
 - Staging through `FilamentStaging`.
 - Local NFC tag reader.
@@ -148,10 +149,9 @@ main.rs
 - Slint UI projection.
 - Web API responses.
 - Print consumption updates.
-- G-code analysis dispatch and completion.
 - Printer state persistence scheduling.
 
-This is the main source of coupling. The Bambu protocol code is mostly isolated, but the application layer is Bambu-shaped.
+This remains a source of coupling, but selected-printer state, UI/web printer reads, material slot commands, Bambu G-code analysis dispatch, and Bambu print-project persistence now pass through `PrinterManager`/driver boundaries instead of direct `ViewModel` Bambu ownership.
 
 ## Current Bambu Implementation
 
@@ -479,6 +479,8 @@ The matching logic is delicate:
 
 This should be treated as a Bambu optional capability, not a generic inventory primitive.
 
+The Bambu adapter currently exposes pressure-advance reads and writes through typed Bambu-specific driver command/query payloads in `src/bambu/driver_specific.rs`. These still route through `PrinterManager` and `PrinterDriver`, but the generic printer trait does not pretend Bambu PA entries are generic printer data.
+
 ## Current Generic Domains
 
 ### Inventory
@@ -692,6 +694,12 @@ Bambu-specific API concepts:
 - `SpoolsSlotsKind::Ams | Ext`
 
 Because client changes are acceptable, these endpoints can be redesigned directly when the client work starts. Internal compatibility adapters are still helpful while only backend is changing.
+
+Current migrated read/write paths:
+
+- `/api/printers-status` reads `PrinterManager` snapshots while keeping the compact existing response shape.
+- `/api/printers-filament-pa` reads Bambu PA entries through a typed `DriverSpecificQuery::Bambu(...)` while keeping the existing response shape.
+- `/api/add-printer-pa` dispatches typed `DriverSpecificCommand::Bambu(BambuDriverCommand::AddPressureAdvance(...))` through `PrinterManager`.
 
 ## Proposed Target Architecture
 
@@ -958,10 +966,23 @@ pub enum PrinterCommand {
     UnassignSpoolFromSlot {
         slot_id: SlotId,
     },
-    AddPressureAdvance(PressureAdvanceProfile),
-    DriverSpecific(DriverCommand),
+    DriverSpecific(DriverSpecificCommand),
 }
 ```
+
+Driver-specific commands and queries should remain typed. For example, Bambu PA uses Bambu-owned payloads under `src/bambu/driver_specific.rs`, wrapped by the generic printer boundary:
+
+```rust
+pub enum DriverSpecificCommand {
+    Bambu(BambuDriverCommand),
+}
+
+pub enum DriverSpecificQuery {
+    Bambu(BambuDriverQuery),
+}
+```
+
+Do not use stringly field bags or JSON round-trips for in-process driver-specific calls.
 
 Assignment mode matters because current behavior has two variants:
 
@@ -1469,7 +1490,7 @@ Current migration status:
 - [done] Adapter exposes Bambu capabilities.
 - [done] Adapter preserves compact `/api/printers-status` slot string output through compatibility conversion in `ViewModel`.
 
-### Phase 3: Introduce PrinterManager Behind ViewModel [partial]
+### Phase 3: Introduce PrinterManager Behind ViewModel [done]
 
 Add `PrinterManager` and initialize Bambu printers through it.
 
@@ -1489,9 +1510,9 @@ Current migration status:
 - [done] Selected printer index is mirrored into `PrinterManager` when the UI selects a printer.
 - [done] `/api/printers-status`, `ui_untag_slot`, and `ui_reset_slot` use `PrinterManager` instead of constructing `BambuPrinterDriver` directly.
 - [done] Web print-command dispatch uses `PrinterManager::dispatch_by_id` instead of scanning `SelectedPrinter` directly.
-- [not started] `ViewModel` still stores `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>`.
-- [not done] `ViewModel` still uses direct Bambu access for many unreworked flows.
-- [not done] `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` is still the primary printer-facing field for those unreworked flows.
+- [done] `ViewModel` no longer stores `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>`.
+- [done] The selected UI printer now maps to a `PrinterManager` index; there is no selected-Bambu mirror.
+- [partial] `ViewModel` still has some Bambu-shaped API surfaces, including `BambuPrintCommand` conversion and Bambu tag/K-info handling.
 
 ### Phase 4: Route Commands Through Generic Printer Commands [done]
 
@@ -1502,11 +1523,12 @@ Refactor these paths:
 - [done] `set_staging_to_slot` / `set_staging_to_tray_direct` dispatch `PrinterCommand::AssignMaterialToSlot` through `PrinterManager`.
 - [done] `configure_slot_with_spool_async` routes by generic printer ID and slot ID, then dispatches `PrinterCommand::AssignMaterialToSlot` through `PrinterManager`.
 - [done] web `/api/printer-command` dispatches `PrinterCommand::PrintControl` through `PrinterManager`.
-- [done] web `/api/add-printer-pa` dispatches explicit Bambu driver command `bambu.add_pressure_advance` through `PrinterManager`.
+- [done] web `/api/add-printer-pa` dispatches typed `DriverSpecificCommand::Bambu(BambuDriverCommand::AddPressureAdvance(...))` through `PrinterManager`.
 
 Additional read-path migration:
 
 - [done] `/api/printers-status` builds from `PrinterManager` snapshots only while preserving the existing compact response format.
+- [done] `/api/printers-filament-pa` builds from typed `DriverSpecificQuery::Bambu(...)` results only while preserving the existing compact response format.
 
 They should dispatch `PrinterCommand` instead of calling `BambuPrinter` methods directly.
 
@@ -1630,16 +1652,17 @@ Acceptance criteria:
 - Driver-specific connection/configuration is isolated.
 - Unsupported capabilities are not shown or are disabled in UI/client.
 
-### Phase 11: Generic Pressure Advance / K Management [not started]
+### Phase 11: Bambu Pressure Advance / K Routing [partial]
 
-Move pressure-advance management out of Bambu-specific web/ViewModel paths when there is a real second driver need.
+Move pressure-advance management out of raw Bambu printer access without presenting Bambu PA as a generic calibration model. Current backend routing keeps Bambu internals out of `ViewModel` and the web layer by using typed Bambu-specific command/query payloads through `PrinterManager` and `PrinterDriver`. The DTOs and stored inventory K model are still Bambu-shaped.
 
 Acceptance criteria:
 
-- Pressure-advance query/add APIs route through generic printer capability and driver interfaces.
-- Bambu calibration internals remain inside the Bambu driver/adapter.
+- [done] Pressure-advance query/add APIs route through typed driver-specific printer interfaces.
+- [done] Bambu calibration internals remain inside the Bambu driver/adapter.
 - Unsupported printers do not expose pressure-advance actions.
-- Slot pressure-advance display continues to use generic snapshot fields.
+- [done] Slot pressure-advance display continues to use generic snapshot fields.
+- [not done] Web/client PA DTOs are still Bambu-compatible rather than a redesigned generic calibration model.
 
 ## Risks
 
@@ -1725,7 +1748,7 @@ Files to avoid changing early unless necessary:
 
 1. [not done] Add scrolling/pagination or another large-topology layout for generic slot groups.
 2. [partial] Continue generic consumption migration: storage and snapshot counters are generic, but Bambu still derives consumption from internal G-code tracking.
-3. [not done] Continue reducing direct `SelectedPrinter<Vec<Rc<RefCell<BambuPrinter>>>>` use where a migrated generic path exists.
+3. [not done] Continue reducing Bambu-shaped app/web APIs where a migrated generic path exists, especially `PrintCommand` DTOs and spool K-info APIs.
 4. [deferred] Start the first real non-Bambu driver only after explicit user instruction.
 
 ## Session Handoff Instructions

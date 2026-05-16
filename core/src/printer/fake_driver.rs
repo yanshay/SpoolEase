@@ -169,7 +169,7 @@ impl FakePrinterRuntime {
             | PrinterCommand::ClearSlot { slot_id }
             | PrinterCommand::UnassignSpoolFromSlot { slot_id } => self.slot_index(slot_id).map(|_| ()),
             PrinterCommand::PrintControl(_) => Err(PrinterError::UnsupportedCommand("print_control".to_string())),
-            PrinterCommand::DriverSpecific(command) => Err(PrinterError::UnsupportedCommand(command.name.clone())),
+            PrinterCommand::DriverSpecific(command) => Err(PrinterError::UnsupportedCommand(format!("{command:?}"))),
         }
     }
 
@@ -220,7 +220,7 @@ impl FakePrinterRuntime {
                 Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
             }
             PrinterCommand::PrintControl(_) => Err(PrinterError::UnsupportedCommand("print_control".to_string())),
-            PrinterCommand::DriverSpecific(command) => Err(PrinterError::UnsupportedCommand(command.name)),
+            PrinterCommand::DriverSpecific(command) => Err(PrinterError::UnsupportedCommand(format!("{command:?}"))),
         }
     }
 

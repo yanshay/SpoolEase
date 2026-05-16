@@ -1,6 +1,5 @@
 use core::cell::RefCell;
 use core::cmp::max;
-use core::ops::{Deref, DerefMut};
 
 use alloc::boxed::Box;
 use alloc::string::String;
@@ -19,7 +18,7 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 use hashbrown::HashMap;
 use ndef_rs::NdefMessage;
 use serde::{Deserialize, Serialize};
-use shared::gcode_analysis_task::{Fetch3mf, FilamentUsage};
+use shared::gcode_analysis_task::FilamentUsage;
 use shared::settings::{
     OTA_DOMAIN_DEBUG, OTA_DOMAIN_STABLE, OTA_DOMAIN_UNSTABLE, OTA_TLS_CERTIFICATE, SCALE_DEBUG_OTA_PATH, SCALE_STABLE_OTA_PATH,
     SCALE_UNSTABLE_OTA_PATH,
@@ -35,17 +34,17 @@ use framework::{
 };
 
 use crate::app::{UiFilament, UiSlot, UiSlotDisplay, UiSlotGroup, UiSlotGroupKind, UiSlotState, UiSpoolRecord, UiSpoolRecordDisplay};
-use crate::app_config::{
-    BAMBU_COLOR_NAMES, BASE_FILAMENTS, BambuPrinterConfig, FILAMENT_BRAND_NAMES, MATERIALS, PrinterConfig, PrinterDriverConfig, PrinterMode,
-    UseAmsScan,
-};
+use crate::app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, BambuPrinterConfig, FILAMENT_BRAND_NAMES, MATERIALS, PrinterDriverConfig};
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
 use crate::bambu::bambu_api::{GcodeState, PrintCommand as BambuPrintCommand};
+use crate::bambu::driver_specific::{
+    BambuAddPressureAdvance, BambuDriverCommand, BambuDriverQuery, BambuDriverQueryResult, BambuPressureAdvanceEntry,
+};
 use crate::filament_staging::StagingOrigin;
 use crate::printer::{
-    self as printer_domain, DriverCommand, DriverData, DriverDataField, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind,
-    PrintControlCommand, PrinterChange, PrinterCommand, PrinterEvent, PrinterEventKind, PrinterId, PrinterRuntimePersistenceRequestChannel,
-    PrinterRuntimePersistenceRequestKind, SlotAssignMode, SlotId, manager::PrinterManager,
+    self as printer_domain, DriverSpecificCommand, DriverSpecificQuery, DriverSpecificQueryResult, FilamentTemps, MaterialSlotPresenceChange,
+    MaterialSlotPresenceChangeKind, PrintControlCommand, PrinterChange, PrinterCommand, PrinterEvent, PrinterEventKind, PrinterId,
+    PrinterRuntimePersistenceRequestChannel, PrinterRuntimePersistenceRequestKind, SlotAssignMode, SlotId, manager::PrinterManager,
 };
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
@@ -55,11 +54,7 @@ use crate::store::{Store, StoreObserver, store_safe_time_now};
 
 use crate::tag_standards::{BAMBULAB_TAG_TYPE, BambuLabTag, OPENPRINTTAG_TAG_TYPE, OpenPrintTagTag};
 use crate::types::FilamentSupInfo;
-use crate::{
-    app_config::AppConfig,
-    bambu::{self, BambuPrinter},
-    filament_staging::FilamentStaging,
-};
+use crate::{app_config::AppConfig, bambu, filament_staging::FilamentStaging};
 use shared::spool_tag::{self, SpoolTagObserver, Status, TAG_PLACEHOLDER};
 
 #[allow(dead_code)]
@@ -162,7 +157,6 @@ pub struct ViewModel {
     // Application
     #[allow(dead_code)]
     app_config: Rc<RefCell<AppConfig>>,
-    pub bambu_printer_model: SelectedPrinter,
     printer_manager: RefCell<PrinterManager>,
     spool_tag_model: Rc<RefCell<spool_tag::SpoolTag>>,
     spool_scale_model: Rc<RefCell<spool_scale::SpoolScale>>,
@@ -172,7 +166,6 @@ pub struct ViewModel {
     // spools_cores_filter: String,
     pub store: Rc<Store>,
     ui_printer_manager_indexes: Vec<usize>,
-    ui_printer_bambu_indexes: Vec<Option<usize>>,
     ssdp_pub_sub: &'static SSDPPubSubChannel,
     app_async_tasks_channel: Rc<AppAsyncTasksChannel>,
     pub recently_added_spool_id: Option<String>,
@@ -335,7 +328,6 @@ impl ViewModel {
         framework: Rc<RefCell<Framework>>,
         // Application
         app_config: Rc<RefCell<AppConfig>>,
-        // bambu_printer_model: Rc<RefCell<bambu::BambuPrinter>>,
         spi_device: Option<
             ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
         >,
@@ -351,9 +343,6 @@ impl ViewModel {
         let trait_for_terminal_weak: Weak<RefCell<dyn terminal::TerminalObserver>> = Rc::downgrade(&trait_for_terminal_rc);
         term_mut().subscribe(trait_for_terminal_weak);
 
-        // Setup empty printers
-        let set_of_printers: Vec<Rc<RefCell<BambuPrinter>>> = Vec::new();
-        let selected_printer = SelectedPrinter::new(set_of_printers, 0);
         let printer_manager = RefCell::new(PrinterManager::new());
 
         // Initialize SpoolTag
@@ -389,7 +378,6 @@ impl ViewModel {
             framework: framework.clone(),
             _terminal_view_model: terminal_view_model, // used by Terminal with weak reference, hold it so it won't be released
             // Application
-            bambu_printer_model: selected_printer,
             printer_manager,
             spool_tag_model: spool_tag_model.clone(),
             spool_scale_model: spool_scale_model.clone(),
@@ -400,7 +388,6 @@ impl ViewModel {
             // spools_cores_filter: String::new(),
             store,
             ui_printer_manager_indexes: Vec::new(),
-            ui_printer_bambu_indexes: Vec::new(),
             ssdp_pub_sub,
             app_async_tasks_channel,
             recently_added_spool_id: None,
@@ -436,31 +423,13 @@ impl ViewModel {
         // Initialize Printers ///////////////////////////
 
         let mut default_printer_ui_index = None;
-        let mut printer_index = 0; // starts from zero and incremented only on successful init and adding to array
+        let mut bambu_printer_index = 0; // starts from zero and incremented only on successful Bambu init
         let mut available_printers: Vec<crate::app::Printer> = Vec::new();
         let mut ui_printer_manager_indexes = Vec::new();
-        let mut ui_printer_bambu_indexes = Vec::new();
-
-        let dummy_printer_config = PrinterConfig::bambu(
-            Some("No Printer Configured".to_string()),
-            BambuPrinterConfig {
-                ip: None,
-                serial: Some("000000000000000".to_string()),
-                access_code: Some("00000000".to_string()),
-                log_filter: None,
-                auto_restore_k: false,
-                track_print_consume: false,
-                fetch_3mf: Fetch3mf::CloudHttp,
-                ignore_certificates: false,
-                printer_mode: PrinterMode::Auto,
-                use_ams_scan: UseAmsScan::SpoolIdAndConfigure,
-            },
-        );
 
         let configured_printers = self.app_config.borrow().configured_printers.printers.clone();
         let configured_default_printer_id = self.app_config.borrow().configured_default_printer.printer_id.clone();
         let no_configured_printers = configured_printers.is_empty();
-        let mut initialized_bambu_printers = false;
 
         for printer_config in configured_printers.iter() {
             let manager_index = self.printer_manager.borrow().len();
@@ -475,7 +444,7 @@ impl ViewModel {
                     match bambu::init(
                         self.framework.clone(),
                         printer_number,
-                        printer_index,
+                        bambu_printer_index,
                         &printer_config.name,
                         bambu_config,
                         self.app_config.clone(),
@@ -483,20 +452,12 @@ impl ViewModel {
                         self.runtime_persistence_request_channel.clone(),
                     ) {
                         Ok(bambu_printer_model) => {
-                            let bambu_index = self.bambu_printer_model.printers.len();
-                            self.bambu_printer_model.printers.push(bambu_printer_model.clone());
-                            initialized_bambu_printers = true;
                             self.printer_manager.borrow_mut().add_bambu_printer(bambu_printer_model.clone());
                             let printer_id = BambuPrinterConfig::printer_id_for_serial(&bambu_printer_model.borrow().printer_serial);
                             if default_printer_ui_index.is_none() && Some(&printer_id.0) == configured_default_printer_id.as_ref() {
                                 default_printer_ui_index = Some(available_printers.len());
-                                self.bambu_printer_model.index = bambu_index;
                             }
-                            let capabilities = self
-                                .printer_manager
-                                .borrow()
-                                .capabilities_at(manager_index)
-                                .unwrap_or_default();
+                            let capabilities = self.printer_manager.borrow().capabilities_at(manager_index).unwrap_or_default();
                             let printer = crate::app::Printer {
                                 can_assign_slot: capabilities.material_slot_assign,
                                 can_set_spool_id: capabilities.material_slot_set_spool_id,
@@ -508,14 +469,12 @@ impl ViewModel {
                             };
                             available_printers.push(printer);
                             ui_printer_manager_indexes.push(manager_index);
-                            ui_printer_bambu_indexes.push(Some(bambu_index));
 
                             // notification from printer on events, should be treated for all printers,
                             // but selected printer should be considered as to what to update in the UI
                             if let Some(view_model_rc) = &self.view_model {
                                 let trait_for_printer_rc: Rc<RefCell<dyn printer_domain::PrinterObserver>> = view_model_rc.clone();
-                                let trait_for_printer_weak: Weak<RefCell<dyn printer_domain::PrinterObserver>> =
-                                    Rc::downgrade(&trait_for_printer_rc);
+                                let trait_for_printer_weak: Weak<RefCell<dyn printer_domain::PrinterObserver>> = Rc::downgrade(&trait_for_printer_rc);
                                 if let Err(err) = self.printer_manager.borrow_mut().subscribe_at(manager_index, trait_for_printer_weak) {
                                     error!("Failed to subscribe generic printer observer: {err:?}");
                                 }
@@ -523,7 +482,7 @@ impl ViewModel {
                             if let Err(err) = self.printer_manager.borrow_mut().start_at(manager_index, self.framework.clone()) {
                                 error!("Failed to start generic printer runtime: {err:?}");
                             }
-                            printer_index += 1; // Bambu index is increased only for Bambu printers
+                            bambu_printer_index += 1;
                         }
                         Err(e) => {
                             term_info!("[{}] Error initializing printer: {}", printer_number, e);
@@ -546,11 +505,7 @@ impl ViewModel {
                     if let Err(err) = self.printer_manager.borrow_mut().start_at(manager_index, self.framework.clone()) {
                         error!("Failed to start generic printer runtime: {err:?}");
                     }
-                    let capabilities = self
-                        .printer_manager
-                        .borrow()
-                        .capabilities_at(manager_index)
-                        .unwrap_or_default();
+                    let capabilities = self.printer_manager.borrow().capabilities_at(manager_index).unwrap_or_default();
                     if default_printer_ui_index.is_none() && Some(&fake_config.printer_id().unwrap().0) == configured_default_printer_id.as_ref() {
                         default_printer_ui_index = Some(available_printers.len());
                     }
@@ -568,42 +523,15 @@ impl ViewModel {
                         kind: "Fake".into(),
                     });
                     ui_printer_manager_indexes.push(manager_index);
-                    ui_printer_bambu_indexes.push(None);
-                }
-            }
-        }
-
-        if !initialized_bambu_printers
-            && let Some(bambu_config) = dummy_printer_config.bambu_config()
-        {
-            match bambu::init(
-                self.framework.clone(),
-                1,
-                printer_index,
-                &dummy_printer_config.name,
-                bambu_config,
-                self.app_config.clone(),
-                self.ssdp_pub_sub,
-                self.runtime_persistence_request_channel.clone(),
-            ) {
-                Ok(bambu_printer_model) => {
-                    self.bambu_printer_model.printers.push(bambu_printer_model);
-                }
-                Err(e) => {
-                    term_info!("[1] Error initializing printer: {}", e);
                 }
             }
         }
 
         if default_printer_ui_index.is_none() && !available_printers.is_empty() {
             default_printer_ui_index = Some(0);
-            if let Some(Some(bambu_index)) = ui_printer_bambu_indexes.first() {
-                self.bambu_printer_model.index = *bambu_index;
-            }
         }
 
         self.ui_printer_manager_indexes = ui_printer_manager_indexes;
-        self.ui_printer_bambu_indexes = ui_printer_bambu_indexes;
 
         let ui = self.ui_weak.unwrap();
         let ui_app_backend = ui.global::<crate::app::AppBackend>();
@@ -651,12 +579,7 @@ impl ViewModel {
 
         let has_consumption_tracking = {
             let printer_manager = self.printer_manager.borrow();
-            (0..printer_manager.len()).any(|printer_index| {
-                printer_manager
-                    .capabilities_at(printer_index)
-                    .unwrap_or_default()
-                    .consumption_tracking
-            })
+            (0..printer_manager.len()).any(|printer_index| printer_manager.capabilities_at(printer_index).unwrap_or_default().consumption_tracking)
         };
 
         if has_consumption_tracking {
@@ -1191,11 +1114,6 @@ impl ViewModel {
             error!("Selected printer {selected_printer} has no generic manager mapping");
             return;
         };
-        let bambu_index = borrowed_view_model
-            .ui_printer_bambu_indexes
-            .get(selected_printer_usize)
-            .copied()
-            .flatten();
         moved_ui
             .unwrap()
             .global::<crate::app::AppState>()
@@ -1204,17 +1122,7 @@ impl ViewModel {
             error!("Failed to select printer {selected_printer}: {err:?}");
         }
         borrowed_view_model.update_slot_groups_from_selected_printer();
-
-        if let Some(bambu_index) = bambu_index {
-            borrowed_view_model.bambu_printer_model.index = bambu_index;
-            borrowed_view_model.update_ui_from_printer(&borrowed_view_model.bambu_printer_model.printers[bambu_index].borrow());
-        }
         borrowed_view_model.register_printer_related_listeners();
-    }
-
-    fn selected_ui_bambu_index(&self) -> Option<usize> {
-        self.selected_ui_index()
-            .and_then(|index| self.ui_printer_bambu_indexes.get(index).copied().flatten())
     }
 
     fn selected_ui_index(&self) -> Option<usize> {
@@ -1623,9 +1531,7 @@ impl ViewModel {
     }
 
     fn stage_unassigned_slot_if_possible(&self, slot_id: &str) {
-        if self.selected_ui_bambu_index().is_none()
-            || ![StagingOrigin::Empty, StagingOrigin::Unloaded].contains(self.filament_staging.borrow().origin())
-        {
+        if ![StagingOrigin::Empty, StagingOrigin::Unloaded].contains(self.filament_staging.borrow().origin()) {
             return;
         }
 
@@ -2367,21 +2273,6 @@ impl ViewModel {
             .map(|full_spool_rec| self.ui_get_spool_record_display(&full_spool_rec.spool_rec.id.to_shared_string()))
     }
 
-    fn update_ui_from_printer(&self, bambu_printer: &BambuPrinter) {
-        // note - accepting bambu_printer rather than taking from self, because it may be called during callback on_trays_update,
-        // and that's taking place when it's already borrowed and another borrow will panic
-
-        let printer_id = BambuPrinterConfig::printer_id_for_serial(&bambu_printer.printer_serial);
-        let snapshot = printer_domain::bambu_adapter::BambuPrinterDriver::snapshot_from_printer(bambu_printer);
-        self.handle_printer_event(PrinterEvent {
-            printer_id,
-            kind: PrinterEventKind::SnapshotChanged {
-                change: PrinterChange::Slots,
-                snapshot: Box::new(snapshot),
-            },
-        });
-    }
-
     fn weight_left_spool(&self, spool: &SpoolRecord, consumed_since_weight_override: Option<f32>) -> Option<f32> {
         let mut weight_left = None;
         let weight_current = spool.weight_current?;
@@ -3082,12 +2973,12 @@ impl ViewModel {
                     view_model.borrow().update_slot_groups_from_selected_printer();
                 }
                 let target_ui_index = view_model.borrow().ui_index_for_manager_index(manager_index).unwrap_or(-1);
-                ui_app_state.invoke_slot_update_succeeded(
-                    "Configure".into(),
-                    full_slot_description.into(),
-                    slot_id.as_str().into(),
-                    target_ui_index,
-                );
+                    ui_app_state.invoke_slot_update_succeeded(
+                        "Configure".into(),
+                        full_slot_description.into(),
+                        slot_id.as_str().into(),
+                        target_ui_index,
+                    );
             }
             Err(err) => {
                 ui_app_state.invoke_slot_operation_failed("Configure".into(), full_slot_description.into(), slint::format!("{err:?}"));
@@ -3191,6 +3082,33 @@ impl ViewModel {
         locations
     }
 
+    pub fn get_printers_filament_pa(&self, filament_id: &str) -> Vec<(String, String, u32, Vec<BambuPressureAdvanceEntry>)> {
+        let printer_manager = self.printer_manager.borrow();
+        let mut printers = Vec::new();
+        for printer_index in 0..printer_manager.len() {
+            let Some(snapshot) = printer_manager.snapshot_at(printer_index) else {
+                continue;
+            };
+            if snapshot.kind != printer_domain::PrinterDriverKind::Bambu {
+                continue;
+            }
+            let entries = match printer_manager.query_driver_specific_at(
+                printer_index,
+                DriverSpecificQuery::Bambu(BambuDriverQuery::PressureAdvanceEntries {
+                    filament_id: filament_id.to_string(),
+                }),
+            ) {
+                Ok(DriverSpecificQueryResult::Bambu(BambuDriverQueryResult::PressureAdvanceEntries(entries))) => entries,
+                Err(err) => {
+                    error!("Failed to query Bambu pressure advance entries for {}: {err:?}", snapshot.identifier);
+                    Vec::new()
+                }
+            };
+            printers.push((snapshot.identifier, snapshot.name, snapshot.num_extruders, entries));
+        }
+        printers
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn add_calibration_to_printer(
         &self,
@@ -3203,41 +3121,17 @@ impl ViewModel {
         k_value: &str,
         name: &str,
     ) -> Result<(), String> {
-        let command = PrinterCommand::DriverSpecific(DriverCommand {
-            name: printer_domain::bambu_adapter::BAMBU_ADD_PRESSURE_ADVANCE_COMMAND.to_string(),
-            data: DriverData {
-                fields: vec![
-                    DriverDataField {
-                        key: "extruder".to_string(),
-                        value: extruder_id.to_string(),
-                    },
-                    DriverDataField {
-                        key: "diameter".to_string(),
-                        value: nozzle_diameter.to_string(),
-                    },
-                    DriverDataField {
-                        key: "nozzle_id".to_string(),
-                        value: nozzle_id.to_string(),
-                    },
-                    DriverDataField {
-                        key: "filament_id".to_string(),
-                        value: filament_id.to_string(),
-                    },
-                    DriverDataField {
-                        key: "setting_id".to_string(),
-                        value: setting_id.to_string(),
-                    },
-                    DriverDataField {
-                        key: "k_value".to_string(),
-                        value: k_value.to_string(),
-                    },
-                    DriverDataField {
-                        key: "name".to_string(),
-                        value: name.to_string(),
-                    },
-                ],
+        let command = PrinterCommand::DriverSpecific(DriverSpecificCommand::Bambu(BambuDriverCommand::AddPressureAdvance(
+            BambuAddPressureAdvance {
+                extruder: extruder_id,
+                diameter: nozzle_diameter.to_string(),
+                nozzle_id: nozzle_id.to_string(),
+                filament_id: filament_id.to_string(),
+                setting_id: setting_id.to_string(),
+                k_value: k_value.to_string(),
+                name: name.to_string(),
             },
-        });
+        )));
         let printer_id = {
             let printer_manager = self.printer_manager.borrow();
             (0..printer_manager.len()).find_map(|printer_index| {
@@ -3831,33 +3725,6 @@ impl TerminalObserver for TerminalViewModel {
     }
 }
 
-pub struct SelectedPrinter {
-    pub printers: Vec<Rc<RefCell<BambuPrinter>>>,
-    index: usize,
-}
-
-impl SelectedPrinter {
-    fn new(vec: Vec<Rc<RefCell<BambuPrinter>>>, default_index: usize) -> Self {
-        Self {
-            printers: vec,
-            index: default_index,
-        }
-    }
-}
-
-impl Deref for SelectedPrinter {
-    type Target = Rc<RefCell<BambuPrinter>>;
-    fn deref(&self) -> &Self::Target {
-        &self.printers[self.index]
-    }
-}
-
-impl DerefMut for SelectedPrinter {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.printers[self.index]
-    }
-}
-
 impl SpoolScaleObserver for ViewModel {
     fn on_scale_loaded(&mut self, weight: i32) {
         info!("Scale loaded with {weight} g");
@@ -4139,10 +4006,6 @@ fn refresh_selected_printer_after_state_restore(view_model: &Rc<RefCell<ViewMode
     }
 
     view_model.borrow().update_slot_groups_from_selected_printer();
-    if let Some(bambu_index) = view_model.borrow().selected_ui_bambu_index() {
-        let printer = view_model.borrow().bambu_printer_model.printers[bambu_index].clone();
-        view_model.borrow().update_ui_from_printer(&printer.borrow());
-    }
 }
 
 async fn restore_printer_runtime_states(framework: &Rc<RefCell<Framework>>, view_model: &Rc<RefCell<ViewModel>>, num_of_printers: usize) {

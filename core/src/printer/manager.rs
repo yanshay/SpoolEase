@@ -13,9 +13,10 @@ use crate::bambu::BambuPrinter;
 use crate::store::Store;
 
 use super::{
-    PRINTER_STATE_FILE_VERSION, PrinterCapabilities, PrinterCommand, PrinterDriver, PrinterError, PrinterId, PrinterObserver,
-    PrinterPersistentStatePayload, PrinterResult, PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind, PrinterSnapshot,
-    PrinterStateFile, SlotId, bambu_adapter::BambuPrinterDriver, fake_driver::FakePrinterDriver,
+    DriverSpecificQuery, DriverSpecificQueryResult, PRINTER_STATE_FILE_VERSION, PrinterCapabilities, PrinterCommand, PrinterDriver,
+    PrinterError, PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterRuntimePersistenceFuture,
+    PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterStateFile, SlotId, bambu_adapter::BambuPrinterDriver,
+    fake_driver::FakePrinterDriver,
 };
 
 #[derive(Default)]
@@ -64,6 +65,13 @@ impl PrinterManager {
 
     pub fn capabilities_at(&self, index: usize) -> Option<PrinterCapabilities> {
         self.printers.get(index).map(|printer| printer.capabilities())
+    }
+
+    pub fn query_driver_specific_at(&self, index: usize, query: DriverSpecificQuery) -> PrinterResult<DriverSpecificQueryResult> {
+        self.printers
+            .get(index)
+            .ok_or_else(|| PrinterError::PrinterUnavailable(format!("printer index {index}")))?
+            .query_driver_specific(query)
     }
 
     pub fn id_at(&self, index: usize) -> Option<PrinterId> {
