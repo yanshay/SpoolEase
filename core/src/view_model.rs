@@ -422,7 +422,6 @@ impl ViewModel {
         // Initialize Printers ///////////////////////////
 
         let mut default_printer_ui_index = None;
-        let mut bambu_printer_index = 0; // starts from zero and incremented only on successful Bambu init
         let mut available_printers: Vec<crate::app::Printer> = Vec::new();
         let mut ui_printer_manager_indexes = Vec::new();
 
@@ -443,7 +442,6 @@ impl ViewModel {
                     match bambu::init(
                         self.framework.clone(),
                         printer_number,
-                        bambu_printer_index,
                         &printer_config.name,
                         bambu_config,
                         self.app_config.clone(),
@@ -481,7 +479,6 @@ impl ViewModel {
                             if let Err(err) = self.printer_manager.borrow_mut().start_at(manager_index, self.framework.clone()) {
                                 error!("Failed to start generic printer runtime: {err:?}");
                             }
-                            bambu_printer_index += 1;
                         }
                         Err(e) => {
                             term_info!("[{}] Error initializing printer: {}", printer_number, e);
@@ -3205,11 +3202,6 @@ impl ViewModel {
 
         for snapshot in snapshots {
             let identifier = snapshot.identifier.clone();
-
-            if identifier.starts_with("0000") {
-                // dummy printer
-                continue;
-            }
 
             let slots_sets = self.slot_sets_from_snapshot(&snapshot);
             let internal_changer_count = snapshot

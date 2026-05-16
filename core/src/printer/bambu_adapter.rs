@@ -536,7 +536,8 @@ impl BambuPrinterEventBridge {
             serial: printer.printer_serial.clone(),
             access_code: printer.printer_access_code.clone(),
             printer_number: printer.printer_number,
-            printer_index: printer.printer_index,
+            // Legacy scale-protocol field; current console routing does not use it.
+            printer_index: printer.printer_number,
             threemf_ftp_filename,
             job_number,
             threemf_url,
@@ -627,7 +628,7 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
             .publish_immediate(GcodeAnalysisNotification::Cancel { job_number });
     }
 
-    fn on_tag_scanned(&self, _printer_index: usize, tray_id: i32, tag_id: &str, only_spool_id: bool) {
+    fn on_tag_scanned(&self, tray_id: i32, tag_id: &str, only_spool_id: bool) {
         self.notify(PrinterEventKind::SlotTagScanned {
             slot_id: SlotId::new(format!("bambu:{tray_id}")),
             tag_id: tag_id.to_string(),
@@ -635,7 +636,7 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
         });
     }
 
-    fn on_slot_consumption_reported(&mut self, _printer_index: usize, tray_id: i32, grams: f32) {
+    fn on_slot_consumption_reported(&mut self, tray_id: i32, grams: f32) {
         if grams == 0.0 {
             return;
         }
@@ -732,10 +733,6 @@ impl PrinterDriver for BambuPrinterDriver {
     fn restore_runtime_state(&mut self, framework: Rc<RefCell<framework::framework::Framework>>) -> Option<PrinterRuntimePersistenceFuture> {
         let printer = self.printer.clone();
         Some(Box::pin(async move {
-            if printer.borrow().dummy_printer() {
-                return Ok(());
-            }
-
             let printer_number = printer.borrow().printer_number;
             info!("[{printer_number}] Checking for print project resume state");
             match BambuPrinter::load_print_project_state(&framework, &printer).await {
@@ -811,14 +808,7 @@ impl PrinterDriver for BambuPrinterDriver {
 
     fn persistent_state_path(&self) -> Option<String> {
         let printer = self.printer.borrow();
-        if printer.dummy_printer() {
-            None
-        } else if printer.printer_name().to_lowercase() == "simulator" {
-            // None
-            Some(BambuPrinter::printer_state_file_path(&printer.printer_serial))
-        } else {
-            Some(BambuPrinter::printer_state_file_path(&printer.printer_serial))
-        }
+        Some(BambuPrinter::printer_state_file_path(&printer.printer_serial))
     }
 
     fn private_state_dirty(&self) -> bool {
@@ -835,12 +825,6 @@ impl PrinterDriver for BambuPrinterDriver {
 
     fn prepare_private_state_store(&mut self) -> Result<Option<Value>, String> {
         let mut printer = self.printer.borrow_mut();
-
-        if printer.dummy_printer() {
-            return Ok(None);
-        } else if printer.printer_name().to_lowercase() == "simulator" {
-            // return Ok(None);
-        }
         let Some((state, dirty_state)) = printer.prepare_printer_private_state_store()? else {
             return Ok(None);
         };

@@ -268,7 +268,7 @@ impl BambuPrinter {
             // Update print project state
             if let Some(gcode_state) = print.gcode_state {
                 if gcode_state == GcodeState::Unsupported {
-                    error!("[{}] Unsupported gcode state", self.printer_index);
+                    error!("[{}] Unsupported gcode state", self.printer_number);
                 } else if gcode_state != self.gcode_state {
                     gcode_state_change = true;
                     new_gcode_state = gcode_state;
@@ -612,7 +612,7 @@ impl BambuPrinter {
             }
             self.queue_runtime_persistence_request(PrinterRuntimePersistenceRequestKind::StorePrintProject);
         } else {
-            error!("Internal Error setting gcode analysis to printer index {}", self.printer_index);
+            error!("[{}] Internal Error setting gcode analysis", self.printer_number);
         }
     }
 

@@ -193,9 +193,6 @@ impl BambuPrinter {
         Timer::after_millis(250).await;
 
         let mut err_str = String::new();
-        if printer.borrow().dummy_printer() {
-            return Ok(());
-        }
         for trial in 1..=3 {
             // in separate section for file_store to be release for later load
             let file_store = framework.borrow().file_store();

@@ -113,7 +113,6 @@ pub struct BambuPrinter {
     pub bambu_model: Option<Rc<RefCell<Self>>>,
     pub log_filter: log::LevelFilter,
     pub printer_number: usize,                   // number of printer in user's configuration,
-    pub printer_index: usize, // index of printer in the array of printers, if a config is not good and skipped, then index would be different than number
     pub printer_serial: String, // mandatory, so configured is the same as actual
     pub printer_access_code: String, // mandatory, so configured is the same as actual
     pub configured_printer_name: Option<String>, // the name from config, could be empty
@@ -188,8 +187,8 @@ pub trait BambuPrinterObserver {
     fn on_printer_connect_status(&self, bambu_printer: &mut BambuPrinter, status: bool);
     fn on_request_gcode_analysis(&mut self, bambu_printer: &mut BambuPrinter, print_project: &PrintProject) -> i32;
     fn on_cancel_gcode_analysis(&mut self, job_number: i32);
-    fn on_tag_scanned(&self, printer_index: usize, tray_id: i32, tag_id: &str, only_spool_id: bool);
-    fn on_slot_consumption_reported(&mut self, _printer_index: usize, _tray_id: i32, _grams: f32) {}
+    fn on_tag_scanned(&self, tray_id: i32, tag_id: &str, only_spool_id: bool);
+    fn on_slot_consumption_reported(&mut self, _tray_id: i32, _grams: f32) {}
 }
 
 // Special access to trays fields for dirty tracking
@@ -283,16 +282,12 @@ impl BambuPrinter {
         }
     }
 
-    pub fn dummy_printer(&self) -> bool {
-        self.printer_serial == "000000000000000"
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
 impl BambuPrinter {
     pub fn new(
         printer_number: usize,
-        printer_index: usize,
         printer_serial: &str,
         printer_access_code: &str,
         printer_config_name: &Option<String>,
@@ -311,7 +306,6 @@ impl BambuPrinter {
     ) -> Rc<RefCell<BambuPrinter>> {
         let myself = Self::internal_new(
             printer_number,
-            printer_index,
             printer_serial,
             printer_access_code,
             printer_config_name,
@@ -335,7 +329,6 @@ impl BambuPrinter {
 
     fn internal_new(
         printer_number: usize,
-        printer_index: usize,
         printer_serial: &str,
         printer_access_code: &str,
         printer_config_name: &Option<String>,
@@ -362,7 +355,6 @@ impl BambuPrinter {
         Self {
             bambu_model: None,
             printer_number,
-            printer_index,
             printer_serial: String::from(printer_serial),
             printer_access_code: String::from(printer_access_code),
             configured_printer_ip: *printer_ip,
@@ -482,7 +474,6 @@ impl BambuPrinter {
     pub fn reset_printer(&mut self) {
         let empty = Self::internal_new(
             self.printer_number,
-            self.printer_index,
             &self.printer_serial,
             &self.printer_access_code,
             &self.configured_printer_name,
@@ -544,7 +535,7 @@ impl BambuPrinter {
         let mut observers = self.observers.clone(); // to avoid two references - can probably optimize in various ways
         for weak_observer in observers.iter_mut() {
             let observer = weak_observer.upgrade().unwrap();
-            observer.borrow_mut().on_tag_scanned(self.printer_index, tray_id, tag_id, only_spool_id);
+            observer.borrow_mut().on_tag_scanned(tray_id, tag_id, only_spool_id);
         }
     }
 
@@ -552,7 +543,7 @@ impl BambuPrinter {
         let mut observers = self.observers.clone(); // to avoid two references - can probably optimize in various ways
         for weak_observer in observers.iter_mut() {
             let observer = weak_observer.upgrade().unwrap();
-            observer.borrow_mut().on_slot_consumption_reported(self.printer_index, tray_id, grams);
+            observer.borrow_mut().on_slot_consumption_reported(tray_id, grams);
         }
     }
 
@@ -596,7 +587,6 @@ fn default_printer_name() -> String {
 pub fn init(
     framework: Rc<RefCell<Framework>>,
     printer_number: usize, // number of printer in user's configuration,
-    printer_index: usize, // index of printer in the array of printers, if a config is not good and skipped, then index would be different than number
     printer_config_name: &Option<String>,
     printer_config: &BambuPrinterConfig,
     app_config: Rc<RefCell<AppConfig>>,
@@ -638,7 +628,6 @@ pub fn init(
 
     let bambu_printer = BambuPrinter::new(
         printer_number,
-        printer_index,
         &printer_serial,
         &printer_access_code,
         printer_config_name,

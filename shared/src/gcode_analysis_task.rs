@@ -279,7 +279,7 @@ async fn fetch_gcode_analysis_task_printer_ftp(
 ) -> FetchSubtaskResult {
     let job_number = gcode_analysis_request.job_number;
     let printer_index = gcode_analysis_request.printer_index;
-    let printer_log_id = printer_index;
+    let printer_log_id = gcode_analysis_request.printer_number;
     let stack = framework.borrow().stack;
     let tls = framework.borrow().tls;
     let mut notifications = match notifications_channel.subscriber() {
@@ -289,9 +289,6 @@ async fn fetch_gcode_analysis_task_printer_ftp(
             return FetchSubtaskResult::Failed;
         }
     };
-
-    let printer_log_id = gcode_analysis_request.printer_number;
-
     let threemf_url = gcode_analysis_request.threemf_url;
     let ip = gcode_analysis_request.ip;
     let serial = gcode_analysis_request.serial;
