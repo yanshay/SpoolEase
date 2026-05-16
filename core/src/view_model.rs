@@ -43,8 +43,8 @@ use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota
 use crate::bambu::bambu_api::{GcodeState, PrintCommand as BambuPrintCommand};
 use crate::filament_staging::StagingOrigin;
 use crate::printer::{
-    self as printer_domain, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind, PrintControlCommand, PrinterChange,
-    PrinterCommand, PrinterEvent, PrinterEventKind, PrinterId, SlotAssignMode, SlotId, manager::PrinterManager,
+    self as printer_domain, DriverCommand, DriverData, DriverDataField, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind,
+    PrintControlCommand, PrinterChange, PrinterCommand, PrinterEvent, PrinterEventKind, PrinterId, SlotAssignMode, SlotId, manager::PrinterManager,
 };
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
@@ -3192,16 +3192,54 @@ impl ViewModel {
         k_value: &str,
         name: &str,
     ) -> Result<(), String> {
-        let mut found_printer = false;
-        for printer in &self.bambu_printer_model.printers {
-            let mut printer_borrow = printer.borrow_mut();
-            if printer_borrow.printer_serial == printer_serial {
-                printer_borrow.add_calibration_to_printer(extruder_id, nozzle_diameter, nozzle_id, filament_id, setting_id, k_value, name);
-                found_printer = true;
-                break;
-            }
+        let command = PrinterCommand::DriverSpecific(DriverCommand {
+            name: printer_domain::bambu_adapter::BAMBU_ADD_PRESSURE_ADVANCE_COMMAND.to_string(),
+            data: DriverData {
+                fields: vec![
+                    DriverDataField {
+                        key: "extruder".to_string(),
+                        value: extruder_id.to_string(),
+                    },
+                    DriverDataField {
+                        key: "diameter".to_string(),
+                        value: nozzle_diameter.to_string(),
+                    },
+                    DriverDataField {
+                        key: "nozzle_id".to_string(),
+                        value: nozzle_id.to_string(),
+                    },
+                    DriverDataField {
+                        key: "filament_id".to_string(),
+                        value: filament_id.to_string(),
+                    },
+                    DriverDataField {
+                        key: "setting_id".to_string(),
+                        value: setting_id.to_string(),
+                    },
+                    DriverDataField {
+                        key: "k_value".to_string(),
+                        value: k_value.to_string(),
+                    },
+                    DriverDataField {
+                        key: "name".to_string(),
+                        value: name.to_string(),
+                    },
+                ],
+            },
+        });
+        let printer_id = {
+            let printer_manager = self.printer_manager.borrow();
+            (0..printer_manager.len()).find_map(|printer_index| {
+                let snapshot = printer_manager.snapshot_at(printer_index)?;
+                (snapshot.kind == printer_domain::PrinterDriverKind::Bambu && snapshot.identifier == printer_serial).then_some(snapshot.id)
+            })
         }
-        if found_printer { Ok(()) } else { Err("Printer not found".to_string()) }
+        .ok_or_else(|| "Printer not found".to_string())?;
+
+        self.printer_manager
+            .borrow_mut()
+            .dispatch_by_id(&printer_id, command)
+            .map_err(|err| format!("{err:?}"))
     }
 
     pub fn update_firmware_versions(&self, fw: &[crate::app_ota::FirmwareInfo]) {

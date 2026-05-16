@@ -26,13 +26,15 @@ use crate::bambu::{
 use crate::store::Store;
 
 use super::{
-    FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind, MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand,
-    PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent,
+    DriverCommand, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind, MaterialSlotSnapshot, PressureAdvanceCapability,
+    PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError,
+    PrinterEvent,
     PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult, PrinterSnapshot, PrinterSnapshotState,
     PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
 };
 
 type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
+pub const BAMBU_ADD_PRESSURE_ADVANCE_COMMAND: &str = "bambu.add_pressure_advance";
 
 pub struct BambuPrinterDriver {
     id: PrinterId,
@@ -169,9 +171,40 @@ impl BambuPrinterDriver {
                 printer.unassign_snapshot_slot_spool(tray_id as usize);
                 Ok(())
             }
-            PrinterCommand::AddPressureAdvance(_profile) => Err(PrinterError::UnsupportedCommand("add_pressure_advance".to_string())),
-            PrinterCommand::DriverSpecific(command) => Err(PrinterError::UnsupportedCommand(command.name)),
+            PrinterCommand::DriverSpecific(command) => Self::dispatch_driver_specific(printer, command),
         }
+    }
+
+    fn dispatch_driver_specific(printer: &mut BambuPrinter, command: DriverCommand) -> PrinterResult<()> {
+        match command.name.as_str() {
+            BAMBU_ADD_PRESSURE_ADVANCE_COMMAND => Self::add_pressure_advance(printer, &command),
+            _ => Err(PrinterError::UnsupportedCommand(command.name)),
+        }
+    }
+
+    fn add_pressure_advance(printer: &mut BambuPrinter, command: &DriverCommand) -> PrinterResult<()> {
+        let extruder_id = Self::driver_field(command, "extruder")?
+            .parse::<i32>()
+            .map_err(|err| PrinterError::InvalidCommand(format!("invalid bambu pressure advance extruder: {err}")))?;
+        let nozzle_diameter = Self::driver_field(command, "diameter")?;
+        let nozzle_id = Self::driver_field(command, "nozzle_id")?;
+        let filament_id = Self::driver_field(command, "filament_id")?;
+        let setting_id = Self::driver_field(command, "setting_id")?;
+        let k_value = Self::driver_field(command, "k_value")?;
+        let name = Self::driver_field(command, "name")?;
+
+        printer.add_calibration_to_printer(extruder_id, nozzle_diameter, nozzle_id, filament_id, setting_id, k_value, name);
+        Ok(())
+    }
+
+    fn driver_field<'a>(command: &'a DriverCommand, key: &str) -> PrinterResult<&'a str> {
+        command
+            .data
+            .fields
+            .iter()
+            .find(|field| field.key == key)
+            .map(|field| field.value.as_str())
+            .ok_or_else(|| PrinterError::InvalidCommand(format!("missing bambu pressure advance field {key}")))
     }
 
     fn capabilities_from_printer(printer: &BambuPrinter) -> PrinterCapabilities {

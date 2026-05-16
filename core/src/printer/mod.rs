@@ -342,7 +342,6 @@ pub enum PrinterCommand {
     UnassignSpoolFromSlot {
         slot_id: SlotId,
     },
-    AddPressureAdvance(PressureAdvanceProfile),
     DriverSpecific(DriverCommand),
 }
 
@@ -357,15 +356,6 @@ pub enum PrintControlCommand {
 pub enum SlotAssignMode {
     SpoolIdOnly,
     WritePrinterMaterial,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PressureAdvanceProfile {
-    pub id: Option<String>,
-    pub name: String,
-    pub filament: PrinterFilamentInfo,
-    pub value: f32,
-    pub driver_data: DriverData,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
