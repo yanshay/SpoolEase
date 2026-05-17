@@ -160,11 +160,8 @@ pub struct ViewModel {
     spool_tag_model: Rc<RefCell<spool_tag::SpoolTag>>,
     spool_scale_model: Rc<RefCell<spool_scale::SpoolScale>>,
     pub filament_staging: Rc<RefCell<FilamentStaging>>,
-    // cores_list_vec_rc: slint::ModelRc<crate::app::SelectorOption>,
-    // spools_cores_weights: HashMap<i32, i32>,
-    // spools_cores_filter: String,
     pub store: Rc<Store>,
-    ui_printer_manager_indexes: Vec<usize>,
+    ui_selected_printer_id: Option<PrinterId>,
     ssdp_pub_sub: &'static SSDPPubSubChannel,
     app_async_tasks_channel: Rc<AppAsyncTasksChannel>,
     pub recently_added_spool_id: Option<String>,
@@ -378,7 +375,7 @@ impl ViewModel {
             app_config: app_config.clone(),
             filament_staging: Rc::new(RefCell::new(FilamentStaging::new(store.clone()))),
             store,
-            ui_printer_manager_indexes: Vec::new(),
+            ui_selected_printer_id: None,
             ssdp_pub_sub,
             app_async_tasks_channel,
             recently_added_spool_id: None,
@@ -415,7 +412,6 @@ impl ViewModel {
 
         let mut default_printer_ui_index = None;
         let mut available_printers: Vec<crate::app::Printer> = Vec::new();
-        let mut ui_printer_manager_indexes = Vec::new();
 
         let configured_printers = self.app_config.borrow().configured_printers.printers.clone();
         let configured_default_printer_id = self.app_config.borrow().configured_default_printer.printer_id.clone();
@@ -448,6 +444,7 @@ impl ViewModel {
                             }
                             let capabilities = self.printer_manager.borrow().capabilities_at(manager_index).unwrap_or_default();
                             let printer = crate::app::Printer {
+                                id: printer_id.0.to_shared_string(),
                                 can_assign_slot: capabilities.material_slot_assign,
                                 can_set_spool_id: capabilities.material_slot_set_spool_id,
                                 can_clear_slot: capabilities.material_slot_clear,
@@ -457,7 +454,6 @@ impl ViewModel {
                                 kind: "Bambu".into(),
                             };
                             available_printers.push(printer);
-                            ui_printer_manager_indexes.push(manager_index);
 
                             // notification from printer on events, should be treated for all printers,
                             // but selected printer should be considered as to what to update in the UI
@@ -478,10 +474,10 @@ impl ViewModel {
                     }
                 }
                 PrinterDriverConfig::Fake(fake_config) => {
-                    if fake_config.printer_id().is_err() {
+                    let Ok(printer_id) = fake_config.printer_id() else {
                         term_info!("[{}] Skipping fake printer with invalid config", printer_number);
                         continue;
-                    }
+                    };
                     self.printer_manager
                         .borrow_mut()
                         .add_fake_printer(printer_config.name.clone(), fake_config);
@@ -496,10 +492,11 @@ impl ViewModel {
                         error!("Failed to start generic printer runtime: {err:?}");
                     }
                     let capabilities = self.printer_manager.borrow().capabilities_at(manager_index).unwrap_or_default();
-                    if default_printer_ui_index.is_none() && Some(&fake_config.printer_id().unwrap().0) == configured_default_printer_id.as_ref() {
+                    if default_printer_ui_index.is_none() && Some(&printer_id.0) == configured_default_printer_id.as_ref() {
                         default_printer_ui_index = Some(available_printers.len());
                     }
                     available_printers.push(crate::app::Printer {
+                        id: printer_id.0.to_shared_string(),
                         can_assign_slot: capabilities.material_slot_assign,
                         can_set_spool_id: capabilities.material_slot_set_spool_id,
                         can_clear_slot: capabilities.material_slot_clear,
@@ -512,7 +509,6 @@ impl ViewModel {
                             .to_shared_string(),
                         kind: "Fake".into(),
                     });
-                    ui_printer_manager_indexes.push(manager_index);
                 }
             }
         }
@@ -521,15 +517,18 @@ impl ViewModel {
             default_printer_ui_index = Some(0);
         }
 
-        self.ui_printer_manager_indexes = ui_printer_manager_indexes;
-
         let ui = self.ui_weak.unwrap();
         let ui_app_backend = ui.global::<crate::app::AppBackend>();
         let ui_app_state = ui.global::<crate::app::AppState>();
-        if let Some(default_printer_ui_index) = default_printer_ui_index
-            && let Some(manager_index) = self.ui_printer_manager_indexes.get(default_printer_ui_index)
-        {
-            let _ = self.printer_manager.borrow_mut().set_selected_index(*manager_index);
+        let default_printer_id = default_printer_ui_index
+            .and_then(|index| available_printers.get(index))
+            .map(|printer| PrinterId::new(printer.id.to_string()));
+        self.ui_selected_printer_id = default_printer_id.clone();
+        if let Some(default_printer_id) = default_printer_id {
+            let manager_index = self.printer_manager.borrow().index_by_id(&default_printer_id);
+            if let Some(manager_index) = manager_index {
+                let _ = self.printer_manager.borrow_mut().set_selected_index(manager_index);
+            }
         }
 
         ui_app_state.set_title_checkerboard_bg(Self::create_title_checkerboard_image());
@@ -550,9 +549,9 @@ impl ViewModel {
         let moved_ui = self.ui_weak.clone();
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         // this select_printer handler CAN'T depend on printer because then it would need to change itself while running
-        ui_app_backend.on_select_printer(move |selected_printer: i32| {
+        ui_app_backend.on_select_printer(move |selected_printer_id| {
             // First stored UI for this printer for when we switch back to it
-            Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), selected_printer);
+            Self::perform_select_printer(moved_ui.clone(), moved_view_model.clone(), selected_printer_id.to_string());
         });
 
         if self.printer_manager.borrow().len() > 0 {
@@ -1091,41 +1090,41 @@ impl ViewModel {
             .on_load_staging(move |spool_id| moved_view_model.borrow().ui_load_staging(&spool_id));
     }
 
-    fn perform_select_printer(moved_ui: slint::Weak<crate::app::AppWindow>, moved_view_model: Rc<RefCell<ViewModel>>, selected_printer: i32) {
+    fn perform_select_printer(moved_ui: slint::Weak<crate::app::AppWindow>, moved_view_model: Rc<RefCell<ViewModel>>, selected_printer_id: String) {
+        let ui = moved_ui.unwrap();
+        let ui_app_state = ui.global::<crate::app::AppState>();
+        let printer_id = PrinterId::new(selected_printer_id);
+
         let mut borrowed_view_model = moved_view_model.borrow_mut();
-        let selected_printer_usize = selected_printer as usize;
-        let Some(manager_index) = borrowed_view_model.ui_printer_manager_indexes.get(selected_printer_usize).copied() else {
-            error!("Selected printer {selected_printer} has no generic manager mapping");
+        let manager_index = borrowed_view_model.printer_manager.borrow().index_by_id(&printer_id);
+        let Some(manager_index) = manager_index else {
+            error!("Selected printer {} has no generic manager mapping", printer_id.as_str());
             return;
         };
-        moved_ui
-            .unwrap()
-            .global::<crate::app::AppState>()
-            .invoke_set_curr_printer(selected_printer);
+        let selected_ui_index = borrowed_view_model.ui_index_for_printer_id(&printer_id).unwrap_or(-1);
+        ui_app_state.invoke_set_curr_printer(selected_ui_index);
+        borrowed_view_model.ui_selected_printer_id = Some(printer_id);
         if let Err(err) = borrowed_view_model.printer_manager.borrow_mut().set_selected_index(manager_index) {
-            error!("Failed to select printer {selected_printer}: {err:?}");
+            error!("Failed to select printer at index {manager_index}: {err:?}");
         }
         borrowed_view_model.update_slot_groups_from_selected_printer();
         borrowed_view_model.register_printer_related_listeners();
     }
 
-    fn selected_ui_index(&self) -> Option<usize> {
-        let current_printer = self.ui_weak.unwrap().global::<crate::app::AppState>().get_curr_printer();
-        (current_printer >= 0).then_some(current_printer as usize)
-    }
-
     fn selected_manager_index(&self) -> Option<usize> {
-        self.selected_ui_index()
-            .and_then(|index| self.ui_printer_manager_indexes.get(index).copied())
+        self.ui_selected_printer_id
+            .as_ref()
+            .and_then(|printer_id| self.printer_manager.borrow().index_by_id(printer_id))
     }
 
     fn selected_printer_snapshot(&self) -> Option<(i32, usize, printer_domain::PrinterSnapshot)> {
-        let current_printer = self.ui_weak.unwrap().global::<crate::app::AppState>().get_curr_printer();
-        if current_printer < 0 {
-            return None;
-        }
-        let manager_index = self.ui_printer_manager_indexes.get(current_printer as usize).copied()?;
+        let manager_index = self.selected_manager_index()?;
         let snapshot = self.printer_manager.borrow().snapshot_at(manager_index)?;
+        let current_printer = self
+            .ui_selected_printer_id
+            .as_ref()
+            .and_then(|printer_id| self.ui_index_for_printer_id(printer_id))
+            .unwrap_or(-1);
         Some((current_printer, manager_index, snapshot))
     }
 
@@ -1137,10 +1136,25 @@ impl ViewModel {
     }
 
     fn ui_index_for_manager_index(&self, manager_index: usize) -> Option<i32> {
-        self.ui_printer_manager_indexes
-            .iter()
-            .position(|index| *index == manager_index)
-            .map(|index| index as i32)
+        let printer_id = self.printer_manager.borrow().id_at(manager_index)?;
+        self.ui_index_for_printer_id(&printer_id)
+    }
+
+    fn printer_id_for_manager_index(&self, manager_index: usize) -> Option<String> {
+        self.printer_manager.borrow().id_at(manager_index).map(|printer_id| printer_id.0)
+    }
+
+    fn ui_index_for_printer_id(&self, printer_id: &PrinterId) -> Option<i32> {
+        let ui = self.ui_weak.unwrap();
+        let ui_printers = ui.global::<crate::app::AppState>().get_available_printers();
+        for index in 0..ui_printers.row_count() {
+            if let Some(printer) = ui_printers.row_data(index)
+                && printer.id.as_str() == printer_id.as_str()
+            {
+                return Some(index as i32);
+            }
+        }
+        None
     }
 
     fn slot_description_from_snapshot(snapshot: &printer_domain::PrinterSnapshot, slot_id: &str) -> String {
@@ -1154,14 +1168,10 @@ impl ViewModel {
     }
 
     fn update_slot_groups_from_selected_printer(&self) {
-        let current_printer = self.ui_weak.unwrap().global::<crate::app::AppState>().get_curr_printer();
-        let selected_snapshot = if current_printer < 0 {
-            None
-        } else {
-            self.ui_printer_manager_indexes
-                .get(current_printer as usize)
-                .and_then(|manager_index| self.printer_manager.borrow().snapshot_at(*manager_index))
-        };
+        let selected_snapshot = self
+            .ui_selected_printer_id
+            .as_ref()
+            .and_then(|printer_id| self.printer_snapshot_by_id(printer_id).map(|(_, snapshot)| snapshot));
 
         if let Some(snapshot) = &selected_snapshot {
             self.update_slot_groups_from_snapshot(snapshot);
@@ -2833,19 +2843,17 @@ impl ViewModel {
                         }
                         let selected_manager_index = {
                             let view_model_borrow = view_model.borrow();
-                            view_model_borrow
-                                .selected_ui_index()
-                                .and_then(|index| view_model_borrow.ui_printer_manager_indexes.get(index).copied())
+                            view_model_borrow.selected_manager_index()
                         };
                         if selected_manager_index == Some(manager_index) {
                             view_model.borrow().update_slot_groups_from_selected_printer();
                         }
-                        let target_ui_index = view_model.borrow().ui_index_for_manager_index(manager_index).unwrap_or(-1);
+                        let target_printer_id = view_model.borrow().printer_id_for_manager_index(manager_index).unwrap_or_default();
                         ui_app_state.invoke_slot_update_succeeded(
                             "Configure".into(),
                             full_slot_description.into(),
                             slot_id.as_str().into(),
-                            target_ui_index,
+                            target_printer_id.into(),
                         );
                     }
                     Err(err) => {
@@ -2949,15 +2957,18 @@ impl ViewModel {
 
                 let selected_manager_index = {
                     let view_model_borrow = view_model.borrow();
-                    view_model_borrow
-                        .selected_ui_index()
-                        .and_then(|index| view_model_borrow.ui_printer_manager_indexes.get(index).copied())
+                    view_model_borrow.selected_manager_index()
                 };
                 if selected_manager_index == Some(manager_index) {
                     view_model.borrow().update_slot_groups_from_selected_printer();
                 }
-                let target_ui_index = view_model.borrow().ui_index_for_manager_index(manager_index).unwrap_or(-1);
-                ui_app_state.invoke_slot_update_succeeded("Configure".into(), full_slot_description.into(), slot_id.as_str().into(), target_ui_index);
+                let target_printer_id = view_model.borrow().printer_id_for_manager_index(manager_index).unwrap_or_default();
+                ui_app_state.invoke_slot_update_succeeded(
+                    "Configure".into(),
+                    full_slot_description.into(),
+                    slot_id.as_str().into(),
+                    target_printer_id.into(),
+                );
             }
             Err(err) => {
                 ui_app_state.invoke_slot_operation_failed("Configure".into(), full_slot_description.into(), slint::format!("{err:?}"));
@@ -3959,9 +3970,7 @@ async fn load_persistent_printer_state(
 fn refresh_selected_printer_after_state_restore(view_model: &Rc<RefCell<ViewModel>>, manager_index: usize) {
     let selected_manager_index = {
         let view_model_borrow = view_model.borrow();
-        view_model_borrow
-            .selected_ui_index()
-            .and_then(|ui_index| view_model_borrow.ui_printer_manager_indexes.get(ui_index).copied())
+        view_model_borrow.selected_manager_index()
     };
     if selected_manager_index != Some(manager_index) {
         return;
