@@ -4227,29 +4227,31 @@ pub async fn store_printers_consume(view_model: Rc<RefCell<ViewModel>>) {
             let view_model_borrow = view_model.borrow();
             let printer_manager = view_model_borrow.printer_manager.borrow();
             (0..printer_manager.len())
-                .filter_map(|printer_index| printer_manager.snapshot_at(printer_index))
-                .flat_map(|snapshot| {
-                    let printer_id = snapshot.id.clone();
-                    snapshot
-                        .slot_groups
-                        .into_iter()
-                        .flat_map(move |group| {
-                            let printer_id = printer_id.clone();
-                            group.slots.into_iter().filter_map(move |slot| {
-                                let spool_id = slot.spool_id.clone()?;
-                                if slot.consumed_since_load_g == 0.0 || slot.consumed_since_load_saved_g == slot.consumed_since_load_g {
-                                    return None;
-                                }
-                                Some(PendingPrinterConsumption {
-                                    printer_id: printer_id.clone(),
-                                    slot_id: slot.id,
-                                    spool_id,
-                                    consumed_since_load_g: slot.consumed_since_load_g,
-                                    consumed_since_load_saved_g: slot.consumed_since_load_saved_g,
+                .filter_map(|printer_index| printer_manager.snapshot_state_at(printer_index))
+                .flat_map(|snapshot_state| {
+                    snapshot_state.with_snapshot(|snapshot| {
+                        let printer_id = snapshot.id.clone();
+                        snapshot
+                            .slot_groups
+                            .iter()
+                            .flat_map(move |group| {
+                                let printer_id = printer_id.clone();
+                                group.slots.iter().filter_map(move |slot| {
+                                    let spool_id = slot.spool_id.clone()?;
+                                    if slot.consumed_since_load_g == 0.0 || slot.consumed_since_load_saved_g == slot.consumed_since_load_g {
+                                        return None;
+                                    }
+                                    Some(PendingPrinterConsumption {
+                                        printer_id: printer_id.clone(),
+                                        slot_id: slot.id.clone(),
+                                        spool_id,
+                                        consumed_since_load_g: slot.consumed_since_load_g,
+                                        consumed_since_load_saved_g: slot.consumed_since_load_saved_g,
+                                    })
                                 })
                             })
-                        })
-                        .collect::<Vec<_>>()
+                            .collect::<Vec<_>>()
+                    })
                 })
                 .collect::<Vec<_>>()
         };

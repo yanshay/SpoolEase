@@ -173,6 +173,11 @@ pub struct BambuPrinter {
     pub subtask_name: Option<String>,
     pub stg_cur: Option<i32>,
     pub hms: Option<Vec<bambu_api::Hms>>,
+    // Extra generic state used by SpoolEase, not a full Bambu printer cache.
+    // The BambuPrinter fields are still the source for normal live printer data.
+    // This state stores only generic slot fields that SpoolEase owns or updates:
+    // spool_id, consumed_since_load_g, consumed_since_load_saved_g,
+    // consumed_since_weight_g, and used_in_print.
     snapshot_state: Option<PrinterSnapshotState>,
 }
 

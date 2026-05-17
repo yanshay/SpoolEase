@@ -164,6 +164,14 @@ impl PrinterSnapshotStateInner {
         self.snapshot.borrow().clone()
     }
 
+    pub fn with_snapshot<T, F>(&self, f: F) -> T
+    where
+        F: FnOnce(&PrinterSnapshot) -> T,
+    {
+        let snapshot = self.snapshot.borrow();
+        f(&snapshot)
+    }
+
     pub fn replace(&self, snapshot: PrinterSnapshot, mark_dirty: bool) {
         let mut current = self.snapshot.borrow_mut();
         if *current != snapshot {

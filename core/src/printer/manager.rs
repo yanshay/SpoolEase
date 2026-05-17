@@ -15,7 +15,8 @@ use crate::store::Store;
 use super::{
     DriverSpecificQuery, DriverSpecificQueryResult, PRINTER_STATE_FILE_VERSION, PrinterCapabilities, PrinterCommand, PrinterDriver, PrinterError,
     PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind,
-    PrinterSnapshot, PrinterStateFile, SlotId, bambu_adapter::BambuPrinterDriver, fake_driver::FakePrinterDriver, sanitize_loaded_snapshot,
+    PrinterSnapshot, PrinterSnapshotState, PrinterStateFile, SlotId, bambu_adapter::BambuPrinterDriver, fake_driver::FakePrinterDriver,
+    sanitize_loaded_snapshot,
 };
 
 #[derive(Default)]
@@ -60,6 +61,10 @@ impl PrinterManager {
 
     pub fn snapshot_at(&self, index: usize) -> Option<PrinterSnapshot> {
         self.printers.get(index).map(|printer| printer.snapshot())
+    }
+
+    pub fn snapshot_state_at(&self, index: usize) -> Option<PrinterSnapshotState> {
+        self.printers.get(index).map(|printer| printer.snapshot_state())
     }
 
     pub fn capabilities_at(&self, index: usize) -> Option<PrinterCapabilities> {
