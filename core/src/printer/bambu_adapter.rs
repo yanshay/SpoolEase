@@ -39,19 +39,27 @@ type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
 pub struct BambuPrinterDriver {
     id: PrinterId,
     printer: Rc<RefCell<BambuPrinter>>,
+    // Partial generic slot state, not a full Bambu snapshot cache.
+    // Trust only spool_id, consumption counters, and used_in_print here; live data comes from BambuPrinter.
     snapshot_state: PrinterSnapshotState,
     observers: PrinterObserverList,
+    // Keeps the Bambu event bridge alive; BambuPrinter stores only weak observer refs.
     bridge_observer: Option<Rc<RefCell<dyn BambuPrinterObserver>>>,
+    // Dirty flags saved while private state is being written; restored if the write fails.
     pending_dirty_state: Option<BambuPersistentDirtyState>,
 }
 
+// Translates BambuPrinter callbacks into generic printer events and runtime tasks.
 struct BambuPrinterEventBridge {
     printer_id: PrinterId,
     printer: Rc<RefCell<BambuPrinter>>,
     framework: Rc<RefCell<framework::framework::Framework>>,
+    // Same partial generic slot-state handle, updated by Bambu callbacks for app-tracked fields.
     snapshot_state: PrinterSnapshotState,
     observers: PrinterObserverList,
+    // Sends cancel notifications to running G-code analysis jobs.
     gcode_analysis_notification_channel: Rc<GcodeAnalysisNotificationChannel>,
+    // Weak self-reference used by analysis jobs to report results without keeping this bridge alive.
     gcode_analysis_observer: Option<Weak<RefCell<dyn GcodeAnalyzerObserver>>>,
     next_gcode_job_number: i32,
 }
@@ -85,6 +93,7 @@ impl BambuPrinterDriver {
         Self::raw_snapshot_from_printer(printer)
     }
 
+    // Builds from BambuPrinter only. App-tracked fields like spool_id and consumption stay empty/zero here.
     fn raw_snapshot_from_printer(printer: &BambuPrinter) -> PrinterSnapshot {
         PrinterSnapshot {
             id: BambuPrinterConfig::printer_id_for_serial(&printer.printer_serial),
@@ -104,6 +113,7 @@ impl BambuPrinterDriver {
         }
     }
 
+    // Builds from BambuPrinter, fills app-tracked slot fields from snapshot_state, then stores that result back.
     fn sync_snapshot_state_from_printer(printer: &BambuPrinter, snapshot_state: &PrinterSnapshotState) -> PrinterSnapshot {
         let mut snapshot = Self::raw_snapshot_from_printer(printer);
         Self::overlay_generic_fields_from_state(&mut snapshot, &snapshot_state.clone_snapshot());
@@ -111,6 +121,8 @@ impl BambuPrinterDriver {
         snapshot
     }
 
+    // Copies app-tracked fields: spool_id, consumption counters, and used_in_print.
+    // Do not copy live Bambu data like material, connection, or print status; it may be stale.
     fn overlay_generic_fields_from_state(snapshot: &mut PrinterSnapshot, state: &PrinterSnapshot) {
         for slot in snapshot.slot_groups.iter_mut().flat_map(|group| group.slots.iter_mut()) {
             let Some(state_slot) = state
@@ -175,6 +187,7 @@ impl BambuPrinterDriver {
         }
     }
 
+    // Handles Bambu-only commands behind the generic command enum.
     fn dispatch_driver_specific(printer: &mut BambuPrinter, command: DriverSpecificCommand) -> PrinterResult<()> {
         match command {
             DriverSpecificCommand::Bambu(BambuDriverCommand::AddPressureAdvance(command)) => Self::add_pressure_advance(printer, &command),
@@ -690,6 +703,7 @@ impl PrinterDriver for BambuPrinterDriver {
         Self::capabilities_from_printer(&self.printer.borrow())
     }
 
+    // Returns generic slot state, not a fresh Bambu printer snapshot; use snapshot() for that.
     fn snapshot_state(&self) -> PrinterSnapshotState {
         self.snapshot_state.clone()
     }
@@ -711,6 +725,7 @@ impl PrinterDriver for BambuPrinterDriver {
         Ok(())
     }
 
+    // Handles Bambu-only read queries; other drivers may reject these.
     fn query_driver_specific(&self, query: DriverSpecificQuery) -> PrinterResult<DriverSpecificQueryResult> {
         match query {
             DriverSpecificQuery::Bambu(BambuDriverQuery::PressureAdvanceEntries { filament_id }) => Ok(DriverSpecificQueryResult::Bambu(
@@ -719,6 +734,7 @@ impl PrinterDriver for BambuPrinterDriver {
         }
     }
 
+    // Restores transient print-tracking state after boot; this is not generic snapshot/private state.
     fn restore_runtime_state(&mut self, framework: Rc<RefCell<framework::framework::Framework>>) -> Option<PrinterRuntimePersistenceFuture> {
         let printer = self.printer.clone();
         Some(Box::pin(async move {
@@ -741,6 +757,7 @@ impl PrinterDriver for BambuPrinterDriver {
         }))
     }
 
+    // Runs async save/delete requests for Bambu print-tracking files outside the driver borrow.
     fn handle_runtime_persistence_request(
         &mut self,
         framework: Rc<RefCell<framework::framework::Framework>>,
@@ -812,6 +829,7 @@ impl PrinterDriver for BambuPrinterDriver {
         self.printer.borrow_mut().load_printer_private_state_value(state, store)
     }
 
+    // Serializes Bambu private restart state and remembers dirty flags until the file write succeeds.
     fn prepare_private_state_store(&mut self) -> Result<Option<Value>, String> {
         let mut printer = self.printer.borrow_mut();
         let Some((state, dirty_state)) = printer.prepare_printer_private_state_store()? else {
@@ -825,6 +843,7 @@ impl PrinterDriver for BambuPrinterDriver {
         self.pending_dirty_state = None;
     }
 
+    // If storing failed, restore the remembered dirty flags so a later store can retry.
     fn restore_private_state_after_failed_store(&mut self) {
         if let Some(dirty_state) = self.pending_dirty_state.take() {
             self.printer.borrow_mut().restore_printer_persistent_dirty_state(dirty_state);
