@@ -361,11 +361,6 @@ impl ViewModel {
         // Initialize spool_scale_model
         let spool_scale_model = crate::spool_scale::init(framework.clone(), app_config.clone(), stack, spawner, ssdp_pub_sub);
 
-        // // Prepare an empty spool weights lists, later we'll replace it
-        // let spools_cores_weights: HashMap<i32, i32> = HashMap::with_capacity(300);
-        // let selector_options_vec: slint::VecModel<crate::app::SelectorOption> = slint::VecModel::default();
-        // let selector_options_vec_rc = slint::ModelRc::from(Rc::new(selector_options_vec));
-
         let app_async_tasks_channel = Rc::new(AppAsyncTasksChannel::new());
 
         // Create the ViewModel
@@ -382,9 +377,6 @@ impl ViewModel {
             spool_scale_model: spool_scale_model.clone(),
             app_config: app_config.clone(),
             filament_staging: Rc::new(RefCell::new(FilamentStaging::new(store.clone()))),
-            // cores_list_vec_rc: selector_options_vec_rc,
-            // spools_cores_weights,
-            // spools_cores_filter: String::new(),
             store,
             ui_printer_manager_indexes: Vec::new(),
             ssdp_pub_sub,
@@ -746,12 +738,6 @@ impl ViewModel {
         ui_framework_backend.on_reset_device(move || {
             framework.borrow_mut().reset_device_safer(Some(Duration::from_secs(3)));
         });
-
-        // not the OTA used any longer
-        // let framework = self.framework.clone();
-        // ui_framework_backend.on_update_firmware_ota(move || {
-        //     framework.borrow().update_firmware_ota();
-        // });
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         self.ui_weak
