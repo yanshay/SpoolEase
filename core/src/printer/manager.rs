@@ -2,11 +2,11 @@ use alloc::{
     boxed::Box,
     format,
     rc::Rc,
-    string::{String, ToString},
+    string::String,
     vec::Vec,
 };
 use core::cell::RefCell;
-use framework::framework::Framework;
+use framework::{debug, framework::Framework};
 
 use crate::app_config::FakePrinterConfig;
 use crate::bambu::BambuPrinter;
@@ -151,7 +151,7 @@ impl PrinterManager {
     }
 
     pub fn load_persistent_state_at(&mut self, index: usize, state_json: &str, store: &Rc<Store>) -> Result<(), String> {
-        let driver = self.printers.get_mut(index).ok_or_else(|| format!("printer index {index}"))?;
+        let driver = self.printers.get_mut(index).ok_or_else(|| format!("Unknown printer index {index}"))?;
         let mut state = serde_json::from_str::<PrinterStateFile>(state_json).map_err(|err| format!("Failed to parse printer state: {err}"))?;
         if state.version != PRINTER_STATE_FILE_VERSION {
             return Err(format!("Unsupported printer state version {}", state.version));
@@ -190,7 +190,8 @@ impl PrinterManager {
     }
 
     pub fn prepare_persistent_state_store_at(&mut self, index: usize) -> Result<Option<PrinterPersistentStatePayload>, String> {
-        let driver = self.printers.get_mut(index).ok_or_else(|| format!("printer index {index}"))?;
+        let printer_number = self.printer_number_at(index).ok_or_else(|| format!("Unknown printer index {index}"))?;
+        let driver = &mut self.printers[index];
         let Some(path) = driver.persistent_state_path() else {
             return Ok(None);
         };
@@ -205,6 +206,8 @@ impl PrinterManager {
         if private_dirty && driver_private.is_none() {
             return Ok(None);
         }
+
+        debug!("[{printer_number}] Dirty status: Generic({generic_dirty}), Private({private_dirty})");
 
         snapshot_state.begin_store();
         let state = PrinterStateFile {
