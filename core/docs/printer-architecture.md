@@ -905,7 +905,6 @@ pub struct SlotGroupSnapshot {
 pub enum SlotGroupKind {
     InternalChanger,
     External,
-    Toolhead,
     Virtual,
     Other,
 }

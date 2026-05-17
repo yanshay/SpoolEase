@@ -122,7 +122,6 @@ pub enum SlotGroupKind {
     Other,
     InternalChanger,
     External,
-    Toolhead,
     Virtual,
 }
 

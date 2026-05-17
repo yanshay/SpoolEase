@@ -1311,7 +1311,6 @@ impl ViewModel {
         match kind {
             printer_domain::SlotGroupKind::InternalChanger => UiSlotGroupKind::InternalChanger,
             printer_domain::SlotGroupKind::External => UiSlotGroupKind::External,
-            printer_domain::SlotGroupKind::Toolhead => UiSlotGroupKind::Toolhead,
             printer_domain::SlotGroupKind::Virtual => UiSlotGroupKind::Virtual,
             printer_domain::SlotGroupKind::Other => UiSlotGroupKind::Other,
         }
