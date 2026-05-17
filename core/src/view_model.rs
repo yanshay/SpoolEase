@@ -547,7 +547,6 @@ impl ViewModel {
         ui_app_state.invoke_set_printers_info(available_printers, default_printer);
         ui_app_state.invoke_set_curr_printer(default_printer);
         self.update_slot_groups_from_selected_printer();
-        self.register_printer_related_listeners();
 
         let moved_ui = self.ui_weak.clone();
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
@@ -1113,7 +1112,6 @@ impl ViewModel {
             error!("Failed to select printer at index {manager_index}: {err:?}");
         }
         borrowed_view_model.update_slot_groups_from_selected_printer();
-        borrowed_view_model.register_printer_related_listeners();
     }
 
     fn selected_manager_index(&self) -> Option<usize> {
@@ -1609,40 +1607,6 @@ impl ViewModel {
             }
         }
     }
-
-    // fn full_slot_description(bambu_printer: &BambuPrinter, tray_id: i32) -> String {
-    //     let (ams_id, slot_in_ams) = BambuPrinter::get_ams_and_slot_id(tray_id as usize);
-    //     if ams_id <= 3 {
-    //         format!("{} Slot {}", Self::ams_name(bambu_printer, ams_id), slot_in_ams + 1)
-    //     } else {
-    //         Self::ams_name(bambu_printer, ams_id)
-    //     }
-    // }
-
-    // fn ams_name(bambu_printer: &BambuPrinter, mut ams_id: usize) -> String {
-    //     if (4..4 + 8).contains(&ams_id) {
-    //         // deal with case of AMS_HT as index in ams list vs. bambu values of 128..
-    //         ams_id = ams_id - 4 + 128;
-    //     }
-    //     if ams_id <= 3 {
-    //         format!("AMS-{}", (b'A' + ams_id as u8) as char)
-    //     } else if (128..128 + 8).contains(&ams_id) {
-    //         format!("HT-{}", (b'A' + (ams_id - 128) as u8) as char)
-    //     } else if ams_id == 255 {
-    //         if bambu_printer.num_extruders() == 1 {
-    //             "External Spool".into()
-    //         } else {
-    //             "Right External Spool".into()
-    //         }
-    //     } else if ams_id == 254 {
-    //         "Left External Spool".into()
-    //     } else {
-    //         format!("AMS-#{ams_id}?")
-    //     }
-    // }
-
-    // TODO: check the neccessity of this function and if all content is relevant to it
-    fn register_printer_related_listeners(&mut self) {}
 
     fn ui_load_staging(&self, spool_id: &str) -> SharedString {
         if let Some(spool_rec) = self.store.get_spool_by_id(spool_id) {

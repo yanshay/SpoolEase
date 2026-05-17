@@ -45,13 +45,6 @@ pub struct Tray {
 }
 
 impl Tray {
-    #[allow(dead_code)]
-    pub fn empty() -> Self {
-        Self {
-            state: TrayState::Empty,
-            ..Default::default()
-        }
-    }
     pub fn unknown() -> Self {
         Self {
             state: TrayState::Unknown,

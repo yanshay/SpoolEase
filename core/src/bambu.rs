@@ -475,35 +475,6 @@ impl BambuPrinter {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn reset_printer(&mut self) {
-        let empty = Self::internal_new(
-            self.printer_number,
-            &self.printer_serial,
-            &self.printer_access_code,
-            &self.configured_printer_name,
-            &self.configured_printer_ip,
-            self.auto_restore_k,
-            self.track_print_consume,
-            self.fetch_3mf,
-            self.ignore_certificates,
-            self.printer_mode,
-            self.use_ams_scan,
-            self.write_packets.clone(),
-            self.app_config.clone(),
-            self.restart_printer.clone(),
-            self.log_filter,
-            self.runtime_persistence_request_channel.clone(),
-        );
-        *self = Self {
-            observers: self.observers.clone(),
-            bambu_model: self.bambu_model.clone(),
-            snapshot_state: self.snapshot_state.clone(),
-            ..empty
-        };
-        self.restart_printer.signal(1);
-    }
-
     pub fn report_printer_connectivity(&mut self, status: bool) {
         if self.printer_connectivity_ok == Some(true) && !status {
             self.printer_was_disconnected = true;
@@ -514,9 +485,6 @@ impl BambuPrinter {
     }
     pub fn subscribe(&mut self, observer: alloc::rc::Weak<RefCell<dyn BambuPrinterObserver>>) {
         self.observers.push(observer);
-    }
-    pub fn _clear_all_subscriptions(&mut self) {
-        self.observers.clear();
     }
 
     fn get_active_extruder_from_extruder_state(extruder_state: &Option<i32>) -> Option<usize> {

@@ -56,8 +56,6 @@ pub enum PrinterDriverKind {
     Unknown,
     Bambu,
     Fake,
-    Snapmaker,
-    CoreOne,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -170,11 +168,6 @@ impl PrinterSnapshotStateInner {
                 self.dirty.set(true);
             }
         }
-    }
-
-    pub fn replace_loaded(&self, mut snapshot: PrinterSnapshot) {
-        sanitize_loaded_snapshot(&mut snapshot);
-        self.replace_loaded_sanitized(snapshot);
     }
 
     pub fn replace_loaded_sanitized(&self, snapshot: PrinterSnapshot) {
@@ -474,8 +467,6 @@ pub enum PrinterEventKind {
     SnapshotChanged { change: PrinterChange, snapshot: Box<PrinterSnapshot> },
     SlotTagScanned { slot_id: SlotId, tag_id: String, only_spool_id: bool },
     MaterialSlotPresenceChanged { changes: Vec<MaterialSlotPresenceChange> },
-    PrintFileAnalysisRequested { request: PrintFileAnalysisRequest },
-    PrintFileAnalysisCanceled { job_number: i32 },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -495,11 +486,4 @@ pub enum MaterialSlotPresenceChangeKind {
 pub enum PrinterChange {
     All,
     Slots,
-}
-
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-pub struct PrintFileAnalysisRequest {
-    pub job_number: i32,
-    pub job_name: String,
-    pub file_name: String,
 }

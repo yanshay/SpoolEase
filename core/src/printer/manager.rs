@@ -94,13 +94,6 @@ impl PrinterManager {
         self.printers.iter().position(|printer| printer.id() == printer_id)
     }
 
-    pub fn dispatch_selected(&mut self, command: PrinterCommand) -> PrinterResult<()> {
-        let selected_index = self
-            .selected_index
-            .ok_or_else(|| PrinterError::PrinterUnavailable("no selected printer".to_string()))?;
-        self.dispatch_at(selected_index, command)
-    }
-
     pub fn dispatch_at(&mut self, index: usize, command: PrinterCommand) -> PrinterResult<()> {
         self.printers
             .get_mut(index)
