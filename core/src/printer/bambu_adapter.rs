@@ -95,6 +95,7 @@ impl BambuPrinterDriver {
 
     // Builds from BambuPrinter only. App-tracked fields like spool_id and consumption stay empty/zero here.
     fn raw_snapshot_from_printer(printer: &BambuPrinter) -> PrinterSnapshot {
+        let slot_groups_known = Self::slot_groups_known_from_printer(printer);
         PrinterSnapshot {
             id: BambuPrinterConfig::printer_id_for_serial(&printer.printer_serial),
             kind: PrinterDriverKind::Bambu,
@@ -102,23 +103,45 @@ impl BambuPrinterDriver {
             name: printer.printer_name().clone(),
             connected: printer.printer_connectivity_ok.unwrap_or_default(),
             num_extruders: printer.num_extruders(),
+            slot_groups_known,
             print_error_code: printer.print_error,
             system_error_codes: printer
                 .hms
                 .as_ref()
                 .map(|errors| errors.iter().map(|error| (error.attr.unwrap_or(0), error.code.unwrap_or(0))).collect())
                 .unwrap_or_default(),
-            slot_groups: Self::slot_groups_from_printer(printer),
+            slot_groups: if slot_groups_known {
+                Self::slot_groups_from_printer(printer)
+            } else {
+                Vec::new()
+            },
             print: Self::print_from_printer(printer),
         }
     }
 
     // Builds from BambuPrinter, fills app-tracked slot fields from snapshot_state, then stores that result back.
     fn sync_snapshot_state_from_printer(printer: &BambuPrinter, snapshot_state: &PrinterSnapshotState) -> PrinterSnapshot {
+        let state_snapshot = snapshot_state.clone_snapshot();
         let mut snapshot = Self::raw_snapshot_from_printer(printer);
-        Self::overlay_generic_fields_from_state(&mut snapshot, &snapshot_state.clone_snapshot());
+        if !snapshot.slot_groups_known && state_snapshot.slot_groups_known && !state_snapshot.slot_groups.is_empty() {
+            snapshot.slot_groups_known = true;
+            snapshot.slot_groups = state_snapshot.slot_groups.clone();
+        } else {
+            Self::overlay_generic_fields_from_state(&mut snapshot, &state_snapshot);
+        }
         snapshot_state.replace(snapshot.clone(), false);
         snapshot
+    }
+
+    fn slot_groups_known_from_printer(printer: &BambuPrinter) -> bool {
+        if printer.ams_exist_bits().is_none() {
+            return false;
+        }
+
+        match printer.model_series() {
+            crate::bambu::PrinterModelSeries::H2 | crate::bambu::PrinterModelSeries::X2 => printer.extruder_state().is_some(),
+            _ => true,
+        }
     }
 
     // Copies app-tracked fields: spool_id, consumption counters, and used_in_print.

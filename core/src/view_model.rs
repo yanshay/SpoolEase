@@ -1185,11 +1185,21 @@ impl ViewModel {
         if let Some(snapshot) = &selected_snapshot {
             self.update_slot_groups_from_snapshot(snapshot);
         } else {
+            self.ui_weak.unwrap().global::<crate::app::AppState>().set_slot_groups_loading(false);
             self.set_ui_slot_groups(Vec::new());
         }
     }
 
     fn update_slot_groups_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) {
+        let ui = self.ui_weak.unwrap();
+        let ui_app_state = ui.global::<crate::app::AppState>();
+        if !snapshot.slot_groups_known {
+            ui_app_state.set_slot_groups_loading(true);
+            self.set_ui_slot_groups(Vec::new());
+            return;
+        }
+
+        ui_app_state.set_slot_groups_loading(false);
         let groups = snapshot
             .slot_groups
             .iter()

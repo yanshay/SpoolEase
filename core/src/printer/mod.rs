@@ -80,12 +80,18 @@ pub struct PrinterSnapshot {
     pub name: String,
     pub connected: bool,
     pub num_extruders: u32,
+    #[serde(default = "default_true")]
+    pub slot_groups_known: bool,
     #[serde(default)]
     pub print_error_code: Option<i32>,
     #[serde(default)]
     pub system_error_codes: Vec<(i32, i32)>,
     pub slot_groups: Vec<SlotGroupSnapshot>,
     pub print: PrintSnapshot,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

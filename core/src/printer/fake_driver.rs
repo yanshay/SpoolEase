@@ -68,6 +68,7 @@ impl FakePrinterRuntime {
             name,
             connected: true,
             num_extruders: 1,
+            slot_groups_known: true,
             print_error_code: None,
             system_error_codes: Vec::new(),
             slot_groups: alloc::vec![SlotGroupSnapshot {

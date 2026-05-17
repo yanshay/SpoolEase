@@ -432,13 +432,26 @@ component SlotGroupPanel inherits VerticalLayout {
 export component StandardSlotGroups inherits HorizontalLayout {
     spacing: AppConsts.trays-spacing;
 
-    if AppState.primary-slot-groups.length > 0: SlotGroupPanel {
+    if AppState.slot-groups-loading: Rectangle {
+        width: FrameworkState.display-width;
+        height: 50px + AppConsts.trays-spacing + (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5 + 42px;
+
+        MyText {
+            width: parent.width;
+            height: parent.height;
+            text: "Fetching printer information...";
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    if !AppState.slot-groups-loading && AppState.primary-slot-groups.length > 0: SlotGroupPanel {
         is-primary-group: true;
         reserve-external-area: AppState.external-slot-groups.length > 0;
         group: AppState.primary-slot-groups[AppState.current-primary-slot-group-index()];
     }
 
-    if AppState.external-slot-groups.length > 0: SlotGroupPanel {
+    if !AppState.slot-groups-loading && AppState.external-slot-groups.length > 0: SlotGroupPanel {
         is-primary-group: false;
         group: AppState.external-slot-groups[AppState.current-external-slot-group-index()];
         title-clicked => {
