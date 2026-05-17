@@ -343,6 +343,9 @@ pub enum PrintState {
     Canceled,
 }
 
+// Keep immediate dispatch allocation-free. Channels that store commands should
+// box the whole command so their buffers hold pointers instead of large values.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum PrinterCommand {
     Refresh,

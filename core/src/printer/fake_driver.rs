@@ -19,7 +19,7 @@ use super::{
     slot_in_snapshot_mut,
 };
 
-type FakePrinterCommandChannel = Channel<NoopRawMutex, PrinterCommand, 5>;
+type FakePrinterCommandChannel = Channel<NoopRawMutex, Box<PrinterCommand>, 5>;
 
 pub struct FakePrinterDriver {
     id: PrinterId,
@@ -276,7 +276,7 @@ impl PrinterDriver for FakePrinterDriver {
     fn dispatch(&mut self, command: PrinterCommand) -> PrinterResult<()> {
         self.runtime.borrow().validate_command(&command)?;
         self.command_channel
-            .try_send(command)
+            .try_send(Box::new(command))
             .map_err(|err| PrinterError::DriverError(format!("Failed to queue fake printer command: {err:?}")))
     }
 
@@ -332,7 +332,7 @@ async fn fake_printer_task(runtime: Rc<RefCell<FakePrinterRuntime>>, command_cha
         Timer::after_millis(500).await;
         let event = {
             let mut runtime = runtime.borrow_mut();
-            runtime.dispatch_command(command)
+            runtime.dispatch_command(*command)
         };
 
         match event {
