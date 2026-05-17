@@ -769,42 +769,25 @@ Required for first non-Bambu driver:
 
 Likely generic capabilities:
 
-- `MaterialSlotRead`
-- `MaterialSlotWrite`
 - `MaterialSlotAssign`
 - `MaterialSlotSetSpoolId`
 - `MaterialSlotClear`
 - `MaterialSlotUnassignSpool`
-- `MaterialSlotPresenceNotify`
 - `PrintStatusRead`
 - `PrintControl`
 - `ConsumptionTracking`
-- `TagScanFromPrinter`
-- `DriverManagedPressureAdvance`
-- `PrintFileFetch`
-- `PersistentSlotState`
 
 Example:
 
 ```rust
 pub struct PrinterCapabilities {
-    pub material_slot_read: bool,
-    pub material_slot_write: bool,
     pub material_slot_assign: bool,
     pub material_slot_set_spool_id: bool,
     pub material_slot_clear: bool,
     pub material_slot_unassign_spool: bool,
-    pub material_slot_presence_notify: bool,
     pub print_status_read: bool,
     pub print_control: bool,
     pub consumption_tracking: bool,
-    pub printer_tag_scan: bool,
-    pub pressure_advance: PressureAdvanceCapability,
-}
-
-pub enum PressureAdvanceCapability {
-    Unsupported,
-    DriverManaged,
 }
 ```
 
@@ -1369,18 +1352,7 @@ Bambu support remains:
 - Existing K matching and restore behavior.
 - Existing add/select calibration commands.
 
-Generic layer should expose capability and extension data, but not require all drivers to implement it.
-
-Conceptual capability:
-
-```rust
-pub enum PressureAdvanceCapability {
-    Unsupported,
-    DriverManaged,
-}
-```
-
-The UI/client should only show pressure advance features when the selected printer supports them.
+Pressure advance remains Bambu-specific in the current generic printer layer. Add a generic capability only when a non-Bambu driver needs a matching feature.
 
 ## Material Slot Assignment Architecture
 

@@ -13,7 +13,7 @@ use crate::app_config::FakePrinterConfig;
 use framework::{error, framework::Framework, info, prelude::*};
 
 use super::{
-    MaterialSlotSnapshot, PressureAdvanceCapability, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver,
+    MaterialSlotSnapshot, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver,
     PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult,
     PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
     slot_in_snapshot_mut,
@@ -97,20 +97,13 @@ impl FakePrinterRuntime {
 
     fn capabilities() -> PrinterCapabilities {
         PrinterCapabilities {
-            material_slot_read: true,
-            material_slot_write: true,
             material_slot_assign: true,
             material_slot_set_spool_id: true,
             material_slot_clear: true,
             material_slot_unassign_spool: true,
-            material_slot_presence_notify: false,
             print_status_read: true,
             print_control: false,
             consumption_tracking: false,
-            printer_tag_scan: false,
-            print_file_fetch: false,
-            persistent_slot_state: true,
-            pressure_advance: PressureAdvanceCapability::Unsupported,
         }
     }
 

@@ -28,7 +28,7 @@ use crate::store::Store;
 
 use super::{
     DriverSpecificCommand, DriverSpecificQuery, DriverSpecificQueryResult, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind,
-    MaterialSlotSnapshot, PressureAdvanceCapability, PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange,
+    MaterialSlotSnapshot, PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange,
     PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId,
     PrinterObserver, PrinterResult, PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterSnapshotState,
     PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
@@ -214,20 +214,13 @@ impl BambuPrinterDriver {
 
     fn capabilities_from_printer(printer: &BambuPrinter) -> PrinterCapabilities {
         PrinterCapabilities {
-            material_slot_read: true,
-            material_slot_write: true,
             material_slot_assign: true,
             material_slot_set_spool_id: true,
             material_slot_clear: true,
             material_slot_unassign_spool: true,
-            material_slot_presence_notify: true,
             print_status_read: true,
             print_control: true,
             consumption_tracking: printer.track_print_consume,
-            printer_tag_scan: true,
-            print_file_fetch: true,
-            persistent_slot_state: true,
-            pressure_advance: PressureAdvanceCapability::DriverManaged,
         }
     }
 
