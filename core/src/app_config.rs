@@ -221,6 +221,14 @@ pub struct FakePrinterConfig {
 }
 
 impl FakePrinterConfig {
+    pub fn configured_display_name(name: &Option<String>) -> String {
+        name.as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .unwrap_or("Unspecified")
+            .to_string()
+    }
+
     pub fn printer_id_for_unique_id(unique_id: &str) -> PrinterId {
         PrinterId::new(format!("fake_printer_{unique_id}"))
     }

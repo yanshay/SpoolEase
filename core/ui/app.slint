@@ -11,11 +11,13 @@ export enum UiSlotState { Unknown, Empty, Occupied, Reading, Ready, Loading, Unl
 // Unloading - during the process of unloading from the extruder
 export enum UiFilamentState { Unknown, Known }
 
+export enum UiPrinterKind { Unknown, Bambu, Fake }
+
 export struct Printer {
     id: string,
     name: string,
     connected: bool,
-    kind: string,
+    kind: UiPrinterKind,
     can_assign_slot: bool,
     can_set_spool_id: bool,
     can_clear_slot: bool,
@@ -382,16 +384,16 @@ export global AppState {
         }
     }
 
-    pure public function curr-printer-kind() -> string {
+    pure public function curr-printer-kind() -> UiPrinterKind {
         if curr-printer != -1 && available-printers.length != 0 {
             return available-printers[curr-printer].kind;
         } else {
-            return "";
+            return UiPrinterKind.Unknown;
         }
     }
 
     pure public function curr-printer-is-bambu() -> bool {
-        return curr-printer-kind() == "Bambu";
+        return curr-printer-kind() == UiPrinterKind.Bambu;
     }
 
     pure public function curr-printer-can-assign-slot() -> bool {

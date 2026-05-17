@@ -897,7 +897,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
                     <label>Printer Type:<span>Configuration below depends on type</span></label>
                     <select class="driver-kind" onchange="updatePrinterKindFields(this.closest('.printer-form'))" style="width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;">
                       <option value="Bambu" selected>Bambu Lab</option>
-                      <option value="Fake">Fake Non-Bambu</option>
+                      <option value="Fake">Demo</option>
                     </select>
                 </div>
 
@@ -914,15 +914,15 @@ ProtoPasta 500g - Cardboard - 84g,84"
                 </div>
 
                 <div class="form-row fake-setting-row" style="display: none;">
-                    <label>Fake Printer Unique ID: *</label>
-                    <input type="text" class="fake-unique-id" placeholder="Enter stable fake printer ID">
-                    <div class="error-message fake-unique-id-error">Fake printer unique ID is required</div>
+                    <label>Printer Unique ID: *</label>
+                    <input type="text" class="fake-unique-id" placeholder="Enter stable printer ID">
+                    <div class="error-message fake-unique-id-error">Printer unique ID is required</div>
                 </div>
 
                 <div class="form-row fake-setting-row" style="display: none;">
-                    <label>Fake Slot Count:<span>1-64 writable slots</span></label>
+                    <label>Slot Count:<span>1-64 writable slots</span></label>
                     <input type="number" class="fake-slot-count" min="1" max="64" value="4">
-                    <div class="error-message fake-slot-count-error">Fake slot count must be between 1 and 64</div>
+                    <div class="error-message fake-slot-count-error">Slot count must be between 1 and 64</div>
                 </div>
 
                 <div class="form-row">

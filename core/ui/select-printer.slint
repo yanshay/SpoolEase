@@ -33,7 +33,7 @@ export component SelectPrinter inherits VerticalLayout {
   for printer[index] in AppState.available_printers: SelectPrinterButton {
       printer: printer;
       height: 60px;
-      text: (AppState.curr_printer == index ? "  ✓ ": "      ") + printer.name + (printer.kind == "Bambu" ? "" : " (" + printer.kind + ")") + (AppState.default_printer == index ? " (Default)" : "") + (printer.connected ? ": Connected" : ": Disconnected");
+      text: (AppState.curr_printer == index ? "  ✓ ": "      ") + printer.name + (AppState.default_printer == index ? " (Default)" : "") + (printer.connected ? ": Connected" : ": Disconnected");
       clicked  => {
         AppBackend.select-printer(printer.id);
         selected();

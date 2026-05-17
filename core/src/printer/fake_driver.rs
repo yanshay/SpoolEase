@@ -30,6 +30,7 @@ pub struct FakePrinterDriver {
 
 struct FakePrinterRuntime {
     id: PrinterId,
+    display_name: String,
     printer_number: usize,
     state_path: String,
     state: PrinterSnapshotState,
@@ -41,7 +42,7 @@ impl FakePrinterRuntime {
         let id = config
             .printer_id()
             .unwrap_or_else(|_| FakePrinterConfig::printer_id_for_unique_id("invalid"));
-        let name = name.unwrap_or_else(|| format!("Fake Printer {}", config.unique_id));
+        let display_name = FakePrinterConfig::configured_display_name(&name);
         let state_path = Self::state_path_for_printer_id(&id);
         let slot_count = config.slot_count.clamp(1, 64);
         let slots = (0..slot_count)
@@ -65,7 +66,7 @@ impl FakePrinterRuntime {
             id: id.clone(),
             kind: PrinterDriverKind::Fake,
             identifier: config.unique_id.clone(),
-            name,
+            name: display_name.clone(),
             connected: true,
             num_extruders: 1,
             slot_groups_known: true,
@@ -89,6 +90,7 @@ impl FakePrinterRuntime {
 
         Self {
             id,
+            display_name,
             printer_number,
             state_path,
             state: Rc::new(PrinterSnapshotStateInner::new(snapshot)),
@@ -252,7 +254,7 @@ impl PrinterDriver for FakePrinterDriver {
     }
 
     fn display_name(&self) -> String {
-        self.runtime.borrow().state.clone_snapshot().name
+        self.runtime.borrow().display_name.clone()
     }
 
     fn capabilities(&self) -> PrinterCapabilities {
@@ -296,6 +298,7 @@ impl PrinterDriver for FakePrinterDriver {
 
     fn adjust_loaded_snapshot(&self, snapshot: &mut PrinterSnapshot) {
         snapshot.connected = true;
+        snapshot.name = self.runtime.borrow().display_name.clone();
     }
 }
 

@@ -458,7 +458,7 @@ impl ViewModel {
                                 can_unassign_slot: capabilities.material_slot_unassign_spool,
                                 connected: false,
                                 name: bambu_printer_model.borrow().printer_selector_name.to_shared_string(),
-                                kind: "Bambu".into(),
+                                kind: crate::app::UiPrinterKind::Bambu,
                             };
                             available_printers.push(printer);
 
@@ -509,12 +509,8 @@ impl ViewModel {
                         can_clear_slot: capabilities.material_slot_clear,
                         can_unassign_slot: capabilities.material_slot_unassign_spool,
                         connected: true,
-                        name: printer_config
-                            .name
-                            .clone()
-                            .unwrap_or_else(|| format!("Fake Printer {}", fake_config.unique_id))
-                            .to_shared_string(),
-                        kind: "Fake".into(),
+                        name: crate::app_config::FakePrinterConfig::configured_display_name(&printer_config.name).to_shared_string(),
+                        kind: crate::app::UiPrinterKind::Fake,
                     });
                 }
             }
