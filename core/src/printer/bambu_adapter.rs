@@ -6,7 +6,7 @@ use alloc::{
     vec::Vec,
 };
 use core::cell::RefCell;
-use framework::{error, info, utils::SpawnerHeapExt};
+use framework::{debug, error, info, utils::SpawnerHeapExt};
 use hashbrown::HashMap;
 use serde_json::Value;
 use shared::gcode_analysis_task::{
@@ -86,6 +86,7 @@ impl BambuPrinterDriver {
     }
 
     fn raw_snapshot_from_printer(printer: &BambuPrinter) -> PrinterSnapshot {
+        debug!(">>>> [{}] taking bambu snapshot", printer.printer_number);
         PrinterSnapshot {
             id: BambuPrinterConfig::printer_id_for_serial(&printer.printer_serial),
             kind: PrinterDriverKind::Bambu,
@@ -105,6 +106,7 @@ impl BambuPrinterDriver {
     }
 
     fn sync_snapshot_state_from_printer(printer: &BambuPrinter, snapshot_state: &PrinterSnapshotState) -> PrinterSnapshot {
+        debug!(">>>> [{}] bambu sync_snapshot_state_from_printer", printer.printer_number);
         let mut snapshot = Self::raw_snapshot_from_printer(printer);
         Self::overlay_generic_fields_from_state(&mut snapshot, &snapshot_state.clone_snapshot());
         snapshot_state.replace(snapshot.clone(), false);

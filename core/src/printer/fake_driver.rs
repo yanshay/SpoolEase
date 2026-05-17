@@ -199,7 +199,7 @@ impl FakePrinterRuntime {
                         });
                     }
                 })?;
-                Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
+                Ok(Some(self.snapshot_changed(PrinterChange::Slots)))
             }
             PrinterCommand::ClearSlot { slot_id } => {
                 self.update_slot(&slot_id, |slot| {
@@ -211,13 +211,13 @@ impl FakePrinterRuntime {
                     slot.consumed_since_weight_g = 0.0;
                     slot.used_in_print = false;
                 })?;
-                Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
+                Ok(Some(self.snapshot_changed(PrinterChange::Slots)))
             }
             PrinterCommand::UnassignSpoolFromSlot { slot_id } => {
                 self.update_slot(&slot_id, |slot| {
                     slot.spool_id = None;
                 })?;
-                Ok(Some(self.snapshot_changed(PrinterChange::Slot(slot_id))))
+                Ok(Some(self.snapshot_changed(PrinterChange::Slots)))
             }
             PrinterCommand::PrintControl(_) => Err(PrinterError::UnsupportedCommand("print_control".to_string())),
             PrinterCommand::DriverSpecific(command) => Err(PrinterError::UnsupportedCommand(format!("{command:?}"))),

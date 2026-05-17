@@ -3266,7 +3266,7 @@ impl ViewModel {
     }
 
     fn handle_printer_snapshot_changed(&self, printer_id: &PrinterId, change: &PrinterChange, snapshot: &printer_domain::PrinterSnapshot) {
-        if !matches!(change, PrinterChange::All | PrinterChange::Slots | PrinterChange::Slot(_)) {
+        if !matches!(change, PrinterChange::All | PrinterChange::Slots) {
             return;
         }
 
