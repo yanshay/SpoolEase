@@ -218,11 +218,11 @@ component Spool inherits Rectangle {
     property <bool> has-spool-id: slot.spool-id != "";
     property <int> spool-color-count: slot.spool-colors.length;
     property <bool> use-spool-colors: has-spool-id && spool-color-count > 0;
-    property <bool> inner-show-color: (has-known-color || has-spool-id) && slot.state != UiSlotState.Unknown && slot.state != UiSlotState.Empty && slot.state != UiSlotState.Spool && slot.state != UiSlotState.Reading;
+    property <bool> inner-show-color: (has-known-color || has-spool-id) && slot.state != UiSlotState.Unknown && slot.state != UiSlotState.Empty && slot.state != UiSlotState.Occupied && slot.state != UiSlotState.Reading;
     property <bool> outer-color-has-alpha: slot.filament-has-alpha;
     property <bool> inner-color-has-alpha: use-spool-colors ? slot.spool-has-alpha : slot.filament-has-alpha;
     property <[color]> outer-display-color: slot.filament.colors;
-    property <string> circle-default-big-text: slot.state == UiSlotState.Unknown ? "?" : slot.state == UiSlotState.Empty ? "−" : slot.state == UiSlotState.Spool ? "↺" : slot.state == UiSlotState.Reading ? "↻" : "✓";
+    property <string> circle-default-big-text: slot.state == UiSlotState.Unknown ? "?" : slot.state == UiSlotState.Empty ? "−" : slot.state == UiSlotState.Occupied ? "↺" : slot.state == UiSlotState.Reading ? "↻" : "✓";
     property <bool> circle-display-weight: circle-default-big-text == "✓" && slot.weight-display != "";
     property <color> circle-border-color: Utils.contrasting_color(outer-display-color[Helper.representative-color-index(outer-display-color.length)]);
     property <string> circle-weight-display: slot.weight-display;

@@ -3,8 +3,8 @@ import { SelectorOption } from "framework/widgets.slint";
 import { SelectorOptionsList } from "framework/widgets.slint";
 // Types
 
-export enum UiSlotState { Unknown, Empty, Spool, Reading, Ready, Loading, Unloading, Loaded }
-// Spool - Spool entered the slot but not yet processed by AMS, so not ready yet
+export enum UiSlotState { Unknown, Empty, Occupied, Reading, Ready, Loading, Unloading, Loaded }
+// Occupied - Spool entered the slot but not yet processed by AMS, so not ready yet
 // Ready - there is a spool, it is not loaded to the extruder now
 // Loading - during the process of loading into the extruder
 // Loaded - in the extruder
@@ -472,8 +472,8 @@ export global AppState {
         if state == UiSlotState.Empty {
             return "Slot is Empty";
         }
-        if state == UiSlotState.Spool {
-            return "Spool Placed";
+        if state == UiSlotState.Occupied {
+            return "Spool Placed in Slot";
         }
         if state == UiSlotState.Reading {
             return "Reading Filament Information";

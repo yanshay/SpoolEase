@@ -1320,7 +1320,7 @@ impl ViewModel {
         match state {
             printer_domain::SlotState::Unknown | printer_domain::SlotState::Error => UiSlotState::Unknown,
             printer_domain::SlotState::Empty => UiSlotState::Empty,
-            printer_domain::SlotState::Occupied => UiSlotState::Spool,
+            printer_domain::SlotState::Occupied => UiSlotState::Occupied,
             printer_domain::SlotState::Reading => UiSlotState::Reading,
             printer_domain::SlotState::Ready => UiSlotState::Ready,
             printer_domain::SlotState::Loading => UiSlotState::Loading,
