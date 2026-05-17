@@ -181,6 +181,13 @@ struct LocationEncodeCookie {
     location: String, // required for now just to identify the write was for a location tag
 }
 
+enum StorageRackValue {
+    Bays,
+    Shelves,
+    Positions,
+    Containers,
+}
+
 impl ViewModel {
     fn normalize_hex_color(hex: &str) -> &str {
         hex.trim().trim_start_matches('#')
@@ -1045,26 +1052,28 @@ impl ViewModel {
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_storage_available_bays(move |rack_id| moved_view_model.borrow().ui_storage_rack_value(rack_id, "bays"));
+            .on_storage_available_bays(move |rack_id| moved_view_model.borrow().ui_storage_rack_value(rack_id, StorageRackValue::Bays));
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_storage_available_shelves(move |rack_id, _bay| moved_view_model.borrow().ui_storage_rack_value(rack_id, "shelves"));
+            .on_storage_available_shelves(move |rack_id, _bay| moved_view_model.borrow().ui_storage_rack_value(rack_id, StorageRackValue::Shelves));
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
-            .on_storage_available_positions(move |rack_id, _bay, _shelf| moved_view_model.borrow().ui_storage_rack_value(rack_id, "positions"));
+            .on_storage_available_positions(move |rack_id, _bay, _shelf| {
+                moved_view_model.borrow().ui_storage_rack_value(rack_id, StorageRackValue::Positions)
+            });
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppBackend>()
             .on_storage_available_containers(move |rack_id, _bay, _shelf, _position| {
-                moved_view_model.borrow().ui_storage_rack_value(rack_id, "containers")
+                moved_view_model.borrow().ui_storage_rack_value(rack_id, StorageRackValue::Containers)
             });
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
@@ -1679,16 +1688,15 @@ impl ViewModel {
         ))
     }
 
-    fn ui_storage_rack_value(&self, rack_id: i32, field: &str) -> i32 {
+    fn ui_storage_rack_value(&self, rack_id: i32, field: StorageRackValue) -> i32 {
         let rack_id_str = rack_id.to_string();
         let storage_config = self.store.storage_config.borrow();
         if let Some(rack) = storage_config.rack_config.get(&rack_id_str) {
             match field {
-                "bays" => rack.num_bays,
-                "shelves" => rack.num_shelves,
-                "positions" => rack.num_positions,
-                "containers" => rack.num_containers,
-                _ => 0,
+                StorageRackValue::Bays => rack.num_bays,
+                StorageRackValue::Shelves => rack.num_shelves,
+                StorageRackValue::Positions => rack.num_positions,
+                StorageRackValue::Containers => rack.num_containers,
             }
         } else {
             0
