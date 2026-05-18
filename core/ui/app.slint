@@ -524,8 +524,11 @@ export global AppState {
 
     // Functions called locally fom Rust
 
-    // timeout -1 is default as coded here, 0 is no timeout (stays on until ok), positive number - timeout in seconds
+    // timeout -2 is locked, -1 is default, 0 is no timeout, positive number is timeout in seconds
     public function show-message-box(title: string, text: string, text2: string, type: StatusType, timeout: int) {
+        if self.message-box-timeout == -2 && timeout != -2 {
+            return;
+        }
         self.message-box-title = title == "" ? "Message" : title;
         self.message-box-text = text;
         self.message-box-text2 = text2;

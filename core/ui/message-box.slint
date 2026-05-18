@@ -13,6 +13,7 @@ export component MessageBox inherits Rectangle {
     in property <string> dialog-text;
     in property <string> dialog-text2;
     in property <string> dialog-button-text: "Ok";
+    in property <bool> dialog-dismissible: true;
     back-rect := Rectangle {
         x: (root.width - root.dialog-width) / 2;
         y: (root.height - root.dialog-height) / 2;
@@ -71,6 +72,7 @@ export component MessageBox inherits Rectangle {
                 MyButton {
                     width: 120px;
                     height: 56px;
+                    enabled: root.dialog-dismissible;
                     text: root.dialog-button-text;
                     clicked => {
                         root.clicked();

@@ -129,6 +129,7 @@ pub struct Store {
     pub spools_db: OnceCell<CsvDb<SpoolRecord, TheSpi, 20, 5>>,
     last_spool_id: RefCell<i32>,
     spool_tag_id_index: RefCell<HashMap<String, String>>,
+    console_errors: RefCell<Vec<String>>,
     pub initialized: RefCell<bool>,
     store_rc: RefCell<Option<Rc<Store>>>,
     pub storage_config: RefCell<StorageConfig>,
@@ -147,6 +148,7 @@ impl Store {
             spools_db: OnceCell::new(),
             last_spool_id: RefCell::new(0),
             spool_tag_id_index: RefCell::new(HashMap::new()),
+            console_errors: RefCell::new(Vec::new()),
             initialized: RefCell::new(false),
             store_rc: RefCell::new(None),
             storage_config: RefCell::new(StorageConfig::default()),
@@ -168,6 +170,21 @@ impl Store {
 
     pub fn subscribe(&self, observer: alloc::rc::Weak<RefCell<dyn StoreObserver>>) {
         self.observers.borrow_mut().push(observer);
+    }
+
+    pub fn console_errors(&self) -> Vec<String> {
+        self.console_errors.borrow().clone()
+    }
+
+    fn report_store_error(&self, detail: String) {
+        term_error!("SD card issues, store unavailable");
+        term_error!("{}", detail);
+        self.console_errors.borrow_mut().push(detail.clone());
+        for weak_observer in self.observers.borrow().iter() {
+            if let Some(observer) = weak_observer.upgrade() {
+                observer.borrow().on_store_error(&detail);
+            }
+        }
     }
 
     pub fn is_available(&self) -> bool {
@@ -764,6 +781,14 @@ impl Store {
     }
 }
 
+fn db_open_error_detail(db_name: &str, err_text: &str) -> String {
+    if err_text.contains("metadata file") && err_text.contains("missing or empty") && err_text.contains("contains data") {
+        format!("{db_name}.dbm missing/empty, {db_name}.db exists")
+    } else {
+        format!("{db_name}.db open failed")
+    }
+}
+
 // #[embassy_executor::task]
 pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, view_model: Rc<RefCell<ViewModel>>) {
     let spools_db_available;
@@ -834,11 +859,12 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                         Ok(db_version) => {
                             let current_version = semver::Version::parse(SPOOLS_STORE_VER).unwrap();
                             if current_version < db_version {
-                                term_info!(
+                                term_error!(
                                     "Critical Error: Locations DB version is {}, this firmware supports up to {}",
                                     db_version,
                                     current_version
                                 );
+                                store.report_store_error("locatags.db bad version".to_string());
                                 locations_db_available = false;
                             } else {
                                 // currently upgrade is only for ext, so done after loading the db
@@ -854,17 +880,20 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                         }
                         Err(err) => {
                             term_error!("Unparsable locations database version {} {:?}", db_version, err);
+                            store.report_store_error("locatags.db bad version".to_string());
                             locations_db_available = false;
                         }
                     }
                 }
                 Err(e) => {
                     term_error!("Failed to start locations database (and load data): {:?}", e);
+                    store.report_store_error("locatags.db load failed".to_string());
                     locations_db_available = false;
                 }
             },
             Err(e) => {
                 term_error!("Failed to open locations database : {}", e);
+                store.report_store_error(db_open_error_detail("locatags", &e.to_string()));
                 locations_db_available = false;
             }
         }
@@ -891,11 +920,12 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                         Ok(db_version) => {
                             let current_version = semver::Version::parse(SPOOLS_STORE_VER).unwrap();
                             if current_version < db_version {
-                                term_info!(
+                                term_error!(
                                     "Critical Error: Spools database version is {}, this firmware supports up to {}",
                                     db_version,
                                     current_version
                                 );
+                                store.report_store_error("spools.db bad version".to_string());
                                 spools_db_available = false;
                             } else {
                                 // currently upgrade is only for ext, so done after loading the db
@@ -946,6 +976,7 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                                         Err(err) => {
                                             info!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
                                             term_error!("Error upgrading store : {:?}", err);
+                                            store.report_store_error("spools.db upgrade failed".to_string());
                                             view_model.borrow().message_box(
                                                 "Store Notice",
                                                 "Error Upgrading Spools DB",
@@ -964,17 +995,20 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                         }
                         Err(err) => {
                             term_error!("Unparsable spools database version {} {:?}", db_version, err);
+                            store.report_store_error("spools.db bad version".to_string());
                             spools_db_available = false;
                         }
                     }
                 }
                 Err(e) => {
                     term_error!("Failed to start spools database (and load data): {:?}", e);
+                    store.report_store_error("spools.db load failed".to_string());
                     spools_db_available = false;
                 }
             },
             Err(e) => {
                 term_error!("Failed to open spools database : {}", e);
+                store.report_store_error(db_open_error_detail("spools", &e.to_string()));
                 spools_db_available = false;
             }
         }
@@ -1024,6 +1058,7 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
 pub trait StoreObserver {
     fn on_tag_added(&self);
     fn on_tag_removed(&self);
+    fn on_store_error(&self, detail: &str);
     // fn on_read_spool_record_ext(&mut self, result: Result<SpoolRecordExt, String>);
 }
 

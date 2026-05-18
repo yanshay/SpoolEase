@@ -413,6 +413,11 @@ impl ViewModel {
     }
 
     pub fn init_only_if_sdcard_init_ok(&mut self) {
+        // Subscribe before starting the store task so startup errors can be shown immediately.
+        let trait_for_store_rc: Rc<RefCell<dyn StoreObserver>> = self.view_model.as_ref().unwrap().clone();
+        let trait_for_store_weak: Weak<RefCell<dyn StoreObserver>> = Rc::downgrade(&trait_for_store_rc);
+        self.store.subscribe(trait_for_store_weak);
+
         self.store.start(self.view_model.clone().unwrap());
 
         // Initialize Printers ///////////////////////////
@@ -775,13 +780,6 @@ impl ViewModel {
         let trait_for_spool_scale_rc: Rc<RefCell<dyn spool_scale::SpoolScaleObserver>> = self.view_model.as_ref().unwrap().clone();
         let trait_for_spool_scale_weak: Weak<RefCell<dyn spool_scale::SpoolScaleObserver>> = Rc::downgrade(&trait_for_spool_scale_rc);
         self.spool_scale_model.borrow_mut().subscribe(trait_for_spool_scale_weak);
-
-        // Subscribe to rust store events
-        // It's a bit different because store is Rc<Store> and not Rc<RefCell<Store>> due to Store different needs
-        // ...I already don't remember those needs ... maybe not really needed anymore and originated in trying to solve something else there
-        let trait_for_store_rc: Rc<RefCell<dyn StoreObserver>> = self.view_model.as_ref().unwrap().clone();
-        let trait_for_store_weak: Weak<RefCell<dyn StoreObserver>> = Rc::downgrade(&trait_for_store_rc);
-        self.store.subscribe(trait_for_store_weak);
 
         let ui = self.ui_weak.unwrap();
         let ui_app_backend = ui.global::<crate::app::AppBackend>();
@@ -3797,6 +3795,16 @@ impl StoreObserver for ViewModel {
     fn on_tag_removed(&self) {
         let tags_in_store = self.store.tags_in_store();
         let _ = self.spool_scale_model.borrow().tags_in_store(tags_in_store);
+    }
+
+    fn on_store_error(&self, detail: &str) {
+        self.message_box(
+            "Store Error",
+            "SD card issues, store unavailable",
+            detail,
+            crate::app::StatusType::Error,
+            -2,
+        );
     }
 }
 

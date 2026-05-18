@@ -193,6 +193,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     let borrowed_app_config = state.0.app_config.borrow();
                     ConsoleInfoResponse {
                         ai_providers: borrowed_app_config.ai_provider_key_availability(),
+                        console_errors: state.0.store.console_errors(),
                     }
                     .encrypt(&key.borrow())
                 })
@@ -1449,6 +1450,7 @@ pub struct GetAiProviderApiKeyResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ConsoleInfoResponse {
     ai_providers: Vec<AiProviderAvailability>,
+    console_errors: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
