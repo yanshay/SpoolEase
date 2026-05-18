@@ -177,7 +177,7 @@ impl Store {
     }
 
     fn report_store_error(&self, detail: String) {
-        term_error!("SD card issues, store unavailable");
+        term_error!("SD card issues, data store unavailable");
         term_error!("{}", detail);
         self.console_errors.borrow_mut().push(detail.clone());
         for weak_observer in self.observers.borrow().iter() {
@@ -231,7 +231,7 @@ impl Store {
             if let Err(err) = file_store.rename_entry_in_dir("/", "STORE", &format!("STORE.{store_copy_id}")).await {
                 error!("file '/store.bak' exists, '/STORE' folder also exists and couldn't be renamed : {err:?}");
                 view_model.borrow().message_box(
-                    "Restore Inventory Notice",
+                    "Data Store Restore Notice",
                     "Found '/store.bak' and couldn't rename '/STORE' folder ",
                     "Remove '/STORE' folder manually to restore or remove '/store.bak' to avoid this message",
                     crate::app::StatusType::Error,
@@ -256,7 +256,7 @@ impl Store {
                 Err(err) => {
                     error!("Error in backup header: {err}");
                     view_model.borrow().message_box(
-                        "Restoring Inventory",
+                        "Restoring Data Store",
                         "Error in '/store.bak' File Content",
                         "Unrecognized File Header Information",
                         crate::app::StatusType::Error,
@@ -270,7 +270,7 @@ impl Store {
         } else {
             error!("Error parsing backup meta, \\n not found");
             view_model.borrow().message_box(
-                "Restoring Inventory",
+                "Restoring Data Store",
                 "Error in /store.bak File Content",
                 "Expected '\\n' Character When Searching For Header",
                 crate::app::StatusType::Error,
@@ -289,7 +289,7 @@ impl Store {
                         core::str::from_utf8(&backup_data[pos..pos + next]).unwrap_or("NOT Utf8")
                     );
                     view_model.borrow().message_box(
-                        "Restoring Inventory",
+                        "Restoring Data Store",
                         "Error in '/store.bak' File Content",
                         "Failed to Parse a File Details Part",
                         crate::app::StatusType::Error,
@@ -306,7 +306,7 @@ impl Store {
                 Err(err) => {
                     error!("Error writing file {} : {err:?}", file_meta.path);
                     view_model.borrow().message_box(
-                        "Restoring Inventory",
+                        "Restoring Data Store",
                         &format!("Error Writing {}", file_meta.path),
                         &format!("{err:?}"),
                         crate::app::StatusType::Error,
@@ -317,7 +317,7 @@ impl Store {
             }
             info!("Restoring file: {file_meta:?}");
             view_model.borrow().message_box(
-                "Restoring Inventory",
+                "Restoring Data Store",
                 &format!("Restoring File\n{}", file_meta.path),
                 &format!("Progress: {}%", 100 * pos / backup_data.len()),
                 crate::app::StatusType::Normal,
@@ -329,16 +329,16 @@ impl Store {
         if let Err(err) = file_store.delete_file("/store.bak").await {
             error!("Error deleting /store.bak : {err:?}");
             view_model.borrow().message_box(
-                "Restoring Inventory",
-                "Inventory Restore Completed, But Failed to Delete '/store.bak'",
+                "Restoring Data Store",
+                "Data store restore completed, but failed to delete '/store.bak'",
                 &format!("{err:?}"),
                 crate::app::StatusType::Error,
                 0,
             );
         } else {
             view_model.borrow().message_box(
-                "Restoring Inventory",
-                "Inventory Restore Completed Successfully",
+                "Restoring Data Store",
+                "Data store restore completed successfully",
                 "",
                 crate::app::StatusType::Success,
                 0,
@@ -798,12 +798,12 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
             Ok(_) => (),
             Err(e) => {
                 term_error!(
-                    "Inventory Restore started but failed at a critical point, inventory not available : {}",
+                    "Data store restore started but failed at a critical point, data store unavailable : {}",
                     e
                 );
                 view_model.borrow().message_box(
                     "Store Notice",
-                    "Inventory Restore started but failed\nCheck terminal for more info",
+                    "Data store restore started but failed\nCheck terminal for more info",
                     &e.to_string(),
                     crate::app::StatusType::Error,
                     0,

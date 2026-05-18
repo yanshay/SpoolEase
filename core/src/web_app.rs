@@ -967,7 +967,7 @@ impl picoserve::routing::RequestHandlerService<WebAppState<ConsoleAppState>> for
             None => {
                 let connection = request.body_connection.finalize().await?;
                 let resp = GenericResponse {
-                    text: "Backup upload failed".to_string(),
+                    text: "Data store backup upload failed".to_string(),
                     error: Some("Missing or invalid x-file-size header".to_string()),
                 };
                 let payload = resp.encrypt(&key.borrow());
@@ -986,7 +986,7 @@ impl picoserve::routing::RequestHandlerService<WebAppState<ConsoleAppState>> for
             Some(Err(err)) => {
                 let connection = request.body_connection.finalize().await?;
                 let resp = GenericResponse {
-                    text: "Backup upload failed".to_string(),
+                    text: "Data store backup upload failed".to_string(),
                     error: Some(err),
                 };
                 let payload = resp.encrypt(&key.borrow());
@@ -997,7 +997,7 @@ impl picoserve::routing::RequestHandlerService<WebAppState<ConsoleAppState>> for
             None => {
                 let connection = request.body_connection.finalize().await?;
                 let resp = GenericResponse {
-                    text: "Backup upload failed".to_string(),
+                    text: "Data store backup upload failed".to_string(),
                     error: Some("Missing x-file-sha256 header".to_string()),
                 };
                 let payload = resp.encrypt(&key.borrow());
@@ -1010,7 +1010,7 @@ impl picoserve::routing::RequestHandlerService<WebAppState<ConsoleAppState>> for
         cleanup_restore_upload_temp(&framework).await;
 
         let mut response = GenericResponse {
-            text: "Backup upload completed to /store.bak".to_string(),
+            text: "Data store backup upload completed to /store.bak".to_string(),
             error: None,
         };
         let mut status_code = StatusCode::OK;
@@ -1094,7 +1094,7 @@ impl picoserve::routing::RequestHandlerService<WebAppState<ConsoleAppState>> for
         if let Err(err) = upload_result {
             cleanup_restore_upload_temp(&framework).await;
             response = GenericResponse {
-                text: "Backup upload failed".to_string(),
+                text: "Data store backup upload failed".to_string(),
                 error: Some(err),
             };
             status_code = StatusCode::BAD_REQUEST;
@@ -1135,7 +1135,7 @@ impl picoserve::response::chunked::Chunks for StoreBackupChunks {
     }
 
     async fn write_chunks<W: picoserve::io::Write>(self, mut chunk_writer: ChunkWriter<W>) -> Result<ChunksWritten, W::Error> {
-        info!("Backup Store Started");
+        info!("Data store backup started");
         let file_store = self.framework.borrow().file_store();
         let mut files: Vec<String> = Vec::new();
         let mut dirs: Vec<String> = Vec::new();
@@ -1218,7 +1218,7 @@ impl picoserve::response::chunked::Chunks for StoreBackupChunks {
             }
         }
         let res = chunk_writer.finalize().await;
-        info!("Backup Store Completed");
+        info!("Data store backup completed");
         res
     }
 }

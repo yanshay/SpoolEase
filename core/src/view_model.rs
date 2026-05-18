@@ -3799,8 +3799,8 @@ impl StoreObserver for ViewModel {
 
     fn on_store_error(&self, detail: &str) {
         self.message_box(
-            "Store Error",
-            "SD card issues, store unavailable",
+            "Data Store Error",
+            "SD card issues, data store unavailable",
             detail,
             crate::app::StatusType::Error,
             -2,
