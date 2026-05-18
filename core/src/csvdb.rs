@@ -13,7 +13,10 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use snafu::prelude::*;
 
-use framework::prelude::{SDCardStore, SDCardStoreErrorSource};
+use framework::{
+    prelude::{SDCardStore, SDCardStoreErrorSource},
+    sdcard_store::Error as SDCardStoreError,
+};
 
 #[derive(Snafu)]
 pub enum CsvDbError {
@@ -39,6 +42,15 @@ pub enum CsvDbError {
 impl core::fmt::Debug for CsvDbError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self)
+    }
+}
+
+fn store_error_is_not_found(error: &SDCardStoreErrorSource) -> bool {
+    match error {
+        SDCardStoreError::Open { source, .. } | SDCardStoreError::ChangeDir { source, .. } => {
+            matches!(&source.0, embedded_sdmmc::asynchronous::Error::NotFound)
+        }
+        _ => false,
     }
 }
 
@@ -110,15 +122,14 @@ where
         let records = HashMap::<String, CsvRecordInfo<T>>::with_capacity(min_capacity);
 
         let mut sdcard = sdcard.lock().await;
-        let mut dbm_str = sdcard.read_create_str(&dbm_file_name).await.context(StoreSnafu)?;
-        if dbm_str.is_empty() {
-            let dbm = DbMetaFile {
-                version: ver_if_new.to_string(),
-            };
-            dbm_str = serde_json::to_string(&dbm).unwrap();
-            sdcard.append_text(&dbm_file_name, &dbm_str).await.context(StoreSnafu)?;
-            sdcard.create_file(&db_file_name).await.context(StoreSnafu)?;
-        }
+        let dbm_str = match sdcard.read_file_str(&dbm_file_name).await {
+            Ok(dbm_str) if !dbm_str.is_empty() => dbm_str,
+            Ok(_) => Self::initialize_new_database_files(&mut sdcard, &dbm_file_name, &db_file_name, ver_if_new).await?,
+            Err(err) if store_error_is_not_found(&err) => {
+                Self::initialize_new_database_files(&mut sdcard, &dbm_file_name, &db_file_name, ver_if_new).await?
+            }
+            Err(err) => return Err(CsvDbError::Store { source: err }),
+        };
         let db_meta: DbMetaFile = serde_json::from_str(&dbm_str).context(MetadataSnafu)?;
 
         Ok(Self {
@@ -133,12 +144,45 @@ where
         })
     }
 
+    async fn initialize_new_database_files(
+        sdcard: &mut SDCardStore<SPI, MAX_DIRS, MAX_FILES>,
+        dbm_file_name: &str,
+        db_file_name: &str,
+        ver_if_new: &str,
+    ) -> Result<String, CsvDbError> {
+        if Self::db_file_has_data(sdcard, db_file_name).await? {
+            return Err(CsvDbError::Internal {
+                details: format!("Database metadata file {dbm_file_name} is missing or empty, but {db_file_name} contains data"),
+            });
+        }
+
+        let dbm = DbMetaFile {
+            version: ver_if_new.to_string(),
+        };
+        let dbm_str = serde_json::to_string(&dbm).unwrap();
+        sdcard.create_write_file_str(dbm_file_name, &dbm_str).await.context(StoreSnafu)?;
+        sdcard.create_file(db_file_name).await.context(StoreSnafu)?;
+        Ok(dbm_str)
+    }
+
+    async fn db_file_has_data(sdcard: &mut SDCardStore<SPI, MAX_DIRS, MAX_FILES>, db_file_name: &str) -> Result<bool, CsvDbError> {
+        match sdcard.read_file_bytes(db_file_name).await {
+            Ok(db_bytes) => Ok(!db_bytes.is_empty()),
+            Err(err) if store_error_is_not_found(&err) => Ok(false),
+            Err(err) => Err(CsvDbError::Store { source: err }),
+        }
+    }
+
     pub async fn start(&mut self, backup: bool, pack: bool) -> Result<(), CsvDbError> {
         // Now read db file
 
         let mut sdcard = self.sdcard.lock().await;
         let db_filename = self.inner.borrow().db_file_name.clone();
-        let db_bytes = sdcard.read_create_bytes(&db_filename).await.context(StoreSnafu)?;
+        let db_bytes = match sdcard.read_file_bytes(&db_filename).await {
+            Ok(db_bytes) => db_bytes,
+            Err(err) if store_error_is_not_found(&err) => Vec::new(),
+            Err(err) => return Err(CsvDbError::Store { source: err }),
+        };
         let db_str = core::str::from_utf8(&db_bytes).context(Utf8Snafu)?;
         let mut reader = serde_csv_core::Reader::<256>::new(); // 100 is max field size
         let mut nread = 0;

@@ -24,9 +24,7 @@ lto = false
 [profile.dev.package.esp-radio]
 opt-level = 's' 
 
-# [patch."https://github.com/yanshay/esp-hal-app/"]
-# esp-hal-app-framework = { path = "../../../esp-hal-app/esp-hal-app-framework/"}
-# esp-hal-app-framework-macros = { path = "../../../esp-hal-app/esp-hal-app-framework-macros/"}
+# DON'T REMOVE ANY COMMENTED LINES IN THIS FILE !!!
 
 [patch.crates-io]
 # slint = { git = "https://github.com/slint-ui/slint", rev = "854711dd49215d9ef78ecb43bb3ce03576779a69" }
@@ -42,6 +40,8 @@ walkdir = "2.5.0"
 #TODO: Important - lock to specific tag when released
 framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial"] }
 framework_macros = { package = "esp-hal-app-framework-macros", path = "../../../esp-hal-app/esp-hal-app-framework-macros/" }
+# framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.8", features = ["esp32s3", "improv-jtag-serial"] }
+# framework_macros = { package = "esp-hal-app-framework-macros", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.8" }
 esp32s3 = { version = "0.34.0" }
 
 # Esp-Hal Crates
@@ -54,8 +54,13 @@ esp-radio = { version = "0.17.0", features = ["wifi", "esp-alloc"]}
 esp-partition-table = { version = "0.1.3" }
 esp-bootloader-esp-idf = { version = "0.4.0" }
 
-esp-mbedtls = { package = "mbedtls-rs", path = "../../../../../../OpenSourceProj/forked/mbedtls-rs/mbedtls-rs", features = [ "log" ] }
-esp-mbedtls-sys = { package = "mbedtls-rs-sys", path = "../../../../../../OpenSourceProj/forked/mbedtls-rs/mbedtls-rs-sys" }
+# esp-mbedtls = { package = "mbedtls-rs", path = "../../../../../../OpenSourceProj/forked/mbedtls-rs/mbedtls-rs", features = [ "log" ] }
+# esp-mbedtls-sys = { package = "mbedtls-rs-sys", path = "../../../../../../OpenSourceProj/forked/mbedtls-rs/mbedtls-rs-sys" }
+esp-mbedtls = { package = "mbedtls-rs", git = "https://github.com/esp-rs/mbedtls-rs", features = [ "log" ] }
+esp-mbedtls-sys = { package = "mbedtls-rs-sys", git = "https://github.com/esp-rs/mbedtls-rs" }
+
+# 5edcd5537b7831900ee332e568c789207dd3acee
+
 esp-alloc = { version = "0.9.0" } # features = ["internal-heap-stats"] }
 esp-storage = { version = "0.4.0", features = [ "nor-flash", "esp32s3" ] }
 

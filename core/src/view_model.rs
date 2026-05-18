@@ -4080,7 +4080,7 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
             return;
         }
     }
-    while !store.is_initialized() {
+    while !store.is_available() {
         Timer::after_millis(100).await;
     }
     Timer::after_millis(250).await;
