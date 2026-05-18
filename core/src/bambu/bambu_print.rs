@@ -154,7 +154,13 @@ impl PrintProject {
                             return Some(255);
                         } else if ams2_info.ams_id == 254 && ams2_info.slot_id == 0 {
                             return Some(254);
-                        }
+                        } else if (128..=135).contains(&ams2_info.ams_id) {
+                            return Some(16 + ams2_info.ams_id - 128);
+                        } 
+                        // else if (0..=3).contains(&ams2_info.ams_id) && (0..=3).contains(&ams2_info.slot_id) {
+                        //     return Some(ams2_info.ams_id * 4 + ams2_info.slot_id);
+                        // }
+                        // ams_mapping2 mirrors ams_mapping for standard trays and adds external/HT entries.
                     }
                 } else if self.use_ams == Some(false) {
                     return Some(255);
@@ -238,8 +244,13 @@ impl BambuPrinter {
                     self.set_snapshot_slot_used_in_print(255, true);
                 } else if ams2_info.ams_id == 254 && ams2_info.slot_id == 0 {
                     self.set_snapshot_slot_used_in_print(254, true);
+                } else if (128..=135).contains(&ams2_info.ams_id) {
+                    self.set_snapshot_slot_used_in_print((16 + ams2_info.ams_id - 128) as usize, true);
                 }
-                // TODO: not filling standard trays from ams_mapping2, maybe should for future removal of ams_mapping?
+                // else if (0..=3).contains(&ams2_info.ams_id) && (0..=3).contains(&ams2_info.slot_id) {
+                //     self.set_snapshot_slot_used_in_print((ams2_info.ams_id * 4 + ams2_info.slot_id) as usize, true);
+                // }
+                // ams_mapping2 mirrors ams_mapping for standard trays and adds external/HT entries, so lines above are remarked for now
             }
         } else if print.use_ams == Some(false) {
             self.set_snapshot_slot_used_in_print(255, true);

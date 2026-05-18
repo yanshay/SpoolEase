@@ -333,8 +333,8 @@ impl BambuPrinter {
         let ams_id = h2d_tray_xxx >> 8;
         let tray_in_ams = h2d_tray_xxx & 0xFF; // maybe will need to change if ams
         match ams_id {
-            0..3 => ams_id * 4 + (tray_in_ams & 0x03), // 0x03 because no support for more than 4 slots ams
-            128..135 => ams_id,
+            0..=3 => ams_id * 4 + (tray_in_ams & 0x03), // 0x03 because no support for more than 4 slots ams
+            128..=135 => ams_id,
             254 | 255 => {
                 if tray_in_ams != 255 {
                     254

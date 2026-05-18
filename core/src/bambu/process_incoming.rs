@@ -415,8 +415,8 @@ impl BambuPrinter {
             for ams in ams_units {
                 let ams_id = ams.id;
                 let ams_index = match ams_id {
-                    0..3 => ams_id,
-                    128..135 => ams_id - 128 + 4,
+                    0..=3 => ams_id,
+                    128..=135 => ams_id - 128 + 4,
                     254 | 255 => ams_id - 254 + 12,
                     _ => {
                         error!("[{}] Bad ams_id encountered: {ams_id}", self.printer_number);
@@ -449,7 +449,7 @@ impl BambuPrinter {
 
         let mut removed_tags: HashMap<usize, SpoolId> = HashMap::new();
 
-        let mut _derived_ams_exist_bits = 0;
+        let mut _derived_ams_exist_bits = 0u32;
         for tray_id in 0..self.ams_trays().len() {
             let spool_removed = if let (Some(prev_tray_exist_bits), Some(new_tray_exist_bits)) = (&prev_tray_exist_bits, self.tray_exist_bits()) {
                 (((prev_tray_exist_bits >> tray_id) & 0x01) != 0) && (((new_tray_exist_bits >> tray_id) & 0x01) == 0)
@@ -460,7 +460,12 @@ impl BambuPrinter {
             let source_tray = if let Some(amss) = &ams.ams {
                 let ams = amss.iter().find(|v| v.id == ams_id as u32);
                 if let Some(ams_data) = ams {
-                    _derived_ams_exist_bits |= 1 << ams_id;
+                    let ams_bit_index = match ams_id {
+                        0..=3 => ams_id,
+                        128..=135 => ams_id - 128 + 4,
+                        _ => continue,
+                    };
+                    _derived_ams_exist_bits |= 1u32 << ams_bit_index;
                     ams_data.tray.iter().find(|v| v.id == Some(ams_tray_id as u32))
                 } else {
                     None
@@ -777,15 +782,11 @@ impl BambuPrinter {
     pub fn get_tray_index_from_print_msg(ams_id: Option<i32>, tray_id: Option<i32>, _slot_id: Option<i32>) -> Option<usize> {
         // returns either index into the ams_trays or 254/255 for external trays (other functions may depend on this)
         if let (Some(ams_id), Some(tray_id)) = (ams_id, tray_id) {
-            if ams_id <= 3 {
-                Some((ams_id * 4 + tray_id) as usize)
-            } else if ams_id < 128 + 8 {
-                // AMS HT
-                Some((16 + ams_id - 128) as usize)
-            } else if ams_id == 255 {
-                Some(255)
-            } else {
-                Some(tray_id as usize)
+            match ams_id {
+                0..=3 => Some((ams_id * 4 + tray_id) as usize),
+                128..=135 => Some((16 + ams_id - 128) as usize),
+                254 | 255 => Some(ams_id as usize),
+                _ => None,
             }
         } else if let Some(tray_id) = tray_id {
             if tray_id == 254 { Some(255) } else { Some(tray_id as usize) }
