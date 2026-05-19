@@ -5,7 +5,7 @@ use alloc::{
     rc::Rc,
     string::{String, ToString},
 };
-use framework::error;
+use framework::{error, info};
 use mqttrust::QoS;
 
 use crate::{
@@ -129,18 +129,22 @@ impl BambuPrinter {
             self.publish_payload(payload);
         }
 
-        let extruder_id = self.get_extruder_id_for_tray(tray_id).unwrap_or_default();
-        let mut cmd = ExtrusionCaliSelCommand::new(
-            &self.nozzle_diameter(extruder_id).clone().unwrap_or_default(),
-            ams_id,
-            original_tray_id, // here we need the original tray_id
-            slot_id,
-            "", // tray_info_idx is filament_id in this command
-            Some(-1),
-        );
-        if !self.is_locked() {
-            let payload = self.printer_message(&mut cmd);
-            self.publish_payload(payload);
+        if let Some(extruder_id) = self.get_unique_extruder_id_for_tray(tray_id) {
+            let mut cmd = ExtrusionCaliSelCommand::new(
+                &self.nozzle_diameter(extruder_id).clone().unwrap_or_default(),
+                ams_id,
+                original_tray_id, // here we need the original tray_id
+                slot_id,
+                "", // tray_info_idx is filament_id in this command
+                Some(-1),
+            );
+            if !self.is_locked() {
+                let payload = self.printer_message(&mut cmd);
+                self.publish_payload(payload);
+            }
+        } else {
+            // Defensive support only: real FTS internal AMS groups are ambiguous, while non-FTS groups should be uniquely bound.
+            info!("[{}] Skipping pressure advance reset for tray {tray_id}: no unique extruder", self.printer_number);
         }
     }
 
@@ -152,8 +156,9 @@ impl BambuPrinter {
         // So if we have calibration information, we send the setting_id from there. If we don't we send None and it seems to work
         // The slicer have the setting-if from the data it has when it selects everything together
 
-        let extruder_id = self.get_extruder_id_for_tray(tray_id).unwrap_or_default();
-        let matching_calibration = self.get_matching_printer_calibration_for_extruder(full_spool_rec, extruder_id);
+        let unique_extruder_id = self.get_unique_extruder_id_for_tray(tray_id);
+        let matching_calibration = unique_extruder_id
+            .and_then(|extruder_id| self.get_matching_printer_calibration_for_extruder(full_spool_rec, extruder_id));
 
         let setting_id: Option<&str> = matching_calibration.as_ref().and_then(|c| c.setting_id.as_deref());
 
@@ -187,22 +192,26 @@ impl BambuPrinter {
 
             // Send printer pressure advance
 
-            let extruder_id = self.get_extruder_id_for_tray(tray_id).unwrap_or_default();
-            let mut cmd = ExtrusionCaliSelCommand::new(
-                &self.nozzle_diameter(extruder_id).clone().unwrap_or_default(),
-                ams_id_for_set_filament,
-                original_tray_id, // here we need the original tray_id
-                slot_id,
-                &filament.tray_info_idx, // tray_info_idx is filament_id in this command
-                if let Some(calibration) = &matching_calibration {
-                    Some(calibration.cali_idx)
-                } else {
-                    Some(-1)
-                },
-            );
-            if !self.is_locked() {
-                let payload = self.printer_message(&mut cmd);
-                self.publish_payload(payload);
+            if let Some(extruder_id) = unique_extruder_id {
+                let mut cmd = ExtrusionCaliSelCommand::new(
+                    &self.nozzle_diameter(extruder_id).clone().unwrap_or_default(),
+                    ams_id_for_set_filament,
+                    original_tray_id, // here we need the original tray_id
+                    slot_id,
+                    &filament.tray_info_idx, // tray_info_idx is filament_id in this command
+                    if let Some(calibration) = &matching_calibration {
+                        Some(calibration.cali_idx)
+                    } else {
+                        Some(-1)
+                    },
+                );
+                if !self.is_locked() {
+                    let payload = self.printer_message(&mut cmd);
+                    self.publish_payload(payload);
+                }
+            } else {
+                // Defensive support only: real FTS internal AMS groups are ambiguous, while non-FTS groups should be uniquely bound.
+                info!("[{}] Skipping automatic pressure advance selection for tray {tray_id}: no unique extruder", self.printer_number);
             }
 
             // Record the app-level slot assignment in the generic snapshot state.

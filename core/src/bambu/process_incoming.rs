@@ -4,6 +4,7 @@ use alloc::{
     boxed::Box,
     rc::Rc,
     string::{String, ToString},
+    vec::Vec,
 };
 use embassy_time::{Duration, with_timeout};
 use framework::{debug, error, info, term_info, trace, utils::SpawnerHeapExt, warn};
@@ -12,18 +13,100 @@ use hashbrown::HashMap;
 use crate::{
     app_config::UseAmsScan,
     bambu::{
-        BambuPrinter, Filament, FilamentInfo, PrinterMode, ReadPacketsPubSub, SpoolId,
+        BambuFilaSwitchPos, BambuFilaSwitchSlot, BambuPrinter, Filament, FilamentInfo, PrinterMode, ReadPacketsPubSub, SpoolId,
         bambu_api::{GcodeState, Message, PrintAms, PrintData, PrintTray},
         calibration::{Calibration, fix_k_on_restart},
+        driver_specific::BambuAmsType,
         fetch_initial_info,
         protocol::clean_message_bytes_to_log,
-        tray::{Tray, TrayBits, TrayMetaInfo, TrayState},
+        tray::{Tray, TrayBits, TrayMetaInfo, TrayState, canonical_tray_id, canonical_tray_id_from_ams_slot},
     },
     printer::PrinterRuntimePersistenceRequestKind,
     settings::MAX_NUM_PRINTERS,
 };
 
 impl BambuPrinter {
+    fn parse_aux_fila_switch_installed(aux: &str) -> Option<bool> {
+        u64::from_str_radix(aux, 16).ok().map(|info_bits| ((info_bits >> 29) & 1) == 1)
+    }
+
+    fn parse_fila_switch_slot(value: i32) -> Option<BambuFilaSwitchSlot> {
+        if value < 0 {
+            return None;
+        }
+        Some(BambuFilaSwitchSlot {
+            ams_id: value >> 8,
+            slot_id: value & 0xFF,
+        })
+    }
+
+    fn parse_fila_switch_out_extruder(value: i32) -> Option<u32> {
+        if value < 0 || value == 0x0E { None } else { Some(value as u32) }
+    }
+
+    #[allow(non_snake_case)]
+    pub fn process_print_message__fila_switch(&mut self, print: &PrintData) -> bool {
+        let mut new_state = self.fila_switch.clone();
+
+        if let Some(aux) = &print.aux {
+            if let Some(installed) = Self::parse_aux_fila_switch_installed(aux) {
+                new_state.installed = installed;
+            } else {
+                warn!("[{}] Could not parse Bambu aux bits: {aux}", self.printer_number);
+            }
+        }
+
+        if let Some(fila_switch) = print.device.as_ref().and_then(|device| device.fila_switch.as_ref()) {
+            if let Some(in_slots) = &fila_switch.in_slots {
+                new_state.in_slots = [
+                    in_slots.first().and_then(|value| Self::parse_fila_switch_slot(*value)),
+                    in_slots.get(1).and_then(|value| Self::parse_fila_switch_slot(*value)),
+                ];
+            }
+            if let Some(out) = &fila_switch.out {
+                new_state.out_extruders = [
+                    out.first().and_then(|value| Self::parse_fila_switch_out_extruder(*value)),
+                    out.get(1).and_then(|value| Self::parse_fila_switch_out_extruder(*value)),
+                ];
+            }
+            if fila_switch.stat.is_some() {
+                new_state.stat = fila_switch.stat;
+            }
+            if fila_switch.info.is_some() {
+                new_state.info = fila_switch.info;
+            }
+        }
+
+        if new_state != self.fila_switch {
+            self.fila_switch = new_state;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn ams_info_from_protocol(&self, ams_info: u32) -> (BambuAmsType, Vec<u32>, Option<BambuFilaSwitchPos>) {
+        let ams_type = BambuAmsType::from_protocol((ams_info & 0x0F) as u8);
+        let extruder_id = (ams_info >> 8) & 0x0F;
+        let switcher_pos = match (ams_info >> 24) & 0x0F {
+            0 => Some(BambuFilaSwitchPos::InB),
+            1 => Some(BambuFilaSwitchPos::InA),
+            _ => None,
+        };
+
+        let bound_extruders = if extruder_id == 0x0E {
+            if self.fila_switch.installed && switcher_pos.is_some() {
+                alloc::vec![0, 1]
+            } else {
+                Vec::new()
+            }
+        } else {
+            alloc::vec![extruder_id]
+        };
+
+        (ams_type, bound_extruders, switcher_pos)
+    }
+
     #[allow(non_snake_case)]
     pub fn process_print_message__vt_tray(&mut self, extruder_id: u32, v_tray: &PrintTray) -> (bool, Option<SpoolId>) {
         let old_tray = self.virt_trays()[extruder_id as usize].clone();
@@ -424,27 +507,49 @@ impl BambuPrinter {
                     }
                 } as usize;
                 if let Some(humidity) = ams.humidity {
-                    self.ams_info[ams_index].humidity = Some(-humidity);
+                    let mut new_info = self.ams_info[ams_index].clone();
+                    new_info.humidity = Some(-humidity);
+                    if new_info != self.ams_info[ams_index] {
+                        self.ams_info[ams_index] = new_info;
+                        change_made = true;
+                    }
                 }
                 if let Some(humidity_raw) = ams.humidity_raw {
-                    self.ams_info[ams_index].humidity = Some(humidity_raw);
+                    let mut new_info = self.ams_info[ams_index].clone();
+                    new_info.humidity = Some(humidity_raw);
+                    if new_info != self.ams_info[ams_index] {
+                        self.ams_info[ams_index] = new_info;
+                        change_made = true;
+                    }
                 }
                 if let Some(temp) = ams.temp {
-                    self.ams_info[ams_index].temp = Some(temp);
+                    let mut new_info = self.ams_info[ams_index].clone();
+                    new_info.temp = Some(temp);
+                    if new_info != self.ams_info[ams_index] {
+                        self.ams_info[ams_index] = new_info;
+                        change_made = true;
+                    }
                 }
                 if let Some(ams_info) = ams.info {
-                    let mut extruder = (ams_info >> 8) & 0x0F;
-                    // TODO: TEMPORARY fix to track filament switcher
-                    if extruder == 0x0E {
-                        extruder = 0;
+                    let (ams_type, bound_extruders, bound_switcher_pos) = self.ams_info_from_protocol(ams_info);
+                    let mut new_info = self.ams_info[ams_index].clone();
+                    new_info.ams_type = ams_type;
+                    new_info.bound_extruders = bound_extruders;
+                    new_info.bound_switcher_pos = bound_switcher_pos;
+                    if new_info != self.ams_info[ams_index] {
+                        self.ams_info[ams_index] = new_info;
+                        change_made = true;
                     }
-                    self.ams_info[ams_index].extruder = extruder;
                 }
             }
-            // The two external tray are also treated sometimes as AMS to get extruder
-            // They are not in the ams list, so setting them fixed here
-            self.ams_info[12].extruder = 1; // 254 is left, extruder 1
-            self.ams_info[13].extruder = 0; // 255 is right, extruder 0
+            // The two external trays are fixed by Bambu extruder side, not by FTS inlet.
+            for (index, extruder_id) in [(12, 1), (13, 0)] {
+                let new_info = crate::bambu::AmsInfo::external(extruder_id);
+                if self.ams_info[index] != new_info {
+                    self.ams_info[index] = new_info;
+                    change_made = true;
+                }
+            }
         }
 
         let mut removed_tags: HashMap<usize, SpoolId> = HashMap::new();
@@ -519,13 +624,13 @@ impl BambuPrinter {
         // Therefore, to issue an event need to call update_ams_trays_done afterwards through a non mut reference (so not borrow_mut if refcell)
         //   in order to issue the event on observers
 
-        let mut change_made = false;
+        let mut change_made = self.process_print_message__fila_switch(print);
         let mut removed_tags = HashMap::new();
         let mut processed_specific_command = false;
         if let Some(command) = &print.command {
             processed_specific_command = true;
             if command == "ams_filament_setting" {
-                change_made = change_made || self.process_print_message__ams_filament_setting(print)
+                change_made |= self.process_print_message__ams_filament_setting(print)
             } else if command == "extrusion_cali_set" || command == "extrusion_cali_del" {
                 // trigger request command for cali_get (request, not response)
                 if let Some(nozzle_diameter) = &print.nozzle_diameter {
@@ -534,13 +639,13 @@ impl BambuPrinter {
                 change_made = true;
             } else if command == "extrusion_cali_sel" {
                 // update the tray with the new k factor
-                change_made = change_made || self.process_print_message__extrusion_cali_sel(print)
+                change_made |= self.process_print_message__extrusion_cali_sel(print)
             } else if command == "extrusion_cali_get" {
                 // TODO: Check: distinguish between command that was sent and the result, which are structured the same
                 // here we want to process only the results (the one that includes the list of filaments )
-                change_made = change_made || self.process_print_message__extrusion_cali_get(print);
+                change_made |= self.process_print_message__extrusion_cali_get(print);
             } else if command == "project_file" {
-                change_made = change_made || self.process_print_message__project_file(print);
+                change_made |= self.process_print_message__project_file(print);
             } else {
                 processed_specific_command = false;
             }
@@ -549,7 +654,9 @@ impl BambuPrinter {
             }
         }
         if !processed_specific_command {
-            (change_made, removed_tags) = self.process_print_message__common(print);
+            let (common_change_made, common_removed_tags) = self.process_print_message__common(print);
+            removed_tags = common_removed_tags;
+            change_made |= common_change_made;
             if self.loaded_print_project.is_some()
                 && let Some(gcode_state) = print.gcode_state
             {
@@ -782,14 +889,13 @@ impl BambuPrinter {
     pub fn get_tray_index_from_print_msg(ams_id: Option<i32>, tray_id: Option<i32>, _slot_id: Option<i32>) -> Option<usize> {
         // returns either index into the ams_trays or 254/255 for external trays (other functions may depend on this)
         if let (Some(ams_id), Some(tray_id)) = (ams_id, tray_id) {
-            match ams_id {
-                0..=3 => Some((ams_id * 4 + tray_id) as usize),
-                128..=135 => Some((16 + ams_id - 128) as usize),
-                254 | 255 => Some(ams_id as usize),
-                _ => None,
-            }
+            canonical_tray_id_from_ams_slot(ams_id, tray_id).map(|tray_id| tray_id as usize)
         } else if let Some(tray_id) = tray_id {
-            if tray_id == 254 { Some(255) } else { Some(tray_id as usize) }
+            if tray_id == 254 {
+                Some(255)
+            } else {
+                canonical_tray_id(tray_id).map(|tray_id| tray_id as usize)
+            }
         } else {
             None
         }

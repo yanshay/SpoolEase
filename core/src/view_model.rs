@@ -119,12 +119,22 @@ pub enum SpoolsSlotsKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SlotSet {
+    id: String,
     kind: SpoolsSlotsKind,
     name: String,
-    extruder: u32,
+    short_name: String,
+    driver_info: printer_domain::SlotGroupDriverInfo,
     slots: Vec<String>,
     temp: Option<f32>,
     humidity: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SlotSetDisplayGroup {
+    id: String,
+    name: String,
+    short_name: String,
+    slot_set_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,6 +154,7 @@ pub struct PrinterInfo {
     hms_errors: Vec<(i32, i32)>,
     num_extruders: u32,
     slots_sets: Vec<SlotSet>,
+    slot_set_display_groups: Vec<SlotSetDisplayGroup>,
 }
 
 pub struct ViewModel {
@@ -202,7 +213,7 @@ impl ViewModel {
             for x in 0..width as usize {
                 let x_block = x / cell_w as usize;
                 let y_block = y / cell_h as usize;
-                let use_light = ((x_block + y_block) % 2) == 0;
+                let use_light = (x_block + y_block).is_multiple_of(2);
                 let (r, g, b, a) = if use_light { TITLE_CHECKER_LIGHT } else { TITLE_CHECKER_DARK };
                 pixels[y * width_usize + x] = slint::Rgba8Pixel { r, g, b, a };
             }
@@ -3176,6 +3187,7 @@ impl ViewModel {
             let identifier = snapshot.identifier.clone();
 
             let slots_sets = self.slot_sets_from_snapshot(&snapshot);
+            let slot_set_display_groups = Self::slot_set_display_groups_from_snapshot(&snapshot);
             let internal_changer_count = snapshot
                 .slot_groups
                 .iter()
@@ -3198,6 +3210,7 @@ impl ViewModel {
                 hms_errors: snapshot.system_error_codes,
                 num_extruders: snapshot.num_extruders,
                 slots_sets,
+                slot_set_display_groups,
             };
             printers_info.push(printer_info);
         }
@@ -3229,7 +3242,6 @@ impl ViewModel {
                 only_spool_id,
             } => self.handle_slot_tag_scanned(&printer_id, &slot_id, &tag_id, only_spool_id),
             PrinterEventKind::MaterialSlotPresenceChanged { changes } => self.handle_material_slot_presence_changed(&printer_id, changes),
-            _ => {}
         }
     }
 
@@ -3321,12 +3333,27 @@ impl ViewModel {
             .slot_groups
             .iter()
             .map(|group| SlotSet {
+                id: group.id.clone(),
                 kind: Self::legacy_slot_group_kind(group.kind),
                 name: group.name.clone(),
-                extruder: group.extruder.unwrap_or_default(),
+                short_name: group.short_name.clone(),
+                driver_info: group.driver_info.clone(),
                 slots: group.slots.iter().map(|slot| self.slot_snapshot_str(slot)).collect(),
                 temp: group.temperature_c,
                 humidity: group.humidity_percent,
+            })
+            .collect()
+    }
+
+    fn slot_set_display_groups_from_snapshot(snapshot: &printer_domain::PrinterSnapshot) -> Vec<SlotSetDisplayGroup> {
+        snapshot
+            .slot_group_display_groups
+            .iter()
+            .map(|display_group| SlotSetDisplayGroup {
+                id: display_group.id.clone(),
+                name: display_group.name.clone(),
+                short_name: display_group.short_name.clone(),
+                slot_set_ids: display_group.slot_group_ids.clone(),
             })
             .collect()
     }

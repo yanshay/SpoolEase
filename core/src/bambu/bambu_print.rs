@@ -19,6 +19,7 @@ use crate::{
     bambu::{
         BambuPrinter,
         bambu_api::{AmsMapping2Entry, GcodeState, PrintData},
+        tray::{canonical_tray_id, canonical_tray_id_from_ams_slot},
     },
     printer::PrinterRuntimePersistenceRequestKind,
 };
@@ -147,26 +148,23 @@ impl PrintProject {
             // Deal with multiextruder, old and new mappings
             // Single extruded (so no_ams means external spool, and not always there is ams_mapping2,
             // Sometimes even ams_mapping is empty in case of external spool (Orca on A1)
-            if ams_slot.is_none() || ams_slot == Some(-1) {
-                if let Some(ams_mapping2) = &self.ams_mapping2 {
-                    if let Some(ams2_info) = ams_mapping2.get(filament_id as usize) {
-                        if ams2_info.ams_id == 255 && ams2_info.slot_id == 0 {
-                            return Some(255);
-                        } else if ams2_info.ams_id == 254 && ams2_info.slot_id == 0 {
-                            return Some(254);
-                        } else if (128..=135).contains(&ams2_info.ams_id) {
-                            return Some(16 + ams2_info.ams_id - 128);
-                        } 
-                        // else if (0..=3).contains(&ams2_info.ams_id) && (0..=3).contains(&ams2_info.slot_id) {
-                        //     return Some(ams2_info.ams_id * 4 + ams2_info.slot_id);
-                        // }
-                        // ams_mapping2 mirrors ams_mapping for standard trays and adds external/HT entries.
-                    }
-                } else if self.use_ams == Some(false) {
-                    return Some(255);
-                }
+            if let Some(ams_slot) = ams_slot
+                && ams_slot != -1
+                && let Some(canonical_tray_id) = canonical_tray_id(ams_slot)
+            {
+                return Some(canonical_tray_id);
             }
-            ams_slot
+
+            if let Some(ams_mapping2) = &self.ams_mapping2 {
+                if let Some(ams2_info) = ams_mapping2.get(filament_id as usize)
+                    && let Some(canonical_tray_id) = canonical_tray_id_from_ams_slot(ams2_info.ams_id, ams2_info.slot_id)
+                {
+                    return Some(canonical_tray_id);
+                }
+            } else if self.use_ams == Some(false) {
+                return Some(255);
+            }
+            None
         } else {
             None
         }
@@ -233,24 +231,15 @@ impl BambuPrinter {
         self.clear_snapshot_slots_used_in_print();
 
         for tray_id in &print.ams_mapping {
-            let tray_id = *tray_id as usize;
-            if (0..self.ams_trays().len()).contains(&tray_id) {
-                self.set_snapshot_slot_used_in_print(tray_id, true);
+            if let Some(tray_id) = canonical_tray_id(*tray_id) {
+                self.set_snapshot_slot_used_in_print(tray_id as usize, true);
             }
         }
         if let Some(ams_mapping2) = &print.ams_mapping2 {
             for ams2_info in ams_mapping2 {
-                if ams2_info.ams_id == 255 && ams2_info.slot_id == 0 {
-                    self.set_snapshot_slot_used_in_print(255, true);
-                } else if ams2_info.ams_id == 254 && ams2_info.slot_id == 0 {
-                    self.set_snapshot_slot_used_in_print(254, true);
-                } else if (128..=135).contains(&ams2_info.ams_id) {
-                    self.set_snapshot_slot_used_in_print((16 + ams2_info.ams_id - 128) as usize, true);
+                if let Some(tray_id) = canonical_tray_id_from_ams_slot(ams2_info.ams_id, ams2_info.slot_id) {
+                    self.set_snapshot_slot_used_in_print(tray_id as usize, true);
                 }
-                // else if (0..=3).contains(&ams2_info.ams_id) && (0..=3).contains(&ams2_info.slot_id) {
-                //     self.set_snapshot_slot_used_in_print((ams2_info.ams_id * 4 + ams2_info.slot_id) as usize, true);
-                // }
-                // ams_mapping2 mirrors ams_mapping for standard trays and adds external/HT entries, so lines above are remarked for now
             }
         } else if print.use_ams == Some(false) {
             self.set_snapshot_slot_used_in_print(255, true);

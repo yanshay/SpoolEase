@@ -76,6 +76,7 @@ pub struct PrintData {
     // pub lifecycle: Option<String>,
     // pub wifi_signal: Option<String>,
     pub gcode_state: Option<GcodeState>,
+    pub aux: Option<String>,
     #[serde(default, serialize_with = "option_i32_as_str_se", deserialize_with = "option_i32_as_str_de")]
     pub gcode_file_prepare_percent: Option<i32>,
     // pub queue_number: Option<i64>,
@@ -151,10 +152,20 @@ pub struct Hms {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PrintDevice {
     pub extruder: Option<PrintDeviceExtruder>,
+    pub fila_switch: Option<PrintDeviceFilaSwitch>,
     // ignore failure to parse due to X1C fw 01.08.02.00 (last before authorization)
     // that has nozzle but completely different than H2D and not in use for X1C
     #[serde(default, deserialize_with = "ignore_errors")]
     pub nozzle: Option<PrintDeviceNozzle>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PrintDeviceFilaSwitch {
+    #[serde(rename = "in")]
+    pub in_slots: Option<Vec<i32>>,
+    pub out: Option<Vec<i32>>,
+    pub stat: Option<i32>,
+    pub info: Option<i32>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

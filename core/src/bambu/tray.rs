@@ -11,6 +11,24 @@ use crate::{
     spool_record::SpoolRecord,
 };
 
+pub(crate) fn canonical_tray_id(tray_id: i32) -> Option<i32> {
+    match tray_id {
+        0..=23 => Some(tray_id),
+        128..=135 => Some(tray_id - 128 + 16),
+        254 | 255 => Some(tray_id),
+        _ => None,
+    }
+}
+
+pub(crate) fn canonical_tray_id_from_ams_slot(ams_id: i32, slot_id: i32) -> Option<i32> {
+    match (ams_id, slot_id) {
+        (0..=3, 0..=3) => Some(ams_id * 4 + slot_id),
+        (128..=135, 0) => Some(ams_id - 128 + 16),
+        (254 | 255, 0 | 255) => Some(ams_id),
+        _ => None,
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct TrayBits {
@@ -244,18 +262,23 @@ impl BambuPrinter {
         }
     }
 
-    // returns 0..15, 128.. for AMS-HT, 254/255
+    // returns canonical tray ids: 0..23 for AMS/AMS-HT, 254/255 for external trays
     pub(crate) fn get_common_tray_active(active_extruder: usize, extruder_tray_now: i32) -> Option<i32> {
+        let extruder_tray_now = if extruder_tray_now > 255 {
+            Self::normalized_h2d_tray_xxx(extruder_tray_now)
+        } else {
+            extruder_tray_now
+        };
         if extruder_tray_now == 255 {
             None
         } else if extruder_tray_now == 254 {
             if active_extruder == 0 { Some(255) } else { Some(254) }
         } else {
-            Some(extruder_tray_now)
+            canonical_tray_id(extruder_tray_now)
         }
     }
 
-    // returns 0..15, 128.. for AMS-HT, 254/255
+    // returns canonical tray ids: 0..23 for AMS/AMS-HT, 254/255 for external trays
     pub(crate) fn get_tray_active(&self) -> Option<i32> {
         let active_extruder = self.get_active_extruder()?;
         Self::get_common_tray_active(active_extruder, self.tray_now[active_extruder])
@@ -275,12 +298,7 @@ impl BambuPrinter {
         //
 
         if tray_id != 254 && tray_id != 255 {
-            if let Some(mut active_tray_id) = self.get_tray_active() {
-                // tray_active: tray_xxx format (0..16, 128..135, 254, 255)
-                if active_tray_id >= 128 {
-                    // AMS-HT case
-                    active_tray_id = active_tray_id - 128 + 16;
-                }
+            if let Some(active_tray_id) = self.get_tray_active() {
                 if active_tray_id == tray_id {
                     TrayState::Loaded
                 } else {
@@ -326,7 +344,7 @@ impl BambuPrinter {
     }
 
     pub(crate) fn normalized_h2d_tray_xxx(h2d_tray_xxx: i32) -> i32 {
-        // this returns normalized the h2d snow/star/spre to be compatible with older printers tray_now/tray_tar/tray_pre
+        // this returns normalized the h2d snow/star/spre to canonical console tray ids
         // this need to be called only on data from message
         // the self.tray_xxx are already normalized
 
@@ -334,7 +352,7 @@ impl BambuPrinter {
         let tray_in_ams = h2d_tray_xxx & 0xFF; // maybe will need to change if ams
         match ams_id {
             0..=3 => ams_id * 4 + (tray_in_ams & 0x03), // 0x03 because no support for more than 4 slots ams
-            128..=135 => ams_id,
+            128..=135 => canonical_tray_id_from_ams_slot(ams_id, tray_in_ams).unwrap_or(255),
             254 | 255 => {
                 if tray_in_ams != 255 {
                     254
@@ -355,10 +373,10 @@ impl BambuPrinter {
     }
 
     pub(crate) fn update_std_tray_xxx(curr_tray_xxx: &mut i32, message_tray_xxx: &Option<i32>, changed: &mut bool) {
-        if let Some(new_tray_xxx) = message_tray_xxx
-            && new_tray_xxx != curr_tray_xxx
+        if let Some(new_tray_xxx) = message_tray_xxx.and_then(canonical_tray_id)
+            && new_tray_xxx != *curr_tray_xxx
         {
-            *curr_tray_xxx = *new_tray_xxx;
+            *curr_tray_xxx = new_tray_xxx;
             *changed = true;
         }
     }

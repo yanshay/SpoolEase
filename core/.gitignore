@@ -62,3 +62,4 @@ _untracked/
 # deploy-beta.sh
 # deploy-rel.sh
 static/pkg
+docs/

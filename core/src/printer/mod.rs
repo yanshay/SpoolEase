@@ -85,6 +85,8 @@ pub struct PrinterSnapshot {
     #[serde(default)]
     pub system_error_codes: Vec<(i32, i32)>,
     pub slot_groups: Vec<SlotGroupSnapshot>,
+    #[serde(default)]
+    pub slot_group_display_groups: Vec<SlotGroupDisplayGroup>,
     pub print: PrintSnapshot,
 }
 
@@ -98,10 +100,26 @@ pub struct SlotGroupSnapshot {
     pub name: String,
     pub short_name: String,
     pub kind: SlotGroupKind,
-    pub extruder: Option<u32>,
+    #[serde(default)]
+    pub driver_info: SlotGroupDriverInfo,
     pub temperature_c: Option<f32>,
     pub humidity_percent: Option<i32>,
     pub slots: Vec<MaterialSlotSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct SlotGroupDisplayGroup {
+    pub id: String,
+    pub name: String,
+    pub short_name: String,
+    pub slot_group_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub enum SlotGroupDriverInfo {
+    #[default]
+    None,
+    Bambu(crate::bambu::driver_specific::BambuSlotGroupInfo),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

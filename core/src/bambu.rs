@@ -17,11 +17,12 @@ pub mod tray;
 
 use crate::bambu::bambu_api::{GcodeState, PrintDeviceNozzleInfo};
 use crate::bambu::calibration::Calibration;
+use crate::bambu::driver_specific::BambuAmsType;
 use crate::bambu::filament::{Filament, FilamentInfo};
 use crate::bambu::mqtt::{ReadPacketsPubSub, WritePacketsChannel, restartable_mqtt_task};
 use crate::bambu::process_incoming::incoming_messages_task;
 use crate::bambu::protocol::ProtocolState;
-use crate::bambu::tray::{Tray, TrayBits};
+use crate::bambu::tray::{Tray, TrayBits, canonical_tray_id};
 use crate::{
     app_config::{BambuPrinterConfig, PrinterMode, UseAmsScan},
     printer::{
@@ -102,11 +103,58 @@ impl Extruder {
     }
 }
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct AmsInfo {
-    pub extruder: u32,
+    pub ams_type: BambuAmsType,
+    pub bound_extruders: Vec<u32>,
+    pub bound_switcher_pos: Option<BambuFilaSwitchPos>,
     pub humidity: Option<i32>,
     pub temp: Option<f32>,
+}
+
+impl AmsInfo {
+    pub fn external(extruder_id: u32) -> Self {
+        Self {
+            ams_type: BambuAmsType::ExternalSpool,
+            bound_extruders: alloc::vec![extruder_id],
+            bound_switcher_pos: None,
+            humidity: None,
+            temp: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BambuFilaSwitchPos {
+    InB,
+    InA,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct BambuFilaSwitchSlot {
+    pub ams_id: i32,
+    pub slot_id: i32,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Eq)]
+pub struct BambuFilaSwitchState {
+    pub installed: bool,
+    // Protocol index 0 is Inlet B, protocol index 1 is Inlet A.
+    pub in_slots: [Option<BambuFilaSwitchSlot>; 2],
+    pub out_extruders: [Option<u32>; 2],
+    pub stat: Option<i32>,
+    pub info: Option<i32>,
+}
+
+#[allow(dead_code)]
+impl BambuFilaSwitchState {
+    pub fn in_a_slot(&self) -> Option<&BambuFilaSwitchSlot> {
+        self.in_slots[1].as_ref()
+    }
+
+    pub fn in_b_slot(&self) -> Option<&BambuFilaSwitchSlot> {
+        self.in_slots[0].as_ref()
+    }
 }
 
 pub struct BambuPrinter {
@@ -163,6 +211,7 @@ pub struct BambuPrinter {
     pub locked_mode: Option<bool>, // None, unknown, treat as unlocked, false - dev mode, true - locked
     runtime_persistence_request_channel: Rc<PrinterRuntimePersistenceRequestChannel>,
     pub ams_info: Vec<AmsInfo>,
+    pub fila_switch: BambuFilaSwitchState,
     pub gcode_state: GcodeState,
     pub layer_num: Option<i32>,
     pub total_layer_num: Option<i32>,
@@ -404,7 +453,7 @@ impl BambuPrinter {
             curr_print_project: None,
             loaded_print_project: None,
             inner_extruder_state: None, // h2d field for knowing which extruder is active
-            tray_tar: [255, 255],       // format for these fields: 0-16 (regular AMS), 128-135 (AMS-HT), 254 (external), 255 (none)
+            tray_tar: [255, 255],       // canonical format: 0..23 (AMS/AMS-HT), 254 (external), 255 (none)
             tray_now: [255, 255],
             tray_pre: [255, 255],
             locked_mode: match printer_mode {
@@ -413,7 +462,13 @@ impl BambuPrinter {
                 PrinterMode::Cloud => Some(true),
             },
             runtime_persistence_request_channel,
-            ams_info: alloc::vec![AmsInfo::default();14], // 0..3: standard ams, 4..11: 128..135 (HT), 12: 254 (external - left?), 13: 255 (external - right?)
+            ams_info: {
+                let mut ams_info = alloc::vec![AmsInfo::default();14]; // 0..3: standard ams, 4..11: 128..135 (HT), 12: 254, 13: 255
+                ams_info[12] = AmsInfo::external(1); // 254 is left, extruder 1
+                ams_info[13] = AmsInfo::external(0); // 255 is right, extruder 0
+                ams_info
+            },
+            fila_switch: BambuFilaSwitchState::default(),
             gcode_state: GcodeState::Unknown,
             layer_num: None,
             total_layer_num: None,
@@ -513,6 +568,10 @@ impl BambuPrinter {
     }
 
     pub fn notify_slot_consumption_reported(&mut self, tray_id: i32, grams: f32) {
+        let Some(tray_id) = canonical_tray_id(tray_id) else {
+            error!("[{}] Ignoring consumption for unsupported Bambu tray id {tray_id}", self.printer_number);
+            return;
+        };
         let mut observers = self.observers.clone(); // to avoid two references - can probably optimize in various ways
         for weak_observer in observers.iter_mut() {
             let observer = weak_observer.upgrade().unwrap();
@@ -528,15 +587,34 @@ impl BambuPrinter {
         }
     }
 
-    pub fn get_extruder_id_for_tray(&self, tray_id: i32) -> Result<u32, String> {
+    pub fn get_unique_extruder_id_for_tray(&self, tray_id: i32) -> Option<u32> {
         // tray_id: 0..15 (4xAMS), 16..23 (8 AMS-HT), 254, 255
+        // In real Bambu FTS setups, internal AMS groups are ambiguous and external trays are uniquely bound.
+        // The exact-one rule also handles defensive protocol cases that are not expected normal configurations.
+        let ams_info_index = self.get_ams_info_index_for_tray(tray_id).ok()?;
+        let bound_extruders = &self.ams_info[ams_info_index].bound_extruders;
+        if bound_extruders.len() == 1 { Some(bound_extruders[0]) } else { None }
+    }
+
+    pub fn get_extruder_id_for_tray(&self, tray_id: i32) -> Result<u32, String> {
+        // Display-only fallback for K value/name lookup. Automatic PA commands must use
+        // get_unique_extruder_id_for_tray() so ambiguous FTS AMS groups are never configured as extruder 0.
         let ams_info_index = self.get_ams_info_index_for_tray(tray_id)?;
-        Ok(self.ams_info[ams_info_index].extruder)
+        self.ams_info[ams_info_index].bound_extruders.first().copied().ok_or_else(|| {
+            format!(
+                "[{}] Slot {tray_id} does not resolve to a Bambu extruder",
+                self.printer_number
+            )
+        })
     }
 
     pub fn get_extruder_for_tray(&self, tray_id: i32) -> Result<&Extruder, String> {
         // tray_id: 0..15 (4xAMS), 16..23 (8 AMS-HT), 254, 255
         Ok(self.get_extruder(self.get_extruder_id_for_tray(tray_id)?))
+    }
+
+    pub fn fila_switch_installed(&self) -> bool {
+        self.fila_switch.installed
     }
 
     pub fn queue_runtime_persistence_request(&self, kind: PrinterRuntimePersistenceRequestKind) {

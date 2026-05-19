@@ -15,7 +15,8 @@ use framework::{error, framework::Framework, info, prelude::*};
 use super::{
     MaterialSlotSnapshot, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver,
     PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult,
-    PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner, SlotAssignMode, SlotGroupDriverInfo, SlotGroupKind, SlotGroupSnapshot, SlotId,
+    SlotState,
     slot_in_snapshot_mut,
 };
 
@@ -77,11 +78,12 @@ impl FakePrinterRuntime {
                 name: "Fake Slots".into(),
                 short_name: "Fake".into(),
                 kind: SlotGroupKind::Virtual,
-                extruder: Some(0),
+                driver_info: SlotGroupDriverInfo::None,
                 temperature_c: None,
                 humidity_percent: None,
                 slots,
             }],
+            slot_group_display_groups: Vec::new(),
             print: PrintSnapshot {
                 state: PrintState::Idle,
                 ..PrintSnapshot::default()

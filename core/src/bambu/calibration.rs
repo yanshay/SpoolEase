@@ -356,8 +356,6 @@ pub async fn fix_k_on_restart(
         }
     }
 
-    let nozzle_diameter = &bambu_printer.borrow().nozzle_diameter(0).clone().unwrap_or_default();
-
     for (id, prev_tray) in prev_ams_trays
         .iter()
         .enumerate()
@@ -368,6 +366,13 @@ pub async fn fix_k_on_restart(
             if set_tray.is_some()
                 && let Filament::Known(filament_info) = &prev_tray.filament
             {
+                let tray_id = id as i32;
+                let Some(extruder_id) = bambu_printer.borrow().get_unique_extruder_id_for_tray(tray_id) else {
+                    // Defensive support only: real FTS internal AMS groups are ambiguous, while non-FTS groups should be uniquely bound.
+                    info!("[{}] Skipping K restore for tray {tray_id}: no unique extruder", printer_number);
+                    continue;
+                };
+                let nozzle_diameter = bambu_printer.borrow().nozzle_diameter(extruder_id).clone().unwrap_or_default();
                 let original_tray_id = if id == 255 { 254 } else { id };
                 let (ams_id, slot_id) = BambuPrinter::get_ams_and_slot_id(original_tray_id);
                 // TODO: (if change) check ams_id against 255
@@ -377,7 +382,7 @@ pub async fn fix_k_on_restart(
                     info!("[{}] Updating pressure advance of external slot", printer_number);
                 }
                 let mut cmd = ExtrusionCaliSelCommand::new(
-                    nozzle_diameter,
+                    &nozzle_diameter,
                     ams_id as i32,
                     original_tray_id as i32, // here we need the original tray_id
                     slot_id as i32,

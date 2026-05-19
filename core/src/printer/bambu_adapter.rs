@@ -16,13 +16,16 @@ use shared::gcode_analysis_task::{
 
 use crate::app_config::BambuPrinterConfig;
 use crate::bambu::{
-    BambuPrinter, BambuPrinterObserver, SpoolId,
+    BambuFilaSwitchPos, BambuPrinter, BambuPrinterObserver, SpoolId,
     bambu_api::{GcodeState, PrintCommand as BambuPrintCommand},
     bambu_print::PrintProject,
-    driver_specific::{BambuAddPressureAdvance, BambuDriverCommand, BambuDriverQuery, BambuDriverQueryResult, BambuPressureAdvanceEntry},
+    driver_specific::{
+        BambuAddPressureAdvance, BambuAmsType, BambuDriverCommand, BambuDriverQuery, BambuDriverQueryResult, BambuPressureAdvanceEntry,
+        BambuSlotGroupInfo,
+    },
     filament::Filament as BambuFilament,
     printer_state::BambuPersistentDirtyState,
-    tray::{Tray, TrayBits, TrayState as BambuTrayState},
+    tray::{Tray, TrayBits, TrayState as BambuTrayState, canonical_tray_id},
 };
 use crate::store::Store;
 
@@ -31,7 +34,8 @@ use super::{
     MaterialSlotSnapshot, PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange,
     PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId,
     PrinterObserver, PrinterResult, PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterSnapshotState,
-    PrinterSnapshotStateInner, SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
+    PrinterSnapshotStateInner, SlotAssignMode, SlotGroupDisplayGroup, SlotGroupDriverInfo, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
+    slot_in_snapshot_mut,
 };
 
 type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
@@ -96,6 +100,16 @@ impl BambuPrinterDriver {
     // Builds from BambuPrinter only. App-tracked fields like spool_id and consumption stay empty/zero here.
     fn raw_snapshot_from_printer(printer: &BambuPrinter) -> PrinterSnapshot {
         let slot_groups_known = Self::slot_groups_known_from_printer(printer);
+        let slot_groups = if slot_groups_known {
+            Self::slot_groups_from_printer(printer)
+        } else {
+            Vec::new()
+        };
+        let slot_group_display_groups = if slot_groups_known {
+            Self::slot_group_display_groups_from_printer(printer, &slot_groups)
+        } else {
+            Vec::new()
+        };
         PrinterSnapshot {
             id: BambuPrinterConfig::printer_id_for_serial(&printer.printer_serial),
             kind: PrinterDriverKind::Bambu,
@@ -110,11 +124,8 @@ impl BambuPrinterDriver {
                 .as_ref()
                 .map(|errors| errors.iter().map(|error| (error.attr.unwrap_or(0), error.code.unwrap_or(0))).collect())
                 .unwrap_or_default(),
-            slot_groups: if slot_groups_known {
-                Self::slot_groups_from_printer(printer)
-            } else {
-                Vec::new()
-            },
+            slot_groups,
+            slot_group_display_groups,
             print: Self::print_from_printer(printer),
         }
     }
@@ -126,6 +137,7 @@ impl BambuPrinterDriver {
         if !snapshot.slot_groups_known && state_snapshot.slot_groups_known && !state_snapshot.slot_groups.is_empty() {
             snapshot.slot_groups_known = true;
             snapshot.slot_groups = state_snapshot.slot_groups.clone();
+            snapshot.slot_group_display_groups = state_snapshot.slot_group_display_groups.clone();
         } else {
             Self::overlay_generic_fields_from_state(&mut snapshot, &state_snapshot);
         }
@@ -284,7 +296,10 @@ impl BambuPrinterDriver {
                     name: printer.ams_name(ams_index as usize),
                     short_name: printer.ams_name(ams_index as usize),
                     kind: SlotGroupKind::InternalChanger,
-                    extruder: ams_info.map(|info| info.extruder),
+                    driver_info: SlotGroupDriverInfo::Bambu(BambuSlotGroupInfo {
+                        ams_type: ams_info.map(|info| info.ams_type.clone()).unwrap_or_default(),
+                        bound_extruders: ams_info.map(|info| info.bound_extruders.clone()).unwrap_or_default(),
+                    }),
                     temperature_c: ams_info.and_then(|info| info.temp),
                     humidity_percent: ams_info.and_then(|info| info.humidity),
                     slots,
@@ -306,7 +321,10 @@ impl BambuPrinterDriver {
             name: Self::external_group_name(printer, extruder),
             short_name: Self::external_group_short_name(printer, extruder),
             kind: SlotGroupKind::External,
-            extruder: Some(extruder),
+            driver_info: SlotGroupDriverInfo::Bambu(BambuSlotGroupInfo {
+                ams_type: BambuAmsType::ExternalSpool,
+                bound_extruders: alloc::vec![extruder],
+            }),
             temperature_c: None,
             humidity_percent: None,
             slots: alloc::vec![Self::slot_from_tray(printer, tray_id, printer.get_any_tray(tray_id as usize))],
@@ -327,10 +345,102 @@ impl BambuPrinterDriver {
         if printer.num_extruders() == 1 {
             "Ext".into()
         } else if extruder == 1 {
-            "Ext-L".into()
+            "Ext L".into()
         } else {
-            "Ext-R".into()
+            "Ext R".into()
         }
+    }
+
+    fn slot_group_display_groups_from_printer(printer: &BambuPrinter, groups: &[SlotGroupSnapshot]) -> Vec<SlotGroupDisplayGroup> {
+        if printer.fila_switch_installed() {
+            let (left, right) = Self::bambu_group_ids_by_panel(printer, groups, true);
+            return alloc::vec![
+                SlotGroupDisplayGroup {
+                    id: "bambu:display:filament-inlet-a".into(),
+                    name: "Filament Inlet A".into(),
+                    short_name: "Inlet A".into(),
+                    slot_group_ids: left,
+                },
+                SlotGroupDisplayGroup {
+                    id: "bambu:display:filament-inlet-b".into(),
+                    name: "Filament Inlet B".into(),
+                    short_name: "Inlet B".into(),
+                    slot_group_ids: right,
+                },
+            ];
+        }
+
+        if printer.num_extruders() != 2 {
+            return Vec::new();
+        }
+
+        let (left, right) = Self::bambu_group_ids_by_panel(printer, groups, false);
+        alloc::vec![
+            SlotGroupDisplayGroup {
+                id: "bambu:display:left-extruder".into(),
+                name: "Left Extruder".into(),
+                short_name: "Left".into(),
+                slot_group_ids: left,
+            },
+            SlotGroupDisplayGroup {
+                id: "bambu:display:right-extruder".into(),
+                name: "Right Extruder".into(),
+                short_name: "Right".into(),
+                slot_group_ids: right,
+            },
+        ]
+    }
+
+    fn bambu_group_ids_by_panel(printer: &BambuPrinter, groups: &[SlotGroupSnapshot], fts_layout: bool) -> (Vec<String>, Vec<String>) {
+        let mut left = Vec::new();
+        let mut right = Vec::new();
+
+        for group in groups {
+            let left_panel = if fts_layout {
+                Self::group_is_left_fts_panel(printer, group)
+            } else {
+                Self::group_is_left_extruder_panel(group)
+            };
+            if left_panel {
+                left.push(group.id.clone());
+            } else {
+                right.push(group.id.clone());
+            }
+        }
+
+        (left, right)
+    }
+
+    fn group_is_left_fts_panel(printer: &BambuPrinter, group: &SlotGroupSnapshot) -> bool {
+        if group.id == "bambu:external:254" {
+            return true;
+        }
+        if group.id == "bambu:external:255" {
+            return false;
+        }
+
+        Self::ams_index_from_group(group)
+            .and_then(|ams_index| printer.ams_info.get(ams_index))
+            .and_then(|info| info.bound_switcher_pos)
+            == Some(BambuFilaSwitchPos::InA)
+    }
+
+    fn group_is_left_extruder_panel(group: &SlotGroupSnapshot) -> bool {
+        if group.id == "bambu:external:254" {
+            return true;
+        }
+        if group.id == "bambu:external:255" {
+            return false;
+        }
+
+        match &group.driver_info {
+            SlotGroupDriverInfo::Bambu(info) => info.bound_extruders.as_slice() == [1],
+            SlotGroupDriverInfo::None => false,
+        }
+    }
+
+    fn ams_index_from_group(group: &SlotGroupSnapshot) -> Option<usize> {
+        group.id.strip_prefix("bambu:group:")?.parse().ok()
     }
 
     fn slot_from_tray(printer: &BambuPrinter, tray_id: i32, tray: &Tray) -> MaterialSlotSnapshot {
@@ -353,8 +463,8 @@ impl BambuPrinterDriver {
 
     fn slot_short_name_from_tray_id(tray_id: i32) -> String {
         match tray_id {
-            255 => "Ext-R".to_string(),
-            254 => "Ext-L".to_string(),
+            255 => "Ext R".to_string(),
+            254 => "Ext L".to_string(),
             0..=15 => {
                 let ams_letter = (b'A' + (tray_id / 4) as u8) as char;
                 format!("{ams_letter}{}", tray_id % 4 + 1)
@@ -662,6 +772,10 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
     }
 
     fn on_slot_consumption_reported(&mut self, tray_id: i32, grams: f32) {
+        let Some(tray_id) = canonical_tray_id(tray_id) else {
+            error!("Ignoring consumption for unsupported Bambu tray {tray_id}");
+            return;
+        };
         if grams == 0.0 {
             return;
         }

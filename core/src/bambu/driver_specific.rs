@@ -1,4 +1,35 @@
 use alloc::{string::String, vec::Vec};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BambuSlotGroupInfo {
+    pub ams_type: BambuAmsType,
+    pub bound_extruders: Vec<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum BambuAmsType {
+    ExternalSpool,
+    #[default]
+    Ams,
+    AmsLite,
+    Ams2Pro,
+    AmsHt,
+    Unknown(u8),
+}
+
+impl BambuAmsType {
+    pub fn from_protocol(value: u8) -> Self {
+        match value {
+            0 => Self::ExternalSpool,
+            1 => Self::Ams,
+            2 => Self::AmsLite,
+            3 => Self::Ams2Pro,
+            4 => Self::AmsHt,
+            _ => Self::Unknown(value),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BambuDriverCommand {
