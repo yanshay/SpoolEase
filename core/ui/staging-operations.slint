@@ -162,11 +162,10 @@ component OperationSelectionStep inherits Rectangle {
                 }
 
                 MyButton {
-                    // for used up spools it needs to show "mark refilled", and start process of weighting;
-                    // used up should clear the weights/fill the used, and mark it as used etc.
-                    visible: false;
-                    enabled: false;
-                    text: "Mark Used-Up";
+                    text: "Mark Empty";
+                    clicked => {
+                        AppState.staging-operation-page = StagingOperationsPage.MarkEmptyConfirm;
+                    }
                 }
             }
         }
@@ -231,6 +230,63 @@ component UnlinkSelectionStep inherits Rectangle {
                 } else {
                     AppBackend.unlink-spool-from-all-tags(AppState.spool-staging-info.spool-record.id);
                 }
+            }
+            back-clicked => {
+                AppState.staging-operation-page = StagingOperationsPage.OperationSelection;
+            }
+            cancel-clicked => {
+                AppState.control-state = ControlState.Ready;
+            }
+        }
+    }
+}
+
+component MarkEmptyConfirmStep inherits Rectangle {
+    background: white;
+
+    VerticalLayout {
+        Title {
+            text: "Mark Spool Empty";
+        }
+
+        VerticalLayout {
+            alignment: center;
+            padding: 20px;
+            spacing: 12px;
+
+            MyText {
+                width: parent.width;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                text: "This will mark spool \{AppState.spool-staging-info.spool-record.id} as empty.";
+            }
+
+            MyText {
+                width: parent.width;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                text: "Its available filament weight will be cleared.";
+            }
+
+            MyText {
+                width: parent.width;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                text: "Press Mark Empty to continue.";
+            }
+        }
+
+        WizardButtons {
+            next-enabled: true;
+            back-enabled: true;
+            next-text: "Mark Empty";
+            next-clicked => {
+                AppBackend.set-spool-weight(
+                    AppState.spool-staging-info.spool-record.id,
+                    AppState.spool-staging-info.spool-record.weight-core,
+                    -1,
+                    false,
+                );
             }
             back-clicked => {
                 AppState.staging-operation-page = StagingOperationsPage.OperationSelection;
@@ -554,6 +610,7 @@ export component StagingOperations {
     }
     if AppState.staging-operation-page == StagingOperationsPage.OperationSelection: OperationSelectionStep { }
     if AppState.staging-operation-page == StagingOperationsPage.UnlinkSelection: UnlinkSelectionStep { }
+    if AppState.staging-operation-page == StagingOperationsPage.MarkEmptyConfirm: MarkEmptyConfirmStep { }
     if AppState.staging-operation-page == StagingOperationsPage.UpdateWeight: UpdateWeightPage {
         title: "Update Spool \{spool-display.spool-record.id} Weight";
         user-prompt: "Please place the spool on the scale:";
