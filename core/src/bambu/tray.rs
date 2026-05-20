@@ -21,10 +21,14 @@ pub(crate) fn canonical_tray_id(tray_id: i32) -> Option<i32> {
 }
 
 pub(crate) fn canonical_tray_id_from_ams_slot(ams_id: i32, slot_id: i32) -> Option<i32> {
+    if slot_id == 255 {
+        return None;
+    }
+
     match (ams_id, slot_id) {
         (0..=3, 0..=3) => Some(ams_id * 4 + slot_id),
         (128..=135, 0) => Some(ams_id - 128 + 16),
-        (254 | 255, 0 | 255) => Some(ams_id),
+        (254 | 255, 0) => Some(ams_id),
         _ => None,
     }
 }
