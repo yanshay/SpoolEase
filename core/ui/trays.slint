@@ -179,10 +179,19 @@ component CircleStripes inherits Rectangle {
                 background: display-circle-color ? c : transparent;
                 property <color> text-color: Utils.contrasting_color(c);
 
-                if !circle-display-weight: Text {
+                if !circle-display-weight && circle-default-big-text != "✓": Text {
                     text: circle-default-big-text;
                     color: text-color;
                     font-size: 60px;
+                }
+
+                if !circle-display-weight && circle-default-big-text == "✓": Image {
+                    width: parent.width;
+                    height: parent.height;
+                    image-fit: preserve;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    source: text-color == #ffffff ? @image-url("./img/spool_white_binary_40px.png") : @image-url("./img/spool_black_binary_40px.png");
                 }
 
                 if circle-display-weight: MyText {
