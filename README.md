@@ -56,8 +56,8 @@ If you find it valuable or helpful, please **Boost** the 3D models on MakerWorld
 </a>
 
 ## Printers Monitoring
-<a href="readme/printers-monitoring-overview.png">
-  <img src="readme/printers-monitoring-overview.png">
+<a href="readme/printer-monitoring-overview.png">
+  <img src="readme/printer-monitoring-overview.png">
 </a>
 
 ## A Few SpoolEase Console Screenshots
