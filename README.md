@@ -3,24 +3,28 @@
 SpoolEase is a smart add-on system for Bambu Lab 3D printers that adds intelligence and control to every filament spool.
 
 It features:
-- NFC tags for automatic spool identification (see below supported tags and formats)
-- Comprehensive spool inventory management system - keep your spools organized
-- Precise dual method filament weight tracking using (1) weight scale, (2) print usage monitoring, combined with a very streamlined workflow - so you can tell how much filament is available in every spool
-- Flexible storage system - with both structured and free-form locations, NFC location tags, streamlined and easy to use - so you can tell where each spool is at any given time
-- Automatic slot configuration for material, color, pressure advance (K) - simplify printing and reduce errors
-- Virtual Spool Label for viewing spool info on your mobile device
+- NFC tags for automatic spool identification
+- [**Comprehensive spool inventory management system**](https://docs.spoolease.io/docs/quickstart/inventory-ui-intro) - keeping your spools organized
+- [**Precise Filament Weight Tracking**](https://docs.spoolease.io/docs/full-guide/spool-weight-tracking) using (1) weight scale, (2) print usage monitoring, and (3) a smart workflow - so you can tell how much filament is available in every spool
+- [**Storage System Management**](https://docs.spoolease.io/docs/full-guide/storage-system) - quickly find where your spools are using NFC based location tracking and seamless workflow to keep location information up to date
+- **Automatic slot configuration** for material, color, pressure advance (K)
+- [**Printers Monitoring**](https://docs.spoolease.io/docs/full-guide/printers-monitoring) - the essentials for monitoring printers, prints progress and AMS units status
+- [**Configurable Dashboard**](https://docs.spoolease.io/docs/full-guide/dashboard) - get the big picture of your spools inventory
+- [**Virtual Spool Label**](https://docs.spoolease.io/docs/quickstart/view-tag-info) for viewing spool info on your mobile device
+- Import and support for Bambu Lab Spools RFID tag
+- Software support for OpenPrintTag (see support scope in [Register OpenPrintTag Spools](https://docs.spoolease.io/docs/quickstart/register-openprinttag-spools))
 - Compatibility with your slicer filament settings
-- Serves as backup for your pressure advance settings (for when the printer loses them — and yes, it happens)
+- Even serves as **backup for your pressure advance settings** (for when the printer loses them — and yes, it happens)
 
 - Supports most common NFC tags - NTAG (recommended 215 and above) and Mifare Classic (with Mifare no support yet for virtual label feature)
 - Supports data import from and use of Bambu Lab filament RFID tags
-- Supports Bambu Lab X1, P1, A1, H2, P2 product lines with AMS-Lite, AMS, AMS2-Pro and AMS-HT
+- Supports Bambu Lab X1, P1, A1, H2, P2, X2 product lines with AMS-Lite, AMS, AMS2-Pro and AMS-HT and Filament Track Switcher
 - Supports multiple printers simultaneously (within resource limits)
 - More ...
 
 The system includes two products:  
-- **SpoolEase Console** – The main hub with a display, managing inventory, weight tracking, AMS/External slot configuration, and showing AMS/External filament status. It works independently, but some features require SpoolEase Scale, so using both is recommended.
-- **SpoolEase Scale** – Measures spool weight and feeds data to the Console. SpoolEase Scale depends on SpoolEase Console to operate.
+- **SpoolEase Console** – The main hub with a display, managing inventory, weight tracking, AMS/External slot configuration, and showing AMS/External filament status.
+- **SpoolEase Scale** – Measures spool weight and feeds data to the Console.
 
 SpoolEase works well together with the [SpoolEase NFC tag holder](https://makerworld.com/en/models/2050083) that supports easily swappable NFC tag, material type and spool-id labels for spool reuse purpose.
 
@@ -42,8 +46,18 @@ If you find it valuable or helpful, please **Boost** the 3D models on MakerWorld
 </div>
 
 ## Inventory Management (Press to Enlarge)
-<a href="readme/inventory-screenshot.png">
-  <img src="readme/inventory-screenshot.png">
+<a href="readme/inventory-main.png">
+  <img src="readme/inventory-main.png">
+</a>
+
+## Dashboarding
+<a href="readme/dashboard-overview.png">
+  <img src="readme/dashboard-overview.png">
+</a>
+
+## Printers Monitoring
+<a href="readme/printers-monitoring-overview.png">
+  <img src="readme/printers-monitoring-overview.png">
 </a>
 
 ## A Few SpoolEase Console Screenshots
@@ -117,13 +131,13 @@ If you're interested in commercial licensing, redistribution rights, or other ac
   [Troubleshooting](https://docs.spoolease.io/docs/troubleshooting)
 
 ## Third Party Attributions
-SpoolScale uses the following sources for it's Spools Catalog:  
+SpoolScale uses the following sources for it's spools weights catalog:  
 - Scuk's "Empty Spool Weight Catalog": https://www.printables.com/model/464663-empty-spool-weight-catalog
 - https://www.onlyspoolz.com/portfolio/
 
 ## License
 
-This software is licensed under Apache License, Version 2.0 **with Commons Clause** - see [LICENSE.md](LICENSE.md).
+SpoolEase Console software is licensed under Apache License, Version 2.0 **with Commons Clause** - see [LICENSE.md](LICENSE.md).
 
 - ✅ Free for use
 - ❌ Cannot be sold, offered as a service, or used for consulting, see [LICENSE.md](LICENSE.md) for more details
