@@ -25,6 +25,7 @@ use picoserve::{
 };
 
 use framework::{
+    display_snapshot::{DisplaySnapshotBmp, DisplaySnapshotError},
     encrypted_input,
     framework_web_app::{
         CustomNotFound, Encryptable, EncryptedRejection, Encryption, NestedAppWithWebAppStateBuilder, SetConfigResponseDTO, WebAppState, decrypt,
@@ -690,31 +691,36 @@ impl AppWithStateBuilder for NestedAppBuilder {
             ),
         );
 
+        // http://device.local/insecure/screenshot?key=<key>&file=image.bmp
         #[derive(serde::Deserialize)]
         struct ScreenshotQueryParams {
             key: String,
             file: String,
         }
-        let router = router.route(
-            "/insecure/screenshot",
-            get(
-                move |picoserve::extract::Query(ScreenshotQueryParams { file, key }),
-                      State(Encryption(_key)),
-                      State(state): State<ConsoleAppState>,
-                      State(FrameworkState(framework))| async move {
-                    if key == framework.borrow().web_config_key {
-                        let screenshot = state.view_model.borrow().taks_screenshot();
-                        let resp = ChunkedResponse::new(ScreenshotChunks { screenshot }).into_response();
-                        resp.with_header("Content-Disposition", format!("attachment; filename=\"{file}\""))
-                            .with_status_code(StatusCode::OK)
-                    } else {
-                        let screenshot = Err(slint::PlatformError::Other("Security Key Error".to_string()));
-                        let resp = ChunkedResponse::new(ScreenshotChunks { screenshot }).into_response();
-                        resp.with_header("", String::new()).with_status_code(StatusCode::UNAUTHORIZED)
-                    }
-                },
-            ),
-        );
+        let router =
+            router.route(
+                "/insecure/screenshot",
+                get(
+                    move |picoserve::extract::Query(ScreenshotQueryParams { file, key }),
+                          State(Encryption(_key)),
+                          State(FrameworkState(framework))| async move {
+                        if key == framework.borrow().web_config_key {
+                            let screenshot = framework
+                                .borrow()
+                                .take_display_snapshot_bmp()
+                                .map_err(ScreenshotError::from);
+                            let status_code = if screenshot.is_ok() { StatusCode::OK } else { StatusCode::BAD_REQUEST };
+                            let resp = ChunkedResponse::new(ScreenshotChunks { screenshot }).into_response();
+                            resp.with_header("Content-Disposition", format!("attachment; filename=\"{file}\""))
+                                .with_status_code(status_code)
+                        } else {
+                            let screenshot = Err(ScreenshotError::SecurityKey);
+                            let resp = ChunkedResponse::new(ScreenshotChunks { screenshot }).into_response();
+                            resp.with_header("", String::new()).with_status_code(StatusCode::UNAUTHORIZED)
+                        }
+                    },
+                ),
+            );
 
         let router = router.route(
             "/api/storage-config",
@@ -1108,17 +1114,43 @@ impl picoserve::routing::RequestHandlerService<WebAppState<ConsoleAppState>> for
     }
 }
 
+#[derive(Debug)]
+enum ScreenshotError {
+    SecurityKey,
+    Snapshot(DisplaySnapshotError),
+}
+
+impl From<DisplaySnapshotError> for ScreenshotError {
+    fn from(value: DisplaySnapshotError) -> Self {
+        Self::Snapshot(value)
+    }
+}
+
+impl ScreenshotError {
+    fn message(&self) -> String {
+        match self {
+            Self::SecurityKey => "Security key error".to_string(),
+            Self::Snapshot(err) => err.message(),
+        }
+    }
+}
+
 struct ScreenshotChunks {
-    screenshot: Result<slint::SharedPixelBuffer<slint::Rgba8Pixel>, slint::PlatformError>,
+    screenshot: Result<DisplaySnapshotBmp, ScreenshotError>,
 }
 
 impl picoserve::response::chunked::Chunks for ScreenshotChunks {
     fn content_type(&self) -> &'static str {
-        "application/octet-stream"
+        if self.screenshot.is_ok() { DisplaySnapshotBmp::content_type() } else { "text/plain" }
     }
+
     async fn write_chunks<W: picoserve::io::Write>(self, mut chunk_writer: ChunkWriter<W>) -> Result<ChunksWritten, W::Error> {
-        if let Ok(screenshot) = self.screenshot {
-            chunk_writer.write_chunk(screenshot.as_bytes()).await?;
+        match self.screenshot {
+            Ok(screenshot) => screenshot.write_to(&mut chunk_writer).await?,
+            Err(err) => {
+                let message = format!("Screenshot failed: {}", err.message());
+                chunk_writer.write_chunk(message.as_bytes()).await?;
+            }
         }
         chunk_writer.finalize().await
     }

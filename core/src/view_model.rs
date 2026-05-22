@@ -3025,10 +3025,6 @@ impl ViewModel {
         }
     }
 
-    pub fn taks_screenshot(&self) -> Result<slint::SharedPixelBuffer<slint::Rgba8Pixel>, slint::PlatformError> {
-        self.ui_weak.unwrap().window().take_snapshot()
-    }
-
     pub fn get_spools_in_printers(&self) -> HashMap<String, String> {
         // spool_id,
         // location: A1 / B3 /... or Ext
