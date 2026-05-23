@@ -64,24 +64,8 @@ where
     T: CsvDbId + Serialize + DeserializeOwned + PartialEq + core::fmt::Debug,
 {
     pub data: T,
-    pub length: usize, // including EOL (\n at this time, so +1)
+    pub length_in_file: usize, // owned byte span in the DB file, including EOL
     offset: u32,
-}
-
-impl<T> CsvRecordInfo<T>
-where
-    T: CsvDbId + Serialize + DeserializeOwned + PartialEq + core::fmt::Debug,
-{
-    pub fn to_csv_string(&self) -> Result<String, CsvDbError> {
-        let mut writer = serde_csv_core::Writer::new();
-        let mut buffer = alloc::vec![0; self.length];
-        let length_written = writer.serialize(&self.data, buffer.as_mut_slice()).context(SerializeSnafu)?;
-        buffer.truncate(length_written);
-        // TODO: add this error as a source to the SerializeSnafu (so one error from several underlying sources)
-        // Not critical since data will always be utf8
-        let buffer_str = String::from_utf8(buffer).unwrap();
-        Ok(buffer_str)
-    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -182,6 +166,17 @@ where
         }
     }
 
+    pub fn record_to_csv_string(&self, record: &CsvRecordInfo<T>) -> Result<String, CsvDbError> {
+        let mut writer = serde_csv_core::Writer::new();
+        let mut buffer = alloc::vec![0; self.inner.borrow().max_record_width];
+        let length_written = writer.serialize(&record.data, buffer.as_mut_slice()).context(SerializeSnafu)?;
+        buffer.truncate(length_written);
+        // TODO: add this error as a source to the SerializeSnafu (so one error from several underlying sources)
+        // Not critical since data will always be utf8
+        let buffer_str = String::from_utf8(buffer).unwrap();
+        Ok(buffer_str)
+    }
+
     fn free_range_end(range: FreeRange) -> u32 {
         range.offset + range.length as u32
     }
@@ -265,6 +260,9 @@ where
         Ok(())
     }
 
+    // TODO: packing is risky under certain sdcard errors since it does truncate first. 
+    // a proper packing should create dbname.new, then rename name.db to name.old, then rename dbname.new to dbname.db and then remove dbname.old
+    // and deal with potential failures during and inbetween these operations
     pub async fn start(&mut self, backup: bool, pack: bool) -> Result<(), CsvDbError> {
         // Now read db file
 
@@ -292,18 +290,18 @@ where
                 Self::add_free_range(&mut free_ranges, nread as u32, line_length);
             } else {
                 _data_nread += line_length;
-                let (record, record_length) = reader.deserialize::<T>(line.as_bytes()).context(DeserializeSnafu { record: line })?;
+                let (record, _record_length) = reader.deserialize::<T>(line.as_bytes()).context(DeserializeSnafu { record: line })?;
                 let record_info = CsvRecordInfo {
                     data: record,
                     offset: nread as u32,
-                    length: record_length + 1,
+                    length_in_file: line_length,
                 };
                 let record_id = record_info.data.id().clone();
                 if let Some(previous_record_info) = records.insert(record_id, record_info) {
                     // Later duplicates win. The older visible row is cleaned after the file is fully loaded.
                     stale_ranges.push(FreeRange {
                         offset: previous_record_info.offset,
-                        length: previous_record_info.length,
+                        length: previous_record_info.length_in_file,
                     });
                 }
             }
@@ -336,7 +334,7 @@ where
             for record in records.iter_mut() {
                 let length_written = writer.serialize(&record.1.data, &mut file_buffer[pos..]).context(SerializeSnafu)?;
                 record.1.offset = pos as u32;
-                record.1.length = length_written;
+                record.1.length_in_file = length_written;
                 pos += length_written;
             }
             sdcard.create_write_file_bytes(&db_filename, &file_buffer).await.context(StoreSnafu)?;
@@ -390,7 +388,7 @@ where
         for (id, offset, length) in record_positions {
             if let Some(record) = records.get_mut(&id) {
                 record.offset = offset;
-                record.length = length;
+                record.length_in_file = length;
             }
         }
         self.free_ranges.borrow_mut().clear();
@@ -410,7 +408,7 @@ where
             if v.data == record {
                 return Ok(false);
             }
-            (true, v.offset, v.length)
+            (true, v.offset, v.length_in_file)
         } else {
             (false, 0, 0)
         };
@@ -450,12 +448,12 @@ where
             if let Some(v) = records_borrow.get_mut(record.id()) {
                 v.data = record;
                 v.offset = final_offset;
-                v.length = serialized_len;
+                v.length_in_file = serialized_len;
             } else {
                 let csv_record_info = CsvRecordInfo {
                     data: record,
                     offset: final_offset,
-                    length: serialized_len,
+                    length_in_file: serialized_len,
                 };
                 records_borrow.insert(csv_record_info.data.id().clone(), csv_record_info);
             }
@@ -475,7 +473,7 @@ where
     #[allow(dead_code)]
     pub async fn delete(&self, id: &str) -> Result<Option<T>, CsvDbError> {
         let (offset, length) = if let Some(v) = self.records.borrow().get(id) {
-            (v.offset, v.length)
+            (v.offset, v.length_in_file)
         } else {
             return Ok(None);
         };

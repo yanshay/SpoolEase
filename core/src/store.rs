@@ -353,9 +353,9 @@ impl Store {
     pub fn query_spools(&self) -> Option<String> {
         if let Some(spools_db) = self.spools_db.get() {
             let spool_records = spools_db.records.borrow();
-            let total_length = spool_records.values().map(|v| v.length).sum::<usize>();
+            let total_length = spool_records.values().map(|v| v.length_in_file).sum::<usize>();
             let results: Result<String, CsvDbError> = spool_records.values().try_fold(String::with_capacity(total_length), |mut acc, v| {
-                let csv = v.to_csv_string();
+                let csv = spools_db.record_to_csv_string(v);
                 if let Err(e) = &csv {
                     error!("Error serializing to csv: {v:?} : {e}");
                 }
@@ -563,9 +563,9 @@ impl Store {
     pub fn get_spool_csv_by_id(&self, id: &str) -> Option<String> {
         if let Some(spools_db) = self.spools_db.get()
             && let Some(current_rec) = spools_db.records.borrow().get(id)
-            && let Ok(mut csv_str) = current_rec.to_csv_string()
+            && let Ok(mut csv_str) = spools_db.record_to_csv_string(current_rec)
         {
-            // the to_csv_string adds a trailing \n automatically
+            // record_to_csv_string adds a trailing \n automatically
             if csv_str.ends_with('\n') {
                 csv_str.pop(); // removes last char
             }
