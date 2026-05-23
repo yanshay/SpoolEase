@@ -135,7 +135,6 @@ pub struct Store {
     pub storage_config: RefCell<StorageConfig>,
 
     pub locations_db: OnceCell<CsvDb<TagLocationRecord, TheSpi, 20, 5>>,
-    last_location_id: RefCell<i32>,
 }
 
 impl Store {
@@ -153,7 +152,6 @@ impl Store {
             store_rc: RefCell::new(None),
             storage_config: RefCell::new(StorageConfig::default()),
             locations_db: OnceCell::new(),
-            last_location_id: RefCell::new(0),
         });
         *store.store_rc.borrow_mut() = Some(store.clone());
         store
@@ -792,7 +790,7 @@ fn db_open_error_detail(db_name: &str, err_text: &str) -> String {
 // #[embassy_executor::task]
 pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, view_model: Rc<RefCell<ViewModel>>) {
     let spools_db_available;
-    let locations_db_available;
+    let _locations_db_available;
     {
         match store.try_restore_from_backup(view_model.clone()).await {
             Ok(_) => (),
@@ -857,7 +855,7 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                     };
                     match semver::Version::parse(db_version.as_str()) {
                         Ok(db_version) => {
-                            let current_version = semver::Version::parse(SPOOLS_STORE_VER).unwrap();
+                            let current_version = semver::Version::parse(LOCATIONS_STORE_VER).unwrap();
                             if current_version < db_version {
                                 term_error!(
                                     "Critical Error: Locations DB version is {}, this firmware supports up to {}",
@@ -865,7 +863,7 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                                     current_version
                                 );
                                 store.report_store_error("locatags.db bad version".to_string());
-                                locations_db_available = false;
+                                _locations_db_available = false;
                             } else {
                                 // currently upgrade is only for ext, so done after loading the db
                                 store
@@ -875,26 +873,26 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
                                     .unwrap();
                                 term_info!("Opened locations database");
 
-                                locations_db_available = true;
+                                _locations_db_available = true;
                             }
                         }
                         Err(err) => {
                             term_error!("Unparsable locations database version {} {:?}", db_version, err);
                             store.report_store_error("locatags.db bad version".to_string());
-                            locations_db_available = false;
+                            _locations_db_available = false;
                         }
                     }
                 }
                 Err(e) => {
                     term_error!("Failed to start locations database (and load data): {:?}", e);
                     store.report_store_error("locatags.db load failed".to_string());
-                    locations_db_available = false;
+                    _locations_db_available = false;
                 }
             },
             Err(e) => {
                 term_error!("Failed to open locations database : {}", e);
                 store.report_store_error(db_open_error_detail("locatags", &e.to_string()));
-                locations_db_available = false;
+                _locations_db_available = false;
             }
         }
 
@@ -1015,19 +1013,6 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
     }
 
     // create tag indexes and find largest_id's in lists, would be better if we persisted that
-
-    let mut largest_location_id = 0;
-    if locations_db_available && let Some(locations_db) = store.spools_db.get() {
-        let records = locations_db.records.borrow();
-        for record in records.iter() {
-            if let Ok(id) = record.1.data.id.parse::<i32>()
-                && id > largest_location_id
-            {
-                largest_location_id = id;
-            }
-        }
-    }
-    *store.last_location_id.borrow_mut() = largest_location_id;
 
     let mut largest_spool_id = 0;
     if spools_db_available && let Some(spools_db) = store.spools_db.get() {
