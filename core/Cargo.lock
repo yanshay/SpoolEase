@@ -1920,7 +1920,7 @@ dependencies = [
 [[package]]
 name = "embedded-sdmmc"
 version = "0.8.0"
-source = "git+https://github.com/yanshay/embedded-sdmmc-rs?branch=yanshay_bisync#3e18c7951ab05a375c509fefc9b7fccd68ec7327"
+source = "git+https://github.com/yanshay/embedded-sdmmc-rs?branch=yanshay_bisync#1d9e990dc9e070f5b705f7cae873c6fd28f3b773"
 dependencies = [
  "bisync",
  "byteorder",

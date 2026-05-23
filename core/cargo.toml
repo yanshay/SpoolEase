@@ -138,6 +138,7 @@ num-traits = { version = "0.2.19", default-features = false }
 fnv = { version = "1.0.7", default-features = false }
 hex = {version = "0.4.3", default-features = false, features = ["alloc"]}
 embedded-sdmmc = { git = "https://github.com/yanshay/embedded-sdmmc-rs", branch = "yanshay_bisync" }
+# embedded-sdmmc = { path = "../../../../../../OpenSourceProj/forked/embedded-sdmmc-rs" }
 # url = { version ="2.5.7", default-features = false }
 percent-encoding = {version = "2.3.2", default-features = false, features = ["alloc"]}
 
