@@ -1,4 +1,4 @@
-use crate::utils::{deserialize_string_array, serialize_string_array};
+use crate::utils::{deserialize_line_safe_string, deserialize_string_array, serialize_line_safe_string, serialize_string_array};
 use crate::{
     bambu::{
         NozzleType,
@@ -40,7 +40,8 @@ pub struct SpoolRecord {
     pub color_name: String,       // 10
     #[serde(serialize_with = "serialize_string_array", deserialize_with = "deserialize_string_array")]
     pub color_code: Vec<String>, // 8
-    pub note: String,             // 40
+    #[serde(serialize_with = "serialize_line_safe_string", deserialize_with = "deserialize_line_safe_string")]
+    pub note: String, // 40
     pub brand: String,            // 30
     #[serde(deserialize_with = "deserialize_optional")]
     pub weight_advertised: Option<i32>, // 4
