@@ -236,9 +236,10 @@ where
                 record.1.length = length_written;
                 pos += length_written;
             }
-            self.records = Rc::new(RefCell::new(records));
             sdcard.create_write_file_bytes(&db_filename, &file_buffer).await.context(StoreSnafu)?;
         }
+
+        *self.records.borrow_mut() = records;
 
         Ok(())
     }
