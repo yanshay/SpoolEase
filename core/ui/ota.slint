@@ -143,6 +143,20 @@ export component OtaDisplay inherits Rectangle {
                 }
             }
         }
+
+        Row {
+            Rectangle {
+                background: red;
+                colspan: 3;
+                vertical-stretch: 1;
+                MyText {
+                    color: yellow;
+                    vertical-alignment: center;
+                    horizontal-alignment: center;
+                    text: "Before updating, backup from Web App!";
+                }
+            }
+        }
     }
 }
 
@@ -303,14 +317,15 @@ export component OtaDisplay inherits Rectangle {
 export component AppOtaSelect inherits Rectangle {
     background: white;
     VerticalLayout {
-        alignment: space-between;
         VerticalLayout {
             Title {
                 text: "Over the Air Network Software Update";
             }
 
             // if FrameworkState.ota-state == OtaState.Checking: OtaCheck { }
-            if FrameworkState.ota-state == OtaState.UserInput: OtaDisplay { }
+            if FrameworkState.ota-state == OtaState.UserInput: OtaDisplay {
+                vertical-stretch: 1;
+            }
         }
 
         if FrameworkState.ota-state != OtaState.Started: MyButton {
