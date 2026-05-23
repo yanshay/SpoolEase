@@ -849,7 +849,7 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
         )
         .await
         {
-            Ok(mut db) => match db.start(true, true).await {
+            Ok(mut db) => match db.start(true, false).await {
                 Ok(_) => {
                     let db_version = {
                         let db_inner = db.inner.borrow();
@@ -907,7 +907,7 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
         )
         .await
         {
-            Ok(mut db) => match db.start(true, true).await {
+            Ok(mut db) => match db.start(true, false).await {
                 Ok(_) => {
                     let mut db_version = {
                         let db_inner = db.inner.borrow();
