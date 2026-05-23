@@ -96,6 +96,12 @@ pub struct CsvDbInner {
     pub db_meta: DbMetaFile,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct FreeRange {
+    offset: u32,
+    length: usize,
+}
+
 pub struct CsvDb<T, SPI: SpiDevice, const MAX_DIRS: usize, const MAX_FILES: usize>
 where
     T: CsvDbId + Serialize + DeserializeOwned + PartialEq + core::fmt::Debug,
@@ -103,6 +109,8 @@ where
     sdcard: Rc<Mutex<CriticalSectionRawMutex, SDCardStore<SPI, MAX_DIRS, MAX_FILES>>>,
     pub inner: RefCell<CsvDbInner>,
     pub records: Rc<RefCell<HashMap<String, CsvRecordInfo<T>>>>,
+    // Rebuilt on start. These ranges already contain dashed/empty bytes and are safe to overwrite.
+    free_ranges: RefCell<Vec<FreeRange>>,
 }
 
 impl<T, SPI: SpiDevice, const MAX_DIRS: usize, const MAX_FILES: usize> CsvDb<T, SPI, MAX_DIRS, MAX_FILES>
@@ -141,6 +149,7 @@ where
             }),
             sdcard: sdcard_input.clone(),
             records: Rc::new(RefCell::new(records)),
+            free_ranges: RefCell::new(Vec::with_capacity(min_capacity)),
         })
     }
 
@@ -173,6 +182,89 @@ where
         }
     }
 
+    fn free_range_end(range: FreeRange) -> u32 {
+        range.offset + range.length as u32
+    }
+
+    fn add_free_range(free_ranges: &mut Vec<FreeRange>, offset: u32, length: usize) {
+        if length == 0 {
+            return;
+        }
+
+        let mut new_offset = offset;
+        let mut new_end = offset + length as u32;
+        let mut index = 0;
+
+        while index < free_ranges.len() {
+            let range = free_ranges[index];
+            let range_end = Self::free_range_end(range);
+
+            if range_end < new_offset {
+                index += 1;
+                continue;
+            }
+
+            if new_end < range.offset {
+                break;
+            }
+
+            // Overlapping or directly adjacent free ranges are one reusable space.
+            new_offset = new_offset.min(range.offset);
+            new_end = new_end.max(range_end);
+            free_ranges.remove(index);
+        }
+
+        free_ranges.insert(
+            index,
+            FreeRange {
+                offset: new_offset,
+                length: (new_end - new_offset) as usize,
+            },
+        );
+    }
+
+    fn find_free_range(free_ranges: &[FreeRange], length: usize, min_offset: Option<u32>) -> Option<usize> {
+        // First-fit is enough for the small database sizes this file handles.
+        free_ranges.iter().position(|range| {
+            range.length >= length
+                && match min_offset {
+                    Some(min_offset) => range.offset >= min_offset,
+                    None => true,
+                }
+        })
+    }
+
+    fn consume_free_range(free_ranges: &mut Vec<FreeRange>, index: usize, used_length: usize) {
+        if used_length >= free_ranges[index].length {
+            free_ranges.remove(index);
+        } else {
+            free_ranges[index].offset += used_length as u32;
+            free_ranges[index].length -= used_length;
+        }
+    }
+
+    fn empty_record_buffer(length: usize) -> Vec<u8> {
+        let mut buffer = alloc::vec![b'-'; length];
+        if length > 0 {
+            buffer[length - 1] = b'\n';
+        }
+        buffer
+    }
+
+    async fn write_empty_range(
+        sdcard: &mut SDCardStore<SPI, MAX_DIRS, MAX_FILES>,
+        db_file_name: &str,
+        offset: u32,
+        length: usize,
+    ) -> Result<(), CsvDbError> {
+        let empty_buffer = Self::empty_record_buffer(length);
+        sdcard
+            .write_file_bytes(db_file_name, offset, empty_buffer.as_slice(), false)
+            .await
+            .context(StoreSnafu)?;
+        Ok(())
+    }
+
     pub async fn start(&mut self, backup: bool, pack: bool) -> Result<(), CsvDbError> {
         // Now read db file
 
@@ -189,22 +281,33 @@ where
         let mut _data_nread = 0;
         let mut _empty_nread = 0;
         let mut records = self.records.take();
+        records.clear();
+        let mut free_ranges = self.free_ranges.take();
+        free_ranges.clear();
+        let mut stale_ranges = Vec::<FreeRange>::new();
         for line in db_str.lines() {
-            if line.is_empty() {
-                _empty_nread += 1;
-            } else if line.chars().all(|c| c == '-') {
-                _empty_nread += line.len() + 1;
+            let line_length = line.len() + 1;
+            if line.is_empty() || line.chars().all(|c| c == '-') {
+                _empty_nread += line_length;
+                Self::add_free_range(&mut free_ranges, nread as u32, line_length);
             } else {
-                _data_nread += line.len() + 1;
+                _data_nread += line_length;
                 let (record, record_length) = reader.deserialize::<T>(line.as_bytes()).context(DeserializeSnafu { record: line })?;
                 let record_info = CsvRecordInfo {
                     data: record,
                     offset: nread as u32,
                     length: record_length + 1,
                 };
-                records.insert(record_info.data.id().clone(), record_info);
+                let record_id = record_info.data.id().clone();
+                if let Some(previous_record_info) = records.insert(record_id, record_info) {
+                    // Later duplicates win. The older visible row is cleaned after the file is fully loaded.
+                    stale_ranges.push(FreeRange {
+                        offset: previous_record_info.offset,
+                        length: previous_record_info.length,
+                    });
+                }
             }
-            nread = nread + line.len() + 1;
+            nread += line_length;
         }
 
         // Don't copy in case records are empty (so not destroy old backup)
@@ -237,34 +340,60 @@ where
                 pos += length_written;
             }
             sdcard.create_write_file_bytes(&db_filename, &file_buffer).await.context(StoreSnafu)?;
+            free_ranges.clear();
+        } else {
+            // Packing removes stale duplicates by rewriting active records only. Without packing,
+            // dash older duplicates now so users do not see obsolete rows in the CSV file.
+            for stale_range in stale_ranges {
+                if Self::write_empty_range(&mut sdcard, &db_filename, stale_range.offset, stale_range.length)
+                    .await
+                    .is_ok()
+                {
+                    Self::add_free_range(&mut free_ranges, stale_range.offset, stale_range.length);
+                }
+            }
         }
 
         *self.records.borrow_mut() = records;
+        *self.free_ranges.borrow_mut() = free_ranges;
 
         Ok(())
     }
 
     pub async fn save_all_records_only_before_use(&self) -> Result<(), CsvDbError> {
-        let mut record_buffer = alloc::vec![0u8;self.inner.borrow().max_record_width];
-        let mut writer = serde_csv_core::Writer::new();
-        let mut length_required = 0;
-        let mut records = self.records.take();
-        for record in records.iter() {
-            let serialized_len = writer.serialize(&record.1.data, record_buffer.as_mut_slice()).context(SerializeSnafu)?;
-            length_required += serialized_len;
-        }
-        let mut file_buffer = alloc::vec![b'-'; length_required];
-        let mut pos = 0;
-        for record in records.iter_mut() {
-            let length_written = writer.serialize(&record.1.data, &mut file_buffer[pos..]).context(SerializeSnafu)?;
-            record.1.offset = pos as u32;
-            record.1.length = length_written;
-            pos += length_written;
-        }
-        *self.records.borrow_mut() = records;
+        let (file_buffer, record_positions) = {
+            let mut record_buffer = alloc::vec![0u8;self.inner.borrow().max_record_width];
+            let mut writer = serde_csv_core::Writer::new();
+            let mut length_required = 0;
+            let records = self.records.borrow();
+            for record in records.iter() {
+                let serialized_len = writer.serialize(&record.1.data, record_buffer.as_mut_slice()).context(SerializeSnafu)?;
+                length_required += serialized_len;
+            }
+            let mut file_buffer = alloc::vec![b'-'; length_required];
+            let mut pos = 0;
+            let mut record_positions = Vec::with_capacity(records.len());
+            for record in records.iter() {
+                let length_written = writer.serialize(&record.1.data, &mut file_buffer[pos..]).context(SerializeSnafu)?;
+                record_positions.push((record.0.clone(), pos as u32, length_written));
+                pos += length_written;
+            }
+
+            (file_buffer, record_positions)
+        };
+
         let db_filename = self.inner.borrow().db_file_name.clone();
         let mut sdcard = self.sdcard.lock().await;
         sdcard.create_write_file_bytes(&db_filename, &file_buffer).await.context(StoreSnafu)?;
+
+        let mut records = self.records.borrow_mut();
+        for (id, offset, length) in record_positions {
+            if let Some(record) = records.get_mut(&id) {
+                record.offset = offset;
+                record.length = length;
+            }
+        }
+        self.free_ranges.borrow_mut().clear();
         Ok(())
     }
     pub async fn update_version(&self, version: &str) -> Result<(), CsvDbError> {
@@ -288,47 +417,56 @@ where
         let mut buffer = alloc::vec![0;self.inner.borrow().max_record_width];
         let serialized_len = self.calc_csv_row(&record, &mut buffer)?;
         let db_file_name = self.inner.borrow().db_file_name.clone();
-        let mut final_offset;
+        let final_offset;
         let mut sdcard = self.sdcard.lock().await;
-        if already_exist {
-            if serialized_len <= prev_length {
-                buffer[serialized_len..prev_length].fill(b'-');
-                buffer[prev_length - 1] = b'\n';
-                final_offset = Some(prev_offset);
-                sdcard
-                    .write_file_bytes(&db_file_name, prev_offset, &buffer[..prev_length], false)
-                    .await
-                    .context(StoreSnafu)?;
+
+        let min_offset = if already_exist {
+            // Replacements are written after the old record, so latest-offset-wins recovery remains valid.
+            Some(prev_offset + prev_length as u32)
+        } else {
+            None
+        };
+
+        let free_range = {
+            let free_ranges = self.free_ranges.borrow();
+            Self::find_free_range(&free_ranges, serialized_len, min_offset).map(|index| (index, free_ranges[index].offset))
+        };
+
+        if let Some((free_range_index, free_range_offset)) = free_range {
+            // Once we try writing into a free range, it is no longer known-clean if the write fails.
+            Self::consume_free_range(&mut self.free_ranges.borrow_mut(), free_range_index, serialized_len);
+            sdcard
+                .write_file_bytes(&db_file_name, free_range_offset, &buffer[..serialized_len], false)
+                .await
+                .context(StoreSnafu)?;
+            final_offset = free_range_offset;
+        } else {
+            final_offset = sdcard.append_bytes(&db_file_name, &buffer[..serialized_len]).await.context(StoreSnafu)?;
+        }
+
+        {
+            let mut records_borrow = self.records.borrow_mut();
+
+            if let Some(v) = records_borrow.get_mut(record.id()) {
+                v.data = record;
+                v.offset = final_offset;
+                v.length = serialized_len;
             } else {
-                let mut empty_buffer = alloc::vec![b'-';prev_length];
-                empty_buffer[prev_length - 1] = b'\n';
-                sdcard
-                    .write_file_bytes(&db_file_name, prev_offset, empty_buffer.as_slice(), false)
-                    .await
-                    .context(StoreSnafu)?;
-                final_offset = None;
+                let csv_record_info = CsvRecordInfo {
+                    data: record,
+                    offset: final_offset,
+                    length: serialized_len,
+                };
+                records_borrow.insert(csv_record_info.data.id().clone(), csv_record_info);
             }
-        } else {
-            final_offset = None;
         }
 
-        if final_offset.is_none() {
-            final_offset = Some(sdcard.append_bytes(&db_file_name, &buffer[..serialized_len]).await.context(StoreSnafu)?);
-        }
-
-        let mut records_borrow = self.records.borrow_mut();
-
-        if let Some(v) = records_borrow.get_mut(record.id()) {
-            v.data = record;
-            v.offset = final_offset.unwrap();
-            v.length = serialized_len;
-        } else {
-            let csv_record_info = CsvRecordInfo {
-                data: record,
-                offset: final_offset.unwrap(),
-                length: serialized_len,
-            };
-            records_borrow.insert(csv_record_info.data.id().clone(), csv_record_info);
+        if already_exist
+            && Self::write_empty_range(&mut sdcard, &db_file_name, prev_offset, prev_length)
+                .await
+                .is_ok()
+        {
+            Self::add_free_range(&mut self.free_ranges.borrow_mut(), prev_offset, prev_length);
         }
 
         Ok(!already_exist)
@@ -342,16 +480,12 @@ where
             return Ok(None);
         };
 
-        let mut buffer = Vec::<u8>::with_capacity(self.inner.borrow().max_record_width);
-        self.calc_empty_record(&mut buffer, length);
         let mut sdcard = self.sdcard.lock().await;
         let db_file_name = self.inner.borrow().db_file_name.clone();
-        sdcard
-            .write_file_bytes(&db_file_name, offset, buffer.as_slice(), false)
-            .await
-            .context(StoreSnafu)?;
+        Self::write_empty_range(&mut sdcard, &db_file_name, offset, length).await?;
 
         if let Some(record) = self.records.borrow_mut().remove(id) {
+            Self::add_free_range(&mut self.free_ranges.borrow_mut(), offset, length);
             return Ok(Some(record.data));
         }
         Ok(None)
@@ -366,11 +500,5 @@ where
     fn calc_csv_row(&self, record: &T, buffer: &mut Vec<u8>) -> Result<usize, CsvDbError> {
         buffer.resize(self.inner.borrow().max_record_width, 0);
         Self::inner_calc_csv_row(record, buffer)
-    }
-
-    fn calc_empty_record(&self, buffer: &mut Vec<u8>, length: usize) {
-        buffer.clear();
-        buffer.resize(length, b'-');
-        buffer[length - 1] = b'\n';
     }
 }
