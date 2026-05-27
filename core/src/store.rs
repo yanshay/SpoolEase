@@ -491,6 +491,7 @@ impl Store {
                         assigned_location: spool_record.assigned_location.clone(),
                         actual_location: spool_record.actual_location.clone(),
                         spools_count: spool_record.spools_count,
+                        td: spool_record.td,
                     }
                 } else {
                     return Err(StoreError::NotFound { id: spool_record.id.clone() });

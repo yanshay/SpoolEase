@@ -77,6 +77,8 @@ pub struct SpoolRecord {
     #[serde(deserialize_with = "one_if_empty")]
     #[derivative(Default(value = "1"))]
     pub spools_count: i32,
+    #[serde(default, deserialize_with = "deserialize_optional")]
+    pub td: Option<f32>,
     // !!! Don't Forget to set default for any field!
     // pub update_time
     // pub update_tag_fields_time

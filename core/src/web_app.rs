@@ -484,6 +484,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         assigned_location: add_spool.assigned_location,
                         actual_location: add_spool.actual_location,
                         spools_count: add_spool.spools_count,
+                        td: add_spool.td.filter(|td| td.is_finite() && *td >= 0.0),
                     };
 
                     let spool_id = if add_spool_operation {
@@ -1533,6 +1534,8 @@ pub struct AddSpoolDTO {
     pub spools_count: i32,
     pub split: Option<String>,
     pub added_time: Option<i32>,
+    #[serde(default)]
+    pub td: Option<f32>,
 }
 encrypted_input!(AddSpoolDTO);
 
