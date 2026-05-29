@@ -16,7 +16,7 @@ use picoserve::{AppRouter, AppWithStateBuilder};
 use crate::{
     api_app,
     app_config::AppConfig,
-    settings::{API_SERVER_HTTPS, API_SERVER_NUM_LISTENERS, API_SERVER_PORT, API_SERVER_TLS_CERTIFICATE, API_SERVER_TLS_PRIVATE_KEY},
+    settings::{API_SERVER_HTTPS, API_SERVER_NUM_LISTENERS, API_SERVER_PORT},
 };
 
 pub type ApiServerCommands = WebServerCommands;
@@ -55,7 +55,13 @@ impl ApiServerHandle {
     }
 }
 
-pub fn init_api_server(framework: Rc<RefCell<Framework>>, app_config: Rc<RefCell<AppConfig>>, spawner: Spawner) -> &'static ApiServerHandle {
+pub fn init_api_server(
+    framework: Rc<RefCell<Framework>>,
+    app_config: Rc<RefCell<AppConfig>>,
+    spawner: Spawner,
+    tls_certificate: &'static str,
+    tls_private_key: &'static str,
+) -> &'static ApiServerHandle {
     let api_server_builder = ApiServerAppBuilder;
 
     let api_server_router = mk_static!(AppRouter<ApiServerAppBuilder>, AppWithStateBuilder::build_app(api_server_builder));
@@ -74,8 +80,8 @@ pub fn init_api_server(framework: Rc<RefCell<Framework>>, app_config: Rc<RefCell
         web_app_name: "Api-Server",
         port: API_SERVER_PORT,
         tls: API_SERVER_HTTPS,
-        tls_certificate: API_SERVER_TLS_CERTIFICATE,
-        tls_private_key: API_SERVER_TLS_PRIVATE_KEY,
+        tls_certificate,
+        tls_private_key,
     };
 
     let config = picoserve::Config::new(picoserve::Timeouts {

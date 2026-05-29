@@ -1,6 +1,7 @@
-use core::{cell::RefCell, str::FromStr};
+use core::{cell::RefCell, net::Ipv4Addr as CoreIpv4Addr, str::FromStr};
 
 use alloc::{
+    boxed::Box,
     format,
     rc::Rc,
     string::{String, ToString},
@@ -15,6 +16,7 @@ use serde::{Deserialize, Deserializer, Serializer};
 use framework::prelude::*;
 use shared::gcode_analysis_task::Fetch3mf;
 
+use crate::certgen::{self, CertificateValidity, DEFAULT_CA_SUBJECT};
 use crate::printer::{PrinterDriverKind, PrinterId};
 use crate::utils::sha256_hex;
 
@@ -33,11 +35,14 @@ const USER_CORES_CONFIG_KEY: &str = "user_cores";
 const CUSTOM_FILAMENTS_CONFIG_KEY: &str = "custom_filaments";
 const AI_PROVIDERS_CONFIG_KEY: &str = "ai_providers";
 const API_TOKENS_CONFIG_KEY: &str = "api_tokens";
+const DEVICE_CERTIFICATE_CONFIG_KEY: &str = "device_certificate";
 
 pub const API_TOKEN_NAME_MAX_LEN: usize = 32;
 const API_TOKEN_PREFIX: &str = "spe_api_v1";
 const API_TOKEN_ID_BYTES: usize = 8;
 const API_TOKEN_SECRET_BYTES: usize = 32;
+const DEVICE_CERTIFICATE_SAN_MAX_COUNT: usize = 16;
+const DEVICE_CERTIFICATE_SAN_MAX_LEN: usize = 253;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct ApiTokensConfig {
@@ -80,6 +85,115 @@ fn random_base64url<const N: usize>() -> Result<String, String> {
     let mut bytes = [0u8; N];
     getrandom::getrandom(&mut bytes).map_err(|e| format!("Random token generation failed: {e:?}"))?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct DeviceCertificateConfig {
+    pub enabled: bool,
+    pub custom: Option<StoredDeviceCertificate>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct StoredDeviceCertificate {
+    pub ca_subject: String,
+    pub ca_key_pem: String,
+    pub ca_cert_pem: String,
+    pub leaf_key_pem: String,
+    pub leaf_cert_pem: String,
+    pub sans: Vec<String>,
+    pub created_at: i32,
+    pub ca_expires_at: i32,
+    pub leaf_expires_at: i32,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct DeviceCertificateStatus {
+    pub enabled: bool,
+    pub active_custom: bool,
+    pub restart_required: bool,
+    pub custom_certificate_available: bool,
+    pub sans: Vec<String>,
+    pub created_at: Option<i32>,
+    pub ca_expires_at: Option<i32>,
+    pub leaf_expires_at: Option<i32>,
+}
+
+pub struct DeviceCertificateGenerationRequest {
+    pub sans: Vec<String>,
+    pub created_at: i32,
+    pub ca_not_before: String,
+    pub ca_not_after: String,
+    pub ca_expires_at: i32,
+    pub leaf_not_before: String,
+    pub leaf_not_after: String,
+    pub leaf_expires_at: i32,
+}
+
+pub struct DeviceCertificateLeafRequest {
+    pub sans: Vec<String>,
+    pub created_at: i32,
+    pub leaf_not_before: String,
+    pub leaf_not_after: String,
+    pub leaf_expires_at: i32,
+}
+
+fn leak_nul_terminated(value: &str) -> &'static str {
+    let mut value = value.to_string();
+    if !value.ends_with('\0') {
+        value.push('\0');
+    }
+    Box::leak(value.into_boxed_str())
+}
+
+fn certificate_chain_pem(leaf_cert_pem: &str, ca_cert_pem: &str) -> String {
+    let mut chain = leaf_cert_pem.to_string();
+    if !chain.ends_with('\n') {
+        chain.push('\n');
+    }
+    chain.push_str(ca_cert_pem);
+    chain
+}
+
+fn normalize_certificate_sans(sans: Vec<String>) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    for san in sans {
+        let san = san.trim().to_ascii_lowercase();
+        if san.is_empty() || out.iter().any(|existing| existing == &san) {
+            continue;
+        }
+        if out.len() >= DEVICE_CERTIFICATE_SAN_MAX_COUNT {
+            return Err(format!("Certificate can include up to {DEVICE_CERTIFICATE_SAN_MAX_COUNT} names/IPs"));
+        }
+        if !is_valid_certificate_san(&san) {
+            return Err(format!("Invalid certificate name/IP: {san}"));
+        }
+        out.push(san);
+    }
+
+    if out.is_empty() {
+        return Err("At least one certificate name or IP is required".to_string());
+    }
+    Ok(out)
+}
+
+fn is_valid_certificate_san(value: &str) -> bool {
+    if value.len() > DEVICE_CERTIFICATE_SAN_MAX_LEN || value.as_bytes().contains(&0) {
+        return false;
+    }
+    if CoreIpv4Addr::from_str(value).is_ok() {
+        return true;
+    }
+    value.split('.').all(|part| {
+        !part.is_empty()
+            && part.len() <= 63
+            && !part.starts_with('-')
+            && !part.ends_with('-')
+            && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    })
+}
+
+fn leaf_subject_from_sans(sans: &[String]) -> String {
+    format!("CN={}", sans.first().map(String::as_str).unwrap_or("SpoolEase"))
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
@@ -404,6 +518,8 @@ pub struct AppConfig {
     pub custom_filaments: Option<String>,
     pub ai_providers_config: AiProvidersConfig,
     pub api_tokens_config: ApiTokensConfig,
+    pub device_certificate_config: DeviceCertificateConfig,
+    active_device_certificate_hash: Option<String>,
     pub root_redirect: String,
 }
 
@@ -468,6 +584,8 @@ impl AppConfig {
             custom_filaments: None,
             ai_providers_config: AiProvidersConfig::default(),
             api_tokens_config: ApiTokensConfig::default(),
+            device_certificate_config: DeviceCertificateConfig::default(),
+            active_device_certificate_hash: None,
             root_redirect: "/config".to_string(),
         }
     }
@@ -534,6 +652,13 @@ impl AppConfig {
             && let Ok(api_tokens_config) = serde_json::from_str::<ApiTokensConfig>(&api_tokens_store)
         {
             self.api_tokens_config = api_tokens_config;
+        }
+
+        let config = self.framework.borrow_mut().fetch(String::from(DEVICE_CERTIFICATE_CONFIG_KEY));
+        if let Ok(Some(device_certificate_store)) = config
+            && let Ok(device_certificate_config) = serde_json::from_str::<DeviceCertificateConfig>(&device_certificate_store)
+        {
+            self.device_certificate_config = device_certificate_config;
         }
 
         let config = self.framework.borrow_mut().fetch(String::from(SCALE_CONFIG_KEY));
@@ -903,6 +1028,159 @@ impl AppConfig {
             .iter()
             .find(|stored_token| stored_token.id == id && stored_token.token_hash == presented_hash)
             .map(|stored_token| stored_token.name.clone())
+    }
+
+    fn persist_device_certificate_config(
+        &self,
+        device_certificate_config: &DeviceCertificateConfig,
+    ) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        if *device_certificate_config == DeviceCertificateConfig::default() {
+            self.framework.borrow().remove(DEVICE_CERTIFICATE_CONFIG_KEY.to_string())?;
+        } else {
+            let store = serde_json::to_string(device_certificate_config).unwrap();
+            self.framework.borrow().store(DEVICE_CERTIFICATE_CONFIG_KEY.to_string(), store)?;
+        }
+        Ok(())
+    }
+
+    pub fn api_tls_certificate_and_key(&mut self, default_cert: &'static str, default_key: &'static str) -> (&'static str, &'static str) {
+        if self.device_certificate_config.enabled
+            && let Some(custom) = &self.device_certificate_config.custom
+        {
+            let cert_chain = certificate_chain_pem(&custom.leaf_cert_pem, &custom.ca_cert_pem);
+            self.active_device_certificate_hash = Some(sha256_hex(cert_chain.as_bytes()));
+            return (leak_nul_terminated(&cert_chain), leak_nul_terminated(&custom.leaf_key_pem));
+        }
+
+        self.active_device_certificate_hash = None;
+        (default_cert, default_key)
+    }
+
+    pub fn device_certificate_status(&self) -> DeviceCertificateStatus {
+        let custom = self.device_certificate_config.custom.as_ref();
+        let configured_hash = if self.device_certificate_config.enabled {
+            custom.map(|custom| sha256_hex(certificate_chain_pem(&custom.leaf_cert_pem, &custom.ca_cert_pem).as_bytes()))
+        } else {
+            None
+        };
+
+        DeviceCertificateStatus {
+            enabled: self.device_certificate_config.enabled,
+            active_custom: self.active_device_certificate_hash.is_some(),
+            restart_required: configured_hash != self.active_device_certificate_hash,
+            custom_certificate_available: custom.is_some(),
+            sans: custom.map(|custom| custom.sans.clone()).unwrap_or_default(),
+            created_at: custom.map(|custom| custom.created_at),
+            ca_expires_at: custom.map(|custom| custom.ca_expires_at),
+            leaf_expires_at: custom.map(|custom| custom.leaf_expires_at),
+        }
+    }
+
+    pub fn device_name(&self) -> Option<String> {
+        self.framework.borrow().device_name.clone()
+    }
+
+    pub fn device_ip(&self) -> Option<String> {
+        self.framework.borrow().stack.config_v4().map(|config| config.address.address().to_string())
+    }
+
+    pub fn create_device_certificate(&mut self, request: DeviceCertificateGenerationRequest) -> Result<(), String> {
+        let sans = normalize_certificate_sans(request.sans)?;
+        let leaf_subject = leaf_subject_from_sans(&sans);
+        let generated = certgen::generate_ca_and_leaf(
+            DEFAULT_CA_SUBJECT,
+            &CertificateValidity {
+                not_before: &request.ca_not_before,
+                not_after: &request.ca_not_after,
+            },
+            &leaf_subject,
+            &CertificateValidity {
+                not_before: &request.leaf_not_before,
+                not_after: &request.leaf_not_after,
+            },
+            &sans,
+        )
+        .map_err(|e| format!("Failed to create certificate: {e}"))?;
+
+        let next_device_certificate_config = DeviceCertificateConfig {
+            enabled: true,
+            custom: Some(StoredDeviceCertificate {
+                ca_subject: DEFAULT_CA_SUBJECT.to_string(),
+                ca_key_pem: generated.ca_key_pem,
+                ca_cert_pem: generated.ca_cert_pem,
+                leaf_key_pem: generated.leaf_key_pem,
+                leaf_cert_pem: generated.leaf_cert_pem,
+                sans,
+                created_at: request.created_at,
+                ca_expires_at: request.ca_expires_at,
+                leaf_expires_at: request.leaf_expires_at,
+            }),
+        };
+        self.persist_device_certificate_config(&next_device_certificate_config)
+            .map_err(|e| format!("Failed to store certificate: {e:?}"))?;
+        self.device_certificate_config = next_device_certificate_config;
+        Ok(())
+    }
+
+    pub fn update_device_certificate_leaf(&mut self, request: DeviceCertificateLeafRequest) -> Result<(), String> {
+        let sans = normalize_certificate_sans(request.sans)?;
+        let custom = self
+            .device_certificate_config
+            .custom
+            .as_ref()
+            .ok_or_else(|| "Create a custom certificate before updating names/IPs".to_string())?;
+        let leaf_subject = leaf_subject_from_sans(&sans);
+        let leaf = certgen::issue_leaf_from_existing_ca(
+            &custom.ca_key_pem,
+            &custom.ca_subject,
+            &leaf_subject,
+            &CertificateValidity {
+                not_before: &request.leaf_not_before,
+                not_after: &request.leaf_not_after,
+            },
+            &sans,
+        )
+        .map_err(|e| format!("Failed to update certificate: {e}"))?;
+
+        let mut next_custom = custom.clone();
+        next_custom.leaf_key_pem = leaf.leaf_key_pem;
+        next_custom.leaf_cert_pem = leaf.leaf_cert_pem;
+        next_custom.sans = sans;
+        next_custom.created_at = request.created_at;
+        next_custom.leaf_expires_at = request.leaf_expires_at;
+
+        let next_device_certificate_config = DeviceCertificateConfig {
+            enabled: true,
+            custom: Some(next_custom),
+        };
+        self.persist_device_certificate_config(&next_device_certificate_config)
+            .map_err(|e| format!("Failed to store certificate: {e:?}"))?;
+        self.device_certificate_config = next_device_certificate_config;
+        Ok(())
+    }
+
+    pub fn set_device_certificate_enabled(&mut self, enabled: bool) -> Result<(), String> {
+        if enabled && self.device_certificate_config.custom.is_none() {
+            return Err("Create a custom certificate before switching to it".to_string());
+        }
+        let mut next_device_certificate_config = self.device_certificate_config.clone();
+        next_device_certificate_config.enabled = enabled;
+        self.persist_device_certificate_config(&next_device_certificate_config)
+            .map_err(|e| format!("Failed to update certificate mode: {e:?}"))?;
+        self.device_certificate_config = next_device_certificate_config;
+        Ok(())
+    }
+
+    pub fn delete_device_certificate(&mut self) -> Result<(), String> {
+        let next_device_certificate_config = DeviceCertificateConfig::default();
+        self.persist_device_certificate_config(&next_device_certificate_config)
+            .map_err(|e| format!("Failed to delete certificate: {e:?}"))?;
+        self.device_certificate_config = next_device_certificate_config;
+        Ok(())
+    }
+
+    pub fn device_ca_cert_pem(&self) -> Option<String> {
+        self.device_certificate_config.custom.as_ref().map(|custom| custom.ca_cert_pem.clone())
     }
 
     pub fn _set_redirect_web_to_config(&mut self) {

@@ -37,8 +37,9 @@ use serde::{Deserialize, Serialize};
 use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::app_config::{
-    AiProviderAvailability, AiProviderId, ApiTokenMetadata, AppConfig, BambuPrinterConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES,
-    FakePrinterConfig, PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
+    AiProviderAvailability, AiProviderId, ApiTokenMetadata, AppConfig, BambuPrinterConfig, DefaultPrinterConfig, DeviceCertificateLeafRequest,
+    DeviceCertificateGenerationRequest, DeviceCertificateStatus, FILAMENT_BRAND_NAMES, FakePrinterConfig, PrinterConfig, PrinterDriverConfig,
+    PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
 };
 use crate::bambu::bambu_api::PrintCommand;
 use crate::bambu::calibration::KInfo;
@@ -194,6 +195,9 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     let borrowed_app_config = state.0.app_config.borrow();
                     ConsoleInfoResponse {
                         ai_providers: borrowed_app_config.ai_provider_key_availability(),
+                        device_name: borrowed_app_config.device_name(),
+                        device_ip: borrowed_app_config.device_ip(),
+                        device_certificate: borrowed_app_config.device_certificate_status(),
                         console_errors: state.0.store.console_errors(),
                     }
                     .encrypt(&key.borrow())
@@ -341,6 +345,64 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     })
                 },
             ),
+        );
+
+        let router = router.route(
+            "/api/device-certificate/create",
+            post(
+                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, create_certificate: CreateDeviceCertificateDTO| {
+                    ready(match state.0.app_config.borrow_mut().create_device_certificate(create_certificate.into()) {
+                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+                    })
+                },
+            ),
+        );
+
+        let router = router.route(
+            "/api/device-certificate/update-leaf",
+            post(
+                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, update_certificate: UpdateDeviceCertificateLeafDTO| {
+                    ready(match state.0.app_config.borrow_mut().update_device_certificate_leaf(update_certificate.into()) {
+                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+                    })
+                },
+            ),
+        );
+
+        let router = router.route(
+            "/api/device-certificate/set-enabled",
+            post(
+                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, set_enabled: SetDeviceCertificateEnabledDTO| {
+                    ready(match state.0.app_config.borrow_mut().set_device_certificate_enabled(set_enabled.enabled) {
+                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+                    })
+                },
+            ),
+        );
+
+        let router = router.route(
+            "/api/device-certificate/delete",
+            post(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
+                ready(match state.0.app_config.borrow_mut().delete_device_certificate() {
+                    Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                    Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+                })
+            }),
+        );
+
+        let router = router.route(
+            "/api/device-certificate/ca-cert",
+            get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
+                ready(
+                    DeviceCertificateCaCertResponse {
+                        ca_cert_pem: state.0.app_config.borrow().device_ca_cert_pem(),
+                    }
+                    .encrypt(&key.borrow()),
+                )
+            }),
         );
 
         let router = router.route(
@@ -1543,8 +1605,72 @@ pub struct DeleteApiTokenDTO {
 encrypted_input!(DeleteApiTokenDTO);
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct CreateDeviceCertificateDTO {
+    sans: Vec<String>,
+    created_at: i32,
+    ca_not_before: String,
+    ca_not_after: String,
+    ca_expires_at: i32,
+    leaf_not_before: String,
+    leaf_not_after: String,
+    leaf_expires_at: i32,
+}
+encrypted_input!(CreateDeviceCertificateDTO);
+
+impl From<CreateDeviceCertificateDTO> for DeviceCertificateGenerationRequest {
+    fn from(v: CreateDeviceCertificateDTO) -> Self {
+        Self {
+            sans: v.sans,
+            created_at: v.created_at,
+            ca_not_before: v.ca_not_before,
+            ca_not_after: v.ca_not_after,
+            ca_expires_at: v.ca_expires_at,
+            leaf_not_before: v.leaf_not_before,
+            leaf_not_after: v.leaf_not_after,
+            leaf_expires_at: v.leaf_expires_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateDeviceCertificateLeafDTO {
+    sans: Vec<String>,
+    created_at: i32,
+    leaf_not_before: String,
+    leaf_not_after: String,
+    leaf_expires_at: i32,
+}
+encrypted_input!(UpdateDeviceCertificateLeafDTO);
+
+impl From<UpdateDeviceCertificateLeafDTO> for DeviceCertificateLeafRequest {
+    fn from(v: UpdateDeviceCertificateLeafDTO) -> Self {
+        Self {
+            sans: v.sans,
+            created_at: v.created_at,
+            leaf_not_before: v.leaf_not_before,
+            leaf_not_after: v.leaf_not_after,
+            leaf_expires_at: v.leaf_expires_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetDeviceCertificateEnabledDTO {
+    enabled: bool,
+}
+encrypted_input!(SetDeviceCertificateEnabledDTO);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceCertificateCaCertResponse {
+    ca_cert_pem: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ConsoleInfoResponse {
     ai_providers: Vec<AiProviderAvailability>,
+    device_name: Option<String>,
+    device_ip: Option<String>,
+    device_certificate: DeviceCertificateStatus,
     console_errors: Vec<String>,
 }
 
