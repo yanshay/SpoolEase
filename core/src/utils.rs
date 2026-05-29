@@ -3,6 +3,11 @@ use alloc::{
     vec::Vec,
 };
 use serde::{Deserialize, Deserializer, Serializer};
+use sha2::{Digest, Sha256};
+
+pub fn sha256_hex(data: &[u8]) -> String {
+    hex::encode(Sha256::digest(data))
+}
 
 pub fn serialize_string_array<S>(values: &[String], serializer: S) -> Result<S::Ok, S::Error>
 where

@@ -556,7 +556,7 @@ async fn main(spawner: Spawner) {
         spawner.spawn_heap(web_server_task(web_server_runner, id)).unwrap();
     }
 
-    let api_server = api_server::init_api_server(framework.clone(), spawner);
+    let api_server = api_server::init_api_server(framework.clone(), app_config.clone(), spawner);
 
     // yields for term initialization to complete until term is fixed to not require this
     yield_now().await;

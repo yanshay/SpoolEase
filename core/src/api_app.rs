@@ -1,15 +1,64 @@
 use core::future::ready;
 
 use alloc::{string::String, string::ToString};
-use picoserve::routing::get;
+use picoserve::{
+    ResponseSent,
+    io::Read,
+    request::RequestParts,
+    response::{IntoResponse, ResponseWriter, StatusCode},
+    routing::{Layer, Next, get},
+};
 
 use crate::api_server::ApiServerState;
 
 pub fn build_app() -> picoserve::Router<impl picoserve::routing::PathRouter<ApiServerState>, ApiServerState> {
-    picoserve::Router::new().route(
-        "/api/hello",
-        get(|| ready(JsonStringResponse::new(r#"{"message":"hello from ApiServer"}"#.to_string()))),
-    )
+    picoserve::Router::new()
+        .route(
+            "/api/hello",
+            get(|| ready(JsonStringResponse::new(r#"{"message":"hello from ApiServer"}"#.to_string()))),
+        )
+        .layer(ApiTokenAuthLayer)
+}
+
+struct ApiTokenAuthLayer;
+
+impl<PathParameters> Layer<ApiServerState, PathParameters> for ApiTokenAuthLayer {
+    type NextPathParameters = PathParameters;
+    type NextState = ApiServerState;
+
+    async fn call_layer<'a, R: Read + 'a, NextLayer: Next<'a, R, Self::NextState, Self::NextPathParameters>, W: ResponseWriter<Error = R::Error>>(
+        &self,
+        next: NextLayer,
+        state: &ApiServerState,
+        path_parameters: PathParameters,
+        request_parts: RequestParts<'_>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        let authorized_token_name = bearer_token_from_parts(&request_parts).and_then(|token| state.app_config.borrow().verify_api_token(token));
+
+        if authorized_token_name.is_some() {
+            return next.run(state, path_parameters, response_writer).await;
+        }
+
+        (
+            StatusCode::UNAUTHORIZED,
+            ("WWW-Authenticate", "Bearer realm=\"SpoolEase API\""),
+            JsonStringResponse::new(r#"{"error":"unauthorized"}"#.to_string()),
+        )
+            .write_to(next.into_connection().await?, response_writer)
+            .await
+    }
+}
+
+fn bearer_token_from_parts<'r>(request_parts: &RequestParts<'r>) -> Option<&'r str> {
+    request_parts
+        .headers()
+        .get("authorization")
+        .and_then(|value| value.as_str().ok())
+        .map(str::trim)
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
 }
 
 struct JsonStringResponse {

@@ -15,6 +15,7 @@ use picoserve::{AppRouter, AppWithStateBuilder};
 
 use crate::{
     api_app,
+    app_config::AppConfig,
     settings::{API_SERVER_HTTPS, API_SERVER_NUM_LISTENERS, API_SERVER_PORT, API_SERVER_TLS_CERTIFICATE, API_SERVER_TLS_PRIVATE_KEY},
 };
 
@@ -25,6 +26,7 @@ type ApiServerRunner = GenericRunner<ApiServerAppBuilder, ApiServerState>;
 pub struct ApiServerState {
     #[allow(dead_code)]
     pub framework: Rc<RefCell<Framework>>,
+    pub app_config: Rc<RefCell<AppConfig>>,
 }
 
 pub struct ApiServerAppBuilder;
@@ -53,7 +55,7 @@ impl ApiServerHandle {
     }
 }
 
-pub fn init_api_server(framework: Rc<RefCell<Framework>>, spawner: Spawner) -> &'static ApiServerHandle {
+pub fn init_api_server(framework: Rc<RefCell<Framework>>, app_config: Rc<RefCell<AppConfig>>, spawner: Spawner) -> &'static ApiServerHandle {
     let api_server_builder = ApiServerAppBuilder;
 
     let api_server_router = mk_static!(AppRouter<ApiServerAppBuilder>, AppWithStateBuilder::build_app(api_server_builder));
@@ -62,6 +64,7 @@ pub fn init_api_server(framework: Rc<RefCell<Framework>>, spawner: Spawner) -> &
         ApiServerState,
         ApiServerState {
             framework: framework.clone(),
+            app_config: app_config.clone(),
         }
     );
 

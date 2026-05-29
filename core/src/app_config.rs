@@ -6,6 +6,8 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use derivative::Derivative;
 use embassy_net::Ipv4Address;
 use serde::{Deserialize, Deserializer, Serializer};
@@ -14,6 +16,7 @@ use framework::prelude::*;
 use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::printer::{PrinterDriverKind, PrinterId};
+use crate::utils::sha256_hex;
 
 pub const SPOOLS_CATALOG: &str = include_str!("../data/Spool-Core-Weights.csv");
 pub const BASE_FILAMENTS: &str = include_str!("../data/base-filaments-index.csv");
@@ -29,6 +32,55 @@ const SCALE_CONFIG_KEY: &str = "_scale_"; // for backwards compatibility
 const USER_CORES_CONFIG_KEY: &str = "user_cores";
 const CUSTOM_FILAMENTS_CONFIG_KEY: &str = "custom_filaments";
 const AI_PROVIDERS_CONFIG_KEY: &str = "ai_providers";
+const API_TOKENS_CONFIG_KEY: &str = "api_tokens";
+
+pub const API_TOKEN_NAME_MAX_LEN: usize = 32;
+const API_TOKEN_PREFIX: &str = "spe_api_v1";
+const API_TOKEN_ID_BYTES: usize = 8;
+const API_TOKEN_SECRET_BYTES: usize = 32;
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct ApiTokensConfig {
+    #[serde(default)]
+    tokens: Vec<ApiTokenRecord>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+struct ApiTokenRecord {
+    id: String,
+    name: String,
+    token_hash: String,
+    created_at: i32,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct ApiTokenMetadata {
+    pub id: String,
+    pub name: String,
+    pub created_at: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GeneratedApiToken {
+    pub token: String,
+    pub metadata: ApiTokenMetadata,
+}
+
+impl From<&ApiTokenRecord> for ApiTokenMetadata {
+    fn from(v: &ApiTokenRecord) -> Self {
+        Self {
+            id: v.id.clone(),
+            name: v.name.clone(),
+            created_at: v.created_at,
+        }
+    }
+}
+
+fn random_base64url<const N: usize>() -> Result<String, String> {
+    let mut bytes = [0u8; N];
+    getrandom::getrandom(&mut bytes).map_err(|e| format!("Random token generation failed: {e:?}"))?;
+    Ok(URL_SAFE_NO_PAD.encode(bytes))
+}
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
 pub enum AiProviderId {
@@ -285,7 +337,6 @@ impl From<LegacyPrinterConfig> for PrinterConfig {
                 },
             ),
             PrinterDriverKind::Fake => Self::fake(v.name, FakePrinterConfig::default()),
-            _ => Self::default(),
         }
     }
 }
@@ -352,6 +403,7 @@ pub struct AppConfig {
     // pub previously_used_cores: Option<String>,
     pub custom_filaments: Option<String>,
     pub ai_providers_config: AiProvidersConfig,
+    pub api_tokens_config: ApiTokensConfig,
     pub root_redirect: String,
 }
 
@@ -415,6 +467,7 @@ impl AppConfig {
             // previously_used_cores: None,
             custom_filaments: None,
             ai_providers_config: AiProvidersConfig::default(),
+            api_tokens_config: ApiTokensConfig::default(),
             root_redirect: "/config".to_string(),
         }
     }
@@ -474,6 +527,13 @@ impl AppConfig {
             && let Ok(ai_providers_config) = serde_json::from_str::<AiProvidersConfig>(&ai_providers_store)
         {
             self.ai_providers_config = ai_providers_config;
+        }
+
+        let config = self.framework.borrow_mut().fetch(String::from(API_TOKENS_CONFIG_KEY));
+        if let Ok(Some(api_tokens_store)) = config
+            && let Ok(api_tokens_config) = serde_json::from_str::<ApiTokensConfig>(&api_tokens_store)
+        {
+            self.api_tokens_config = api_tokens_config;
         }
 
         let config = self.framework.borrow_mut().fetch(String::from(SCALE_CONFIG_KEY));
@@ -752,6 +812,97 @@ impl AppConfig {
                 provider,
             })
             .collect()
+    }
+
+    fn persist_api_tokens_config(
+        &self,
+        api_tokens_config: &ApiTokensConfig,
+    ) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        if api_tokens_config.tokens.is_empty() {
+            self.framework.borrow().remove(API_TOKENS_CONFIG_KEY.to_string())?;
+        } else {
+            let api_tokens_store = serde_json::to_string(api_tokens_config).unwrap();
+            self.framework.borrow().store(API_TOKENS_CONFIG_KEY.to_string(), api_tokens_store)?;
+        }
+        Ok(())
+    }
+
+    pub fn list_api_tokens(&self) -> Vec<ApiTokenMetadata> {
+        self.api_tokens_config.tokens.iter().map(ApiTokenMetadata::from).collect()
+    }
+
+    pub fn create_api_token(&mut self, name: String, created_at: i32) -> Result<GeneratedApiToken, String> {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return Err("API token name is required".to_string());
+        }
+        if name.chars().count() > API_TOKEN_NAME_MAX_LEN {
+            return Err(format!("API token name must be {API_TOKEN_NAME_MAX_LEN} characters or less"));
+        }
+
+        for _ in 0..8 {
+            let id = random_base64url::<API_TOKEN_ID_BYTES>()?;
+            if self.api_tokens_config.tokens.iter().any(|token| token.id == id) {
+                continue;
+            }
+
+            let secret = random_base64url::<API_TOKEN_SECRET_BYTES>()?;
+            let token = format!("{API_TOKEN_PREFIX}.{id}.{secret}");
+            let record = ApiTokenRecord {
+                id,
+                name: name.clone(),
+                token_hash: sha256_hex(token.as_bytes()),
+                created_at,
+            };
+            let metadata = ApiTokenMetadata::from(&record);
+
+            let mut next_api_tokens_config = self.api_tokens_config.clone();
+            next_api_tokens_config.tokens.push(record);
+            self.persist_api_tokens_config(&next_api_tokens_config)
+                .map_err(|e| format!("Failed to store API token: {e:?}"))?;
+            self.api_tokens_config = next_api_tokens_config;
+
+            return Ok(GeneratedApiToken { token, metadata });
+        }
+
+        Err("Failed to generate a unique API token ID".to_string())
+    }
+
+    pub fn delete_api_token(&mut self, id: String) -> Result<bool, String> {
+        let id = id.trim();
+        if id.is_empty() {
+            return Ok(false);
+        }
+
+        let mut next_api_tokens_config = self.api_tokens_config.clone();
+        let orig_num_tokens = next_api_tokens_config.tokens.len();
+        next_api_tokens_config.tokens.retain(|token| token.id != id);
+        if next_api_tokens_config.tokens.len() == orig_num_tokens {
+            return Ok(false);
+        }
+
+        self.persist_api_tokens_config(&next_api_tokens_config)
+            .map_err(|e| format!("Failed to delete API token: {e:?}"))?;
+        self.api_tokens_config = next_api_tokens_config;
+        Ok(true)
+    }
+
+    pub fn verify_api_token(&self, token: &str) -> Option<String> {
+        let token = token.trim();
+        let mut parts = token.split('.');
+        let prefix = parts.next()?;
+        let id = parts.next()?;
+        let secret = parts.next()?;
+        if parts.next().is_some() || prefix != API_TOKEN_PREFIX || id.is_empty() || secret.is_empty() {
+            return None;
+        }
+
+        let presented_hash = sha256_hex(token.as_bytes());
+        self.api_tokens_config
+            .tokens
+            .iter()
+            .find(|stored_token| stored_token.id == id && stored_token.token_hash == presented_hash)
+            .map(|stored_token| stored_token.name.clone())
     }
 
     pub fn _set_redirect_web_to_config(&mut self) {

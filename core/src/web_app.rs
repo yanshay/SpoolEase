@@ -34,18 +34,18 @@ use framework::{
 };
 use framework_macros::include_bytes_gz;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::app_config::{
-    AiProviderAvailability, AiProviderId, AppConfig, BambuPrinterConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES, FakePrinterConfig,
-    PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
+    AiProviderAvailability, AiProviderId, ApiTokenMetadata, AppConfig, BambuPrinterConfig, DefaultPrinterConfig, FILAMENT_BRAND_NAMES,
+    FakePrinterConfig, PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
 };
 use crate::bambu::bambu_api::PrintCommand;
 use crate::bambu::calibration::KInfo;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
 use crate::store::{BackupMeta, FileMeta, Store};
+use crate::utils::sha256_hex;
 use crate::view_model::{PrinterInfo, ViewModel};
 
 #[derive(Clone)]
@@ -287,6 +287,58 @@ impl AppWithStateBuilder for NestedAppBuilder {
                             .encrypt(&key.borrow()),
                         },
                     )
+                },
+            ),
+        );
+
+        let router = router.route(
+            "/api/api-tokens",
+            get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
+                ready({
+                    ApiTokensResponse {
+                        tokens: state.0.app_config.borrow().list_api_tokens(),
+                    }
+                    .encrypt(&key.borrow())
+                })
+            }),
+        );
+
+        let router = router.route(
+            "/api/api-tokens/create",
+            post(
+                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, create_api_token: CreateApiTokenDTO| {
+                    ready({
+                        match state
+                            .0
+                            .app_config
+                            .borrow_mut()
+                            .create_api_token(create_api_token.name, create_api_token.created_at)
+                        {
+                            Ok(generated_token) => CreateApiTokenResponse {
+                                token: Some(generated_token.token),
+                                token_metadata: Some(generated_token.metadata),
+                                error_text: None,
+                            },
+                            Err(err) => CreateApiTokenResponse {
+                                token: None,
+                                token_metadata: None,
+                                error_text: Some(err),
+                            },
+                        }
+                        .encrypt(&key.borrow())
+                    })
+                },
+            ),
+        );
+
+        let router = router.route(
+            "/api/api-tokens/delete",
+            post(
+                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, delete_api_token: DeleteApiTokenDTO| {
+                    ready(match state.0.app_config.borrow_mut().delete_api_token(delete_api_token.id) {
+                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+                    })
                 },
             ),
         );
@@ -909,21 +961,6 @@ async fn cleanup_restore_upload_temp(framework: &Rc<RefCell<Framework>>) {
     let _ = file_store.delete_file("/store.bak").await;
 }
 
-fn sha256_hex(data: &[u8]) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    let digest = hasher.finalize();
-
-    let mut out = String::with_capacity(64);
-    for byte in digest {
-        let hi = (byte >> 4) & 0x0f;
-        let lo = byte & 0x0f;
-        out.push((if hi < 10 { b'0' + hi } else { b'a' + (hi - 10) }) as char);
-        out.push((if lo < 10 { b'0' + lo } else { b'a' + (lo - 10) }) as char);
-    }
-    out
-}
-
 fn parse_sha256_header(mut raw_sha: String) -> Result<String, String> {
     raw_sha = raw_sha.trim().to_ascii_lowercase();
     if raw_sha.len() != 64 {
@@ -1479,6 +1516,31 @@ pub struct GetAiProviderApiKeyResponse {
     provider: AiProviderId,
     api_key: Option<String>,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiTokensResponse {
+    tokens: Vec<ApiTokenMetadata>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateApiTokenDTO {
+    name: String,
+    created_at: i32,
+}
+encrypted_input!(CreateApiTokenDTO);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateApiTokenResponse {
+    token: Option<String>,
+    token_metadata: Option<ApiTokenMetadata>,
+    error_text: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteApiTokenDTO {
+    id: String,
+}
+encrypted_input!(DeleteApiTokenDTO);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ConsoleInfoResponse {
