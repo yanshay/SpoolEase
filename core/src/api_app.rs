@@ -3,6 +3,7 @@ use core::future::ready;
 use alloc::{string::String, string::ToString};
 use picoserve::{
     ResponseSent,
+    extract::State,
     io::Read,
     request::RequestParts,
     response::{IntoResponse, ResponseWriter, StatusCode},
@@ -16,6 +17,16 @@ pub fn build_app() -> picoserve::Router<impl picoserve::routing::PathRouter<ApiS
         .route(
             "/api/hello",
             get(|| ready(JsonStringResponse::new(r#"{"message":"hello from ApiServer"}"#.to_string()))),
+        )
+        .route(
+            "/api/internal/printers/slots",
+            get(|state: State<ApiServerState>| {
+                ready({
+                    let response = state.0.view_model.borrow().get_api_printer_slots();
+                    let json = serde_json::to_string(&response).unwrap_or_else(|_| r#"{"error":"serialization_failed"}"#.to_string());
+                    JsonStringResponse::new(json)
+                })
+            }),
         )
         .layer(ApiTokenAuthLayer)
 }

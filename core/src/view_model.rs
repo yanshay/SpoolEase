@@ -32,6 +32,7 @@ use framework::{
     terminal::{self, TerminalObserver, term_mut},
 };
 
+use crate::api_types::{ApiPrinterSlot, ApiPrinterSlotGroup, ApiPrinterSlotsPrinter, ApiPrinterSlotsResponse};
 use crate::app::{UiFilament, UiSlot, UiSlotDisplay, UiSlotGroup, UiSlotGroupKind, UiSlotState, UiSpoolRecord, UiSpoolRecordDisplay};
 use crate::app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, BambuPrinterConfig, FILAMENT_BRAND_NAMES, MATERIALS, PrinterDriverConfig};
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
@@ -1322,7 +1323,7 @@ impl ViewModel {
 
     fn ui_slot_group_kind(kind: printer_domain::SlotGroupKind) -> UiSlotGroupKind {
         match kind {
-            printer_domain::SlotGroupKind::InternalChanger => UiSlotGroupKind::InternalChanger,
+            printer_domain::SlotGroupKind::Mms => UiSlotGroupKind::InternalChanger,
             printer_domain::SlotGroupKind::External => UiSlotGroupKind::External,
             printer_domain::SlotGroupKind::Virtual => UiSlotGroupKind::Virtual,
             printer_domain::SlotGroupKind::Other => UiSlotGroupKind::Other,
@@ -3054,6 +3055,43 @@ impl ViewModel {
         locations
     }
 
+    pub fn get_api_printer_slots(&self) -> ApiPrinterSlotsResponse {
+        let printer_manager = self.printer_manager.borrow();
+        let printers = (0..printer_manager.len())
+            .filter_map(|printer_index| {
+                let snapshot = printer_manager.snapshot_at(printer_index)?;
+                let slot_groups = snapshot
+                    .slot_groups
+                    .iter()
+                    .map(|group| ApiPrinterSlotGroup {
+                        id: group.id.clone(),
+                        native_id: group.native_id.clone(),
+                        kind: group.kind,
+                        slots: group
+                            .slots
+                            .iter()
+                            .map(|slot| ApiPrinterSlot {
+                                id: slot.id.as_str().to_string(),
+                                native_id: slot.native_id.clone(),
+                                spool_id: slot.spool_id.clone(),
+                                weight_net: self.weight_left_snapshot(slot).filter(|weight| weight.is_finite()),
+                            })
+                            .collect(),
+                    })
+                    .collect();
+
+                Some(ApiPrinterSlotsPrinter {
+                    id: snapshot.id.0,
+                    native_id: snapshot.native_id,
+                    kind: snapshot.kind,
+                    slot_groups,
+                })
+            })
+            .collect();
+
+        ApiPrinterSlotsResponse { printers }
+    }
+
     pub fn get_printers_filament_pa(&self, filament_id: &str) -> Vec<(String, String, u32, Vec<BambuPressureAdvanceEntry>)> {
         let printer_manager = self.printer_manager.borrow();
         let mut printers = Vec::new();
@@ -3072,11 +3110,11 @@ impl ViewModel {
             ) {
                 Ok(DriverSpecificQueryResult::Bambu(BambuDriverQueryResult::PressureAdvanceEntries(entries))) => entries,
                 Err(err) => {
-                    error!("Failed to query Bambu pressure advance entries for {}: {err:?}", snapshot.identifier);
+                    error!("Failed to query Bambu pressure advance entries for {}: {err:?}", snapshot.native_id);
                     Vec::new()
                 }
             };
-            printers.push((snapshot.identifier, snapshot.name, snapshot.num_extruders, entries));
+            printers.push((snapshot.native_id, snapshot.name, snapshot.num_extruders, entries));
         }
         printers
     }
@@ -3108,7 +3146,7 @@ impl ViewModel {
             let printer_manager = self.printer_manager.borrow();
             (0..printer_manager.len()).find_map(|printer_index| {
                 let snapshot = printer_manager.snapshot_at(printer_index)?;
-                (snapshot.kind == printer_domain::PrinterDriverKind::Bambu && snapshot.identifier == printer_serial).then_some(snapshot.id)
+                (snapshot.kind == printer_domain::PrinterDriverKind::Bambu && snapshot.native_id == printer_serial).then_some(snapshot.id)
             })
         }
         .ok_or_else(|| "Printer not found".to_string())?;
@@ -3180,19 +3218,19 @@ impl ViewModel {
         };
 
         for snapshot in snapshots {
-            let identifier = snapshot.identifier.clone();
+            let native_id = snapshot.native_id.clone();
 
             let slots_sets = self.slot_sets_from_snapshot(&snapshot);
             let slot_set_display_groups = Self::slot_set_display_groups_from_snapshot(&snapshot);
             let internal_changer_count = snapshot
                 .slot_groups
                 .iter()
-                .filter(|group| group.kind == printer_domain::SlotGroupKind::InternalChanger)
+                .filter(|group| group.kind == printer_domain::SlotGroupKind::Mms)
                 .count() as u32;
 
             let printer_info = PrinterInfo {
                 printer_name: snapshot.name.clone(),
-                printer_serial: identifier,
+                printer_serial: native_id,
                 connected: snapshot.connected,
                 num_ams: Some(internal_changer_count),
                 print_state: Self::print_state_from_snapshot(snapshot.print.state),
@@ -3356,7 +3394,7 @@ impl ViewModel {
 
     fn legacy_slot_group_kind(kind: printer_domain::SlotGroupKind) -> SpoolsSlotsKind {
         match kind {
-            printer_domain::SlotGroupKind::InternalChanger => SpoolsSlotsKind::Ams,
+            printer_domain::SlotGroupKind::Mms => SpoolsSlotsKind::Ams,
             _ => SpoolsSlotsKind::Ext,
         }
     }

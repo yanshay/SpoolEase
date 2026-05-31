@@ -113,7 +113,7 @@ impl BambuPrinterDriver {
         PrinterSnapshot {
             id: BambuPrinterConfig::printer_id_for_serial(&printer.printer_serial),
             kind: PrinterDriverKind::Bambu,
-            identifier: printer.printer_serial.clone(),
+            native_id: printer.printer_serial.clone(),
             name: printer.printer_name().clone(),
             connected: printer.printer_connectivity_ok.unwrap_or_default(),
             num_extruders: printer.num_extruders(),
@@ -293,9 +293,10 @@ impl BambuPrinterDriver {
 
                 groups.push(SlotGroupSnapshot {
                     id: format!("bambu:group:{ams_index}"),
+                    native_id: Some(Self::slot_group_native_id_from_ams_index(ams_index)),
                     name: printer.ams_name(ams_index as usize),
                     short_name: printer.ams_name(ams_index as usize),
-                    kind: SlotGroupKind::InternalChanger,
+                    kind: SlotGroupKind::Mms,
                     driver_info: SlotGroupDriverInfo::Bambu(BambuSlotGroupInfo {
                         ams_type: ams_info.map(|info| info.ams_type.clone()).unwrap_or_default(),
                         bound_extruders: ams_info.map(|info| info.bound_extruders.clone()).unwrap_or_default(),
@@ -318,6 +319,7 @@ impl BambuPrinterDriver {
     fn external_group(printer: &BambuPrinter, tray_id: i32, extruder: u32) -> SlotGroupSnapshot {
         SlotGroupSnapshot {
             id: format!("bambu:external:{tray_id}"),
+            native_id: Some(tray_id.to_string()),
             name: Self::external_group_name(printer, extruder),
             short_name: Self::external_group_short_name(printer, extruder),
             kind: SlotGroupKind::External,
@@ -447,6 +449,7 @@ impl BambuPrinterDriver {
         let (pressure_advance_value, pressure_advance_meta) = Self::pressure_advance_from_tray(printer, tray_id, tray);
         MaterialSlotSnapshot {
             id: Self::slot_id_from_tray_id(tray_id),
+            native_id: Some(Self::slot_native_id_from_tray_id(tray_id)),
             display_name: printer.full_slot_description(tray_id),
             short_name: Self::slot_short_name_from_tray_id(tray_id),
             state: Self::slot_state_from_bambu(tray.state),
@@ -526,6 +529,22 @@ impl BambuPrinterDriver {
             ams_exist_bits >>= 1;
         }
         ams_ids
+    }
+
+    fn slot_group_native_id_from_ams_index(ams_index: i32) -> String {
+        if ams_index <= 3 {
+            ams_index.to_string()
+        } else {
+            (128 + (ams_index - 4)).to_string()
+        }
+    }
+
+    fn slot_native_id_from_tray_id(tray_id: i32) -> String {
+        match tray_id {
+            0..=15 => (tray_id % 4).to_string(),
+            16..=23 | 254 | 255 => "0".to_string(),
+            _ => tray_id.to_string(),
+        }
     }
 
     fn slot_id_from_tray_id(tray_id: i32) -> SlotId {

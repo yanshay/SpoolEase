@@ -11,6 +11,7 @@
 
 mod api_app;
 mod api_server;
+mod api_types;
 mod app;
 mod app_config;
 mod app_ota;
@@ -560,7 +561,14 @@ async fn main(spawner: Spawner) {
     let (api_tls_certificate, api_tls_private_key) = app_config
         .borrow_mut()
         .api_tls_certificate_and_key(settings::API_SERVER_TLS_CERTIFICATE, settings::API_SERVER_TLS_PRIVATE_KEY);
-    let api_server = api_server::init_api_server(framework.clone(), app_config.clone(), spawner, api_tls_certificate, api_tls_private_key);
+    let api_server = api_server::init_api_server(
+        framework.clone(),
+        app_config.clone(),
+        view_model.clone(),
+        spawner,
+        api_tls_certificate,
+        api_tls_private_key,
+    );
 
     // yields for term initialization to complete until term is fixed to not require this
     yield_now().await;

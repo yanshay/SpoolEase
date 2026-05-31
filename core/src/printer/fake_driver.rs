@@ -49,6 +49,7 @@ impl FakePrinterRuntime {
         let slots = (0..slot_count)
             .map(|index| MaterialSlotSnapshot {
                 id: SlotId::new(format!("fake:{index}")),
+                native_id: Some(index.to_string()),
                 display_name: format!("Slot {}", index + 1),
                 short_name: format!("Slot {}", index + 1),
                 state: SlotState::Empty,
@@ -66,7 +67,7 @@ impl FakePrinterRuntime {
         let snapshot = PrinterSnapshot {
             id: id.clone(),
             kind: PrinterDriverKind::Fake,
-            identifier: config.unique_id.clone(),
+            native_id: config.unique_id.clone(),
             name: display_name.clone(),
             connected: true,
             num_extruders: 1,
@@ -75,6 +76,7 @@ impl FakePrinterRuntime {
             system_error_codes: Vec::new(),
             slot_groups: alloc::vec![SlotGroupSnapshot {
                 id: "fake:slots".into(),
+                native_id: Some("slots".into()),
                 name: "Fake Slots".into(),
                 short_name: "Fake".into(),
                 kind: SlotGroupKind::Virtual,

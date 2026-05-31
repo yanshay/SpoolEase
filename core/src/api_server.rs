@@ -17,6 +17,7 @@ use crate::{
     api_app,
     app_config::AppConfig,
     settings::{API_SERVER_HTTPS, API_SERVER_NUM_LISTENERS, API_SERVER_PORT},
+    view_model::ViewModel,
 };
 
 pub type ApiServerCommands = WebServerCommands;
@@ -27,6 +28,7 @@ pub struct ApiServerState {
     #[allow(dead_code)]
     pub framework: Rc<RefCell<Framework>>,
     pub app_config: Rc<RefCell<AppConfig>>,
+    pub view_model: Rc<RefCell<ViewModel>>,
 }
 
 pub struct ApiServerAppBuilder;
@@ -58,6 +60,7 @@ impl ApiServerHandle {
 pub fn init_api_server(
     framework: Rc<RefCell<Framework>>,
     app_config: Rc<RefCell<AppConfig>>,
+    view_model: Rc<RefCell<ViewModel>>,
     spawner: Spawner,
     tls_certificate: &'static str,
     tls_private_key: &'static str,
@@ -71,6 +74,7 @@ pub fn init_api_server(
         ApiServerState {
             framework: framework.clone(),
             app_config: app_config.clone(),
+            view_model: view_model.clone(),
         }
     );
 

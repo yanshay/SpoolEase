@@ -73,8 +73,8 @@ pub struct PrinterCapabilities {
 pub struct PrinterSnapshot {
     pub id: PrinterId,
     pub kind: PrinterDriverKind,
-    #[serde(default)]
-    pub identifier: String,
+    #[serde(default, alias = "identifier")]
+    pub native_id: String, // Driver-specific printer ID; reads legacy persisted `identifier`.
     pub name: String,
     pub connected: bool,
     pub num_extruders: u32,
@@ -97,6 +97,8 @@ fn default_true() -> bool {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct SlotGroupSnapshot {
     pub id: String,
+    #[serde(default)]
+    pub native_id: Option<String>,
     pub name: String,
     pub short_name: String,
     pub kind: SlotGroupKind,
@@ -126,7 +128,8 @@ pub enum SlotGroupDriverInfo {
 pub enum SlotGroupKind {
     #[default]
     Other,
-    InternalChanger,
+    #[serde(rename = "MMS", alias = "InternalChanger")]
+    Mms,
     External,
     Virtual,
 }
@@ -134,6 +137,8 @@ pub enum SlotGroupKind {
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct MaterialSlotSnapshot {
     pub id: SlotId,
+    #[serde(default)]
+    pub native_id: Option<String>,
     pub display_name: String,
     pub short_name: String,
     pub state: SlotState,
