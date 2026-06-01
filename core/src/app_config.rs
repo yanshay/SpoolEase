@@ -154,6 +154,17 @@ fn certificate_chain_pem(leaf_cert_pem: &str, ca_cert_pem: &str) -> String {
     chain
 }
 
+fn last_certificate_pem(certificate_chain_pem: &str) -> Option<String> {
+    const CERT_BEGIN: &str = "-----BEGIN CERTIFICATE-----";
+    const CERT_END: &str = "-----END CERTIFICATE-----";
+
+    let end = certificate_chain_pem.rfind(CERT_END)? + CERT_END.len();
+    let start = certificate_chain_pem[..end].rfind(CERT_BEGIN)?;
+    let mut certificate = certificate_chain_pem[start..end].to_string();
+    certificate.push('\n');
+    Some(certificate)
+}
+
 fn normalize_certificate_sans(sans: Vec<String>) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
     for san in sans {
@@ -1179,8 +1190,14 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn device_ca_cert_pem(&self) -> Option<String> {
-        self.device_certificate_config.custom.as_ref().map(|custom| custom.ca_cert_pem.clone())
+    pub fn device_ca_cert_pem(&self, default_certificate_chain_pem: &str) -> Option<String> {
+        if self.device_certificate_config.enabled
+            && let Some(custom) = &self.device_certificate_config.custom
+        {
+            return Some(custom.ca_cert_pem.clone());
+        }
+
+        last_certificate_pem(default_certificate_chain_pem)
     }
 
     pub fn _set_redirect_web_to_config(&mut self) {

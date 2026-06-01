@@ -43,6 +43,7 @@ use crate::app_config::{
 };
 use crate::bambu::bambu_api::PrintCommand;
 use crate::bambu::calibration::KInfo;
+use crate::settings;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
 use crate::store::{BackupMeta, FileMeta, Store};
@@ -398,7 +399,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
             get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
                 ready(
                     DeviceCertificateCaCertResponse {
-                        ca_cert_pem: state.0.app_config.borrow().device_ca_cert_pem(),
+                        ca_cert_pem: state.0.app_config.borrow().device_ca_cert_pem(settings::API_SERVER_TLS_CERTIFICATE),
                     }
                     .encrypt(&key.borrow()),
                 )
