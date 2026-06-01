@@ -36,6 +36,8 @@ const CUSTOM_FILAMENTS_CONFIG_KEY: &str = "custom_filaments";
 const AI_PROVIDERS_CONFIG_KEY: &str = "ai_providers";
 const API_TOKENS_CONFIG_KEY: &str = "api_tokens";
 const DEVICE_CERTIFICATE_CONFIG_KEY: &str = "device_certificate";
+const BACKUP_CONFIG_KEY: &str = "backup_config";
+const BACKUP_STATUS_KEY: &str = "backup_status";
 
 pub const API_TOKEN_NAME_MAX_LEN: usize = 32;
 const API_TOKEN_PREFIX: &str = "spe_api_v1";
@@ -43,6 +45,31 @@ const API_TOKEN_ID_BYTES: usize = 8;
 const API_TOKEN_SECRET_BYTES: usize = 32;
 const DEVICE_CERTIFICATE_SAN_MAX_COUNT: usize = 16;
 const DEVICE_CERTIFICATE_SAN_MAX_LEN: usize = 253;
+const DEFAULT_BACKUP_REQUIRED_INTERVAL_SECONDS: u32 = 7 * 24 * 60 * 60;
+
+fn default_backup_required_interval_seconds() -> u32 {
+    DEFAULT_BACKUP_REQUIRED_INTERVAL_SECONDS
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct BackupConfig {
+    #[serde(default = "default_backup_required_interval_seconds")]
+    pub required_interval_seconds: u32,
+}
+
+impl Default for BackupConfig {
+    fn default() -> Self {
+        Self {
+            required_interval_seconds: DEFAULT_BACKUP_REQUIRED_INTERVAL_SECONDS,
+        }
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct BackupStatus {
+    #[serde(default)]
+    pub last_backup_date_time: Option<i64>,
+}
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, PartialEq, Eq)]
 pub struct ApiTokensConfig {
@@ -530,6 +557,8 @@ pub struct AppConfig {
     pub ai_providers_config: AiProvidersConfig,
     pub api_tokens_config: ApiTokensConfig,
     pub device_certificate_config: DeviceCertificateConfig,
+    pub backup_config: BackupConfig,
+    pub backup_status: BackupStatus,
     active_device_certificate_hash: Option<String>,
     pub root_redirect: String,
 }
@@ -596,6 +625,8 @@ impl AppConfig {
             ai_providers_config: AiProvidersConfig::default(),
             api_tokens_config: ApiTokensConfig::default(),
             device_certificate_config: DeviceCertificateConfig::default(),
+            backup_config: BackupConfig::default(),
+            backup_status: BackupStatus::default(),
             active_device_certificate_hash: None,
             root_redirect: "/config".to_string(),
         }
@@ -670,6 +701,21 @@ impl AppConfig {
             && let Ok(device_certificate_config) = serde_json::from_str::<DeviceCertificateConfig>(&device_certificate_store)
         {
             self.device_certificate_config = device_certificate_config;
+        }
+
+        let config = self.framework.borrow_mut().fetch(String::from(BACKUP_CONFIG_KEY));
+        if let Ok(Some(backup_config_store)) = config
+            && let Ok(backup_config) = serde_json::from_str::<BackupConfig>(&backup_config_store)
+            && backup_config.required_interval_seconds > 0
+        {
+            self.backup_config = backup_config;
+        }
+
+        let config = self.framework.borrow_mut().fetch(String::from(BACKUP_STATUS_KEY));
+        if let Ok(Some(backup_status_store)) = config
+            && let Ok(backup_status) = serde_json::from_str::<BackupStatus>(&backup_status_store)
+        {
+            self.backup_status = backup_status;
         }
 
         let config = self.framework.borrow_mut().fetch(String::from(SCALE_CONFIG_KEY));
@@ -1051,6 +1097,58 @@ impl AppConfig {
             let store = serde_json::to_string(device_certificate_config).unwrap();
             self.framework.borrow().store(DEVICE_CERTIFICATE_CONFIG_KEY.to_string(), store)?;
         }
+        Ok(())
+    }
+
+    fn persist_backup_config(&self, backup_config: &BackupConfig) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        if *backup_config == BackupConfig::default() {
+            self.framework.borrow().remove(BACKUP_CONFIG_KEY.to_string())?;
+        } else {
+            let store = serde_json::to_string(backup_config).unwrap();
+            self.framework.borrow().store(BACKUP_CONFIG_KEY.to_string(), store)?;
+        }
+        Ok(())
+    }
+
+    fn persist_backup_status(&self, backup_status: &BackupStatus) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        if *backup_status == BackupStatus::default() {
+            self.framework.borrow().remove(BACKUP_STATUS_KEY.to_string())?;
+        } else {
+            let store = serde_json::to_string(backup_status).unwrap();
+            self.framework.borrow().store(BACKUP_STATUS_KEY.to_string(), store)?;
+        }
+        Ok(())
+    }
+
+    pub fn set_backup_config(&mut self, backup_config: BackupConfig) -> Result<(), String> {
+        if backup_config.required_interval_seconds == 0 {
+            return Err("Backup interval must be greater than zero".to_string());
+        }
+
+        self.persist_backup_config(&backup_config)
+            .map_err(|e| format!("Failed to store backup configuration: {e:?}"))?;
+        self.backup_config = backup_config;
+        Ok(())
+    }
+
+    pub fn mark_backup_completed(&mut self, date_time: i64) -> Result<(), String> {
+        if date_time <= 0 {
+            return Err("Backup completion date must be greater than zero".to_string());
+        }
+
+        let mut next_backup_status = self.backup_status.clone();
+        next_backup_status.last_backup_date_time = Some(date_time);
+        self.persist_backup_status(&next_backup_status)
+            .map_err(|e| format!("Failed to store backup status: {e:?}"))?;
+        self.backup_status = next_backup_status;
+        Ok(())
+    }
+
+    pub fn reset_backup_status(&mut self) -> Result<(), String> {
+        let next_backup_status = BackupStatus::default();
+        self.persist_backup_status(&next_backup_status)
+            .map_err(|e| format!("Failed to reset backup status: {e:?}"))?;
+        self.backup_status = next_backup_status;
         Ok(())
     }
 

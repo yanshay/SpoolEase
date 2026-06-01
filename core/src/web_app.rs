@@ -37,9 +37,9 @@ use serde::{Deserialize, Serialize};
 use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::app_config::{
-    AiProviderAvailability, AiProviderId, ApiTokenMetadata, AppConfig, BambuPrinterConfig, DefaultPrinterConfig, DeviceCertificateLeafRequest,
-    DeviceCertificateGenerationRequest, DeviceCertificateStatus, FILAMENT_BRAND_NAMES, FakePrinterConfig, PrinterConfig, PrinterDriverConfig,
-    PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
+    AiProviderAvailability, AiProviderId, ApiTokenMetadata, AppConfig, BackupConfig, BackupStatus, BambuPrinterConfig, DefaultPrinterConfig,
+    DeviceCertificateLeafRequest, DeviceCertificateGenerationRequest, DeviceCertificateStatus, FILAMENT_BRAND_NAMES, FakePrinterConfig, PrinterConfig,
+    PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
 };
 use crate::bambu::bambu_api::PrintCommand;
 use crate::bambu::calibration::KInfo;
@@ -199,6 +199,8 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         device_name: borrowed_app_config.device_name(),
                         device_ip: borrowed_app_config.device_ip(),
                         device_certificate: borrowed_app_config.device_certificate_status(),
+                        backup_config: borrowed_app_config.backup_config.clone(),
+                        backup_status: borrowed_app_config.backup_status.clone(),
                         console_errors: state.0.store.console_errors(),
                     }
                     .encrypt(&key.borrow())
@@ -786,6 +788,38 @@ impl AppWithStateBuilder for NestedAppBuilder {
                     key,
                 })
                 .into_response()
+            }),
+        );
+
+        let router = router.route(
+            "/api/store-backup/config",
+            post(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, backup_config: BackupConfig| {
+                ready(match state.0.app_config.borrow_mut().set_backup_config(backup_config) {
+                    Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                    Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+                })
+            }),
+        );
+
+        let router = router.route(
+            "/api/store-backup/mark-completed",
+            post(
+                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, mark_backup: MarkBackupCompletedDTO| {
+                    ready(match state.0.app_config.borrow_mut().mark_backup_completed(mark_backup.date_time) {
+                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+                    })
+                },
+            ),
+        );
+
+        let router = router.route(
+            "/api/store-backup/reset-status",
+            post(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
+                ready(match state.0.app_config.borrow_mut().reset_backup_status() {
+                    Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                    Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+                })
             }),
         );
 
@@ -1672,6 +1706,8 @@ pub struct ConsoleInfoResponse {
     device_name: Option<String>,
     device_ip: Option<String>,
     device_certificate: DeviceCertificateStatus,
+    backup_config: BackupConfig,
+    backup_status: BackupStatus,
     console_errors: Vec<String>,
 }
 
@@ -1802,6 +1838,14 @@ pub struct GenericResponse {
     error: Option<String>,
 }
 encrypted_input!(GenericResponse);
+
+encrypted_input!(BackupConfig);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MarkBackupCompletedDTO {
+    date_time: i64,
+}
+encrypted_input!(MarkBackupCompletedDTO);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RestoreDeleteDTO {}
