@@ -367,6 +367,14 @@ impl Store {
         }
     }
 
+    pub fn spools_csv_len(&self) -> Result<usize, StoreError> {
+        self.spools_db.get().ok_or(StoreError::NoCsvDb)?.records_csv_len().context(CsvDbSnafu)
+    }
+
+    pub fn write_spools_csv(&self, output: &mut [u8]) -> Result<usize, StoreError> {
+        self.spools_db.get().ok_or(StoreError::NoCsvDb)?.write_records_csv(output).context(CsvDbSnafu)
+    }
+
     pub async fn delete_spool(&self, id: &str) -> Result<(), StoreError> {
         let deleted_record = if let Some(spools_db) = &self.spools_db.get() {
             let delete_res = spools_db.delete(id).await;

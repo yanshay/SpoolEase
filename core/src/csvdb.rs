@@ -177,6 +177,33 @@ where
         Ok(buffer_str)
     }
 
+    pub fn records_csv_len(&self) -> Result<usize, CsvDbError> {
+        let mut writer = serde_csv_core::Writer::new();
+        let mut buffer = alloc::vec![0; self.inner.borrow().max_record_width];
+        let records = self.records.borrow();
+        let mut total_length = 0_usize;
+        for record in records.values() {
+            let length_written = writer.serialize(&record.data, buffer.as_mut_slice()).context(SerializeSnafu)?;
+            total_length = total_length.checked_add(length_written).ok_or_else(|| CsvDbError::Internal {
+                details: "CSV length overflow".to_string(),
+            })?;
+        }
+        Ok(total_length)
+    }
+
+    pub fn write_records_csv(&self, output: &mut [u8]) -> Result<usize, CsvDbError> {
+        let mut writer = serde_csv_core::Writer::new();
+        let records = self.records.borrow();
+        let mut pos = 0_usize;
+        for record in records.values() {
+            let length_written = writer.serialize(&record.data, &mut output[pos..]).context(SerializeSnafu)?;
+            pos = pos.checked_add(length_written).ok_or_else(|| CsvDbError::Internal {
+                details: "CSV length overflow".to_string(),
+            })?;
+        }
+        Ok(pos)
+    }
+
     fn free_range_end(range: FreeRange) -> u32 {
         range.offset + range.length as u32
     }

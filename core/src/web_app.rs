@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use embedded_sdmmc::asynchronous::LfnBuffer;
-use framework::framework_web_app::{FrameworkState, encrypt, encrypt_bytes};
+use framework::framework_web_app::{FrameworkState, encrypt, encrypt_bytes, encrypt_bytes_compact};
 use hashbrown::HashMap;
 use picoserve::response::ResponseWriter;
 use picoserve::response::StatusCode;
@@ -46,7 +46,7 @@ use crate::bambu::calibration::KInfo;
 use crate::settings;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
-use crate::store::{BackupMeta, FileMeta, Store};
+use crate::store::{BackupMeta, FileMeta, Store, StoreError};
 use crate::utils::sha256_hex;
 use crate::view_model::{PrinterInfo, ViewModel};
 
@@ -60,6 +60,31 @@ pub struct ConsoleAppState {
 impl picoserve::extract::FromRef<WebAppState<ConsoleAppState>> for ConsoleAppState {
     fn from_ref(state: &WebAppState<ConsoleAppState>) -> Self {
         state.more_state.clone()
+    }
+}
+
+fn encrypt_spools_csv_response(key: &[u8], store: &Store) -> String {
+    let csv_len = match store.spools_csv_len() {
+        Ok(csv_len) => csv_len,
+        Err(err) => {
+            error!("Failed to generate response to spoole query: {err}");
+            return "".to_string();
+        }
+    };
+
+    match encrypt_bytes_compact(key, csv_len, |plaintext| {
+        let written = store.write_spools_csv(plaintext)?;
+        if written != plaintext.len() {
+            error!("Spools CSV length changed from {} to {} while generating response", plaintext.len(), written);
+            return Err(StoreError::InternalError);
+        }
+        Ok(())
+    }) {
+        Ok(encrypted) => encrypted,
+        Err(err) => {
+            error!("Failed to generate response to spoole query: {err}");
+            "".to_string()
+        }
     }
 }
 
@@ -502,15 +527,9 @@ impl AppWithStateBuilder for NestedAppBuilder {
 
         let router = router.route(
             "/api/spools",
-            get(
-                async move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| match state.0.store.query_spools() {
-                    Some(csv) => encrypt(&key.borrow(), &csv),
-                    None => {
-                        error!("Failed to generate response to spoole query");
-                        "".to_string()
-                    }
-                },
-            ),
+            get(async move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
+                encrypt_spools_csv_response(&key.borrow(), state.0.store.as_ref())
+            }),
         );
 
         let router = router.route(
