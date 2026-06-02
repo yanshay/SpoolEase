@@ -26,6 +26,7 @@ use crate::{
     bambu::calibration::KInfo,
     csvdb::{CsvDb, CsvDbError},
     spools_storage::{StorageConfig, TagLocationRecord},
+    utils::hash_string_list,
     view_model::ViewModel,
 };
 
@@ -348,31 +349,24 @@ impl Store {
 
     //// Spools Database Methods
 
-    pub fn query_spools(&self) -> Option<String> {
-        if let Some(spools_db) = self.spools_db.get() {
-            let spool_records = spools_db.records.borrow();
-            let total_length = spool_records.values().map(|v| v.length_in_file).sum::<usize>();
-            let results: Result<String, CsvDbError> = spool_records.values().try_fold(String::with_capacity(total_length), |mut acc, v| {
-                let csv = spools_db.record_to_csv_string(v);
-                if let Err(e) = &csv {
-                    error!("Error serializing to csv: {v:?} : {e}");
-                }
-                acc.push_str(&csv?);
-                Ok(acc)
-            });
-            // TODO: make it an error up as well, to handle in the caller
-            results.ok()
-        } else {
-            None
-        }
-    }
-
     pub fn spools_csv_len(&self) -> Result<usize, StoreError> {
         self.spools_db.get().ok_or(StoreError::NoCsvDb)?.records_csv_len().context(CsvDbSnafu)
     }
 
     pub fn write_spools_csv(&self, output: &mut [u8]) -> Result<usize, StoreError> {
         self.spools_db.get().ok_or(StoreError::NoCsvDb)?.write_records_csv(output).context(CsvDbSnafu)
+    }
+
+    pub fn spool_ids_hash(&self) -> Result<String, StoreError> {
+        let spools_db = self.spools_db.get().ok_or(StoreError::NoCsvDb)?;
+        let spool_records = spools_db.records.borrow();
+        Ok(hash_string_list(spool_records.keys()))
+    }
+
+    pub fn spool_csv_rows_by_id(&self, ids: &[String]) -> Result<Vec<String>, StoreError> {
+        ids.iter()
+            .map(|id| self.get_spool_csv_by_id(id).ok_or_else(|| StoreError::NotFound { id: id.clone() }))
+            .collect()
     }
 
     pub async fn delete_spool(&self, id: &str) -> Result<(), StoreError> {

@@ -9,6 +9,33 @@ pub fn sha256_hex(data: &[u8]) -> String {
     hex::encode(Sha256::digest(data))
 }
 
+pub fn canonical_string_list_bytes<I, S>(values: I) -> Vec<u8>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut values: Vec<String> = values.into_iter().map(|value| value.as_ref().to_string()).collect();
+    values.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
+
+    let mut output = Vec::new();
+    for value in values {
+        let value_bytes = value.as_bytes();
+        output.extend_from_slice(value_bytes.len().to_string().as_bytes());
+        output.push(b':');
+        output.extend_from_slice(value_bytes);
+        output.push(b';');
+    }
+    output
+}
+
+pub fn hash_string_list<I, S>(values: I) -> String
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    sha256_hex(&canonical_string_list_bytes(values))
+}
+
 pub fn serialize_string_array<S>(values: &[String], serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,

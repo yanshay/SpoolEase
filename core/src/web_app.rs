@@ -537,16 +537,21 @@ impl AppWithStateBuilder for NestedAppBuilder {
             post(
                 async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, delete_spool: DeleteSpoolDTO| {
                     let store = state.store;
-                    match store.delete_spool(&delete_spool.id).await {
-                        Ok(_) => match store.query_spools() {
-                            Some(csv) => encrypt(&key.borrow(), &csv),
-                            None => {
-                                error!("Failed to generate response to spoole query");
+                    let delete_spool_id = delete_spool.id;
+                    match store.delete_spool(&delete_spool_id).await {
+                        Ok(_) => match store.spool_ids_hash() {
+                            Ok(ids_hash) => DeleteSpoolDTOResponse {
+                                deleted_ids: vec![delete_spool_id],
+                                ids_hash,
+                            }
+                            .encrypt(&key.borrow()),
+                            Err(err) => {
+                                error!("Failed to generate response to spoole delete: {err}");
                                 "".to_string()
                             }
                         },
                         Err(err) => {
-                            error!("Failed to delete spool {} : {err}", delete_spool.id);
+                            error!("Failed to delete spool {} : {err}", delete_spool_id);
                             err.to_string()
                         }
                     }
@@ -654,19 +659,34 @@ impl AppWithStateBuilder for NestedAppBuilder {
                             }
                         }
                     };
+                    let mut changed_ids = vec![spool_id.clone()];
 
                     if let Some(mut split_spool) = split_spool {
+                        let split_spool_id = split_spool.id.clone();
                         split_spool.spools_count -= add_spool.spools_count;
                         if let Err(err) = store.update_spool(split_spool, None).await {
                             error!("Critical: Added new splitted spool/stock but failed to update splitted stock : {err}");
                             return err.to_string();
                         }
+                        changed_ids.push(split_spool_id);
                     }
 
-                    match store.query_spools() {
-                        Some(csv) => AddSpoolDTOResponse { id: spool_id, csv }.encrypt(&key.borrow()),
-                        None => {
-                            error!("Failed to generate response to spoole query");
+                    let changed_records = match store.spool_csv_rows_by_id(&changed_ids) {
+                        Ok(changed_records) => changed_records,
+                        Err(err) => {
+                            error!("Failed to generate changed spool records response: {err}");
+                            return "Failed to generate changed spool records response".to_string();
+                        }
+                    };
+                    match store.spool_ids_hash() {
+                        Ok(ids_hash) => AddSpoolDTOResponse {
+                            id: spool_id,
+                            changed_records,
+                            ids_hash,
+                        }
+                        .encrypt(&key.borrow()),
+                        Err(err) => {
+                            error!("Failed to generate response to spoole query: {err}");
                             "Failed to generate response to spoole query".to_string()
                         }
                     }
@@ -1759,6 +1779,12 @@ pub struct DeleteSpoolDTO {
 encrypted_input!(DeleteSpoolDTO);
 
 #[derive(serde::Deserialize, serde::Serialize)]
+pub struct DeleteSpoolDTOResponse {
+    pub deleted_ids: Vec<String>,
+    pub ids_hash: String,
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
 pub struct AddSpoolDTO {
     pub tag_id: String,
     pub id: String,
@@ -1786,7 +1812,8 @@ encrypted_input!(AddSpoolDTO);
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct AddSpoolDTOResponse {
     pub id: String,
-    pub csv: String,
+    pub changed_records: Vec<String>,
+    pub ids_hash: String,
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
