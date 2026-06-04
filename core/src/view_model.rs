@@ -3855,12 +3855,7 @@ impl SpoolScaleObserver for ViewModel {
 }
 
 impl StoreObserver for ViewModel {
-    fn on_tag_added(&self) {
-        let tags_in_store = self.store.tags_in_store();
-        let _ = self.spool_scale_model.borrow().tags_in_store(tags_in_store);
-    }
-
-    fn on_tag_removed(&self) {
+    fn on_tags_changed(&self) {
         let tags_in_store = self.store.tags_in_store();
         let _ = self.spool_scale_model.borrow().tags_in_store(tags_in_store);
     }

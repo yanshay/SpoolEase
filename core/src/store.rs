@@ -171,6 +171,13 @@ impl Store {
         self.observers.borrow_mut().push(observer);
     }
 
+    fn notify_tags_changed(&self) {
+        for weak_observer in self.observers.borrow().iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow().on_tags_changed();
+        }
+    }
+
     pub fn console_errors(&self) -> Vec<String> {
         self.console_errors.borrow().clone()
     }
@@ -390,30 +397,6 @@ impl Store {
         Ok(())
     }
 
-    pub fn remove_spool_tag_from_tag_id_index(&self, tag_id: &str) -> Option<String> {
-        let res = self.spool_tag_id_index.borrow_mut().remove(tag_id);
-        if res.is_some() {
-            // if was key previously (and now isn't) need to send an update on remove
-            for weak_observer in self.observers.borrow().iter() {
-                let observer = weak_observer.upgrade().unwrap();
-                observer.borrow().on_tag_removed();
-            }
-        }
-        res
-    }
-
-    pub fn insert_spool_tag_to_tag_id_index(&self, tag_id: String, spool_id: String) -> Option<String> {
-        let res = self.spool_tag_id_index.borrow_mut().insert(tag_id, spool_id);
-        if res.is_none() {
-            // if was no key (and now there is) need to send an update on add
-            for weak_observer in self.observers.borrow().iter() {
-                let observer = weak_observer.upgrade().unwrap();
-                observer.borrow().on_tag_added();
-            }
-        }
-        res
-    }
-
     fn remove_all_spool_tags_from_tag_id_index(&self, spool_id: &str) {
         let tags_to_remove: Vec<String> = self
             .spool_tag_id_index
@@ -422,15 +405,60 @@ impl Store {
             .filter(|(_, index_spool_id)| *index_spool_id == spool_id)
             .map(|(index_tag, _)| index_tag.clone())
             .collect();
-        for tag_id in tags_to_remove {
-            self.remove_spool_tag_from_tag_id_index(&tag_id);
+        if tags_to_remove.is_empty() {
+            return;
         }
+
+        let mut index = self.spool_tag_id_index.borrow_mut();
+        for tag_id in tags_to_remove {
+            index.remove(&tag_id);
+        }
+        drop(index);
+
+        self.notify_tags_changed();
+    }
+
+    fn sorted_linked_tag_ids(spool_record: &SpoolRecord) -> Vec<String> {
+        let mut tags = spool_record.linked_tag_ids().map(ToString::to_string).collect::<Vec<_>>();
+        tags.sort_unstable();
+        tags.dedup();
+        tags
+    }
+
+    fn indexed_spool_tag_ids(&self, spool_id: &str) -> Vec<String> {
+        let mut tags = self
+            .spool_tag_id_index
+            .borrow()
+            .iter()
+            .filter(|(_, index_spool_id)| *index_spool_id == spool_id)
+            .map(|(index_tag, _)| index_tag.clone())
+            .collect::<Vec<_>>();
+        tags.sort_unstable();
+        tags.dedup();
+        tags
     }
 
     fn sync_spool_tags_in_tag_id_index(&self, spool_record: &SpoolRecord) {
-        self.remove_all_spool_tags_from_tag_id_index(&spool_record.id);
-        for tag_id in spool_record.linked_tag_ids() {
-            self.insert_spool_tag_to_tag_id_index(tag_id.to_string(), spool_record.id.clone());
+        let current_tags = self.indexed_spool_tag_ids(&spool_record.id);
+        let updated_tags = Self::sorted_linked_tag_ids(spool_record);
+
+        if current_tags == updated_tags {
+            return;
+        }
+
+        let mut tags_changed = false;
+        {
+            let mut index = self.spool_tag_id_index.borrow_mut();
+            for tag_id in current_tags.iter().filter(|tag_id| !updated_tags.contains(*tag_id)) {
+                tags_changed |= index.remove(tag_id).is_some();
+            }
+            for tag_id in updated_tags.iter().filter(|tag_id| !current_tags.contains(*tag_id)) {
+                tags_changed |= index.insert(tag_id.clone(), spool_record.id.clone()).is_none();
+            }
+        }
+
+        if tags_changed {
+            self.notify_tags_changed();
         }
     }
 
@@ -604,7 +632,8 @@ impl Store {
         let mut ret_spool_rec_ext = None;
         if let Some(spools_db) = self.spools_db.get() {
             if !spool_record.id.is_empty() {
-                if spools_db.records.borrow().contains_key(&spool_record.id) {
+                let record_exists = spools_db.records.borrow().contains_key(&spool_record.id);
+                if record_exists {
                     if let Some(update_ext_fn) = update_ext_fn {
                         let mut spool_rec_ext = self.get_spool_ext_by_id(&spool_record.id).await.ok().unwrap_or_default(); // on read error don't raise error
                         update_ext_fn(&mut spool_rec_ext);
@@ -1044,8 +1073,7 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
 }
 
 pub trait StoreObserver {
-    fn on_tag_added(&self);
-    fn on_tag_removed(&self);
+    fn on_tags_changed(&self);
     fn on_store_error(&self, detail: &str);
     // fn on_read_spool_record_ext(&mut self, result: Result<SpoolRecordExt, String>);
 }
