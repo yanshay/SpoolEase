@@ -3,12 +3,13 @@ use core::future::ready;
 use alloc::{string::String, string::ToString};
 use picoserve::{
     ResponseSent,
-    extract::State,
+    extract::{JsonWithUnescapeBufferSize, State},
     io::Read,
     request::RequestParts,
     response::{IntoResponse, ResponseWriter, StatusCode},
-    routing::{Layer, Next, get},
+    routing::{Layer, Next, get, post},
 };
+use serde::Deserialize;
 
 use crate::api_server::ApiServerState;
 
@@ -28,7 +29,30 @@ pub fn build_app() -> picoserve::Router<impl picoserve::routing::PathRouter<ApiS
                 })
             }),
         )
+        .route(
+            "/api/internal/filaments-config",
+            post(
+                |state: State<ApiServerState>,
+                 JsonWithUnescapeBufferSize(FilamentsConfigRequest { custom_filaments }): JsonWithUnescapeBufferSize<
+                    FilamentsConfigRequest,
+                    4096,
+                >| {
+                    ready(match state.0.app_config.borrow_mut().set_filaments(custom_filaments) {
+                        Ok(_) => (StatusCode::OK, JsonStringResponse::new(r#"{"success":true}"#.to_string())),
+                        Err(_) => (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            JsonStringResponse::new(r#"{"error":"set_filaments_failed"}"#.to_string()),
+                        ),
+                    })
+                },
+            ),
+        )
         .layer(ApiTokenAuthLayer)
+}
+
+#[derive(Deserialize)]
+struct FilamentsConfigRequest {
+    custom_filaments: Option<String>,
 }
 
 struct ApiTokenAuthLayer;

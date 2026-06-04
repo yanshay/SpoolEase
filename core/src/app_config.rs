@@ -893,6 +893,11 @@ impl AppConfig {
     }
 
     pub fn set_filaments(&mut self, custom_filaments: Option<String>) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        let custom_filaments = custom_filaments.and_then(|custom_filaments| {
+            let custom_filaments = custom_filaments.trim().replace("\r\n", "\n").replace("\n", "\r\n");
+            if custom_filaments.is_empty() { None } else { Some(custom_filaments) }
+        });
+
         if let Some(custom_filaments) = &custom_filaments {
             let mut skip_store = false;
             if let Some(curr_custom_filaments) = &self.custom_filaments

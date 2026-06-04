@@ -485,15 +485,6 @@ impl AppWithStateBuilder for NestedAppBuilder {
             "/api/filaments-config",
             post(
                 move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, FilamentsConfigDTO { custom_filaments }| {
-                    let custom_filaments = if let Some(custom_filaments) = custom_filaments {
-                        if !custom_filaments.trim().is_empty() {
-                            Some(custom_filaments.trim().replace("\r\n", "\n").replace("\n", "\r\n"))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
                     ready(match state.0.app_config.borrow_mut().set_filaments(custom_filaments) {
                         Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
                         Err(e) => SetConfigResponseDTO {
