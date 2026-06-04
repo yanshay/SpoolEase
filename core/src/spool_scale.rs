@@ -30,7 +30,7 @@ use shared::scale::{ConsoleToScale, OtaProgressUpdate, ScaleToConsole};
 // Reference only; the shared protocol remains for older consoles and scale firmware.
 // use shared::gcode_analysis_task::{FilamentUsage, GcodeAnalysisNotification, GcodeAnalysisRequest};
 
-use crate::{app_config::AppConfig, ssdp::SSDPPubSubChannel};
+use crate::{app_config::AppConfig, settings::SPOOL_SCALE_WS_CLIENT_BUFFER_BYTES, ssdp::SSDPPubSubChannel};
 
 pub type ConsoleToScaleChannel = Channel<NoopRawMutex, ConsoleToScale, 5>;
 
@@ -522,7 +522,7 @@ pub async fn spool_scale_task(
 
     let mut first_connect = true;
     let mut connect_error_counter = 0;
-    let mut conn_buf = alloc::vec![0_u8; 128*1024]; // TODO: large size for gcode_analysis (not required that long any longer since g-code analysis not using scale, don't remove comment)
+    let mut conn_buf = alloc::vec![0_u8; SPOOL_SCALE_WS_CLIENT_BUFFER_BYTES]; // TODO: large size for gcode_analysis (not required that long any longer since g-code analysis not using scale, don't remove comment)
     'connect_loop: loop {
         Framework::wait_for_wifi(&framework).await;
         if first_connect {

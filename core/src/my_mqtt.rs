@@ -30,6 +30,9 @@ use framework::prelude::*;
 
 use crate::bambu::BambuPrinter;
 use crate::bambu::PrinterModel;
+use crate::settings::{
+    MQTT_INITIAL_OUT_BUFFER_BYTES, MQTT_INITIAL_PACKET_BUFFER_BYTES, MQTT_MAX_PACKET_BUFFER_BYTES, MQTT_PACKET_BUFFER_GROW_STEP_BYTES,
+};
 
 #[derive(Debug)]
 #[allow(clippy::enum_variant_names)]
@@ -61,11 +64,6 @@ impl From<mqttrust::encoding::v4::utils::Error> for MyMqttError {
     }
 }
 
-const INITIAL_MQTT_BUFFER_SIZE: usize = 32768;
-const INITIAL_MQTT_OUT_BUFFER_SIZE: usize = 512;
-const MAX_MQTT_BUFFER_SIZE: usize = 49152;
-const MQTT_BUFFER_SIZE_GROW_STEPS: usize = 8192;
-
 pub struct MyMqtt<'a, T>
 where
     T: embedded_io_async::Read + embedded_io_async::Write,
@@ -85,8 +83,8 @@ where
     pub fn new(tls: esp_mbedtls::Session<'a, T>, write_timeout: Duration) -> MyMqtt<'a, T> {
         MyMqtt {
             tls,
-            buf: vec![0u8; INITIAL_MQTT_BUFFER_SIZE],
-            out_buf: vec![0u8; INITIAL_MQTT_OUT_BUFFER_SIZE],
+            buf: vec![0u8; MQTT_INITIAL_PACKET_BUFFER_BYTES],
+            out_buf: vec![0u8; MQTT_INITIAL_OUT_BUFFER_BYTES],
             message_bytes_in_buf: 0,
             data_bytes_in_buf: 0,
             write_timeout,
@@ -212,8 +210,8 @@ where
 
             // increase buffer if no room
             if self.data_bytes_in_buf >= self.buf.len() {
-                if self.buf.len() < MAX_MQTT_BUFFER_SIZE {
-                    let add_capacity = min(MQTT_BUFFER_SIZE_GROW_STEPS, MAX_MQTT_BUFFER_SIZE - self.buf.len());
+                if self.buf.len() < MQTT_MAX_PACKET_BUFFER_BYTES {
+                    let add_capacity = min(MQTT_PACKET_BUFFER_GROW_STEP_BYTES, MQTT_MAX_PACKET_BUFFER_BYTES - self.buf.len());
                     debug!(
                         "Adding {add_capacity} to MQTT Buffer, from {} to {}",
                         self.buf.len(),

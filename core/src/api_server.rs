@@ -16,7 +16,10 @@ use picoserve::{AppRouter, AppWithStateBuilder};
 use crate::{
     api_app,
     app_config::AppConfig,
-    settings::{API_SERVER_HTTPS, API_SERVER_NUM_LISTENERS, API_SERVER_PORT},
+    settings::{
+        API_REQUEST_BODY_MAX_BYTES, API_SERVER_HTTP_BUFFER_BYTES, API_SERVER_HTTPS, API_SERVER_NUM_LISTENERS, API_SERVER_PORT,
+        API_SERVER_TCP_RX_BUFFER_BYTES, API_SERVER_TCP_TX_BUFFER_BYTES,
+    },
     view_model::ViewModel,
 };
 
@@ -29,6 +32,7 @@ pub struct ApiServerState {
     pub framework: Rc<RefCell<Framework>>,
     pub app_config: Rc<RefCell<AppConfig>>,
     pub view_model: Rc<RefCell<ViewModel>>,
+    pub request_body_max_bytes: usize,
 }
 
 pub struct ApiServerAppBuilder;
@@ -75,6 +79,7 @@ pub fn init_api_server(
             framework: framework.clone(),
             app_config: app_config.clone(),
             view_model: view_model.clone(),
+            request_body_max_bytes: API_REQUEST_BODY_MAX_BYTES,
         }
     );
 
@@ -86,6 +91,11 @@ pub fn init_api_server(
         tls: API_SERVER_HTTPS,
         tls_certificate,
         tls_private_key,
+        buffer_sizes: framework::web_server::WebServerBufferSizes {
+            tcp_rx: API_SERVER_TCP_RX_BUFFER_BYTES,
+            tcp_tx: API_SERVER_TCP_TX_BUFFER_BYTES,
+            http: API_SERVER_HTTP_BUFFER_BYTES,
+        },
     };
 
     let config = picoserve::Config::new(picoserve::Timeouts {

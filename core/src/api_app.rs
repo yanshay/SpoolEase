@@ -1,11 +1,12 @@
 use core::future::ready;
 
 use alloc::{string::String, string::ToString};
+use framework::framework_web_app::{BodyReadRejection, read_limited_body};
 use picoserve::{
     ResponseSent,
-    extract::{JsonWithUnescapeBufferSize, State},
+    extract::{FromRequest, State},
     io::Read,
-    request::RequestParts,
+    request::{RequestBody, RequestParts},
     response::{IntoResponse, ResponseWriter, StatusCode},
     routing::{Layer, Next, get, post},
 };
@@ -32,11 +33,7 @@ pub fn build_app() -> picoserve::Router<impl picoserve::routing::PathRouter<ApiS
         .route(
             "/api/internal/filaments-config",
             post(
-                |state: State<ApiServerState>,
-                 JsonWithUnescapeBufferSize(FilamentsConfigRequest { custom_filaments }): JsonWithUnescapeBufferSize<
-                    FilamentsConfigRequest,
-                    4096,
-                >| {
+                |state: State<ApiServerState>, FilamentsConfigRequest { custom_filaments }: FilamentsConfigRequest| {
                     ready(match state.0.app_config.borrow_mut().set_filaments(custom_filaments) {
                         Ok(_) => (StatusCode::OK, JsonStringResponse::new(r#"{"success":true}"#.to_string())),
                         Err(_) => (
@@ -53,6 +50,47 @@ pub fn build_app() -> picoserve::Router<impl picoserve::routing::PathRouter<ApiS
 #[derive(Deserialize)]
 struct FilamentsConfigRequest {
     custom_filaments: Option<String>,
+}
+
+enum ApiRequestRejection {
+    BodyRead(BodyReadRejection),
+    DeserializationError,
+}
+
+impl From<BodyReadRejection> for ApiRequestRejection {
+    fn from(value: BodyReadRejection) -> Self {
+        Self::BodyRead(value)
+    }
+}
+
+impl IntoResponse for ApiRequestRejection {
+    async fn write_to<R: Read, W: ResponseWriter<Error = R::Error>>(
+        self,
+        connection: picoserve::response::Connection<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        match self {
+            Self::BodyRead(error) => error.write_to(connection, response_writer).await,
+            Self::DeserializationError => {
+                (StatusCode::BAD_REQUEST, JsonStringResponse::new(r#"{"error":"bad_json"}"#.to_string()))
+                    .write_to(connection, response_writer)
+                    .await
+            }
+        }
+    }
+}
+
+impl<'r> FromRequest<'r, ApiServerState> for FilamentsConfigRequest {
+    type Rejection = ApiRequestRejection;
+
+    async fn from_request<R: Read>(
+        state: &'r ApiServerState,
+        _request_parts: RequestParts<'r>,
+        request_body: RequestBody<'r, R>,
+    ) -> Result<Self, Self::Rejection> {
+        let body = read_limited_body(request_body, state.request_body_max_bytes).await?;
+        serde_json::from_slice(&body).map_err(|_| ApiRequestRejection::DeserializationError)
+    }
 }
 
 struct ApiTokenAuthLayer;

@@ -28,6 +28,7 @@ use crate::{
     printer::{
         PrinterRuntimePersistenceRequest, PrinterRuntimePersistenceRequestChannel, PrinterRuntimePersistenceRequestKind, PrinterSnapshotState,
     },
+    settings::{MQTT_TCP_RX_BUFFER_BYTES, MQTT_TCP_TX_BUFFER_BYTES},
     ssdp::SSDPPubSubChannel,
 };
 use alloc::{
@@ -699,8 +700,8 @@ pub fn init(
     spawner
         .spawn_heap(restartable_mqtt_task(
             framework,
-            8192,
-            4096,
+            MQTT_TCP_RX_BUFFER_BYTES,
+            MQTT_TCP_TX_BUFFER_BYTES,
             read_packets.clone(),
             write_packets,
             bambu_printer.clone(),

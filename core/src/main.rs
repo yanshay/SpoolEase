@@ -85,7 +85,8 @@ use settings::{AP_ADDR, MAX_NUM_PRINTERS};
 use settings::{API_SERVER_NUM_LISTENERS, WEB_SERVER_NUM_LISTENERS};
 use settings::{
     OTA_DOMAIN, OTA_PATH, OTA_TOML_FILENAME, WEB_APP_DOMAIN, WEB_APP_KEY_DERIVATION_ITERATIONS, WEB_APP_SALT, WEB_APP_SECURITY_KEY_LENGTH,
-    WEB_SERVER_CAPTIVE, WEB_SERVER_HTTPS, WEB_SERVER_PORT, WEB_SERVER_TLS_CERTIFICATE, WEB_SERVER_TLS_PRIVATE_KEY,
+    WEB_REQUEST_BODY_MAX_BYTES, WEB_SERVER_CAPTIVE, WEB_SERVER_HTTP_BUFFER_BYTES, WEB_SERVER_HTTPS, WEB_SERVER_PORT, WEB_SERVER_TCP_RX_BUFFER_BYTES,
+    WEB_SERVER_TCP_TX_BUFFER_BYTES, WEB_SERVER_TLS_CERTIFICATE, WEB_SERVER_TLS_PRIVATE_KEY,
 };
 use web_app::{ConsoleAppState, NestedAppBuilder};
 const STA_STACK_RESOURCES: usize = WEB_SERVER_NUM_LISTENERS + API_SERVER_NUM_LISTENERS + 1 + MAX_NUM_PRINTERS + FRAMEWORK_STA_STACK_RESOURCES; // web-config listeners + api server listeners + USDP + mqtt*num-of-printers + from framework: potentially https captive + ota + captive dns + ? initial firmware check if doen't complete
@@ -535,7 +536,12 @@ async fn main(spawner: Spawner) {
 
     let web_app_state = mk_static!(
         framework::framework_web_app::WebAppState<ConsoleAppState>,
-        framework::framework_web_app::WebAppState::<ConsoleAppState>::new(framework.borrow().encryption_key, framework.clone(), console_app_state)
+        framework::framework_web_app::WebAppState::<ConsoleAppState>::new(
+            framework.borrow().encryption_key,
+            framework.clone(),
+            console_app_state,
+            WEB_REQUEST_BODY_MAX_BYTES,
+        )
     );
 
     // Timeouts here are CRITICAL !!!
@@ -551,7 +557,17 @@ async fn main(spawner: Spawner) {
 
     let web_server_runner = mk_static!(
         framework::web_server::WebAppRunner<ConsoleAppState, NestedAppBuilder>,
-        framework::web_server::WebAppRunner::new(framework.clone(), web_app_router, web_app_state, config)
+        framework::web_server::WebAppRunner::new(
+            framework.clone(),
+            web_app_router,
+            web_app_state,
+            config,
+            framework::web_server::WebServerBufferSizes {
+                tcp_rx: WEB_SERVER_TCP_RX_BUFFER_BYTES,
+                tcp_tx: WEB_SERVER_TCP_TX_BUFFER_BYTES,
+                http: WEB_SERVER_HTTP_BUFFER_BYTES,
+            },
+        )
     );
 
     for id in 0..WEB_SERVER_NUM_LISTENERS {
