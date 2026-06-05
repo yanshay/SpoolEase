@@ -244,6 +244,7 @@ where
         let _response = self.control_transaction("PROT P\r\n").await?;
 
         let mut retr_response = ControlResponse::default();
+        let mut retrieve_started = !memory_save;
 
         for path in paths {
             debugex!(">>>> Trying to read {path}");
@@ -258,9 +259,16 @@ where
                         response: retr_response,
                     });
                 } else {
+                    retrieve_started = true;
                     break;
                 }
             };
+        }
+
+        if !retrieve_started {
+            return Err(Error::Ftp {
+                response: retr_response,
+            });
         }
 
         data_socket

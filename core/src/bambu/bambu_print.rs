@@ -427,7 +427,10 @@ impl BambuPrinter {
                 curr_print_project.need_consume = true;
             }
 
-            if gcode_state_change && new_gcode_state == GcodeState::FAILED && curr_print_project.gcode_analysis != GcodeAnalysis::WaitingForPrinter {
+            if gcode_state_change
+                && [GcodeState::FAILED, GcodeState::FINISH].contains(&new_gcode_state)
+                && curr_print_project.gcode_analysis != GcodeAnalysis::WaitingForPrinter
+            {
                 match curr_print_project.gcode_analysis {
                     GcodeAnalysis::WaitingForPrinter => unreachable!(),
                     GcodeAnalysis::Requested { at: _, job_number } | GcodeAnalysis::Received { at: _, job_number, usage: _ } => {

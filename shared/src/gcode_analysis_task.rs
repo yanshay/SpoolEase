@@ -11,8 +11,12 @@ use alloc::{
 use edge_http::io::client::Connection;
 use edge_nal_embassy::{Tcp, TcpBuffers};
 use embassy_net::{IpAddress, Ipv4Address, tcp::TcpSocket};
-use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel, pubsub::PubSubChannel};
-use embassy_time::{Duration, Instant};
+use embassy_sync::{
+    blocking_mutex::raw::NoopRawMutex,
+    channel::Channel,
+    pubsub::{PubSubChannel, Subscriber},
+};
+use embassy_time::{Duration, Instant, with_deadline};
 use embedded_io_async::Read;
 use esp_mbedtls::{Certificate, ClientSessionConfig, X509};
 use framework::{debug, error, info, prelude::Framework};
@@ -21,7 +25,8 @@ use url::{Position, Url};
 
 use crate::{
     gcode_analysis::{FilamentUsageEntry, GcodeFilamentCalc},
-    my_ftp::MyFtps,
+    my_ftp::{Error as MyFtpError, MyFtps},
+    settings::{GCODE_ANALYSIS_PRINTER_FTP_RETRY_INTERVAL_SECS, GCODE_ANALYSIS_PRINTER_FTP_RETRY_TIMEOUT_SECS},
     threemf_extractor::{FeedStatus, ThreemfExtractor},
 };
 
@@ -141,6 +146,8 @@ pub enum GcodeAnalysisNotification {
     Cancel { job_number: i32 },
 }
 
+type GcodeAnalysisNotificationSubscriber<'a> = Subscriber<'a, NoopRawMutex, GcodeAnalysisNotification, 5, 5, 1>;
+
 #[derive(Debug, Serialize, Deserialize)]
 // This is serialized between scale/console, if modified consider backwards compatibility
 pub struct GcodeAnalysisRequest {
@@ -172,6 +179,13 @@ pub trait GcodeAnalyzerObserver {
 
 enum FetchSubtaskResult {
     Failed,
+    Canceled,
+    Ok,
+}
+
+enum PrinterFtpAttemptResult {
+    Failed,
+    FileNotFound,
     Canceled,
     Ok,
 }
@@ -271,6 +285,45 @@ pub async fn fetch_gcode_analysis_task(
     }
 }
 
+fn is_cancel_for_job(notification: GcodeAnalysisNotification, job_number: i32) -> bool {
+    match notification {
+        GcodeAnalysisNotification::Cancel {
+            job_number: canceled_job_number,
+        } => canceled_job_number == job_number,
+    }
+}
+
+fn received_cancel_for_job(notifications: &mut GcodeAnalysisNotificationSubscriber<'_>, job_number: i32) -> bool {
+    notifications
+        .try_next_message_pure()
+        .is_some_and(|notification| is_cancel_for_job(notification, job_number))
+}
+
+async fn wait_for_retry_or_cancel(
+    notifications: &mut GcodeAnalysisNotificationSubscriber<'_>,
+    job_number: i32,
+    retry_at: Instant,
+) -> bool {
+    loop {
+        if Instant::now() >= retry_at {
+            return false;
+        }
+
+        match with_deadline(retry_at, notifications.next_message_pure()).await {
+            Ok(notification) => {
+                if is_cancel_for_job(notification, job_number) {
+                    return true;
+                }
+            }
+            Err(_) => return false,
+        }
+    }
+}
+
+fn is_ftp_file_not_found(err: &MyFtpError) -> bool {
+    matches!(err, MyFtpError::Ftp { response } if response.code == 550)
+}
+
 async fn fetch_gcode_analysis_task_printer_ftp(
     framework: Rc<RefCell<Framework>>,
     gcode_analysis_request: GcodeAnalysisRequest,
@@ -278,10 +331,7 @@ async fn fetch_gcode_analysis_task_printer_ftp(
     notifications_channel: Rc<GcodeAnalysisNotificationChannel>,
 ) -> FetchSubtaskResult {
     let job_number = gcode_analysis_request.job_number;
-    let printer_index = gcode_analysis_request.printer_index;
     let printer_log_id = gcode_analysis_request.printer_number;
-    let stack = framework.borrow().stack;
-    let tls = framework.borrow().tls;
     let mut notifications = match notifications_channel.subscriber() {
         Ok(subscriber) => subscriber,
         Err(err) => {
@@ -289,13 +339,94 @@ async fn fetch_gcode_analysis_task_printer_ftp(
             return FetchSubtaskResult::Failed;
         }
     };
-    let threemf_url = gcode_analysis_request.threemf_url;
+
+    let retry_interval_secs = GCODE_ANALYSIS_PRINTER_FTP_RETRY_INTERVAL_SECS;
+    let retry_timeout_secs = GCODE_ANALYSIS_PRINTER_FTP_RETRY_TIMEOUT_SECS;
+    let retry_started_at = Instant::now();
+    let retry_timeout = if retry_timeout_secs == 0 {
+        None
+    } else {
+        Some(Duration::from_secs(retry_timeout_secs))
+    };
+    let retry_timeout_at = retry_timeout.map(|timeout| retry_started_at + timeout);
+    let mut attempt = 1_u64;
+
+    loop {
+        match fetch_gcode_analysis_task_printer_ftp_attempt(
+            framework.clone(),
+            &gcode_analysis_request,
+            observer.clone(),
+            &mut notifications,
+            attempt,
+        )
+        .await
+        {
+            PrinterFtpAttemptResult::Ok => return FetchSubtaskResult::Ok,
+            PrinterFtpAttemptResult::Canceled => return FetchSubtaskResult::Canceled,
+            PrinterFtpAttemptResult::Failed => return FetchSubtaskResult::Failed,
+            PrinterFtpAttemptResult::FileNotFound => {
+                if retry_interval_secs == 0 {
+                    error!(
+                        "[{printer_log_id}] 3mf(ftp) file not found on attempt {attempt}; retry interval is 0, there will be no more retries; failed to find the 3mf file {}",
+                        gcode_analysis_request.threemf_url
+                    );
+                    return FetchSubtaskResult::Failed;
+                }
+
+                if let Some(timeout) = retry_timeout
+                    && retry_started_at.elapsed() >= timeout
+                {
+                    error!(
+                        "[{printer_log_id}] 3mf(ftp) retry timeout reached after {} seconds; there will be no more retries; failed to find the 3mf file {}",
+                        retry_started_at.elapsed().as_secs(),
+                        gcode_analysis_request.threemf_url
+                    );
+                    return FetchSubtaskResult::Failed;
+                }
+
+                let retry_at = Instant::now() + Duration::from_secs(retry_interval_secs);
+                if let Some(timeout_at) = retry_timeout_at
+                    && retry_at > timeout_at
+                {
+                    error!(
+                        "[{printer_log_id}] 3mf(ftp) file not found on attempt {attempt}; next retry would exceed the configured retry timeout of {retry_timeout_secs} seconds, there will be no more retries; failed to find the 3mf file {}",
+                        gcode_analysis_request.threemf_url
+                    );
+                    return FetchSubtaskResult::Failed;
+                }
+
+                info!(
+                    "[{printer_log_id}] 3mf(ftp) file not found on attempt {attempt}; will retry in {retry_interval_secs} seconds"
+                );
+                if wait_for_retry_or_cancel(&mut notifications, job_number, retry_at).await {
+                    info!("[{printer_log_id}] Gcode analysis job {job_number} canceled while waiting to retry 3mf(ftp) fetch");
+                    return FetchSubtaskResult::Canceled;
+                }
+                attempt = attempt.saturating_add(1);
+            }
+        }
+    }
+}
+
+async fn fetch_gcode_analysis_task_printer_ftp_attempt(
+    framework: Rc<RefCell<Framework>>,
+    gcode_analysis_request: &GcodeAnalysisRequest,
+    observer: alloc::rc::Weak<RefCell<dyn GcodeAnalyzerObserver>>,
+    notifications: &mut GcodeAnalysisNotificationSubscriber<'_>,
+    attempt: u64,
+) -> PrinterFtpAttemptResult {
+    let job_number = gcode_analysis_request.job_number;
+    let printer_index = gcode_analysis_request.printer_index;
+    let printer_log_id = gcode_analysis_request.printer_number;
+    let stack = framework.borrow().stack;
+    let tls = framework.borrow().tls;
+    let threemf_url = &gcode_analysis_request.threemf_url;
     let ip = gcode_analysis_request.ip;
-    let serial = gcode_analysis_request.serial;
-    let access_code = gcode_analysis_request.access_code;
+    let serial = &gcode_analysis_request.serial;
+    let access_code = &gcode_analysis_request.access_code;
 
     // let plate_idx = gcode_analysis_request.plate_idx;
-    let gcode_filename_in_3mf = gcode_analysis_request.gcode_filename_in_3mf;
+    let gcode_filename_in_3mf = &gcode_analysis_request.gcode_filename_in_3mf;
 
     let mut data_rx_buffer = alloc::vec![0u8;16384];
     let mut data_tx_buffer = alloc::vec![0u8;1024];
@@ -358,52 +489,45 @@ async fn fetch_gcode_analysis_task_printer_ftp(
         certificates,
     );
 
-    info!("[{printer_log_id}] Connecting to printer ftp");
+    if received_cancel_for_job(notifications, job_number) {
+        return PrinterFtpAttemptResult::Canceled;
+    }
+
+    info!("[{printer_log_id}] Connecting to printer ftp for 3mf fetch attempt {attempt}");
     match ftps.connect().await {
         Ok(_) => {
-            info!("[{printer_log_id}] Connected to printer ftp");
+            info!("[{printer_log_id}] Connected to printer ftp for 3mf fetch attempt {attempt}");
         }
         Err(err) => {
-            error!("[{printer_log_id}] Error connecting to printer ftp : {err:?}");
-            return FetchSubtaskResult::Failed;
+            error!("[{printer_log_id}] Error connecting to printer ftp on 3mf fetch attempt {attempt} : {err:?}");
+            return PrinterFtpAttemptResult::Failed;
         }
     }
 
-    if let Some(GcodeAnalysisNotification::Cancel {
-        job_number: canceled_job_number,
-    }) = notifications.try_next_message_pure()
-        && canceled_job_number == job_number
-    {
-        return FetchSubtaskResult::Canceled;
+    if received_cancel_for_job(notifications, job_number) {
+        return PrinterFtpAttemptResult::Canceled;
     }
 
     let username = if !VSFTPD { "bblp" } else { "ftpuser" };
-    let password = if !VSFTPD { &access_code } else { "ftppassword" };
+    let password = if !VSFTPD { access_code.as_str() } else { "ftppassword" };
 
     match ftps.login(username, password).await {
         Ok(success) => {
             if success {
-                info!("[{printer_log_id}] Login to printer ftp succeeded");
+                info!("[{printer_log_id}] Login to printer ftp succeeded for 3mf fetch attempt {attempt}");
             } else {
-                error!("[{printer_log_id}] Login to printer ftp failed");
-                return FetchSubtaskResult::Failed;
+                error!("[{printer_log_id}] Login to printer ftp failed on 3mf fetch attempt {attempt}");
+                return PrinterFtpAttemptResult::Failed;
             }
         }
         Err(err) => {
-            error!(
-                "[{printer_log_id}] Error in login to printer ftp: {:?}",
-                err
-            );
-            return FetchSubtaskResult::Failed;
+            error!("[{printer_log_id}] Error in login to printer ftp on 3mf fetch attempt {attempt}: {err:?}");
+            return PrinterFtpAttemptResult::Failed;
         }
     }
 
-    if let Some(GcodeAnalysisNotification::Cancel {
-        job_number: canceled_job_number,
-    }) = notifications.try_next_message_pure()
-        && canceled_job_number == job_number
-    {
-        return FetchSubtaskResult::Canceled;
+    if received_cancel_for_job(notifications, job_number) {
+        return PrinterFtpAttemptResult::Canceled;
     }
 
     // it looks like in the gcode file name (not in the bbl file name) bambu uses for gcode filename the text until "." in case there is such
@@ -456,9 +580,9 @@ async fn fetch_gcode_analysis_task_printer_ftp(
     let mut buf = alloc::vec![0;16384];
     let mut gcode_calc = GcodeFilamentCalc::new();
     let mut total_read = 0;
-    let mut threemf_extractor = Box::new(ThreemfExtractor::new(&gcode_filename_in_3mf, 16384));
+    let mut threemf_extractor = Box::new(ThreemfExtractor::new(gcode_filename_in_3mf, 16384));
     info!(
-        "[{printer_log_id}] Fetching 3mf(ftp) - first of: {threemf_filenames:?} and extracing {gcode_filename_in_3mf}"
+        "[{printer_log_id}] Fetching 3mf(ftp) attempt {attempt} - first of: {threemf_filenames:?} and extracting {gcode_filename_in_3mf}"
     );
     match ftps
         .start_retrieve_first_of(
@@ -473,6 +597,7 @@ async fn fetch_gcode_analysis_task_printer_ftp(
         .await
     {
         Ok(file_length) => {
+            info!("[{printer_log_id}] 3mf(ftp) retrieve started on attempt {attempt}");
             if let Some(file_length) = file_length {
                 info!("[{printer_log_id}] 3mf(ftp) file size is {file_length} bytes");
             }
@@ -481,12 +606,8 @@ async fn fetch_gcode_analysis_task_printer_ftp(
             let mut time_on_last_send = Instant::now();
             let mut total_on_last_send = 0;
             let success = loop {
-                if let Some(GcodeAnalysisNotification::Cancel {
-                    job_number: canceled_job_number,
-                }) = notifications.try_next_message_pure()
-                    && canceled_job_number == job_number
-                {
-                    return FetchSubtaskResult::Canceled;
+                if received_cancel_for_job(notifications, job_number) {
+                    return PrinterFtpAttemptResult::Canceled;
                 }
                 match ftps.retrieve(&mut buf).await {
                     Ok(n) => {
@@ -502,7 +623,7 @@ async fn fetch_gcode_analysis_task_printer_ftp(
                             &mut total_read,
                             &mut total_on_last_send,
                             &mut time_on_last_send,
-                            &gcode_filename_in_3mf,
+                            gcode_filename_in_3mf,
                             &mut last_report,
                             &report_intervals,
                             printer_log_id,
@@ -516,7 +637,7 @@ async fn fetch_gcode_analysis_task_printer_ftp(
                                 break true;
                             }
                             ProcessResponse::Return => {
-                                return FetchSubtaskResult::Failed;
+                                return PrinterFtpAttemptResult::Failed;
                             }
                             ProcessResponse::Continue => (),
                             ProcessResponse::SendAndContinue => {
@@ -530,16 +651,16 @@ async fn fetch_gcode_analysis_task_printer_ftp(
                     }
                     Err(err) => {
                         error!(
-                            "[{printer_log_id}] Error while reading gcode file {gcode_filename_in_3mf} {err:?}"
+                            "[{printer_log_id}] Error while reading gcode file {gcode_filename_in_3mf} on 3mf fetch attempt {attempt} {err:?}"
                         );
-                        return FetchSubtaskResult::Failed;
+                        return PrinterFtpAttemptResult::Failed;
                     }
                 };
             };
             // first thing, let's send final data available (ftp could still fail, and even partial data is better than nothing)
             gcode_calc.done();
             info!(
-                "[{printer_log_id}] Completed reading and processing gcode file '{gcode_filename_in_3mf}' in one of '{threemf_filenames:?}'"
+                "[{printer_log_id}] Completed reading and processing gcode file '{gcode_filename_in_3mf}' in one of '{threemf_filenames:?}' on 3mf fetch attempt {attempt}"
             );
             observer.upgrade().unwrap().borrow_mut().on_gcode_analysis(
                 job_number,
@@ -564,10 +685,20 @@ async fn fetch_gcode_analysis_task_printer_ftp(
             }
         }
         Err(err) => {
+            if is_ftp_file_not_found(&err) {
+                info!(
+                    "[{printer_log_id}] 3mf(ftp) retrieve attempt {attempt} did not find one of {threemf_filenames:?}: {err:?}"
+                );
+                let _ = ftps.quit().await;
+                let _ = ftps.close().await;
+                return PrinterFtpAttemptResult::FileNotFound;
+            }
             error!(
-                "[{printer_log_id}] Error initiating retrieve of 3mf file one of {threemf_filenames:?} {err:?}"
+                "[{printer_log_id}] Error initiating retrieve of 3mf file one of {threemf_filenames:?} on attempt {attempt} {err:?}"
             );
-            return FetchSubtaskResult::Failed;
+            let _ = ftps.quit().await;
+            let _ = ftps.close().await;
+            return PrinterFtpAttemptResult::Failed;
         }
     };
 
@@ -591,7 +722,7 @@ async fn fetch_gcode_analysis_task_printer_ftp(
         }
     }
 
-    FetchSubtaskResult::Ok
+    PrinterFtpAttemptResult::Ok
 }
 
 async fn fetch_gcode_analysis_task_cloud_http(
