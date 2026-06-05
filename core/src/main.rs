@@ -602,6 +602,7 @@ async fn main(spawner: Spawner) {
         term_info!("SD Card installed");
     } else {
         term_info!("Error initializing SD Card, system can't function");
+        term_info!("Need FAT16 formatted SDCard, not FAT32!");
     }
 
     // just wait for all initalization to be known
