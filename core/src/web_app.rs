@@ -226,6 +226,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
                         device_certificate: borrowed_app_config.device_certificate_status(),
                         backup_config: borrowed_app_config.backup_config.clone(),
                         backup_status: borrowed_app_config.backup_status.clone(),
+                        store_initialized: state.0.store.is_initialized(),
                         console_errors: state.0.store.console_errors(),
                     }
                     .encrypt(&key.borrow())
@@ -1738,6 +1739,7 @@ pub struct ConsoleInfoResponse {
     device_certificate: DeviceCertificateStatus,
     backup_config: BackupConfig,
     backup_status: BackupStatus,
+    store_initialized: bool,
     console_errors: Vec<String>,
 }
 
