@@ -144,7 +144,10 @@ impl BambuPrinter {
             }
         } else {
             // Defensive support only: real FTS internal AMS groups are ambiguous, while non-FTS groups should be uniquely bound.
-            info!("[{}] Skipping pressure advance reset for tray {tray_id}: no unique extruder", self.printer_number);
+            info!(
+                "[{}] Skipping pressure advance reset for tray {tray_id}: no unique extruder",
+                self.printer_number
+            );
         }
     }
 
@@ -157,8 +160,8 @@ impl BambuPrinter {
         // The slicer have the setting-if from the data it has when it selects everything together
 
         let unique_extruder_id = self.get_unique_extruder_id_for_tray(tray_id);
-        let matching_calibration = unique_extruder_id
-            .and_then(|extruder_id| self.get_matching_printer_calibration_for_extruder(full_spool_rec, extruder_id));
+        let matching_calibration =
+            unique_extruder_id.and_then(|extruder_id| self.get_matching_printer_calibration_for_extruder(full_spool_rec, extruder_id));
 
         let setting_id: Option<&str> = matching_calibration.as_ref().and_then(|c| c.setting_id.as_deref());
 
@@ -211,7 +214,10 @@ impl BambuPrinter {
                 }
             } else {
                 // Defensive support only: real FTS internal AMS groups are ambiguous, while non-FTS groups should be uniquely bound.
-                info!("[{}] Skipping automatic pressure advance selection for tray {tray_id}: no unique extruder", self.printer_number);
+                info!(
+                    "[{}] Skipping automatic pressure advance selection for tray {tray_id}: no unique extruder",
+                    self.printer_number
+                );
             }
 
             // Record the app-level slot assignment in the generic snapshot state.

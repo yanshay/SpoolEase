@@ -40,7 +40,7 @@ use alloc::{
 use bambu_print::PrintProject;
 use core::cell::RefCell;
 use embassy_net::Ipv4Address;
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use shared::gcode_analysis_task::Fetch3mf;
@@ -52,6 +52,7 @@ use crate::app_config::AppConfig;
 
 #[allow(dead_code)]
 const EXTRA_DEBUG: bool = false;
+const STARTUP_AMS_GUARD_TIMEOUT_SECS: u64 = 30;
 
 #[allow(unused_macros)]
 macro_rules! debugex {
@@ -162,10 +163,10 @@ pub struct BambuPrinter {
     pub bambu_model: Option<Rc<RefCell<Self>>>,
     pub log_filter: log::LevelFilter,
     pub printer_number: usize,                   // number of printer in user's configuration,
-    pub printer_serial: String, // mandatory, so configured is the same as actual
-    pub printer_access_code: String, // mandatory, so configured is the same as actual
+    pub printer_serial: String,                  // mandatory, so configured is the same as actual
+    pub printer_access_code: String,             // mandatory, so configured is the same as actual
     pub configured_printer_name: Option<String>, // the name from config, could be empty
-    pub inner_printer_name: String, // Unknown or Configured name or from SSDP if discovered
+    pub inner_printer_name: String,              // Unknown or Configured name or from SSDP if discovered
     pub printer_selector_name: String, // Will be assigned printer name from config OR printer serial (which is always availble) if config not available
     pub configured_printer_ip: Option<Ipv4Address>,
     pub auto_restore_k: bool,
@@ -223,6 +224,8 @@ pub struct BambuPrinter {
     pub subtask_name: Option<String>,
     pub stg_cur: Option<i32>,
     pub hms: Option<Vec<bambu_api::Hms>>,
+    startup_ams_guard_active: bool,
+    startup_pushall_sent_at: Option<Instant>,
     // Partial generic slot state, not a full Bambu printer cache.
     // Only spool_id, consumption counters, and used_in_print are meaningful here;
     // read live printer data from BambuPrinter fields instead.
@@ -336,7 +339,6 @@ impl BambuPrinter {
             1
         }
     }
-
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -480,6 +482,8 @@ impl BambuPrinter {
             subtask_name: None,
             stg_cur: None,
             hms: None,
+            startup_ams_guard_active: false,
+            startup_pushall_sent_at: None,
             snapshot_state: None,
         }
     }
@@ -601,12 +605,11 @@ impl BambuPrinter {
         // Display-only fallback for K value/name lookup. Automatic PA commands must use
         // get_unique_extruder_id_for_tray() so ambiguous FTS AMS groups are never configured as extruder 0.
         let ams_info_index = self.get_ams_info_index_for_tray(tray_id)?;
-        self.ams_info[ams_info_index].bound_extruders.first().copied().ok_or_else(|| {
-            format!(
-                "[{}] Slot {tray_id} does not resolve to a Bambu extruder",
-                self.printer_number
-            )
-        })
+        self.ams_info[ams_info_index]
+            .bound_extruders
+            .first()
+            .copied()
+            .ok_or_else(|| format!("[{}] Slot {tray_id} does not resolve to a Bambu extruder", self.printer_number))
     }
 
     pub fn get_extruder_for_tray(&self, tray_id: i32) -> Result<&Extruder, String> {
@@ -626,6 +629,44 @@ impl BambuPrinter {
                 kind,
             },
         );
+    }
+
+    pub(crate) fn start_startup_ams_guard(&mut self) {
+        self.startup_ams_guard_active = true;
+        self.startup_pushall_sent_at = None;
+    }
+
+    pub(crate) fn mark_startup_pushall_sent(&mut self) {
+        self.startup_pushall_sent_at = Some(Instant::now());
+    }
+
+    pub(crate) fn startup_ams_guard_active(&self) -> bool {
+        self.startup_ams_guard_active
+    }
+
+    pub(crate) fn maybe_release_startup_ams_guard(&mut self, command: Option<&str>) {
+        if !self.startup_ams_guard_active {
+            return;
+        }
+
+        let Some(sent_at) = self.startup_pushall_sent_at else {
+            return;
+        };
+
+        if command == Some("push_status") {
+            self.release_startup_ams_guard("push_status received");
+            return;
+        }
+
+        if sent_at.elapsed().as_secs() >= STARTUP_AMS_GUARD_TIMEOUT_SECS {
+            self.release_startup_ams_guard("startup pushall timeout");
+        }
+    }
+
+    fn release_startup_ams_guard(&mut self, reason: &str) {
+        info!("[{}] Releasing startup AMS guard: {reason}", self.printer_number);
+        self.startup_ams_guard_active = false;
+        self.startup_pushall_sent_at = None;
     }
 }
 
@@ -726,6 +767,8 @@ pub fn init(
 pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
     let printer_number = bambu_printer.borrow().printer_number;
 
+    bambu_printer.borrow_mut().start_startup_ams_guard();
+
     BambuPrinter::init_protocol(&bambu_printer).await;
 
     BambuPrinter::request_version_info_async(&bambu_printer).await;
@@ -739,6 +782,8 @@ pub async fn fetch_initial_info(bambu_printer: Rc<RefCell<BambuPrinter>>) {
     }
 
     // Now request full update, and wait until data is processed and have the nozzle diameter at hand for next request
+    debug!("[{printer_number}] Request full printer update (pushall)");
+    bambu_printer.borrow_mut().mark_startup_pushall_sent();
     BambuPrinter::request_full_update_async(&bambu_printer).await;
     while bambu_printer.borrow().nozzle_diameter(0).is_none() {
         Timer::after_millis(100).await;

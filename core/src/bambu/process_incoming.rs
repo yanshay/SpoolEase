@@ -107,6 +107,48 @@ impl BambuPrinter {
         (ams_type, bound_extruders, switcher_pos)
     }
 
+    /// Converts AMS existence bits to the tray-bit mask covered by those AMS units.
+    fn tray_mask_for_ams_exist_bits(ams_bits: u32) -> u32 {
+        let mut tray_mask = 0u32;
+        for ams_index in 0..=11 {
+            if ((ams_bits >> ams_index) & 0x01) == 0 {
+                continue;
+            }
+
+            if ams_index <= 3 {
+                tray_mask |= 0x0f << (ams_index * 4);
+            } else {
+                tray_mask |= 1 << (16 + (ams_index - 4));
+            }
+        }
+        tray_mask
+    }
+
+    /// During startup, keeps known AMS bits while accepting newly reported AMS bits.
+    fn effective_startup_ams_exist_bits(&self, incoming_ams_exist_bits: u32) -> (u32, u32) {
+        if !self.startup_ams_guard_active() {
+            return (incoming_ams_exist_bits, 0);
+        }
+
+        let current_ams_exist_bits = (*self.ams_exist_bits()).unwrap_or_default();
+        let protected_ams_bits = current_ams_exist_bits & !incoming_ams_exist_bits;
+        let effective_ams_exist_bits = current_ams_exist_bits | incoming_ams_exist_bits;
+        (effective_ams_exist_bits, Self::tray_mask_for_ams_exist_bits(protected_ams_bits))
+    }
+
+    /// Preserves previous tray bits for AMS slots protected by the startup guard.
+    fn protect_startup_ams_guard_tray_bits(incoming_bits: u32, previous_bits: Option<u32>, protected_tray_mask: u32) -> u32 {
+        if protected_tray_mask == 0 {
+            return incoming_bits;
+        }
+
+        let Some(previous_bits) = previous_bits else {
+            return incoming_bits;
+        };
+
+        (incoming_bits & !protected_tray_mask) | (previous_bits & protected_tray_mask)
+    }
+
     #[allow(non_snake_case)]
     pub fn process_print_message__vt_tray(&mut self, extruder_id: u32, v_tray: &PrintTray) -> (bool, Option<SpoolId>) {
         let old_tray = self.virt_trays()[extruder_id as usize].clone();
@@ -450,15 +492,24 @@ impl BambuPrinter {
     pub fn process_print_message__ams(&mut self, ams: &PrintAms) -> (bool, HashMap<usize, SpoolId>) {
         let mut change_made = false;
         let prev_tray_exist_bits = *self.tray_exist_bits();
+        let mut protected_tray_mask = 0u32;
 
         // first check which ams's exist
         if let Some(ams_exist_bits) = &ams.ams_exist_bits {
-            let ams_exist_bits = u32::from_str_radix(ams_exist_bits, 16);
-            if let Ok(ams_exist_bits) = ams_exist_bits
-                && (self.ams_exist_bits().is_none() || *self.ams_exist_bits() != Some(ams_exist_bits))
-            {
-                self.set_ams_exist_bits(Some(ams_exist_bits));
-                change_made = true;
+            let incoming_ams_exist_bits = u32::from_str_radix(ams_exist_bits, 16);
+            if let Ok(incoming_ams_exist_bits) = incoming_ams_exist_bits {
+                let (ams_exist_bits, protected_mask) = self.effective_startup_ams_exist_bits(incoming_ams_exist_bits);
+                protected_tray_mask = protected_mask;
+                if protected_tray_mask != 0 {
+                    info!(
+                        "[{}] Startup AMS guard preserving AMS topology: incoming={incoming_ams_exist_bits:#x}, effective={ams_exist_bits:#x}",
+                        self.printer_number
+                    );
+                }
+                if self.ams_exist_bits().is_none() || *self.ams_exist_bits() != Some(ams_exist_bits) {
+                    self.set_ams_exist_bits(Some(ams_exist_bits));
+                    change_made = true;
+                }
             }
         }
 
@@ -471,18 +522,23 @@ impl BambuPrinter {
         // tray_exist_bits - which trays contain a spool
         if let Some(tray_exist_bits) = &ams.tray_exist_bits
             && let Ok(tray_exist_bits) = u32::from_str_radix(tray_exist_bits, 16)
-            && *self.tray_exist_bits() != Some(tray_exist_bits)
         {
-            self.set_tray_exist_bits(Some(tray_exist_bits));
-            change_made = true;
+            let tray_exist_bits = Self::protect_startup_ams_guard_tray_bits(tray_exist_bits, prev_tray_exist_bits, protected_tray_mask);
+            if *self.tray_exist_bits() != Some(tray_exist_bits) {
+                self.set_tray_exist_bits(Some(tray_exist_bits));
+                change_made = true;
+            }
         }
         // tray_read_done - which trays (from those that exist) that have been "read" (meaning ready from ams perspective)
         if let Some(tray_read_done_bits) = &ams.tray_read_done_bits
             && let Ok(tray_read_done_bits) = u32::from_str_radix(tray_read_done_bits, 16)
-            && *self.tray_read_done_bits() != Some(tray_read_done_bits)
         {
-            self.set_tray_read_done_bits(Some(tray_read_done_bits));
-            change_made = true;
+            let tray_read_done_bits =
+                Self::protect_startup_ams_guard_tray_bits(tray_read_done_bits, *self.tray_read_done_bits(), protected_tray_mask);
+            if *self.tray_read_done_bits() != Some(tray_read_done_bits) {
+                self.set_tray_read_done_bits(Some(tray_read_done_bits));
+                change_made = true;
+            }
         }
         // tray_reading - which trays (from those that exist) that are currently being "read" (meaning ams is rotating them to get them ready)
         if let Some(tray_reading_bits) = &ams.tray_reading_bits
@@ -579,6 +635,10 @@ impl BambuPrinter {
                 None
             };
 
+            if ((protected_tray_mask >> tray_id) & 0x01) != 0 && source_tray.is_none() {
+                continue;
+            }
+
             let new_tray = self.get_updated_tray(source_tray, tray_id as i32);
             if let Some(mut new_tray) = new_tray {
                 change_made = true;
@@ -613,6 +673,10 @@ impl BambuPrinter {
     }
 
     pub fn process_print_message(&mut self, print: &PrintData) -> (bool, HashMap<usize, SpoolId>) {
+        if self.startup_ams_guard_active() {
+            self.maybe_release_startup_ams_guard(print.command.as_deref());
+        }
+
         if let Some(sequence_id) = &print.sequence_id {
             if self.log_filter >= log::Level::Debug {
                 debug!("[{}] -> Message {}", self.printer_number, sequence_id);
