@@ -1,5 +1,5 @@
 use core::cell::RefCell;
-use core::future::ready;
+use core::future::Future;
 use core::net::Ipv4Addr;
 
 use alloc::format;
@@ -10,25 +10,23 @@ use alloc::vec::Vec;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use embedded_sdmmc::asynchronous::LfnBuffer;
-use framework::framework_web_app::{FrameworkState, encrypt, encrypt_bytes, encrypt_bytes_compact};
+use framework::framework_web_app::{encrypt, encrypt_bytes, encrypt_bytes_compact};
 use hashbrown::HashMap;
-use picoserve::response::ResponseWriter;
-use picoserve::response::StatusCode;
 use picoserve::response::chunked::{ChunkWriter, ChunkedResponse, ChunksWritten};
-use picoserve::routing::{PathRouterService, RequestHandlerService, get, get_service, post_service};
+use picoserve::response::{Body, HeadersIter, IntoResponse, Response, ResponseWriter, StatusCode};
+use picoserve::routing::RequestHandlerService;
 use picoserve::{
     AppWithStateBuilder, ResponseSent,
-    extract::{FromRequest, State},
+    extract::{FromRequest, FromRequestParts, Query},
     io::Read,
-    request::{Path, Request, RequestBody, RequestParts},
-    routing::post,
+    request::{Path, Request, RequestBody, RequestBodyConnection, RequestParts},
 };
 
 use framework::{
     display_snapshot::{DisplaySnapshotBmp, DisplaySnapshotError},
     encrypted_input,
     framework_web_app::{
-        CustomNotFound, Encryptable, EncryptedRejection, Encryption, NestedAppWithWebAppStateBuilder, SetConfigResponseDTO, WebAppState, decrypt,
+        CustomNotFound, Encryptable, EncryptedRejection, NestedAppWithWebAppStateBuilder, SetConfigResponseDTO, WebAppState, decrypt,
     },
     prelude::*,
 };
@@ -108,988 +106,1173 @@ impl AppWithStateBuilder for NestedAppBuilder {
     type PathRouter = impl picoserve::routing::PathRouter<WebAppState<ConsoleAppState>>;
 
     fn build_app(self) -> picoserve::Router<Self::PathRouter, Self::State> {
-        let _app_config = self.app_config.clone();
-        let _framework = self.framework.clone();
-
-        let router = picoserve::Router::from_service(CustomNotFound {
-            web_server_captive: self.framework.borrow().settings.web_server_captive,
-        }); // Handler in case page is not found for captive portal support
-        // let router = router.route("/", get(|| Redirect::to("/config"))); // Redirect root for now
-
-        // Redirect root to the current active application - either config, or encode or whatever
-        // For that, in order to preserve the hash (for sk=...), using a html/js redirect technique
-        let router = router.route(
-            "/",
-            get(move |state: State<ConsoleAppState>| {
-                ready({
-                    let redirect_url = &state.0.app_config.borrow().root_redirect;
-                    let redirect_html =
-                        format!(r#"<!doctype html><script>location.href=location.hash?"{redirect_url}"+location.hash:"{redirect_url}"</script>"#);
-                    HtmlStringResponse::new(redirect_html)
-                })
-            }),
-        );
-
-        //        TODO: >>>>>> Move to framework with setting for the css
-        let router = router.route(
-            "/styles.css",
-            get_service(picoserve::response::File::with_content_type_and_headers(
-                "text/css",
-                include_bytes_gz!("static/styles.css"),
-                &[("Content-Encoding", "gzip")],
-            )),
-        );
-
-        let router = router.route(
-            "/favicon-48x48.png",
-            get_service(picoserve::response::File::with_content_type(
-                "image/png",
-                include_bytes!("../static/favicon-48x48.png"),
-            )),
-        );
-
-        let router = router.route(
-            "/api/printer-config",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, printers_config_dto: PrintersConfigDTO| {
-                    let default_printer_id = printers_config_dto.default_printer_id.clone().or_else(|| {
-                        printers_config_dto
-                            .default_printer_serial
-                            .as_deref()
-                            .map(|serial| BambuPrinterConfig::printer_id_for_serial(serial).0)
-                    });
-                    ready(
-                        match state.0.app_config.borrow_mut().set_printers_config(
-                            printers_config_dto.into(),
-                            DefaultPrinterConfig {
-                                printer_id: default_printer_id,
-                            },
-                        ) {
-                            Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                            Err(e) => SetConfigResponseDTO {
-                                error_text: Some(format!("{e:?}")),
-                            }
-                            .encrypt(&key.borrow()),
-                        },
-                    )
-                },
-            )
-            .get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
-                ready({
-                    let borrowed_app_config = state.0.app_config.borrow(); // notice the borrow, can't async here
-                    let empty_printers_config = PrintersConfig {
-                        printers: alloc::vec![PrinterConfig::default()],
-                    };
-                    let no_configured_printers = borrowed_app_config.configured_printers.printers.is_empty();
-                    let printers = if no_configured_printers {
-                        &empty_printers_config
-                    } else {
-                        &borrowed_app_config.configured_printers
-                    };
-                    let default_printer = &borrowed_app_config.configured_default_printer;
-                    let mut printers_config = PrintersConfigDTO::from(printers);
-                    printers_config.default_printer_id = default_printer.printer_id.clone();
-                    printers_config.encrypt(&key.borrow())
-                })
-            }),
-        );
-
-        let router = router.route(
-            "/api/scale-config",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, scale_config_dto: ScaleConfigDTO| {
-                    ready(match state.0.app_config.borrow_mut().set_scale_config(scale_config_dto.into()) {
-                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                        Err(e) => SetConfigResponseDTO {
-                            error_text: Some(format!("{e:?}")),
-                        }
-                        .encrypt(&key.borrow()),
-                    })
-                },
-            )
-            .get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
-                ready({
-                    let borrowed_app_config = state.0.app_config.borrow(); // notice the borrow, can't async here
-                    let default_scale_config = ScaleConfig::default();
-                    let scale = borrowed_app_config.configured_scale.as_ref().unwrap_or(&default_scale_config);
-                    let scale_config = ScaleConfigDTO::from(scale);
-                    scale_config.encrypt(&key.borrow())
-                })
-            }),
-        );
-
-        let router = router.route(
-            "/api/console-info",
-            get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
-                ready({
-                    let borrowed_app_config = state.0.app_config.borrow();
-                    ConsoleInfoResponse {
-                        ai_providers: borrowed_app_config.ai_provider_key_availability(),
-                        device_name: borrowed_app_config.device_name(),
-                        device_ip: borrowed_app_config.device_ip(),
-                        device_certificate: borrowed_app_config.device_certificate_status(),
-                        backup_config: borrowed_app_config.backup_config.clone(),
-                        backup_status: borrowed_app_config.backup_status.clone(),
-                        store_initialized: state.0.store.is_initialized(),
-                        console_errors: state.0.store.console_errors(),
-                    }
-                    .encrypt(&key.borrow())
-                })
-            }),
-        );
-
-        let router = router.route(
-            "/api/printers-status",
-            get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
-                ready({
-                    GetPrintersStatusResponse {
-                        printers: state.0.view_model.borrow().get_printers_status(),
-                    }
-                    .encrypt(&key.borrow())
-                })
-            }),
-        );
-
-        let router = router.route(
-            "/api/printer-command",
-            post(
-                async move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, printer_command: PrinterCommandDTO| {
-                    let PrinterCommandDTO { printer_serial, command } = printer_command;
-                    let command_name = command.get_command().to_string();
-
-                    match state.0.view_model.borrow().request_printer_command(&printer_serial, command) {
-                        Ok(()) => GenericResponse {
-                            text: format!("Sent {command_name} command to printer {printer_serial}"),
-                            error: None,
-                        }
-                        .encrypt(&key.borrow()),
-                        Err(err) => GenericResponse {
-                            text: "Printer not found".to_string(),
-                            error: Some(err),
-                        }
-                        .encrypt(&key.borrow()),
-                    }
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/ai-provider-config/get",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, ai_provider_ref: AiProviderRefDTO| {
-                    ready({
-                        let api_key = state.0.app_config.borrow().get_ai_provider_api_key(&ai_provider_ref.provider);
-                        GetAiProviderApiKeyResponse {
-                            provider: ai_provider_ref.provider,
-                            api_key,
-                        }
-                        .encrypt(&key.borrow())
-                    })
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/ai-provider-config/set",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, set_ai_provider_api_key: SetAiProviderApiKeyDTO| {
-                    ready(
-                        match state
-                            .0
-                            .app_config
-                            .borrow_mut()
-                            .set_ai_provider_api_key(set_ai_provider_api_key.provider, set_ai_provider_api_key.api_key)
-                        {
-                            Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                            Err(e) => SetConfigResponseDTO {
-                                error_text: Some(format!("{e:?}")),
-                            }
-                            .encrypt(&key.borrow()),
-                        },
-                    )
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/ai-provider-config/delete",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, ai_provider_ref: AiProviderRefDTO| {
-                    ready(
-                        match state.0.app_config.borrow_mut().delete_ai_provider_api_key(ai_provider_ref.provider) {
-                            Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                            Err(e) => SetConfigResponseDTO {
-                                error_text: Some(format!("{e:?}")),
-                            }
-                            .encrypt(&key.borrow()),
-                        },
-                    )
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/api-tokens",
-            get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
-                ready({
-                    ApiTokensResponse {
-                        tokens: state.0.app_config.borrow().list_api_tokens(),
-                    }
-                    .encrypt(&key.borrow())
-                })
-            }),
-        );
-
-        let router = router.route(
-            "/api/api-tokens/create",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, create_api_token: CreateApiTokenDTO| {
-                    ready({
-                        match state
-                            .0
-                            .app_config
-                            .borrow_mut()
-                            .create_api_token(create_api_token.name, create_api_token.created_at)
-                        {
-                            Ok(generated_token) => CreateApiTokenResponse {
-                                token: Some(generated_token.token),
-                                token_metadata: Some(generated_token.metadata),
-                                error_text: None,
-                            },
-                            Err(err) => CreateApiTokenResponse {
-                                token: None,
-                                token_metadata: None,
-                                error_text: Some(err),
-                            },
-                        }
-                        .encrypt(&key.borrow())
-                    })
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/api-tokens/delete",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, delete_api_token: DeleteApiTokenDTO| {
-                    ready(match state.0.app_config.borrow_mut().delete_api_token(delete_api_token.id) {
-                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
-                    })
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/device-certificate/create",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, create_certificate: CreateDeviceCertificateDTO| {
-                    ready(
-                        match state.0.app_config.borrow_mut().create_device_certificate(create_certificate.into()) {
-                            Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                            Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
-                        },
-                    )
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/device-certificate/update-leaf",
-            post(
-                move |State(Encryption(key)): State<Encryption>,
-                      state: State<ConsoleAppState>,
-                      update_certificate: UpdateDeviceCertificateLeafDTO| {
-                    ready(
-                        match state.0.app_config.borrow_mut().update_device_certificate_leaf(update_certificate.into()) {
-                            Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                            Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
-                        },
-                    )
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/device-certificate/set-enabled",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, set_enabled: SetDeviceCertificateEnabledDTO| {
-                    ready(
-                        match state.0.app_config.borrow_mut().set_device_certificate_enabled(set_enabled.enabled) {
-                            Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                            Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
-                        },
-                    )
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/device-certificate/delete",
-            post(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
-                ready(match state.0.app_config.borrow_mut().delete_device_certificate() {
-                    Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                    Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
-                })
-            }),
-        );
-
-        let router = router.route(
-            "/api/device-certificate/ca-cert",
-            get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
-                ready(
-                    DeviceCertificateCaCertResponse {
-                        ca_cert_pem: state.0.app_config.borrow().device_ca_cert_pem(settings::API_SERVER_TLS_CERTIFICATE),
-                    }
-                    .encrypt(&key.borrow()),
-                )
-            }),
-        );
-
-        let router = router.route(
-            "/spools-catalog",
-            get_service(picoserve::response::File::with_content_type(
-                "text/plain; charset=utf-8",
-                SPOOLS_CATALOG.as_bytes(),
-            )),
-        );
-
-        let router = router.route(
-            "/filament-brands",
-            get_service(picoserve::response::File::with_content_type(
-                "text/plain; charset=utf-8",
-                FILAMENT_BRAND_NAMES.as_bytes(),
-            )),
-        );
-
-        let router = router.route(
-            "/api/spools-config",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, SpoolsConfigDTO { spools }| {
-                    let spools = if let Some(spools) = spools {
-                        if !spools.trim().is_empty() {
-                            Some(spools.trim().replace("\r\n", "\n").replace("\n", "\r\n"))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-                    ready(match state.0.app_config.borrow_mut().set_user_cores(spools) {
-                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                        Err(e) => SetConfigResponseDTO {
-                            error_text: Some(format!("{e:?}")),
-                        }
-                        .encrypt(&key.borrow()),
-                    })
-                },
-            )
-            .get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
-                ready({
-                    let borrowed_app_config = state.0.app_config.borrow(); // notice the borrow, can't async here
-                    let spools = &borrowed_app_config.user_cores;
-                    let spools_config = SpoolsConfigDTO { spools: spools.clone() };
-                    spools_config.encrypt(&key.borrow())
-                })
-            }),
-        );
-
-        let router = router.route(
-            "/api/filaments-config",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, FilamentsConfigDTO { custom_filaments }| {
-                    ready(match state.0.app_config.borrow_mut().set_filaments(custom_filaments) {
-                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                        Err(e) => SetConfigResponseDTO {
-                            error_text: Some(format!("{e:?}")),
-                        }
-                        .encrypt(&key.borrow()),
-                    })
-                },
-            )
-            .get(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
-                ready({
-                    let borrowed_app_config = state.0.app_config.borrow(); // notice the borrow, can't async here
-                    let custom_filaments = &borrowed_app_config.custom_filaments;
-                    let filaments_config = FilamentsConfigDTO {
-                        custom_filaments: custom_filaments.clone(),
-                    };
-                    filaments_config.encrypt(&key.borrow())
-                })
-            }),
-        );
-
-        let router = router.route(
-            "/api/spools-in-printers",
-            get(async move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
-                GetSpoolsInPrintersResponse {
-                    spools: state.0.view_model.borrow().get_spools_in_printers(),
-                }
-                .encrypt(&key.borrow())
-            }),
-        );
-
-        let router = router.route(
-            "/api/spools",
-            get(async move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
-                encrypt_spools_csv_response(&key.borrow(), state.0.store.as_ref())
-            }),
-        );
-
-        let router = router.route(
-            "/api/spools/delete",
-            post(
-                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, delete_spool: DeleteSpoolDTO| {
-                    let store = state.store;
-                    let delete_spool_id = delete_spool.id;
-                    match store.delete_spool(&delete_spool_id).await {
-                        Ok(_) => match store.spool_ids_hash() {
-                            Ok(ids_hash) => DeleteSpoolDTOResponse {
-                                deleted_ids: vec![delete_spool_id],
-                                ids_hash,
-                            }
-                            .encrypt(&key.borrow()),
-                            Err(err) => {
-                                error!("Failed to generate response to spoole delete: {err}");
-                                "".to_string()
-                            }
-                        },
-                        Err(err) => {
-                            error!("Failed to delete spool {} : {err}", delete_spool_id);
-                            err.to_string()
-                        }
-                    }
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/spools/add-edit",
-            post(
-                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, add_spool: AddSpoolDTO| {
-                    let store = state.store;
-                    let mut split_spool = None;
-
-                    if let Some(split_id) = add_spool.split
-                        && let Some(splitted_spool) = store.get_spool_by_id(&split_id)
-                    {
-                        if splitted_spool.spools_count - add_spool.spools_count < 1 {
-                            return format!(
-                                "Spool {split_id} had {} and can't split out {}",
-                                splitted_spool.spools_count, add_spool.spools_count
-                            );
-                        } else {
-                            split_spool = Some(splitted_spool);
-                        }
-                    }
-                    let color_code = add_spool
-                        .rgba
-                        .split(';')
-                        .map(str::trim)
-                        .filter(|c| !c.is_empty())
-                        .map(|c| c.to_string())
-                        .collect::<Vec<_>>();
-
-                    // this happens on successful split or when a simple add/edit and not split
-                    let add_spool_operation = add_spool.id.is_empty();
-                    let new_spool = SpoolRecord {
-                        id: add_spool.id,
-                        tag_id: if add_spool.tag_id.is_empty() {
-                            Vec::new()
-                        } else {
-                            vec![add_spool.tag_id]
-                        },
-                        material_type: add_spool.material,
-                        material_subtype: add_spool.subtype,
-                        color_name: add_spool.color_name,
-                        color_code,
-                        note: add_spool.note,
-                        brand: add_spool.brand,
-                        weight_advertised: if add_spool.label_weight == 0 {
-                            None
-                        } else {
-                            Some(add_spool.label_weight)
-                        },
-                        weight_core: if add_spool.core_weight == 0 { None } else { Some(add_spool.core_weight) },
-                        weight_new: None,
-                        weight_current: None,
-                        slicer_filament: add_spool.slicer_filament,
-                        added_time: if add_spool_operation { add_spool.added_time } else { None }, // will be added by store if required
-                        encode_time: None,                                                         // will be added by store if required
-                        added_full: match add_spool.full_unused.to_lowercase().as_str() {
-                            "y" => Some(true),
-                            "n" => Some(false),
-                            _ => None,
-                        },
-                        consumed_since_add: 0.0,
-                        consumed_since_weight: 0.0,
-                        ext_has_k: add_spool.k_info.is_some(),
-                        data_origin: String::new(),
-                        tag_type: String::new(),
-                        assigned_location: add_spool.assigned_location,
-                        actual_location: add_spool.actual_location,
-                        spools_count: add_spool.spools_count,
-                        td: add_spool.td.filter(|td| td.is_finite() && *td >= 0.0),
-                    };
-
-                    let spool_id = if add_spool_operation {
-                        match store
-                            .add_spool(
-                                new_spool,
-                                SpoolRecordExt {
-                                    tag: None,
-                                    k_info: add_spool.k_info,
-                                    origin_data: None,
-                                },
-                            )
-                            .await
-                        {
-                            Ok(new_id) => {
-                                state.view_model.borrow_mut().recently_added_spool_id = Some(new_id.clone());
-                                new_id
-                            }
-                            Err(err) => {
-                                error!("Failed to add spool : {err}");
-                                return err.to_string();
-                            }
-                        }
-                    } else {
-                        let id = new_spool.id.clone();
-                        match store.edit_spool_from_web(new_spool, add_spool.k_info).await {
-                            Ok(_) => id,
-                            Err(err) => {
-                                error!("Failed to edit spool : {err}");
-                                return err.to_string();
-                            }
-                        }
-                    };
-                    let mut changed_ids = vec![spool_id.clone()];
-
-                    if let Some(mut split_spool) = split_spool {
-                        let split_spool_id = split_spool.id.clone();
-                        split_spool.spools_count -= add_spool.spools_count;
-                        if let Err(err) = store.update_spool(split_spool, None).await {
-                            error!("Critical: Added new splitted spool/stock but failed to update splitted stock : {err}");
-                            return err.to_string();
-                        }
-                        changed_ids.push(split_spool_id);
-                    }
-
-                    let changed_records = match store.spool_csv_rows_by_id(&changed_ids) {
-                        Ok(changed_records) => changed_records,
-                        Err(err) => {
-                            error!("Failed to generate changed spool records response: {err}");
-                            return "Failed to generate changed spool records response".to_string();
-                        }
-                    };
-                    match store.spool_ids_hash() {
-                        Ok(ids_hash) => AddSpoolDTOResponse {
-                            id: spool_id,
-                            changed_records,
-                            ids_hash,
-                        }
-                        .encrypt(&key.borrow()),
-                        Err(err) => {
-                            error!("Failed to generate response to spoole query: {err}");
-                            "Failed to generate response to spoole query".to_string()
-                        }
-                    }
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/printers-filament-pa",
-            post(
-                move |State(Encryption(key)): State<Encryption>,
-                      state: State<ConsoleAppState>,
-                      get_printers_filament_pa: GetPrintersFilamentPaDTO| {
-                    ready({
-                        let printers_filament_pa = state
-                            .0
-                            .view_model
-                            .borrow()
-                            .get_printers_filament_pa(&get_printers_filament_pa.slicer_filament_code)
-                            .into_iter()
-                            .map(|(identifier, name, extruders, pressure_advance)| {
-                                (
-                                    identifier,
-                                    PrinterEntry {
-                                        name,
-                                        extruders,
-                                        pressure_advance: pressure_advance
-                                            .into_iter()
-                                            .map(|pa| PressureAdvanceEntry {
-                                                extruder: pa.extruder,
-                                                diameter: pa.diameter,
-                                                nozzle_id: pa.nozzle_id,
-                                                name: pa.name,
-                                                k_value: pa.k_value,
-                                                cali_idx: pa.cali_idx,
-                                                setting_id: pa.setting_id,
-                                            })
-                                            .collect::<Vec<_>>(),
-                                    },
-                                )
-                            })
-                            .collect::<HashMap<_, _>>();
-                        GetPrintersFilamentPaDTOResponse {
-                            printers: printers_filament_pa,
-                        }
-                        .encrypt(&key.borrow())
-                    })
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/add-printer-pa",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, add_pa: AddPressureAdvanceDTO| {
-                    ready({
-                        match state.0.view_model.borrow_mut().add_calibration_to_printer(
-                            &add_pa.printer_serial,
-                            add_pa.pressure_advance_entry.extruder,
-                            &add_pa.pressure_advance_entry.diameter,
-                            &add_pa.pressure_advance_entry.nozzle_id,
-                            &add_pa.filament_id,
-                            &add_pa.pressure_advance_entry.setting_id.unwrap_or_default(),
-                            &add_pa.pressure_advance_entry.k_value,
-                            &add_pa.pressure_advance_entry.name,
-                        ) {
-                            Ok(_) => GenericResponse {
-                                error: None,
-                                text: "Sent Pressure Advance Add Request to Printer".to_string(),
-                            }
-                            .encrypt(&key.borrow()),
-                            Err(err) => GenericResponse { error: None, text: err }.encrypt(&key.borrow()),
-                        }
-                    })
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/spool-kinfo",
-            post(
-                async move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, get_spool_kinfo: GetSpoolKInfoDTO| {
-                    let store = state.0.view_model.borrow_mut().store.clone();
-                    match store.get_spool_ext_by_id(&get_spool_kinfo.id).await {
-                        Ok(spool_rec_ext) => Ok::<String, StatusCode>(
-                            GetSpoolKInfoDTOResponse {
-                                k_info: spool_rec_ext.k_info,
-                            }
-                            .encrypt(&key.borrow()),
-                        ),
-                        Err(_) => Err::<String, StatusCode>(StatusCode::new(404)),
-                    }
-                },
-            ),
-        );
-
-        // Web App //
-
-        let router = router.route(
-            "/inventory",
-            get(|| {
-                ready({
-                    let redirect_html = r#"<!doctype html><script>location.replace("/app/inventory"+location.hash)</script>"#.to_string();
-                    HtmlStringResponse::new(redirect_html)
-                })
-            }),
-        );
-
-        // captures /app
-        let router = router.route("/app", get_service(APP_INDEX_HTML_FILE));
-
-        // captures /app/*
-        let router = router.nest_service("/app", AppIndexHtml);
-
-        let router = router.route(
-            "/L1/",
-            get_service(picoserve::response::File::with_content_type_and_headers(
-                "text/html",
-                include_bytes_gz!("static/consoletag/index.html"),
-                &[("Content-Encoding", "gzip")],
-            )),
-        );
-
-        // let router = router.route(
-        //     "/inventory.js",
-        //     get_service(picoserve::response::File::with_content_type_and_headers(
-        //         "application/javascript; charset=utf-8",
-        //         include_bytes!("../static/inventory/inventory.js.gz"),
-        //         &[("Content-Encoding", "gzip")],
-        //     )),
-        // );
-
-        let router = router.route(
-            "/api/store-backup",
-            get(move |State(Encryption(key)), State(FrameworkState(framework))| async move {
-                ChunkedResponse::new(StoreBackupChunks {
-                    framework: framework.clone(),
-                    key,
-                })
-                .into_response()
-            }),
-        );
-
-        let router = router.route(
-            "/api/store-backup/config",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, backup_config: BackupConfig| {
-                    ready(match state.0.app_config.borrow_mut().set_backup_config(backup_config) {
-                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
-                    })
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/store-backup/mark-completed",
-            post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, mark_backup: MarkBackupCompletedDTO| {
-                    ready(match state.0.app_config.borrow_mut().mark_backup_completed(mark_backup.date_time) {
-                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
-                    })
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/store-backup/reset-status",
-            post(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>| {
-                ready(match state.0.app_config.borrow_mut().reset_backup_status() {
-                    Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                    Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
-                })
-            }),
-        );
-
-        let router = router.route("/api/store-restore-upload", post_service(StoreRestoreUploadService));
-
-        let router = router.route(
-            "/api/store-restore-delete",
-            post(
-                async move |State(Encryption(key)): State<Encryption>,
-                            State(FrameworkState(framework)): State<FrameworkState>,
-                            RestoreDeleteDTO {}| {
-                    cleanup_restore_upload_temp(&framework).await;
-                    GenericResponse {
-                        text: "Deleted uploaded backup files".to_string(),
-                        error: None,
-                    }
-                    .encrypt(&key.borrow())
-                },
-            ),
-        );
-
-        // http://device.local/insecure/screenshot?key=<key>&file=image.bmp
-        #[derive(serde::Deserialize)]
-        struct ScreenshotQueryParams {
-            key: String,
-            file: String,
-        }
-        let router =
-            router.route(
-                "/insecure/screenshot",
-                get(
-                    move |picoserve::extract::Query(ScreenshotQueryParams { file, key }),
-                          State(Encryption(_key)),
-                          State(FrameworkState(framework))| async move {
-                        if key == framework.borrow().web_config_key {
-                            let screenshot = framework.borrow().take_display_snapshot_bmp().map_err(ScreenshotError::from);
-                            let status_code = if screenshot.is_ok() { StatusCode::OK } else { StatusCode::BAD_REQUEST };
-                            let resp = ChunkedResponse::new(ScreenshotChunks { screenshot }).into_response();
-                            resp.with_header("Content-Disposition", format!("attachment; filename=\"{file}\""))
-                                .with_status_code(status_code)
-                        } else {
-                            let screenshot = Err(ScreenshotError::SecurityKey);
-                            let resp = ChunkedResponse::new(ScreenshotChunks { screenshot }).into_response();
-                            resp.with_header("", String::new()).with_status_code(StatusCode::UNAUTHORIZED)
-                        }
-                    },
-                ),
-            );
-
-        let router = router.route(
-            "/api/storage-config",
-            post(
-                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, storage_config: StorageConfig| {
-                    let store = state.store;
-                    match store.set_storage_config(storage_config).await {
-                        Ok(storage_config_str) => encrypt(&key.borrow(), &storage_config_str),
-                        Err(err) => {
-                            error!("Failed to store Storage Configuration : {err}");
-                            err.to_string()
-                        }
-                    }
-                },
-            )
-            .get(
-                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>| {
-                    let store = state.store;
-                    let storage_config_str = serde_json::to_string(&*store.storage_config.borrow()).unwrap();
-                    encrypt(&key.borrow(), &storage_config_str)
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/dashboard-config",
-            post(
-                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, dashboard_config: DashboardConfigDTO| {
-                    let store = state.store;
-                    match &dashboard_config.dashboard_config_json {
-                        Some(dashboard_config_json) => match store.set_dashboard_config_json(dashboard_config_json).await {
-                            Ok(_) => DashboardConfigDTO {
-                                dashboard_config_json: Some(dashboard_config_json.clone()),
-                            }
-                            .encrypt(&key.borrow()),
-                            Err(err) => {
-                                error!("Failed to store dashboard configuration: {err}");
-                                DashboardConfigDTO { dashboard_config_json: None }.encrypt(&key.borrow())
-                            }
-                        },
-                        None => DashboardConfigDTO { dashboard_config_json: None }.encrypt(&key.borrow()),
-                    }
-                },
-            )
-            .get(
-                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>| {
-                    let store = state.store;
-                    match store.get_dashboard_config_json().await {
-                        Ok(dashboard_config_json) => DashboardConfigDTO { dashboard_config_json }.encrypt(&key.borrow()),
-                        Err(err) => {
-                            error!("Failed to load dashboard configuration: {err}");
-                            DashboardConfigDTO { dashboard_config_json: None }.encrypt(&key.borrow())
-                        }
-                    }
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/tag-scanned",
-            post(
-                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, tag_scanned: TagScannedDTO| {
-                    let store = state.store;
-                    if let Some(location_rec) = store.get_location_by_hex_tag(&tag_scanned.tag_id_hex) {
-                        TagScannedResponse {
-                            tag_info: TagInfo::Location {
-                                location: location_rec.location,
-                            },
-                        }
-                        .encrypt(&key.borrow())
-                    } else {
-                        TagScannedResponse { tag_info: TagInfo::Unknown }.encrypt(&key.borrow())
-                    }
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/set-tag-location",
-            post(
-                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>, set_tag_location: SetTagLocationDTO| {
-                    let store = state.store;
-                    if set_tag_location.location.is_empty() {
-                        match store.delete_location(&set_tag_location.tag_id_hex).await {
-                            Ok(_) => GenericResponse {
-                                error: None,
-                                text: "Tag location cleared".to_string(),
-                            }
-                            .encrypt(&key.borrow()),
-                            Err(err) => GenericResponse {
-                                error: Some(format!("Failed to clear tag location: {err:?}")),
-                                text: String::new(),
-                            }
-                            .encrypt(&key.borrow()),
-                        }
-                    } else {
-                        match store.insert_tag_location(&set_tag_location.tag_id_hex, &set_tag_location.location).await {
-                            Ok(true) => GenericResponse {
-                                error: None,
-                                text: "Location assigned to tag".to_string(),
-                            }
-                            .encrypt(&key.borrow()),
-                            Ok(false) => GenericResponse {
-                                error: None,
-                                text: "Tag's location updated".to_string(),
-                            }
-                            .encrypt(&key.borrow()),
-                            Err(err) => GenericResponse {
-                                error: Some(format!("Error setting tag location: {err:?}")),
-                                text: String::new(),
-                            }
-                            .encrypt(&key.borrow()),
-                        }
-                    }
-                },
-            ),
-        );
-
-        let router = router.route(
-            "/api/spool-staging",
-            get(
-                async move |State(Encryption(key)): State<Encryption>, State(state): State<ConsoleAppState>| {
-                    let view_model = state.view_model.borrow();
-                    let filament_staging = view_model.filament_staging.borrow();
-                    if let Some(spool_rec) = filament_staging.spool_rec() {
-                        let store = state.store;
-                        if let Some(record_csv) = store.get_spool_csv_by_id(&spool_rec.id) {
-                            return SpoolStagingResponse { csv_record: record_csv }.encrypt(&key.borrow());
-                        }
-                    }
-                    return SpoolStagingResponse { csv_record: String::new() }.encrypt(&key.borrow());
-                },
-            ),
-        );
-
-        #[allow(clippy::let_and_return)]
-        let router = router.route(
-            "/api/spool-location",
-            post(
-                async move |State(Encryption(key)): State<Encryption>,
-                            State(state): State<ConsoleAppState>,
-                            set_spool_location: SetSpoolLocationDTO| {
-                    let store = state.store;
-                    if let Some(mut spool_rec) = store.get_spool_by_id(&set_spool_location.spool_id) {
-                        match set_spool_location.location_type {
-                            LocationType::Assigned => spool_rec.assigned_location = set_spool_location.location,
-                            LocationType::Actual => spool_rec.actual_location = set_spool_location.location,
-                        }
-                        match store.update_spool(spool_rec, None).await {
-                            Ok(_) => {
-                                return GenericResponse {
-                                    text: format!("Spool {} updated", set_spool_location.spool_id),
-                                    error: None,
-                                }
-                                .encrypt(&key.borrow());
-                            }
-                            Err(err) => {
-                                return GenericResponse {
-                                    text: format!("Tried to update Spool {}", set_spool_location.spool_id),
-                                    error: Some(format!("Failed to update Spool {} : {err}", set_spool_location.spool_id)),
-                                }
-                                .encrypt(&key.borrow());
-                            }
-                        }
-                    } else {
-                        return GenericResponse {
-                            text: format!("Tried to update Spool {}", set_spool_location.spool_id),
-                            error: Some(format!("No Spool {} in store", set_spool_location.spool_id)),
-                        }
-                        .encrypt(&key.borrow());
-                    }
-                },
-            ),
-        );
-
-        router
+        let web_server_captive = self.framework.borrow().settings.web_server_captive;
+        let _app_config = self.app_config;
+        picoserve::Router::from_service(ConsoleWebService { web_server_captive })
     }
+}
+
+struct ConsoleWebService {
+    web_server_captive: bool,
+}
+
+#[derive(Clone, Copy)]
+enum ApiMethod {
+    Get,
+    Post,
+    Other,
+}
+
+impl From<&str> for ApiMethod {
+    fn from(method: &str) -> Self {
+        match method {
+            "GET" => Self::Get,
+            "POST" => Self::Post,
+            _ => Self::Other,
+        }
+    }
+}
+
+async fn extract_web_app_request<T, R: Read>(
+    state: &WebAppState<ConsoleAppState>,
+    request_parts: RequestParts<'_>,
+    request_body: RequestBody<'_, R>,
+) -> Result<T, EncryptedRejection>
+where
+    T: for<'r> FromRequest<'r, WebAppState<ConsoleAppState>, Rejection = EncryptedRejection>,
+{
+    T::from_request(state, request_parts, request_body).await
+}
+
+async fn write_ok<R: Read, W: ResponseWriter<Error = R::Error>>(
+    body_connection: RequestBodyConnection<'_, R>,
+    response_writer: W,
+    payload: String,
+) -> Result<ResponseSent, W::Error> {
+    response_writer
+        .write_response(body_connection.finalize().await?, Response::new(StatusCode::OK, payload))
+        .await
+}
+
+async fn write_empty_response<R: Read, W: ResponseWriter<Error = R::Error>>(
+    body_connection: RequestBodyConnection<'_, R>,
+    response_writer: W,
+    status_code: StatusCode,
+) -> Result<ResponseSent, W::Error> {
+    response_writer
+        .write_response(body_connection.finalize().await?, Response::new(status_code, ""))
+        .await
+}
+
+async fn write_rejection<R, W, Rejection>(
+    body_connection: RequestBodyConnection<'_, R>,
+    response_writer: W,
+    rejection: Rejection,
+) -> Result<ResponseSent, W::Error>
+where
+    R: Read,
+    W: ResponseWriter<Error = R::Error>,
+    Rejection: IntoResponse,
+{
+    rejection.write_to(body_connection.finalize().await?, response_writer).await
+}
+
+async fn handle_web_app_post<T, R, W, Handler, HandlerFuture>(
+    state: &WebAppState<ConsoleAppState>,
+    mut request: Request<'_, R>,
+    response_writer: W,
+    key: &'static RefCell<Vec<u8>>,
+    app_state: ConsoleAppState,
+    handler: Handler,
+) -> Result<ResponseSent, W::Error>
+where
+    T: for<'r> FromRequest<'r, WebAppState<ConsoleAppState>, Rejection = EncryptedRejection>,
+    R: Read,
+    W: ResponseWriter<Error = R::Error>,
+    Handler: FnOnce(&'static RefCell<Vec<u8>>, ConsoleAppState, T) -> HandlerFuture,
+    HandlerFuture: Future<Output = String>,
+{
+    let input = match extract_web_app_request(state, request.parts, request.body_connection.body()).await {
+        Ok(value) => value,
+        Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
+    };
+
+    let payload = handler(key, app_state, input).await;
+    write_ok(request.body_connection, response_writer, payload).await
+}
+
+macro_rules! box_route_future {
+    ($body:expr) => {
+        alloc::boxed::Box::pin(async move { $body }).await
+    };
+}
+
+impl picoserve::routing::PathRouterService<WebAppState<ConsoleAppState>> for ConsoleWebService {
+    async fn call_path_router_service<R: Read, W: ResponseWriter<Error = R::Error>>(
+        &self,
+        state: &WebAppState<ConsoleAppState>,
+        (): (),
+        path: Path<'_>,
+        request: Request<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        let method = ApiMethod::from(request.parts.method());
+        let key = state.encryption.0;
+        let app_state = state.more_state.clone();
+
+        match (method, path.encoded()) {
+            (ApiMethod::Get, "/") => box_route_future!(handle_root_redirect(request, response_writer, app_state).await),
+            (ApiMethod::Get, "/styles.css") => {
+                box_route_future!(STYLES_CSS_FILE.call_request_handler_service(state, (), request, response_writer).await)
+            }
+            (ApiMethod::Get, "/favicon-48x48.png") => {
+                box_route_future!(FAVICON_FILE.call_request_handler_service(state, (), request, response_writer).await)
+            }
+            (ApiMethod::Get, "/spools-catalog") => box_route_future!({
+                picoserve::response::File::with_content_type("text/plain; charset=utf-8", SPOOLS_CATALOG.as_bytes())
+                    .call_request_handler_service(state, (), request, response_writer)
+                    .await
+            }),
+            (ApiMethod::Get, "/filament-brands") => box_route_future!({
+                picoserve::response::File::with_content_type("text/plain; charset=utf-8", FILAMENT_BRAND_NAMES.as_bytes())
+                    .call_request_handler_service(state, (), request, response_writer)
+                    .await
+            }),
+            (ApiMethod::Get, "/inventory") => box_route_future!(handle_inventory_redirect(request, response_writer).await),
+            (ApiMethod::Get, app_path) if app_path == "/app" || app_path.starts_with("/app/") => box_route_future!({
+                APP_INDEX_HTML_FILE
+                    .call_request_handler_service(state, (), request, response_writer)
+                    .await
+            }),
+            (ApiMethod::Get, "/L1/") => {
+                box_route_future!(L1_INDEX_HTML_FILE.call_request_handler_service(state, (), request, response_writer).await)
+            }
+            (ApiMethod::Get, "/insecure/screenshot") => box_route_future!(handle_screenshot(state, request, response_writer).await),
+            (ApiMethod::Post, "/api/printer-config") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_printer_config_post).await)
+            }
+            (ApiMethod::Get, "/api/printer-config") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_printer_config_get).await)
+            }
+            (ApiMethod::Post, "/api/scale-config") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_scale_config_post).await)
+            }
+            (ApiMethod::Get, "/api/scale-config") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_scale_config_get).await)
+            }
+            (ApiMethod::Get, "/api/console-info") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_console_info_get).await)
+            }
+            (ApiMethod::Get, "/api/printers-status") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_printers_status_get).await)
+            }
+            (ApiMethod::Post, "/api/printer-command") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_printer_command_post).await)
+            }
+
+            (ApiMethod::Post, "/api/ai-provider-config/get") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_ai_provider_config_get).await)
+            }
+            (ApiMethod::Post, "/api/ai-provider-config/set") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_ai_provider_config_set).await)
+            }
+            (ApiMethod::Post, "/api/ai-provider-config/delete") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_ai_provider_config_delete).await)
+            }
+
+            (ApiMethod::Get, "/api/api-tokens") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_api_tokens_get).await)
+            }
+            (ApiMethod::Post, "/api/api-tokens/create") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_api_tokens_create).await)
+            }
+            (ApiMethod::Post, "/api/api-tokens/delete") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_api_tokens_delete).await)
+            }
+
+            (ApiMethod::Post, "/api/device-certificate/create") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_device_certificate_create).await)
+            }
+            (ApiMethod::Post, "/api/device-certificate/update-leaf") => {
+                box_route_future!(
+                    handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_device_certificate_update_leaf).await
+                )
+            }
+            (ApiMethod::Post, "/api/device-certificate/set-enabled") => {
+                box_route_future!(
+                    handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_device_certificate_set_enabled).await
+                )
+            }
+            (ApiMethod::Post, "/api/device-certificate/delete") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_device_certificate_delete).await)
+            }
+            (ApiMethod::Get, "/api/device-certificate/ca-cert") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_device_certificate_ca_cert).await)
+            }
+
+            (ApiMethod::Post, "/api/spools-config") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_spools_config_post).await)
+            }
+            (ApiMethod::Get, "/api/spools-config") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_spools_config_get).await)
+            }
+            (ApiMethod::Post, "/api/filaments-config") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_filaments_config_post).await)
+            }
+            (ApiMethod::Get, "/api/filaments-config") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_filaments_config_get).await)
+            }
+            (ApiMethod::Get, "/api/spools-in-printers") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_spools_in_printers_get).await)
+            }
+            (ApiMethod::Get, "/api/spools") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_spools_get).await)
+            }
+            (ApiMethod::Post, "/api/spools/delete") => {
+                box_route_future!(handle_web_app_post(state, request, response_writer, key, app_state, handle_spools_delete).await)
+            }
+            (ApiMethod::Post, "/api/spools/add-edit") => {
+                box_route_future!(handle_web_app_post(state, request, response_writer, key, app_state, handle_spools_add_edit).await)
+            }
+            (ApiMethod::Post, "/api/printers-filament-pa") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_printers_filament_pa).await)
+            }
+            (ApiMethod::Post, "/api/add-printer-pa") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_add_printer_pa).await)
+            }
+            (ApiMethod::Post, "/api/spool-kinfo") => {
+                box_route_future!(handle_spool_kinfo(state, request, response_writer, key, app_state).await)
+            }
+
+            (ApiMethod::Get, "/api/store-backup") => {
+                box_route_future!(handle_store_backup_get(request, response_writer, key, state.framework.0.clone()).await)
+            }
+            (ApiMethod::Post, "/api/store-backup/config") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_store_backup_config).await)
+            }
+            (ApiMethod::Post, "/api/store-backup/mark-completed") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_store_backup_mark_completed).await)
+            }
+            (ApiMethod::Post, "/api/store-backup/reset-status") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_store_backup_reset_status).await)
+            }
+            (ApiMethod::Post, "/api/store-restore-upload") => box_route_future!({
+                StoreRestoreUploadService
+                    .call_request_handler_service(state, (), request, response_writer)
+                    .await
+            }),
+            (ApiMethod::Post, "/api/store-restore-delete") => {
+                box_route_future!(handle_store_restore_delete(state, request, response_writer, key).await)
+            }
+            (ApiMethod::Post, "/api/storage-config") => {
+                box_route_future!(handle_storage_config_post(state, request, response_writer, key).await)
+            }
+            (ApiMethod::Get, "/api/storage-config") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_storage_config_get).await)
+            }
+            (ApiMethod::Post, "/api/dashboard-config") => {
+                box_route_future!(handle_dashboard_config_post(state, request, response_writer, key).await)
+            }
+            (ApiMethod::Get, "/api/dashboard-config") => {
+                box_route_future!(handle_dashboard_config_get(request, response_writer, key, app_state).await)
+            }
+            (ApiMethod::Post, "/api/tag-scanned") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_tag_scanned).await)
+            }
+            (ApiMethod::Post, "/api/set-tag-location") => {
+                box_route_future!(handle_set_tag_location(state, request, response_writer, key).await)
+            }
+            (ApiMethod::Get, "/api/spool-staging") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_spool_staging_get).await)
+            }
+            (ApiMethod::Post, "/api/spool-location") => {
+                box_route_future!(handle_spool_location(state, request, response_writer, key).await)
+            }
+
+            _ => box_route_future!({
+                CustomNotFound {
+                    web_server_captive: self.web_server_captive,
+                }
+                .call_path_router_service(state, (), path, request, response_writer)
+                .await
+            }),
+        }
+    }
+}
+
+async fn write_response_value<R, W, H, B>(
+    body_connection: RequestBodyConnection<'_, R>,
+    response_writer: W,
+    response: Response<H, B>,
+) -> Result<ResponseSent, W::Error>
+where
+    R: Read,
+    W: ResponseWriter<Error = R::Error>,
+    H: HeadersIter,
+    B: Body,
+{
+    response_writer.write_response(body_connection.finalize().await?, response).await
+}
+
+async fn write_html_ok<R: Read, W: ResponseWriter<Error = R::Error>>(
+    body_connection: RequestBodyConnection<'_, R>,
+    response_writer: W,
+    html: String,
+) -> Result<ResponseSent, W::Error> {
+    write_response_value(
+        body_connection,
+        response_writer,
+        Response::new(StatusCode::OK, HtmlStringResponse::new(html)),
+    )
+    .await
+}
+
+async fn handle_web_app_get_sync<R, W, Handler>(
+    request: Request<'_, R>,
+    response_writer: W,
+    key: &'static RefCell<Vec<u8>>,
+    app_state: ConsoleAppState,
+    handler: Handler,
+) -> Result<ResponseSent, W::Error>
+where
+    R: Read,
+    W: ResponseWriter<Error = R::Error>,
+    Handler: FnOnce(&'static RefCell<Vec<u8>>, ConsoleAppState) -> String,
+{
+    let payload = handler(key, app_state);
+    write_ok(request.body_connection, response_writer, payload).await
+}
+
+async fn handle_web_app_post_sync<T, R, W, Handler>(
+    state: &WebAppState<ConsoleAppState>,
+    mut request: Request<'_, R>,
+    response_writer: W,
+    key: &'static RefCell<Vec<u8>>,
+    app_state: ConsoleAppState,
+    handler: Handler,
+) -> Result<ResponseSent, W::Error>
+where
+    T: for<'r> FromRequest<'r, WebAppState<ConsoleAppState>, Rejection = EncryptedRejection>,
+    R: Read,
+    W: ResponseWriter<Error = R::Error>,
+    Handler: FnOnce(&'static RefCell<Vec<u8>>, ConsoleAppState, T) -> String,
+{
+    let input = match extract_web_app_request(state, request.parts, request.body_connection.body()).await {
+        Ok(value) => value,
+        Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
+    };
+
+    let payload = handler(key, app_state, input);
+    write_ok(request.body_connection, response_writer, payload).await
+}
+
+async fn handle_root_redirect<R: Read, W: ResponseWriter<Error = R::Error>>(
+    request: Request<'_, R>,
+    response_writer: W,
+    app_state: ConsoleAppState,
+) -> Result<ResponseSent, W::Error> {
+    let redirect_html = {
+        let borrowed_app_config = app_state.app_config.borrow();
+        let redirect_url = &borrowed_app_config.root_redirect;
+        format!(r#"<!doctype html><script>location.href=location.hash?"{redirect_url}"+location.hash:"{redirect_url}"</script>"#)
+    };
+    write_html_ok(request.body_connection, response_writer, redirect_html).await
+}
+
+async fn handle_inventory_redirect<R: Read, W: ResponseWriter<Error = R::Error>>(
+    request: Request<'_, R>,
+    response_writer: W,
+) -> Result<ResponseSent, W::Error> {
+    write_html_ok(
+        request.body_connection,
+        response_writer,
+        r#"<!doctype html><script>location.replace("/app/inventory"+location.hash)</script>"#.to_string(),
+    )
+    .await
+}
+
+#[derive(serde::Deserialize)]
+struct ScreenshotQueryParams {
+    key: String,
+    file: String,
+}
+
+async fn handle_screenshot<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &WebAppState<ConsoleAppState>,
+    request: Request<'_, R>,
+    response_writer: W,
+) -> Result<ResponseSent, W::Error> {
+    let query = match Query::<ScreenshotQueryParams>::from_request_parts(state, &request.parts).await {
+        Ok(Query(value)) => value,
+        Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
+    };
+
+    let response = if query.key == state.framework.0.borrow().web_config_key {
+        let screenshot = state.framework.0.borrow().take_display_snapshot_bmp().map_err(ScreenshotError::from);
+        let status_code = if screenshot.is_ok() { StatusCode::OK } else { StatusCode::BAD_REQUEST };
+        ChunkedResponse::new(ScreenshotChunks { screenshot })
+            .into_response()
+            .with_header("Content-Disposition", format!("attachment; filename=\"{}\"", query.file))
+            .with_status_code(status_code)
+    } else {
+        let screenshot = Err(ScreenshotError::SecurityKey);
+        ChunkedResponse::new(ScreenshotChunks { screenshot })
+            .into_response()
+            .with_header("", String::new())
+            .with_status_code(StatusCode::UNAUTHORIZED)
+    };
+
+    write_response_value(request.body_connection, response_writer, response).await
+}
+
+async fn handle_store_backup_get<R: Read, W: ResponseWriter<Error = R::Error>>(
+    request: Request<'_, R>,
+    response_writer: W,
+    key: &'static RefCell<Vec<u8>>,
+    framework: Rc<RefCell<Framework>>,
+) -> Result<ResponseSent, W::Error> {
+    write_response_value(
+        request.body_connection,
+        response_writer,
+        ChunkedResponse::new(StoreBackupChunks { framework, key }).into_response(),
+    )
+    .await
+}
+
+fn handle_printer_config_post(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, printers_config_dto: PrintersConfigDTO) -> String {
+    let default_printer_id = printers_config_dto.default_printer_id.clone().or_else(|| {
+        printers_config_dto
+            .default_printer_serial
+            .as_deref()
+            .map(|serial| BambuPrinterConfig::printer_id_for_serial(serial).0)
+    });
+
+    match state.app_config.borrow_mut().set_printers_config(
+        printers_config_dto.into(),
+        DefaultPrinterConfig {
+            printer_id: default_printer_id,
+        },
+    ) {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO {
+            error_text: Some(format!("{e:?}")),
+        }
+        .encrypt(&key.borrow()),
+    }
+}
+
+fn handle_printer_config_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    let borrowed_app_config = state.app_config.borrow();
+    let empty_printers_config = PrintersConfig {
+        printers: alloc::vec![PrinterConfig::default()],
+    };
+    let no_configured_printers = borrowed_app_config.configured_printers.printers.is_empty();
+    let printers = if no_configured_printers {
+        &empty_printers_config
+    } else {
+        &borrowed_app_config.configured_printers
+    };
+    let default_printer = &borrowed_app_config.configured_default_printer;
+    let mut printers_config = PrintersConfigDTO::from(printers);
+    printers_config.default_printer_id = default_printer.printer_id.clone();
+    printers_config.encrypt(&key.borrow())
+}
+
+fn handle_scale_config_post(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, scale_config_dto: ScaleConfigDTO) -> String {
+    match state.app_config.borrow_mut().set_scale_config(scale_config_dto.into()) {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO {
+            error_text: Some(format!("{e:?}")),
+        }
+        .encrypt(&key.borrow()),
+    }
+}
+
+fn handle_scale_config_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    let borrowed_app_config = state.app_config.borrow();
+    let default_scale_config = ScaleConfig::default();
+    let scale = borrowed_app_config.configured_scale.as_ref().unwrap_or(&default_scale_config);
+    let scale_config = ScaleConfigDTO::from(scale);
+    scale_config.encrypt(&key.borrow())
+}
+
+fn handle_console_info_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    let borrowed_app_config = state.app_config.borrow();
+    ConsoleInfoResponse {
+        ai_providers: borrowed_app_config.ai_provider_key_availability(),
+        device_name: borrowed_app_config.device_name(),
+        device_ip: borrowed_app_config.device_ip(),
+        device_certificate: borrowed_app_config.device_certificate_status(),
+        backup_config: borrowed_app_config.backup_config.clone(),
+        backup_status: borrowed_app_config.backup_status.clone(),
+        store_initialized: state.store.is_initialized(),
+        console_errors: state.store.console_errors(),
+    }
+    .encrypt(&key.borrow())
+}
+
+fn handle_printers_status_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    GetPrintersStatusResponse {
+        printers: state.view_model.borrow().get_printers_status(),
+    }
+    .encrypt(&key.borrow())
+}
+
+fn handle_printer_command_post(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, printer_command: PrinterCommandDTO) -> String {
+    let PrinterCommandDTO { printer_serial, command } = printer_command;
+    let command_name = command.get_command().to_string();
+
+    match state.view_model.borrow().request_printer_command(&printer_serial, command) {
+        Ok(()) => GenericResponse {
+            text: format!("Sent {command_name} command to printer {printer_serial}"),
+            error: None,
+        }
+        .encrypt(&key.borrow()),
+        Err(err) => GenericResponse {
+            text: "Printer not found".to_string(),
+            error: Some(err),
+        }
+        .encrypt(&key.borrow()),
+    }
+}
+
+fn handle_ai_provider_config_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, ai_provider_ref: AiProviderRefDTO) -> String {
+    let api_key = state.app_config.borrow().get_ai_provider_api_key(&ai_provider_ref.provider);
+    GetAiProviderApiKeyResponse {
+        provider: ai_provider_ref.provider,
+        api_key,
+    }
+    .encrypt(&key.borrow())
+}
+
+fn handle_ai_provider_config_set(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, set_ai_provider_api_key: SetAiProviderApiKeyDTO) -> String {
+    match state
+        .app_config
+        .borrow_mut()
+        .set_ai_provider_api_key(set_ai_provider_api_key.provider, set_ai_provider_api_key.api_key)
+    {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO {
+            error_text: Some(format!("{e:?}")),
+        }
+        .encrypt(&key.borrow()),
+    }
+}
+
+fn handle_ai_provider_config_delete(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, ai_provider_ref: AiProviderRefDTO) -> String {
+    match state.app_config.borrow_mut().delete_ai_provider_api_key(ai_provider_ref.provider) {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO {
+            error_text: Some(format!("{e:?}")),
+        }
+        .encrypt(&key.borrow()),
+    }
+}
+
+fn handle_api_tokens_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    ApiTokensResponse {
+        tokens: state.app_config.borrow().list_api_tokens(),
+    }
+    .encrypt(&key.borrow())
+}
+
+fn handle_api_tokens_create(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, create_api_token: CreateApiTokenDTO) -> String {
+    match state
+        .app_config
+        .borrow_mut()
+        .create_api_token(create_api_token.name, create_api_token.created_at)
+    {
+        Ok(generated_token) => CreateApiTokenResponse {
+            token: Some(generated_token.token),
+            token_metadata: Some(generated_token.metadata),
+            error_text: None,
+        },
+        Err(err) => CreateApiTokenResponse {
+            token: None,
+            token_metadata: None,
+            error_text: Some(err),
+        },
+    }
+    .encrypt(&key.borrow())
+}
+
+fn handle_api_tokens_delete(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, delete_api_token: DeleteApiTokenDTO) -> String {
+    match state.app_config.borrow_mut().delete_api_token(delete_api_token.id) {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+    }
+}
+
+fn handle_device_certificate_create(
+    key: &'static RefCell<Vec<u8>>,
+    state: ConsoleAppState,
+    create_certificate: CreateDeviceCertificateDTO,
+) -> String {
+    match state.app_config.borrow_mut().create_device_certificate(create_certificate.into()) {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+    }
+}
+
+fn handle_device_certificate_update_leaf(
+    key: &'static RefCell<Vec<u8>>,
+    state: ConsoleAppState,
+    update_certificate: UpdateDeviceCertificateLeafDTO,
+) -> String {
+    match state.app_config.borrow_mut().update_device_certificate_leaf(update_certificate.into()) {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+    }
+}
+
+fn handle_device_certificate_set_enabled(
+    key: &'static RefCell<Vec<u8>>,
+    state: ConsoleAppState,
+    set_enabled: SetDeviceCertificateEnabledDTO,
+) -> String {
+    match state.app_config.borrow_mut().set_device_certificate_enabled(set_enabled.enabled) {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+    }
+}
+
+fn handle_device_certificate_delete(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    match state.app_config.borrow_mut().delete_device_certificate() {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+    }
+}
+
+fn handle_device_certificate_ca_cert(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    DeviceCertificateCaCertResponse {
+        ca_cert_pem: state.app_config.borrow().device_ca_cert_pem(settings::API_SERVER_TLS_CERTIFICATE),
+    }
+    .encrypt(&key.borrow())
+}
+
+fn handle_spools_config_post(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, SpoolsConfigDTO { spools }: SpoolsConfigDTO) -> String {
+    let spools = if let Some(spools) = spools {
+        if !spools.trim().is_empty() {
+            Some(spools.trim().replace("\r\n", "\n").replace("\n", "\r\n"))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    match state.app_config.borrow_mut().set_user_cores(spools) {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO {
+            error_text: Some(format!("{e:?}")),
+        }
+        .encrypt(&key.borrow()),
+    }
+}
+
+fn handle_spools_config_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    let borrowed_app_config = state.app_config.borrow();
+    let spools_config = SpoolsConfigDTO {
+        spools: borrowed_app_config.user_cores.clone(),
+    };
+    spools_config.encrypt(&key.borrow())
+}
+
+fn handle_filaments_config_post(
+    key: &'static RefCell<Vec<u8>>,
+    state: ConsoleAppState,
+    FilamentsConfigDTO { custom_filaments }: FilamentsConfigDTO,
+) -> String {
+    match state.app_config.borrow_mut().set_filaments(custom_filaments) {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO {
+            error_text: Some(format!("{e:?}")),
+        }
+        .encrypt(&key.borrow()),
+    }
+}
+
+fn handle_filaments_config_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    let borrowed_app_config = state.app_config.borrow();
+    let filaments_config = FilamentsConfigDTO {
+        custom_filaments: borrowed_app_config.custom_filaments.clone(),
+    };
+    filaments_config.encrypt(&key.borrow())
+}
+
+fn handle_spools_in_printers_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    GetSpoolsInPrintersResponse {
+        spools: state.view_model.borrow().get_spools_in_printers(),
+    }
+    .encrypt(&key.borrow())
+}
+
+fn handle_spools_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    encrypt_spools_csv_response(&key.borrow(), state.store.as_ref())
+}
+
+fn handle_printers_filament_pa(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, get_printers_filament_pa: GetPrintersFilamentPaDTO) -> String {
+    let printers_filament_pa = state
+        .view_model
+        .borrow()
+        .get_printers_filament_pa(&get_printers_filament_pa.slicer_filament_code)
+        .into_iter()
+        .map(|(identifier, name, extruders, pressure_advance)| {
+            (
+                identifier,
+                PrinterEntry {
+                    name,
+                    extruders,
+                    pressure_advance: pressure_advance
+                        .into_iter()
+                        .map(|pa| PressureAdvanceEntry {
+                            extruder: pa.extruder,
+                            diameter: pa.diameter,
+                            nozzle_id: pa.nozzle_id,
+                            name: pa.name,
+                            k_value: pa.k_value,
+                            cali_idx: pa.cali_idx,
+                            setting_id: pa.setting_id,
+                        })
+                        .collect::<Vec<_>>(),
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    GetPrintersFilamentPaDTOResponse {
+        printers: printers_filament_pa,
+    }
+    .encrypt(&key.borrow())
+}
+
+fn handle_add_printer_pa(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, add_pa: AddPressureAdvanceDTO) -> String {
+    match state.view_model.borrow_mut().add_calibration_to_printer(
+        &add_pa.printer_serial,
+        add_pa.pressure_advance_entry.extruder,
+        &add_pa.pressure_advance_entry.diameter,
+        &add_pa.pressure_advance_entry.nozzle_id,
+        &add_pa.filament_id,
+        &add_pa.pressure_advance_entry.setting_id.unwrap_or_default(),
+        &add_pa.pressure_advance_entry.k_value,
+        &add_pa.pressure_advance_entry.name,
+    ) {
+        Ok(_) => GenericResponse {
+            error: None,
+            text: "Sent Pressure Advance Add Request to Printer".to_string(),
+        }
+        .encrypt(&key.borrow()),
+        Err(err) => GenericResponse { error: None, text: err }.encrypt(&key.borrow()),
+    }
+}
+
+fn handle_store_backup_config(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, backup_config: BackupConfig) -> String {
+    match state.app_config.borrow_mut().set_backup_config(backup_config) {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+    }
+}
+
+fn handle_store_backup_mark_completed(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, mark_backup: MarkBackupCompletedDTO) -> String {
+    match state.app_config.borrow_mut().mark_backup_completed(mark_backup.date_time) {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+    }
+}
+
+fn handle_store_backup_reset_status(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    match state.app_config.borrow_mut().reset_backup_status() {
+        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+    }
+}
+
+fn handle_storage_config_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    let storage_config_str = serde_json::to_string(&*state.store.storage_config.borrow()).unwrap();
+    encrypt(&key.borrow(), &storage_config_str)
+}
+
+fn handle_tag_scanned(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, tag_scanned: TagScannedDTO) -> String {
+    if let Some(location_rec) = state.store.get_location_by_hex_tag(&tag_scanned.tag_id_hex) {
+        TagScannedResponse {
+            tag_info: TagInfo::Location {
+                location: location_rec.location,
+            },
+        }
+        .encrypt(&key.borrow())
+    } else {
+        TagScannedResponse { tag_info: TagInfo::Unknown }.encrypt(&key.borrow())
+    }
+}
+
+fn handle_spool_staging_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState) -> String {
+    let view_model = state.view_model.borrow();
+    let filament_staging = view_model.filament_staging.borrow();
+    let csv_record = filament_staging
+        .spool_rec()
+        .and_then(|spool_rec| state.store.get_spool_csv_by_id(&spool_rec.id))
+        .unwrap_or_default();
+
+    SpoolStagingResponse { csv_record }.encrypt(&key.borrow())
+}
+
+async fn handle_spools_delete(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, delete_spool: DeleteSpoolDTO) -> String {
+    let store = state.store;
+    let delete_spool_id = delete_spool.id;
+    match store.delete_spool(&delete_spool_id).await {
+        Ok(_) => match store.spool_ids_hash() {
+            Ok(ids_hash) => DeleteSpoolDTOResponse {
+                deleted_ids: vec![delete_spool_id],
+                ids_hash,
+            }
+            .encrypt(&key.borrow()),
+            Err(err) => {
+                error!("Failed to generate response to spoole delete: {err}");
+                "".to_string()
+            }
+        },
+        Err(err) => {
+            error!("Failed to delete spool {} : {err}", delete_spool_id);
+            err.to_string()
+        }
+    }
+}
+
+async fn handle_spools_add_edit(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, add_spool: AddSpoolDTO) -> String {
+    let store = state.store;
+    let mut split_spool = None;
+
+    if let Some(split_id) = add_spool.split
+        && let Some(splitted_spool) = store.get_spool_by_id(&split_id)
+    {
+        if splitted_spool.spools_count - add_spool.spools_count < 1 {
+            return format!(
+                "Spool {split_id} had {} and can't split out {}",
+                splitted_spool.spools_count, add_spool.spools_count
+            );
+        } else {
+            split_spool = Some(splitted_spool);
+        }
+    }
+
+    let color_code = add_spool
+        .rgba
+        .split(';')
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .map(|c| c.to_string())
+        .collect::<Vec<_>>();
+
+    let add_spool_operation = add_spool.id.is_empty();
+    let new_spool = SpoolRecord {
+        id: add_spool.id,
+        tag_id: if add_spool.tag_id.is_empty() {
+            Vec::new()
+        } else {
+            vec![add_spool.tag_id]
+        },
+        material_type: add_spool.material,
+        material_subtype: add_spool.subtype,
+        color_name: add_spool.color_name,
+        color_code,
+        note: add_spool.note,
+        brand: add_spool.brand,
+        weight_advertised: if add_spool.label_weight == 0 {
+            None
+        } else {
+            Some(add_spool.label_weight)
+        },
+        weight_core: if add_spool.core_weight == 0 { None } else { Some(add_spool.core_weight) },
+        weight_new: None,
+        weight_current: None,
+        slicer_filament: add_spool.slicer_filament,
+        added_time: if add_spool_operation { add_spool.added_time } else { None },
+        encode_time: None,
+        added_full: match add_spool.full_unused.to_lowercase().as_str() {
+            "y" => Some(true),
+            "n" => Some(false),
+            _ => None,
+        },
+        consumed_since_add: 0.0,
+        consumed_since_weight: 0.0,
+        ext_has_k: add_spool.k_info.is_some(),
+        data_origin: String::new(),
+        tag_type: String::new(),
+        assigned_location: add_spool.assigned_location,
+        actual_location: add_spool.actual_location,
+        spools_count: add_spool.spools_count,
+        td: add_spool.td.filter(|td| td.is_finite() && *td >= 0.0),
+    };
+
+    let spool_id = if add_spool_operation {
+        match store
+            .add_spool(
+                new_spool,
+                SpoolRecordExt {
+                    tag: None,
+                    k_info: add_spool.k_info,
+                    origin_data: None,
+                },
+            )
+            .await
+        {
+            Ok(new_id) => {
+                state.view_model.borrow_mut().recently_added_spool_id = Some(new_id.clone());
+                new_id
+            }
+            Err(err) => {
+                error!("Failed to add spool : {err}");
+                return err.to_string();
+            }
+        }
+    } else {
+        let id = new_spool.id.clone();
+        match store.edit_spool_from_web(new_spool, add_spool.k_info).await {
+            Ok(_) => id,
+            Err(err) => {
+                error!("Failed to edit spool : {err}");
+                return err.to_string();
+            }
+        }
+    };
+
+    let mut changed_ids = vec![spool_id.clone()];
+
+    if let Some(mut split_spool) = split_spool {
+        let split_spool_id = split_spool.id.clone();
+        split_spool.spools_count -= add_spool.spools_count;
+        if let Err(err) = store.update_spool(split_spool, None).await {
+            error!("Critical: Added new splitted spool/stock but failed to update splitted stock : {err}");
+            return err.to_string();
+        }
+        changed_ids.push(split_spool_id);
+    }
+
+    let changed_records = match store.spool_csv_rows_by_id(&changed_ids) {
+        Ok(changed_records) => changed_records,
+        Err(err) => {
+            error!("Failed to generate changed spool records response: {err}");
+            return "Failed to generate changed spool records response".to_string();
+        }
+    };
+
+    match store.spool_ids_hash() {
+        Ok(ids_hash) => AddSpoolDTOResponse {
+            id: spool_id,
+            changed_records,
+            ids_hash,
+        }
+        .encrypt(&key.borrow()),
+        Err(err) => {
+            error!("Failed to generate response to spoole query: {err}");
+            "Failed to generate response to spoole query".to_string()
+        }
+    }
+}
+
+async fn handle_spool_kinfo<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &WebAppState<ConsoleAppState>,
+    mut request: Request<'_, R>,
+    response_writer: W,
+    key: &'static RefCell<Vec<u8>>,
+    app_state: ConsoleAppState,
+) -> Result<ResponseSent, W::Error> {
+    let get_spool_kinfo = match extract_web_app_request::<GetSpoolKInfoDTO, _>(state, request.parts, request.body_connection.body()).await {
+        Ok(value) => value,
+        Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
+    };
+
+    let store = app_state.view_model.borrow_mut().store.clone();
+    match store.get_spool_ext_by_id(&get_spool_kinfo.id).await {
+        Ok(spool_rec_ext) => {
+            write_ok(
+                request.body_connection,
+                response_writer,
+                GetSpoolKInfoDTOResponse {
+                    k_info: spool_rec_ext.k_info,
+                }
+                .encrypt(&key.borrow()),
+            )
+            .await
+        }
+        Err(_) => write_empty_response(request.body_connection, response_writer, StatusCode::new(404)).await,
+    }
+}
+
+async fn handle_store_restore_delete<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &WebAppState<ConsoleAppState>,
+    mut request: Request<'_, R>,
+    response_writer: W,
+    key: &'static RefCell<Vec<u8>>,
+) -> Result<ResponseSent, W::Error> {
+    let RestoreDeleteDTO {} = match extract_web_app_request::<RestoreDeleteDTO, _>(state, request.parts, request.body_connection.body()).await {
+        Ok(value) => value,
+        Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
+    };
+
+    cleanup_restore_upload_temp(&state.framework.0).await;
+    write_ok(
+        request.body_connection,
+        response_writer,
+        GenericResponse {
+            text: "Deleted uploaded backup files".to_string(),
+            error: None,
+        }
+        .encrypt(&key.borrow()),
+    )
+    .await
+}
+
+async fn handle_storage_config_post<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &WebAppState<ConsoleAppState>,
+    mut request: Request<'_, R>,
+    response_writer: W,
+    key: &'static RefCell<Vec<u8>>,
+) -> Result<ResponseSent, W::Error> {
+    let storage_config = match extract_web_app_request::<StorageConfig, _>(state, request.parts, request.body_connection.body()).await {
+        Ok(value) => value,
+        Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
+    };
+
+    let store = state.more_state.store.clone();
+    let payload = match store.set_storage_config(storage_config).await {
+        Ok(storage_config_str) => encrypt(&key.borrow(), &storage_config_str),
+        Err(err) => {
+            error!("Failed to store Storage Configuration : {err}");
+            err.to_string()
+        }
+    };
+    write_ok(request.body_connection, response_writer, payload).await
+}
+
+async fn handle_dashboard_config_post<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &WebAppState<ConsoleAppState>,
+    mut request: Request<'_, R>,
+    response_writer: W,
+    key: &'static RefCell<Vec<u8>>,
+) -> Result<ResponseSent, W::Error> {
+    let dashboard_config = match extract_web_app_request::<DashboardConfigDTO, _>(state, request.parts, request.body_connection.body()).await {
+        Ok(value) => value,
+        Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
+    };
+
+    let store = state.more_state.store.clone();
+    let payload = match &dashboard_config.dashboard_config_json {
+        Some(dashboard_config_json) => match store.set_dashboard_config_json(dashboard_config_json).await {
+            Ok(_) => DashboardConfigDTO {
+                dashboard_config_json: Some(dashboard_config_json.clone()),
+            }
+            .encrypt(&key.borrow()),
+            Err(err) => {
+                error!("Failed to store dashboard configuration: {err}");
+                DashboardConfigDTO { dashboard_config_json: None }.encrypt(&key.borrow())
+            }
+        },
+        None => DashboardConfigDTO { dashboard_config_json: None }.encrypt(&key.borrow()),
+    };
+    write_ok(request.body_connection, response_writer, payload).await
+}
+
+async fn handle_dashboard_config_get<R: Read, W: ResponseWriter<Error = R::Error>>(
+    request: Request<'_, R>,
+    response_writer: W,
+    key: &'static RefCell<Vec<u8>>,
+    app_state: ConsoleAppState,
+) -> Result<ResponseSent, W::Error> {
+    let store = app_state.store;
+    let payload = match store.get_dashboard_config_json().await {
+        Ok(dashboard_config_json) => DashboardConfigDTO { dashboard_config_json }.encrypt(&key.borrow()),
+        Err(err) => {
+            error!("Failed to load dashboard configuration: {err}");
+            DashboardConfigDTO { dashboard_config_json: None }.encrypt(&key.borrow())
+        }
+    };
+    write_ok(request.body_connection, response_writer, payload).await
+}
+
+async fn handle_set_tag_location<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &WebAppState<ConsoleAppState>,
+    mut request: Request<'_, R>,
+    response_writer: W,
+    key: &'static RefCell<Vec<u8>>,
+) -> Result<ResponseSent, W::Error> {
+    let set_tag_location = match extract_web_app_request::<SetTagLocationDTO, _>(state, request.parts, request.body_connection.body()).await {
+        Ok(value) => value,
+        Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
+    };
+
+    let store = state.more_state.store.clone();
+    let payload = if set_tag_location.location.is_empty() {
+        match store.delete_location(&set_tag_location.tag_id_hex).await {
+            Ok(_) => GenericResponse {
+                error: None,
+                text: "Tag location cleared".to_string(),
+            }
+            .encrypt(&key.borrow()),
+            Err(err) => GenericResponse {
+                error: Some(format!("Failed to clear tag location: {err:?}")),
+                text: String::new(),
+            }
+            .encrypt(&key.borrow()),
+        }
+    } else {
+        match store.insert_tag_location(&set_tag_location.tag_id_hex, &set_tag_location.location).await {
+            Ok(true) => GenericResponse {
+                error: None,
+                text: "Location assigned to tag".to_string(),
+            }
+            .encrypt(&key.borrow()),
+            Ok(false) => GenericResponse {
+                error: None,
+                text: "Tag's location updated".to_string(),
+            }
+            .encrypt(&key.borrow()),
+            Err(err) => GenericResponse {
+                error: Some(format!("Error setting tag location: {err:?}")),
+                text: String::new(),
+            }
+            .encrypt(&key.borrow()),
+        }
+    };
+    write_ok(request.body_connection, response_writer, payload).await
+}
+
+async fn handle_spool_location<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &WebAppState<ConsoleAppState>,
+    mut request: Request<'_, R>,
+    response_writer: W,
+    key: &'static RefCell<Vec<u8>>,
+) -> Result<ResponseSent, W::Error> {
+    let set_spool_location = match extract_web_app_request::<SetSpoolLocationDTO, _>(state, request.parts, request.body_connection.body()).await {
+        Ok(value) => value,
+        Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
+    };
+
+    let store = state.more_state.store.clone();
+    let payload = if let Some(mut spool_rec) = store.get_spool_by_id(&set_spool_location.spool_id) {
+        match set_spool_location.location_type {
+            LocationType::Assigned => spool_rec.assigned_location = set_spool_location.location,
+            LocationType::Actual => spool_rec.actual_location = set_spool_location.location,
+        }
+        match store.update_spool(spool_rec, None).await {
+            Ok(_) => GenericResponse {
+                text: format!("Spool {} updated", set_spool_location.spool_id),
+                error: None,
+            }
+            .encrypt(&key.borrow()),
+            Err(err) => GenericResponse {
+                text: format!("Tried to update Spool {}", set_spool_location.spool_id),
+                error: Some(format!("Failed to update Spool {} : {err}", set_spool_location.spool_id)),
+            }
+            .encrypt(&key.borrow()),
+        }
+    } else {
+        GenericResponse {
+            text: format!("Tried to update Spool {}", set_spool_location.spool_id),
+            error: Some(format!("No Spool {} in store", set_spool_location.spool_id)),
+        }
+        .encrypt(&key.borrow())
+    };
+    write_ok(request.body_connection, response_writer, payload).await
 }
 
 struct StoreRestoreUploadService;
@@ -1953,29 +2136,23 @@ encrypted_input!(SetSpoolLocationDTO);
 
 /////////////////////////////////////////////
 
+const STYLES_CSS_FILE: picoserve::response::File =
+    picoserve::response::File::with_content_type_and_headers("text/css", include_bytes_gz!("static/styles.css"), &[("Content-Encoding", "gzip")]);
+
+const FAVICON_FILE: picoserve::response::File =
+    picoserve::response::File::with_content_type("image/png", include_bytes!("../static/favicon-48x48.png"));
+
+const L1_INDEX_HTML_FILE: picoserve::response::File = picoserve::response::File::with_content_type_and_headers(
+    "text/html",
+    include_bytes_gz!("static/consoletag/index.html"),
+    &[("Content-Encoding", "gzip")],
+);
+
 const APP_INDEX_HTML_FILE: picoserve::response::File = picoserve::response::File::with_content_type_and_headers(
     "text/html",
     include_bytes_gz!("static/app/index.html"),
     &[("Content-Encoding", "gzip")],
 );
-
-#[derive(Clone, Copy)]
-struct AppIndexHtml;
-
-impl<State> PathRouterService<State, ()> for AppIndexHtml {
-    async fn call_path_router_service<R: Read, W: ResponseWriter<Error = R::Error>>(
-        &self,
-        state: &State,
-        (): (),
-        _path: Path<'_>,
-        request: Request<'_, R>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        APP_INDEX_HTML_FILE
-            .call_request_handler_service(state, (), request, response_writer)
-            .await
-    }
-}
 
 struct HtmlStringResponse {
     html: String,
