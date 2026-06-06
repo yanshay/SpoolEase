@@ -13,10 +13,9 @@ use crate::app_config::FakePrinterConfig;
 use framework::{error, framework::Framework, info, prelude::*};
 
 use super::{
-    MaterialSlotSnapshot, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver,
-    PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult,
-    PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner, SlotAssignMode, SlotGroupDriverInfo, SlotGroupKind, SlotGroupSnapshot, SlotId,
-    SlotState,
+    MaterialSlotSnapshot, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver, PrinterDriverKind,
+    PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult, PrinterSnapshot,
+    PrinterSnapshotState, PrinterSnapshotStateInner, SlotAssignMode, SlotGroupDriverInfo, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
     slot_in_snapshot_mut,
 };
 

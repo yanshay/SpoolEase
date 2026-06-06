@@ -31,11 +31,10 @@ use crate::store::Store;
 
 use super::{
     DriverSpecificCommand, DriverSpecificQuery, DriverSpecificQueryResult, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind,
-    MaterialSlotSnapshot, PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange,
-    PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId,
-    PrinterObserver, PrinterResult, PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterSnapshotState,
-    PrinterSnapshotStateInner, SlotAssignMode, SlotGroupDisplayGroup, SlotGroupDriverInfo, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState,
-    slot_in_snapshot_mut,
+    MaterialSlotSnapshot, PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver,
+    PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult,
+    PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner,
+    SlotAssignMode, SlotGroupDisplayGroup, SlotGroupDriverInfo, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
 };
 
 type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;

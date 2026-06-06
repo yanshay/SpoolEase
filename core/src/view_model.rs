@@ -3472,12 +3472,12 @@ impl printer_domain::PrinterObserver for ViewModel {
 impl SpoolTagObserver for ViewModel {
     fn on_tag_status(&mut self, status: &Status) {
         if !matches!(status, Status::Failure(spool_tag::Failure::TagReadFailure)) {
-          // TagReadFailure separately without other events before could be just random error with PN532
-          // and are ignored on the UI (since need an evenr prior to switch to read/write state, only then errors are considered)
-          // So no point in turning on display
-          // Might even make more sense to control undimming display from the slint code and not from here
+            // TagReadFailure separately without other events before could be just random error with PN532
+            // and are ignored on the UI (since need an evenr prior to switch to read/write state, only then errors are considered)
+            // So no point in turning on display
+            // Might even make more sense to control undimming display from the slint code and not from here
 
-          self.framework.borrow().undim_display();
+            self.framework.borrow().undim_display();
         }
         let ui = self.ui_weak.clone();
         // let tag_timeout = self.app_config.borrow().tag_scan_timeout;

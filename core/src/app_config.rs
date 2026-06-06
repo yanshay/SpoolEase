@@ -1195,7 +1195,11 @@ impl AppConfig {
     }
 
     pub fn device_ip(&self) -> Option<String> {
-        self.framework.borrow().stack.config_v4().map(|config| config.address.address().to_string())
+        self.framework
+            .borrow()
+            .stack
+            .config_v4()
+            .map(|config| config.address.address().to_string())
     }
 
     pub fn create_device_certificate(&mut self, request: DeviceCertificateGenerationRequest) -> Result<(), String> {

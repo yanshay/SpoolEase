@@ -287,7 +287,7 @@ where
         Ok(())
     }
 
-    // TODO: packing is risky under certain sdcard errors since it does truncate first. 
+    // TODO: packing is risky under certain sdcard errors since it does truncate first.
     // a proper packing should create dbname.new, then rename name.db to name.old, then rename dbname.new to dbname.db and then remove dbname.old
     // and deal with potential failures during and inbetween these operations
     pub async fn start(&mut self, backup: bool, pack: bool) -> Result<(), CsvDbError> {

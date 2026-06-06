@@ -38,8 +38,8 @@ use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::app_config::{
     AiProviderAvailability, AiProviderId, ApiTokenMetadata, AppConfig, BackupConfig, BackupStatus, BambuPrinterConfig, DefaultPrinterConfig,
-    DeviceCertificateLeafRequest, DeviceCertificateGenerationRequest, DeviceCertificateStatus, FILAMENT_BRAND_NAMES, FakePrinterConfig, PrinterConfig,
-    PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
+    DeviceCertificateGenerationRequest, DeviceCertificateLeafRequest, DeviceCertificateStatus, FILAMENT_BRAND_NAMES, FakePrinterConfig,
+    PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
 };
 use crate::bambu::bambu_api::PrintCommand;
 use crate::bambu::calibration::KInfo;
@@ -75,7 +75,11 @@ fn encrypt_spools_csv_response(key: &[u8], store: &Store) -> String {
     match encrypt_bytes_compact(key, csv_len, |plaintext| {
         let written = store.write_spools_csv(plaintext)?;
         if written != plaintext.len() {
-            error!("Spools CSV length changed from {} to {} while generating response", plaintext.len(), written);
+            error!(
+                "Spools CSV length changed from {} to {} while generating response",
+                plaintext.len(),
+                written
+            );
             return Err(StoreError::InternalError);
         }
         Ok(())
@@ -380,10 +384,12 @@ impl AppWithStateBuilder for NestedAppBuilder {
             "/api/device-certificate/create",
             post(
                 move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, create_certificate: CreateDeviceCertificateDTO| {
-                    ready(match state.0.app_config.borrow_mut().create_device_certificate(create_certificate.into()) {
-                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
-                    })
+                    ready(
+                        match state.0.app_config.borrow_mut().create_device_certificate(create_certificate.into()) {
+                            Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                            Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+                        },
+                    )
                 },
             ),
         );
@@ -391,11 +397,15 @@ impl AppWithStateBuilder for NestedAppBuilder {
         let router = router.route(
             "/api/device-certificate/update-leaf",
             post(
-                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, update_certificate: UpdateDeviceCertificateLeafDTO| {
-                    ready(match state.0.app_config.borrow_mut().update_device_certificate_leaf(update_certificate.into()) {
-                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
-                    })
+                move |State(Encryption(key)): State<Encryption>,
+                      state: State<ConsoleAppState>,
+                      update_certificate: UpdateDeviceCertificateLeafDTO| {
+                    ready(
+                        match state.0.app_config.borrow_mut().update_device_certificate_leaf(update_certificate.into()) {
+                            Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                            Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+                        },
+                    )
                 },
             ),
         );
@@ -404,10 +414,12 @@ impl AppWithStateBuilder for NestedAppBuilder {
             "/api/device-certificate/set-enabled",
             post(
                 move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, set_enabled: SetDeviceCertificateEnabledDTO| {
-                    ready(match state.0.app_config.borrow_mut().set_device_certificate_enabled(set_enabled.enabled) {
-                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
-                    })
+                    ready(
+                        match state.0.app_config.borrow_mut().set_device_certificate_enabled(set_enabled.enabled) {
+                            Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                            Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+                        },
+                    )
                 },
             ),
         );
@@ -824,12 +836,14 @@ impl AppWithStateBuilder for NestedAppBuilder {
 
         let router = router.route(
             "/api/store-backup/config",
-            post(move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, backup_config: BackupConfig| {
-                ready(match state.0.app_config.borrow_mut().set_backup_config(backup_config) {
-                    Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
-                    Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
-                })
-            }),
+            post(
+                move |State(Encryption(key)): State<Encryption>, state: State<ConsoleAppState>, backup_config: BackupConfig| {
+                    ready(match state.0.app_config.borrow_mut().set_backup_config(backup_config) {
+                        Ok(_) => SetConfigResponseDTO { error_text: None }.encrypt(&key.borrow()),
+                        Err(e) => SetConfigResponseDTO { error_text: Some(e) }.encrypt(&key.borrow()),
+                    })
+                },
+            ),
         );
 
         let router = router.route(
@@ -886,10 +900,7 @@ impl AppWithStateBuilder for NestedAppBuilder {
                           State(Encryption(_key)),
                           State(FrameworkState(framework))| async move {
                         if key == framework.borrow().web_config_key {
-                            let screenshot = framework
-                                .borrow()
-                                .take_display_snapshot_bmp()
-                                .map_err(ScreenshotError::from);
+                            let screenshot = framework.borrow().take_display_snapshot_bmp().map_err(ScreenshotError::from);
                             let status_code = if screenshot.is_ok() { StatusCode::OK } else { StatusCode::BAD_REQUEST };
                             let resp = ChunkedResponse::new(ScreenshotChunks { screenshot }).into_response();
                             resp.with_header("Content-Disposition", format!("attachment; filename=\"{file}\""))
@@ -1307,7 +1318,11 @@ struct ScreenshotChunks {
 
 impl picoserve::response::chunked::Chunks for ScreenshotChunks {
     fn content_type(&self) -> &'static str {
-        if self.screenshot.is_ok() { DisplaySnapshotBmp::content_type() } else { "text/plain" }
+        if self.screenshot.is_ok() {
+            DisplaySnapshotBmp::content_type()
+        } else {
+            "text/plain"
+        }
     }
 
     async fn write_chunks<W: picoserve::io::Write>(self, mut chunk_writer: ChunkWriter<W>) -> Result<ChunksWritten, W::Error> {

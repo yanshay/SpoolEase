@@ -26,7 +26,10 @@ use url::{Position, Url};
 use crate::{
     gcode_analysis::{FilamentUsageEntry, GcodeFilamentCalc},
     my_ftp::{Error as MyFtpError, MyFtps},
-    settings::{GCODE_ANALYSIS_PRINTER_FTP_RETRY_INTERVAL_SECS, GCODE_ANALYSIS_PRINTER_FTP_RETRY_TIMEOUT_SECS},
+    settings::{
+        GCODE_ANALYSIS_PRINTER_FTP_RETRY_INTERVAL_SECS,
+        GCODE_ANALYSIS_PRINTER_FTP_RETRY_TIMEOUT_SECS,
+    },
     threemf_extractor::{FeedStatus, ThreemfExtractor},
 };
 
@@ -146,7 +149,8 @@ pub enum GcodeAnalysisNotification {
     Cancel { job_number: i32 },
 }
 
-type GcodeAnalysisNotificationSubscriber<'a> = Subscriber<'a, NoopRawMutex, GcodeAnalysisNotification, 5, 5, 1>;
+type GcodeAnalysisNotificationSubscriber<'a> =
+    Subscriber<'a, NoopRawMutex, GcodeAnalysisNotification, 5, 5, 1>;
 
 #[derive(Debug, Serialize, Deserialize)]
 // This is serialized between scale/console, if modified consider backwards compatibility
@@ -197,7 +201,13 @@ pub async fn fetch_gcode_analysis_once_task(
     gcode_analysis_request: GcodeAnalysisRequest,
 ) {
     info!("Started one-shot fetch_gcode_analysis task");
-    run_gcode_analysis_request(framework, gcode_analysis_request, notifications_channel, observer).await;
+    run_gcode_analysis_request(
+        framework,
+        gcode_analysis_request,
+        notifications_channel,
+        observer,
+    )
+    .await;
 }
 
 async fn run_gcode_analysis_request(
@@ -227,7 +237,9 @@ async fn run_gcode_analysis_request(
         }
         _ => {
             if gcode_analysis_request.fetch_3mf == Fetch3mf::CloudHttp {
-                info!("[{printer_log_id}] Configuration is to fetch 3mf file over HTTP, but file is from sdcard, so using to ftp");
+                info!(
+                    "[{printer_log_id}] Configuration is to fetch 3mf file over HTTP, but file is from sdcard, so using to ftp"
+                );
             }
             fetch_gcode_analysis_task_printer_ftp(
                 framework.clone(),
@@ -293,7 +305,10 @@ fn is_cancel_for_job(notification: GcodeAnalysisNotification, job_number: i32) -
     }
 }
 
-fn received_cancel_for_job(notifications: &mut GcodeAnalysisNotificationSubscriber<'_>, job_number: i32) -> bool {
+fn received_cancel_for_job(
+    notifications: &mut GcodeAnalysisNotificationSubscriber<'_>,
+    job_number: i32,
+) -> bool {
     notifications
         .try_next_message_pure()
         .is_some_and(|notification| is_cancel_for_job(notification, job_number))
@@ -399,7 +414,9 @@ async fn fetch_gcode_analysis_task_printer_ftp(
                     "[{printer_log_id}] 3mf(ftp) file not found on attempt {attempt}; will retry in {retry_interval_secs} seconds"
                 );
                 if wait_for_retry_or_cancel(&mut notifications, job_number, retry_at).await {
-                    info!("[{printer_log_id}] Gcode analysis job {job_number} canceled while waiting to retry 3mf(ftp) fetch");
+                    info!(
+                        "[{printer_log_id}] Gcode analysis job {job_number} canceled while waiting to retry 3mf(ftp) fetch"
+                    );
                     return FetchSubtaskResult::Canceled;
                 }
                 attempt = attempt.saturating_add(1);
@@ -499,7 +516,9 @@ async fn fetch_gcode_analysis_task_printer_ftp_attempt(
             info!("[{printer_log_id}] Connected to printer ftp for 3mf fetch attempt {attempt}");
         }
         Err(err) => {
-            error!("[{printer_log_id}] Error connecting to printer ftp on 3mf fetch attempt {attempt} : {err:?}");
+            error!(
+                "[{printer_log_id}] Error connecting to printer ftp on 3mf fetch attempt {attempt} : {err:?}"
+            );
             return PrinterFtpAttemptResult::Failed;
         }
     }
@@ -509,19 +528,29 @@ async fn fetch_gcode_analysis_task_printer_ftp_attempt(
     }
 
     let username = if !VSFTPD { "bblp" } else { "ftpuser" };
-    let password = if !VSFTPD { access_code.as_str() } else { "ftppassword" };
+    let password = if !VSFTPD {
+        access_code.as_str()
+    } else {
+        "ftppassword"
+    };
 
     match ftps.login(username, password).await {
         Ok(success) => {
             if success {
-                info!("[{printer_log_id}] Login to printer ftp succeeded for 3mf fetch attempt {attempt}");
+                info!(
+                    "[{printer_log_id}] Login to printer ftp succeeded for 3mf fetch attempt {attempt}"
+                );
             } else {
-                error!("[{printer_log_id}] Login to printer ftp failed on 3mf fetch attempt {attempt}");
+                error!(
+                    "[{printer_log_id}] Login to printer ftp failed on 3mf fetch attempt {attempt}"
+                );
                 return PrinterFtpAttemptResult::Failed;
             }
         }
         Err(err) => {
-            error!("[{printer_log_id}] Error in login to printer ftp on 3mf fetch attempt {attempt}: {err:?}");
+            error!(
+                "[{printer_log_id}] Error in login to printer ftp on 3mf fetch attempt {attempt}: {err:?}"
+            );
             return PrinterFtpAttemptResult::Failed;
         }
     }

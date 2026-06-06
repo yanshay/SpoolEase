@@ -1,5 +1,9 @@
 use alloc::{string::String, vec, vec::Vec};
-use core::{ffi::{c_int, c_uchar, c_void}, net::Ipv4Addr, str::FromStr};
+use core::{
+    ffi::{c_int, c_uchar, c_void},
+    net::Ipv4Addr,
+    str::FromStr,
+};
 
 use esp_mbedtls::sys::*;
 
@@ -208,12 +212,7 @@ impl WriteCert {
         Self { inner }
     }
 
-    fn configure_self_signed_ca(
-        &mut self,
-        key: &mut PkContext,
-        subject: &str,
-        validity: &CertificateValidity<'_>,
-    ) -> Result<(), CertError> {
+    fn configure_self_signed_ca(&mut self, key: &mut PkContext, subject: &str, validity: &CertificateValidity<'_>) -> Result<(), CertError> {
         self.configure_common(key.as_mut_ptr(), key.as_mut_ptr(), subject, subject, validity)?;
 
         check_mbedtls("mbedtls_x509write_crt_set_basic_constraints", unsafe {
@@ -294,10 +293,7 @@ impl WriteCert {
     }
 
     fn set_subject_alt_names(&mut self, sans: &[String]) -> Result<(), CertError> {
-        let mut values: Vec<Vec<u8>> = sans
-            .iter()
-            .map(|san| san_to_bytes(san))
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut values: Vec<Vec<u8>> = sans.iter().map(|san| san_to_bytes(san)).collect::<Result<Vec<_>, _>>()?;
         let mut nodes = vec![mbedtls_x509_san_list::default(); values.len()];
         let nodes_ptr = nodes.as_mut_ptr();
 
@@ -395,10 +391,7 @@ fn c_string_bytes(value: &str, context: &'static str) -> Result<Vec<u8>, CertErr
 }
 
 fn pem_string_from_buffer(buffer: &[u8], context: &'static str) -> Result<String, CertError> {
-    let len = buffer
-        .iter()
-        .position(|byte| *byte == 0)
-        .ok_or_else(|| CertError::new(context, -32))?;
+    let len = buffer.iter().position(|byte| *byte == 0).ok_or_else(|| CertError::new(context, -32))?;
     String::from_utf8(buffer[..len].to_vec()).map_err(|_| CertError::new(context, -33))
 }
 

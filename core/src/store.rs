@@ -361,7 +361,11 @@ impl Store {
     }
 
     pub fn write_spools_csv(&self, output: &mut [u8]) -> Result<usize, StoreError> {
-        self.spools_db.get().ok_or(StoreError::NoCsvDb)?.write_records_csv(output).context(CsvDbSnafu)
+        self.spools_db
+            .get()
+            .ok_or(StoreError::NoCsvDb)?
+            .write_records_csv(output)
+            .context(CsvDbSnafu)
     }
 
     pub fn spool_ids_hash(&self) -> Result<String, StoreError> {
