@@ -9,7 +9,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use embedded_sdmmc::asynchronous::LfnBuffer;
 use framework::framework_web_app::{encrypt, encrypt_bytes, encrypt_bytes_compact};
 use hashbrown::HashMap;
 use picoserve::response::chunked::{ChunkWriter, ChunkedResponse, ChunksWritten};
@@ -46,9 +45,9 @@ use crate::bambu::calibration::KInfo;
 use crate::settings;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
-use crate::store::{BackupMeta, FileMeta, Store, StoreError};
+use crate::store::{Store, StoreError};
 use crate::utils::sha256_hex;
-use crate::view_model::{PrinterInfo, ViewModel};
+use crate::view_model::{PrinterInfo, StoreBackupGenerator, StoreBackupPlaintextSink, ViewModel};
 
 #[derive(Clone)]
 pub struct ConsoleAppState {
@@ -294,7 +293,10 @@ impl NestedAppWithWebAppState<ConsoleAppState> for ConsoleWebService {
             }
 
             (ApiMethod::Get, "/api/store-backup") => {
-                box_route_future!(handle_store_backup_get(request, response_writer, key, state.framework.0.clone()).await)
+                box_route_future!({
+                    let backup = app_state.view_model.borrow().store_backup_generator();
+                    handle_store_backup_get(request, response_writer, key, backup).await
+                })
             }
             (ApiMethod::Post, "/api/store-backup/config") => {
                 box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_store_backup_config).await)
@@ -476,12 +478,12 @@ async fn handle_store_backup_get<R: Read, W: ResponseWriter<Error = R::Error>>(
     request: Request<'_, R>,
     response_writer: W,
     key: &'static RefCell<Vec<u8>>,
-    framework: Rc<RefCell<Framework>>,
+    backup: StoreBackupGenerator,
 ) -> Result<ResponseSent, W::Error> {
     write_response_value(
         request.body_connection,
         response_writer,
-        ChunkedResponse::new(StoreBackupChunks { framework, key }).into_response(),
+        ChunkedResponse::new(StoreBackupChunks { backup, key }).into_response(),
     )
     .await
 }
@@ -1468,8 +1470,26 @@ impl picoserve::response::chunked::Chunks for ScreenshotChunks {
 }
 
 struct StoreBackupChunks {
-    framework: Rc<RefCell<Framework>>,
+    backup: StoreBackupGenerator,
     key: &'static RefCell<Vec<u8>>,
+}
+
+struct EncryptedStoreBackupSink<'a, W: picoserve::io::Write> {
+    chunk_writer: &'a mut ChunkWriter<W>,
+    key: &'static RefCell<Vec<u8>>,
+}
+
+impl<W: picoserve::io::Write> StoreBackupPlaintextSink for EncryptedStoreBackupSink<'_, W> {
+    type Error = W::Error;
+
+    async fn write_backup_chunk(&mut self, chunk: &[u8]) -> Result<(), Self::Error> {
+        let encrypted = {
+            let key = self.key.borrow();
+            encrypt_bytes(&key, chunk)
+        };
+        self.chunk_writer.write_chunk(encrypted.as_bytes()).await?;
+        self.chunk_writer.write_chunk("|".as_bytes()).await
+    }
 }
 
 impl picoserve::response::chunked::Chunks for StoreBackupChunks {
@@ -1478,90 +1498,12 @@ impl picoserve::response::chunked::Chunks for StoreBackupChunks {
     }
 
     async fn write_chunks<W: picoserve::io::Write>(self, mut chunk_writer: ChunkWriter<W>) -> Result<ChunksWritten, W::Error> {
-        info!("Data store backup started");
-        let file_store = self.framework.borrow().file_store();
-        let mut files: Vec<String> = Vec::new();
-        let mut dirs: Vec<String> = Vec::new();
-        dirs.push("/store".to_string());
-        let mut lfn_buffer_storage = alloc::vec![0u8;32];
-        let mut lfn_buffer = LfnBuffer::new(lfn_buffer_storage.as_mut_slice());
-        let backup_meta = BackupMeta {
-            spoolease_console_ver: self.framework.borrow().settings.app_cargo_pkg_version.to_string(),
+        let mut sink = EncryptedStoreBackupSink {
+            chunk_writer: &mut chunk_writer,
+            key: self.key,
         };
-        let mut backup_meta_str = serde_json::to_string(&backup_meta).unwrap();
-        backup_meta_str += "\n";
-        let encrypted = encrypt(&self.key.borrow(), &backup_meta_str);
-        chunk_writer.write_chunk(encrypted.as_bytes()).await?;
-        chunk_writer.write_chunk("|".as_bytes()).await?;
-        while !dirs.is_empty() {
-            let curr_dir_path = dirs.remove(0);
-            {
-                info!("Traversing directory: {curr_dir_path}");
-                {
-                    let mut file_store = file_store.lock().await;
-                    match file_store.open_dir(&curr_dir_path, framework::sdcard_store::Mode::ReadOnly).await {
-                        Ok(rawdir) => {
-                            let dir = rawdir.to_directory(file_store.volume_mgr());
-                            if let Err(e) = dir
-                                .iterate_dir_lfn(&mut lfn_buffer, |dir_entry, long_name| {
-                                    let dir_entry_name = if let Some(long_name) = long_name {
-                                        long_name.to_string()
-                                    } else {
-                                        dir_entry.name.to_string()
-                                    };
-                                    if !dir_entry_name.starts_with(".") {
-                                        let full_path = format!("{}/{}", curr_dir_path, dir_entry.name);
-                                        if dir_entry.attributes.is_directory() {
-                                            dirs.push(full_path);
-                                        } else {
-                                            files.push(full_path);
-                                        }
-                                    }
-                                })
-                                .await
-                            {
-                                error!("Error iterating directory {curr_dir_path} : {e:?}");
-                            }
-                            let rawdir = dir.to_raw_directory();
-                            if let Err(e) = file_store.close_dir(rawdir).await {
-                                error!("Error closing sdcard directory : {e:?}");
-                            }
-                        }
-                        Err(_) => todo!(),
-                    }
-                }
-                let mut buffer = Vec::<u8>::with_capacity(1024);
-
-                for file_path in files.drain(..) {
-                    info!("Backing up file {file_path}");
-                    buffer.clear();
-                    let file_content = {
-                        let mut file_store = file_store.lock().await;
-                        if let Ok(file_content) = file_store.read_file_str(&file_path).await {
-                            file_content
-                        } else {
-                            error!("Error reading file {file_path}");
-                            format!("Error reading file {file_path}")
-                        }
-                    };
-
-                    let file_meta = FileMeta {
-                        path: file_path,
-                        length: file_content.len(),
-                    };
-                    let file_meta_str = serde_json::to_string(&file_meta).unwrap();
-                    buffer.extend_from_slice(file_meta_str.as_bytes());
-                    buffer.extend_from_slice("\n".as_bytes());
-                    buffer.extend_from_slice(file_content.as_bytes());
-                    buffer.extend_from_slice("\n".as_bytes());
-                    let encrypted = encrypt_bytes(&self.key.borrow(), &buffer);
-                    chunk_writer.write_chunk(encrypted.as_bytes()).await?;
-                    chunk_writer.write_chunk("|".as_bytes()).await?;
-                }
-            }
-        }
+        self.backup.write_plaintext(&mut sink).await?;
         let res = chunk_writer.finalize().await;
-        info!("Data store backup completed");
         res
     }
 }

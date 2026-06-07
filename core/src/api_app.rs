@@ -1,4 +1,4 @@
-use alloc::{string::String, string::ToString};
+use alloc::{format, string::String, string::ToString};
 use framework::{
     box_route_future, debug,
     framework_web_app::{ApiMethod, BodyReadRejection, read_limited_body, write_rejection},
@@ -8,12 +8,16 @@ use picoserve::{
     extract::FromRequest,
     io::Read,
     request::{Path, Request, RequestBody, RequestParts},
-    response::{IntoResponse, ResponseWriter, StatusCode},
+    response::{
+        IntoResponse, ResponseWriter, StatusCode,
+        chunked::{ChunkWriter, ChunkedResponse, ChunksWritten},
+    },
     routing::PathRouterService,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::api_server::ApiServerState;
+use crate::view_model::StoreBackupPlaintextSink;
 
 pub fn build_app() -> picoserve::Router<impl picoserve::routing::PathRouter<ApiServerState>, ApiServerState> {
     picoserve::Router::from_service(ApiServerWebService)
@@ -57,6 +61,12 @@ impl PathRouterService<ApiServerState> for ApiServerWebService {
             (ApiMethod::Get, "/api/internal/filaments-config") => {
                 box_route_future!(handle_filaments_config_get(state, request, response_writer).await)
             }
+            (ApiMethod::Get, "/api/internal/store-backup") => {
+                box_route_future!(handle_store_backup_get(state, request, response_writer).await)
+            }
+            (ApiMethod::Post, "/api/internal/store-backup/mark-completed") => {
+                box_route_future!(handle_store_backup_mark_completed(state, request, response_writer).await)
+            }
             _ => box_route_future!(write_not_found(request, response_writer).await),
         };
 
@@ -76,6 +86,11 @@ struct FilamentsConfigRequest {
 #[derive(Serialize)]
 struct FilamentsConfigResponse {
     custom_filaments: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct MarkBackupCompletedRequest {
+    date_time: i64,
 }
 
 enum ApiRequestRejection {
@@ -107,6 +122,19 @@ impl IntoResponse for ApiRequestRejection {
 }
 
 impl<'r> FromRequest<'r, ApiServerState> for FilamentsConfigRequest {
+    type Rejection = ApiRequestRejection;
+
+    async fn from_request<R: Read>(
+        state: &'r ApiServerState,
+        _request_parts: RequestParts<'r>,
+        request_body: RequestBody<'r, R>,
+    ) -> Result<Self, Self::Rejection> {
+        let body = read_limited_body(request_body, state.request_body_max_bytes).await?;
+        serde_json::from_slice(&body).map_err(|_| ApiRequestRejection::DeserializationError)
+    }
+}
+
+impl<'r> FromRequest<'r, ApiServerState> for MarkBackupCompletedRequest {
     type Rejection = ApiRequestRejection;
 
     async fn from_request<R: Read>(
@@ -198,6 +226,71 @@ async fn handle_filaments_config_get<R: Read, W: ResponseWriter<Error = R::Error
     JsonStringResponse::new(json)
         .write_to(request.body_connection.finalize().await?, response_writer)
         .await
+}
+
+struct PlainStoreBackupSink<'a, W: picoserve::io::Write> {
+    chunk_writer: &'a mut ChunkWriter<W>,
+}
+
+impl<W: picoserve::io::Write> StoreBackupPlaintextSink for PlainStoreBackupSink<'_, W> {
+    type Error = W::Error;
+
+    async fn write_backup_chunk(&mut self, chunk: &[u8]) -> Result<(), Self::Error> {
+        self.chunk_writer.write_chunk(chunk).await
+    }
+}
+
+struct StoreBackupChunks {
+    backup: crate::view_model::StoreBackupGenerator,
+}
+
+impl picoserve::response::chunked::Chunks for StoreBackupChunks {
+    fn content_type(&self) -> &'static str {
+        "text/plain"
+    }
+
+    async fn write_chunks<W: picoserve::io::Write>(self, mut chunk_writer: ChunkWriter<W>) -> Result<ChunksWritten, W::Error> {
+        let mut sink = PlainStoreBackupSink {
+            chunk_writer: &mut chunk_writer,
+        };
+        self.backup.write_plaintext(&mut sink).await?;
+        chunk_writer.finalize().await
+    }
+}
+
+async fn handle_store_backup_get<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &ApiServerState,
+    request: Request<'_, R>,
+    response_writer: W,
+) -> Result<ResponseSent, W::Error> {
+    let backup = state.view_model.borrow().store_backup_generator();
+    ChunkedResponse::new(StoreBackupChunks { backup })
+        .write_to(request.body_connection.finalize().await?, response_writer)
+        .await
+}
+
+async fn handle_store_backup_mark_completed<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &ApiServerState,
+    mut request: Request<'_, R>,
+    response_writer: W,
+) -> Result<ResponseSent, W::Error> {
+    let MarkBackupCompletedRequest { date_time } =
+        match extract_api_request::<MarkBackupCompletedRequest, _>(state, request.parts, request.body_connection.body()).await {
+            Ok(value) => value,
+            Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
+        };
+
+    let response = match state.app_config.borrow_mut().mark_backup_completed(date_time) {
+        Ok(_) => (StatusCode::OK, JsonStringResponse::new(r#"{"success":true}"#.to_string())),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            JsonStringResponse::new(format!(
+                r#"{{"error":{}}}"#,
+                serde_json::to_string(&err).unwrap_or_else(|_| r#""mark_completed_failed""#.to_string())
+            )),
+        ),
+    };
+    response.write_to(request.body_connection.finalize().await?, response_writer).await
 }
 
 async fn write_unauthorized<R: Read, W: ResponseWriter<Error = R::Error>>(

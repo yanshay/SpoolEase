@@ -15,6 +15,7 @@ use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Timer, with_timeout};
 use embedded_hal_bus::spi::ExclusiveDevice;
+use embedded_sdmmc::asynchronous::LfnBuffer;
 use hashbrown::HashMap;
 use ndef_rs::NdefMessage;
 use serde::{Deserialize, Serialize};
@@ -50,7 +51,7 @@ use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleWeight, SpoolScaleObserver};
 use crate::ssdp::{SSDPPubSubChannel, ssdp_task};
-use crate::store::{Store, StoreObserver, store_safe_time_now};
+use crate::store::{BackupMeta, FileMeta, Store, StoreObserver, store_safe_time_now};
 
 use crate::tag_standards::{BAMBULAB_TAG_TYPE, BambuLabTag, OPENPRINTTAG_TAG_TYPE, OpenPrintTagTag};
 use crate::types::FilamentSupInfo;
@@ -182,6 +183,104 @@ pub struct ViewModel {
     pub scale_version: Option<String>,
 }
 
+pub trait StoreBackupPlaintextSink {
+    type Error;
+
+    async fn write_backup_chunk(&mut self, chunk: &[u8]) -> Result<(), Self::Error>;
+}
+
+pub struct StoreBackupGenerator {
+    framework: Rc<RefCell<Framework>>,
+    spoolease_console_ver: String,
+}
+
+impl StoreBackupGenerator {
+    pub async fn write_plaintext<S: StoreBackupPlaintextSink>(&self, sink: &mut S) -> Result<(), S::Error> {
+        info!("Data store backup started");
+        let file_store = self.framework.borrow().file_store();
+        let mut files: Vec<String> = Vec::new();
+        let mut dirs: Vec<String> = Vec::new();
+        dirs.push("/store".to_string());
+        let mut lfn_buffer_storage = alloc::vec![0u8; 32];
+        let mut lfn_buffer = LfnBuffer::new(lfn_buffer_storage.as_mut_slice());
+        let backup_meta = BackupMeta {
+            spoolease_console_ver: self.spoolease_console_ver.clone(),
+        };
+        let mut backup_meta_str = serde_json::to_string(&backup_meta).unwrap();
+        backup_meta_str += "\n";
+        sink.write_backup_chunk(backup_meta_str.as_bytes()).await?;
+
+        while !dirs.is_empty() {
+            let curr_dir_path = dirs.remove(0);
+            {
+                info!("Traversing directory: {curr_dir_path}");
+                {
+                    let mut file_store = file_store.lock().await;
+                    match file_store.open_dir(&curr_dir_path, framework::sdcard_store::Mode::ReadOnly).await {
+                        Ok(rawdir) => {
+                            let dir = rawdir.to_directory(file_store.volume_mgr());
+                            if let Err(e) = dir
+                                .iterate_dir_lfn(&mut lfn_buffer, |dir_entry, long_name| {
+                                    let dir_entry_name = if let Some(long_name) = long_name {
+                                        long_name.to_string()
+                                    } else {
+                                        dir_entry.name.to_string()
+                                    };
+                                    if !dir_entry_name.starts_with(".") {
+                                        let full_path = format!("{}/{}", curr_dir_path, dir_entry.name);
+                                        if dir_entry.attributes.is_directory() {
+                                            dirs.push(full_path);
+                                        } else {
+                                            files.push(full_path);
+                                        }
+                                    }
+                                })
+                                .await
+                            {
+                                error!("Error iterating directory {curr_dir_path} : {e:?}");
+                            }
+                            let rawdir = dir.to_raw_directory();
+                            if let Err(e) = file_store.close_dir(rawdir).await {
+                                error!("Error closing sdcard directory : {e:?}");
+                            }
+                        }
+                        Err(_) => todo!(),
+                    }
+                }
+                let mut buffer = Vec::<u8>::with_capacity(1024);
+
+                for file_path in files.drain(..) {
+                    info!("Backing up file {file_path}");
+                    buffer.clear();
+                    let file_content = {
+                        let mut file_store = file_store.lock().await;
+                        if let Ok(file_content) = file_store.read_file_str(&file_path).await {
+                            file_content
+                        } else {
+                            error!("Error reading file {file_path}");
+                            format!("Error reading file {file_path}")
+                        }
+                    };
+
+                    let file_meta = FileMeta {
+                        path: file_path,
+                        length: file_content.len(),
+                    };
+                    let file_meta_str = serde_json::to_string(&file_meta).unwrap();
+                    buffer.extend_from_slice(file_meta_str.as_bytes());
+                    buffer.extend_from_slice("\n".as_bytes());
+                    buffer.extend_from_slice(file_content.as_bytes());
+                    buffer.extend_from_slice("\n".as_bytes());
+                    sink.write_backup_chunk(&buffer).await?;
+                }
+            }
+        }
+
+        info!("Data store backup completed");
+        Ok(())
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 struct SpoolEncodeCookie {
     spool_rec_id: String,
@@ -201,6 +300,13 @@ enum StorageRackValue {
 }
 
 impl ViewModel {
+    pub fn store_backup_generator(&self) -> StoreBackupGenerator {
+        StoreBackupGenerator {
+            framework: self.framework.clone(),
+            spoolease_console_ver: self.framework.borrow().settings.app_cargo_pkg_version.to_string(),
+        }
+    }
+
     fn normalize_hex_color(hex: &str) -> &str {
         hex.trim().trim_start_matches('#')
     }
