@@ -14,9 +14,9 @@ use framework::framework_web_app::{encrypt, encrypt_bytes, encrypt_bytes_compact
 use hashbrown::HashMap;
 use picoserve::response::chunked::{ChunkWriter, ChunkedResponse, ChunksWritten};
 use picoserve::response::{Body, HeadersIter, IntoResponse, Response, ResponseWriter, StatusCode};
-use picoserve::routing::RequestHandlerService;
+use picoserve::routing::{PathRouterService, RequestHandlerService};
 use picoserve::{
-    AppWithStateBuilder, ResponseSent,
+    ResponseSent,
     extract::{FromRequest, FromRequestParts, Query},
     io::Read,
     request::{Path, Request, RequestBody, RequestBodyConnection, RequestParts},
@@ -26,7 +26,8 @@ use framework::{
     display_snapshot::{DisplaySnapshotBmp, DisplaySnapshotError},
     encrypted_input,
     framework_web_app::{
-        CustomNotFound, Encryptable, EncryptedRejection, NestedAppWithWebAppStateBuilder, SetConfigResponseDTO, WebAppState, decrypt,
+        ApiMethod, CustomNotFound, Encryptable, EncryptedRejection, NestedAppWithWebAppState, NestedAppWithWebAppStateBuilder, RouteAttempt,
+        SetConfigResponseDTO, WebAppState, decrypt,
     },
     prelude::*,
 };
@@ -96,42 +97,16 @@ pub struct NestedAppBuilder {
 }
 
 impl NestedAppWithWebAppStateBuilder<ConsoleAppState> for NestedAppBuilder {
-    fn path_description(&self) -> &'static str {
-        "" // this nests it at the root.
-    }
-}
+    type WebApp = ConsoleWebService;
 
-impl AppWithStateBuilder for NestedAppBuilder {
-    type State = WebAppState<ConsoleAppState>;
-    type PathRouter = impl picoserve::routing::PathRouter<WebAppState<ConsoleAppState>>;
-
-    fn build_app(self) -> picoserve::Router<Self::PathRouter, Self::State> {
-        let web_server_captive = self.framework.borrow().settings.web_server_captive;
+    fn build_web_app(self) -> Self::WebApp {
+        let _framework = self.framework;
         let _app_config = self.app_config;
-        picoserve::Router::from_service(ConsoleWebService { web_server_captive })
+        ConsoleWebService
     }
 }
 
-struct ConsoleWebService {
-    web_server_captive: bool,
-}
-
-#[derive(Clone, Copy)]
-enum ApiMethod {
-    Get,
-    Post,
-    Other,
-}
-
-impl From<&str> for ApiMethod {
-    fn from(method: &str) -> Self {
-        match method {
-            "GET" => Self::Get,
-            "POST" => Self::Post,
-            _ => Self::Other,
-        }
-    }
-}
+pub struct ConsoleWebService;
 
 async fn extract_web_app_request<T, R: Read>(
     state: &WebAppState<ConsoleAppState>,
@@ -202,20 +177,25 @@ where
 }
 
 macro_rules! box_route_future {
-    ($body:expr) => {
-        alloc::boxed::Box::pin(async move { $body }).await
-    };
+    ($body:expr) => {{
+        let route = alloc::boxed::Box::pin(async move { $body });
+        framework::framework_web_app::log_boxed_route_future_state(core::mem::size_of_val(route.as_ref().get_ref()));
+        RouteAttempt::Handled(route.await)
+    }};
 }
 
-impl picoserve::routing::PathRouterService<WebAppState<ConsoleAppState>> for ConsoleWebService {
-    async fn call_path_router_service<R: Read, W: ResponseWriter<Error = R::Error>>(
+impl NestedAppWithWebAppState<ConsoleAppState> for ConsoleWebService {
+    async fn try_handle_route<'p, 'r, R, W>(
         &self,
         state: &WebAppState<ConsoleAppState>,
-        (): (),
-        path: Path<'_>,
-        request: Request<'_, R>,
+        path: Path<'p>,
+        request: Request<'r, R>,
         response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
+    ) -> RouteAttempt<'p, 'r, R, W>
+    where
+        R: Read,
+        W: ResponseWriter<Error = R::Error>,
+    {
         let method = ApiMethod::from(request.parts.method());
         let key = state.encryption.0;
         let app_state = state.more_state.clone();
@@ -389,14 +369,27 @@ impl picoserve::routing::PathRouterService<WebAppState<ConsoleAppState>> for Con
                 box_route_future!(handle_spool_location(state, request, response_writer, key).await)
             }
 
-            _ => box_route_future!({
-                CustomNotFound {
-                    web_server_captive: self.web_server_captive,
-                }
-                .call_path_router_service(state, (), path, request, response_writer)
-                .await
-            }),
+            _ => RouteAttempt::NotMatched {
+                path,
+                request,
+                response_writer,
+            },
         }
+    }
+
+    async fn handle_fallback<'p, 'r, R, W>(
+        &self,
+        state: &WebAppState<ConsoleAppState>,
+        path: Path<'p>,
+        request: Request<'r, R>,
+        response_writer: W,
+        default_fallback: &CustomNotFound,
+    ) -> Result<ResponseSent, W::Error>
+    where
+        R: Read,
+        W: ResponseWriter<Error = R::Error>,
+    {
+        default_fallback.call_path_router_service(state, (), path, request, response_writer).await
     }
 }
 
