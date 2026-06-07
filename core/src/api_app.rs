@@ -1,50 +1,53 @@
-use core::future::ready;
-
 use alloc::{string::String, string::ToString};
-use framework::framework_web_app::{BodyReadRejection, read_limited_body};
+use framework::{
+    box_route_future,
+    framework_web_app::{ApiMethod, BodyReadRejection, read_limited_body, write_rejection},
+};
 use picoserve::{
     ResponseSent,
-    extract::{FromRequest, State},
+    extract::FromRequest,
     io::Read,
-    request::{RequestBody, RequestParts},
+    request::{Path, Request, RequestBody, RequestParts},
     response::{IntoResponse, ResponseWriter, StatusCode},
-    routing::{Layer, Next, get, post},
+    routing::PathRouterService,
 };
 use serde::Deserialize;
 
 use crate::api_server::ApiServerState;
 
 pub fn build_app() -> picoserve::Router<impl picoserve::routing::PathRouter<ApiServerState>, ApiServerState> {
-    picoserve::Router::new()
-        .route(
-            "/api/hello",
-            get(|| ready(JsonStringResponse::new(r#"{"message":"hello from ApiServer"}"#.to_string()))),
-        )
-        .route(
-            "/api/internal/printers/slots",
-            get(|state: State<ApiServerState>| {
-                ready({
-                    let response = state.0.view_model.borrow().get_api_printer_slots();
-                    let json = serde_json::to_string(&response).unwrap_or_else(|_| r#"{"error":"serialization_failed"}"#.to_string());
-                    JsonStringResponse::new(json)
-                })
-            }),
-        )
-        .route(
-            "/api/internal/filaments-config",
-            post(
-                |state: State<ApiServerState>, FilamentsConfigRequest { custom_filaments }: FilamentsConfigRequest| {
-                    ready(match state.0.app_config.borrow_mut().set_filaments(custom_filaments) {
-                        Ok(_) => (StatusCode::OK, JsonStringResponse::new(r#"{"success":true}"#.to_string())),
-                        Err(_) => (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            JsonStringResponse::new(r#"{"error":"set_filaments_failed"}"#.to_string()),
-                        ),
-                    })
-                },
-            ),
-        )
-        .layer(ApiTokenAuthLayer)
+    picoserve::Router::from_service(ApiServerWebService)
+}
+
+struct ApiServerWebService;
+
+impl PathRouterService<ApiServerState> for ApiServerWebService {
+    async fn call_path_router_service<R: Read, W: ResponseWriter<Error = R::Error>>(
+        &self,
+        state: &ApiServerState,
+        (): (),
+        path: Path<'_>,
+        request: Request<'_, R>,
+        response_writer: W,
+    ) -> Result<ResponseSent, W::Error> {
+        if !request_authorized(state, &request.parts) {
+            return box_route_future!(write_unauthorized(request, response_writer).await);
+        }
+
+        let method = ApiMethod::from(request.parts.method());
+        match (method, path.encoded()) {
+            (ApiMethod::Get, "/api/hello") => {
+                box_route_future!(handle_hello(request, response_writer).await)
+            }
+            (ApiMethod::Get, "/api/internal/printers/slots") => {
+                box_route_future!(handle_printer_slots_get(state, request, response_writer).await)
+            }
+            (ApiMethod::Post, "/api/internal/filaments-config") => {
+                box_route_future!(handle_filaments_config_post(state, request, response_writer).await)
+            }
+            _ => box_route_future!(write_not_found(request, response_writer).await),
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -93,34 +96,10 @@ impl<'r> FromRequest<'r, ApiServerState> for FilamentsConfigRequest {
     }
 }
 
-struct ApiTokenAuthLayer;
-
-impl<PathParameters> Layer<ApiServerState, PathParameters> for ApiTokenAuthLayer {
-    type NextPathParameters = PathParameters;
-    type NextState = ApiServerState;
-
-    async fn call_layer<'a, R: Read + 'a, NextLayer: Next<'a, R, Self::NextState, Self::NextPathParameters>, W: ResponseWriter<Error = R::Error>>(
-        &self,
-        next: NextLayer,
-        state: &ApiServerState,
-        path_parameters: PathParameters,
-        request_parts: RequestParts<'_>,
-        response_writer: W,
-    ) -> Result<ResponseSent, W::Error> {
-        let authorized_token_name = bearer_token_from_parts(&request_parts).and_then(|token| state.app_config.borrow().verify_api_token(token));
-
-        if authorized_token_name.is_some() {
-            return next.run(state, path_parameters, response_writer).await;
-        }
-
-        (
-            StatusCode::UNAUTHORIZED,
-            ("WWW-Authenticate", "Bearer realm=\"SpoolEase API\""),
-            JsonStringResponse::new(r#"{"error":"unauthorized"}"#.to_string()),
-        )
-            .write_to(next.into_connection().await?, response_writer)
-            .await
-    }
+fn request_authorized(state: &ApiServerState, request_parts: &RequestParts<'_>) -> bool {
+    bearer_token_from_parts(request_parts)
+        .and_then(|token| state.app_config.borrow().verify_api_token(token))
+        .is_some()
 }
 
 fn bearer_token_from_parts<'r>(request_parts: &RequestParts<'r>) -> Option<&'r str> {
@@ -132,6 +111,78 @@ fn bearer_token_from_parts<'r>(request_parts: &RequestParts<'r>) -> Option<&'r s
         .and_then(|value| value.strip_prefix("Bearer "))
         .map(str::trim)
         .filter(|token| !token.is_empty())
+}
+
+async fn extract_api_request<T, R: Read>(
+    state: &ApiServerState,
+    request_parts: RequestParts<'_>,
+    request_body: RequestBody<'_, R>,
+) -> Result<T, ApiRequestRejection>
+where
+    T: for<'r> FromRequest<'r, ApiServerState, Rejection = ApiRequestRejection>,
+{
+    T::from_request(state, request_parts, request_body).await
+}
+
+async fn handle_hello<R: Read, W: ResponseWriter<Error = R::Error>>(request: Request<'_, R>, response_writer: W) -> Result<ResponseSent, W::Error> {
+    JsonStringResponse::new(r#"{"message":"hello from ApiServer"}"#.to_string())
+        .write_to(request.body_connection.finalize().await?, response_writer)
+        .await
+}
+
+async fn handle_printer_slots_get<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &ApiServerState,
+    request: Request<'_, R>,
+    response_writer: W,
+) -> Result<ResponseSent, W::Error> {
+    let response = state.view_model.borrow().get_api_printer_slots();
+    let json = serde_json::to_string(&response).unwrap_or_else(|_| r#"{"error":"serialization_failed"}"#.to_string());
+    JsonStringResponse::new(json)
+        .write_to(request.body_connection.finalize().await?, response_writer)
+        .await
+}
+
+async fn handle_filaments_config_post<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &ApiServerState,
+    mut request: Request<'_, R>,
+    response_writer: W,
+) -> Result<ResponseSent, W::Error> {
+    let FilamentsConfigRequest { custom_filaments } =
+        match extract_api_request::<FilamentsConfigRequest, _>(state, request.parts, request.body_connection.body()).await {
+            Ok(value) => value,
+            Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
+        };
+
+    let response = match state.app_config.borrow_mut().set_filaments(custom_filaments) {
+        Ok(_) => (StatusCode::OK, JsonStringResponse::new(r#"{"success":true}"#.to_string())),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            JsonStringResponse::new(r#"{"error":"set_filaments_failed"}"#.to_string()),
+        ),
+    };
+    response.write_to(request.body_connection.finalize().await?, response_writer).await
+}
+
+async fn write_unauthorized<R: Read, W: ResponseWriter<Error = R::Error>>(
+    request: Request<'_, R>,
+    response_writer: W,
+) -> Result<ResponseSent, W::Error> {
+    (
+        StatusCode::UNAUTHORIZED,
+        ("WWW-Authenticate", "Bearer realm=\"SpoolEase API\""),
+        JsonStringResponse::new(r#"{"error":"unauthorized"}"#.to_string()),
+    )
+        .write_to(request.body_connection.finalize().await?, response_writer)
+        .await
+}
+
+async fn write_not_found<R: Read, W: ResponseWriter<Error = R::Error>>(
+    request: Request<'_, R>,
+    response_writer: W,
+) -> Result<ResponseSent, W::Error> {
+    (StatusCode::NOT_FOUND, JsonStringResponse::new(r#"{"error":"not_found"}"#.to_string()))
+        .write_to(request.body_connection.finalize().await?, response_writer)
+        .await
 }
 
 struct JsonStringResponse {
