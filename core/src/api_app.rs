@@ -1,6 +1,6 @@
 use alloc::{string::String, string::ToString};
 use framework::{
-    box_route_future,
+    box_route_future, debug,
     framework_web_app::{ApiMethod, BodyReadRejection, read_limited_body, write_rejection},
 };
 use picoserve::{
@@ -30,12 +30,21 @@ impl PathRouterService<ApiServerState> for ApiServerWebService {
         request: Request<'_, R>,
         response_writer: W,
     ) -> Result<ResponseSent, W::Error> {
+        let method_log = request.parts.method().to_string();
+        let path_log = path.encoded().to_string();
+        debug!("Api-Server request started: {method_log} {path_log}");
+
         if !request_authorized(state, &request.parts) {
-            return box_route_future!(write_unauthorized(request, response_writer).await);
+            let result = box_route_future!(write_unauthorized(request, response_writer).await);
+            debug!(
+                "Api-Server request completed: {method_log} {path_log} {}",
+                if result.is_ok() { "ok" } else { "error" }
+            );
+            return result;
         }
 
         let method = ApiMethod::from(request.parts.method());
-        match (method, path.encoded()) {
+        let result = match (method, path.encoded()) {
             (ApiMethod::Get, "/api/hello") => {
                 box_route_future!(handle_hello(request, response_writer).await)
             }
@@ -46,7 +55,13 @@ impl PathRouterService<ApiServerState> for ApiServerWebService {
                 box_route_future!(handle_filaments_config_post(state, request, response_writer).await)
             }
             _ => box_route_future!(write_not_found(request, response_writer).await),
-        }
+        };
+
+        debug!(
+            "Api-Server request completed: {method_log} {path_log} {}",
+            if result.is_ok() { "ok" } else { "error" }
+        );
+        result
     }
 }
 
