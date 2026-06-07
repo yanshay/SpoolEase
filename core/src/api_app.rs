@@ -11,7 +11,7 @@ use picoserve::{
     response::{IntoResponse, ResponseWriter, StatusCode},
     routing::PathRouterService,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::api_server::ApiServerState;
 
@@ -54,6 +54,9 @@ impl PathRouterService<ApiServerState> for ApiServerWebService {
             (ApiMethod::Post, "/api/internal/filaments-config") => {
                 box_route_future!(handle_filaments_config_post(state, request, response_writer).await)
             }
+            (ApiMethod::Get, "/api/internal/filaments-config") => {
+                box_route_future!(handle_filaments_config_get(state, request, response_writer).await)
+            }
             _ => box_route_future!(write_not_found(request, response_writer).await),
         };
 
@@ -67,6 +70,11 @@ impl PathRouterService<ApiServerState> for ApiServerWebService {
 
 #[derive(Deserialize)]
 struct FilamentsConfigRequest {
+    custom_filaments: Option<String>,
+}
+
+#[derive(Serialize)]
+struct FilamentsConfigResponse {
     custom_filaments: Option<String>,
 }
 
@@ -176,6 +184,20 @@ async fn handle_filaments_config_post<R: Read, W: ResponseWriter<Error = R::Erro
         ),
     };
     response.write_to(request.body_connection.finalize().await?, response_writer).await
+}
+
+async fn handle_filaments_config_get<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &ApiServerState,
+    request: Request<'_, R>,
+    response_writer: W,
+) -> Result<ResponseSent, W::Error> {
+    let response = FilamentsConfigResponse {
+        custom_filaments: state.app_config.borrow().custom_filaments.clone(),
+    };
+    let json = serde_json::to_string(&response).unwrap_or_else(|_| r#"{"error":"serialization_failed"}"#.to_string());
+    JsonStringResponse::new(json)
+        .write_to(request.body_connection.finalize().await?, response_writer)
+        .await
 }
 
 async fn write_unauthorized<R: Read, W: ResponseWriter<Error = R::Error>>(
