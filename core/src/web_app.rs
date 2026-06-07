@@ -13,8 +13,8 @@ use embedded_sdmmc::asynchronous::LfnBuffer;
 use framework::framework_web_app::{encrypt, encrypt_bytes, encrypt_bytes_compact};
 use hashbrown::HashMap;
 use picoserve::response::chunked::{ChunkWriter, ChunkedResponse, ChunksWritten};
-use picoserve::response::{Body, HeadersIter, IntoResponse, Response, ResponseWriter, StatusCode};
-use picoserve::routing::{PathRouterService, RequestHandlerService};
+use picoserve::response::{Body, HeadersIter, Response, ResponseWriter, StatusCode};
+use picoserve::routing::RequestHandlerService;
 use picoserve::{
     ResponseSent,
     extract::{FromRequest, FromRequestParts, Query},
@@ -22,12 +22,13 @@ use picoserve::{
     request::{Path, Request, RequestBody, RequestBodyConnection, RequestParts},
 };
 
+use framework::handled_route_future as box_route_future;
 use framework::{
     display_snapshot::{DisplaySnapshotBmp, DisplaySnapshotError},
     encrypted_input,
     framework_web_app::{
-        ApiMethod, CustomNotFound, Encryptable, EncryptedRejection, NestedAppWithWebAppState, NestedAppWithWebAppStateBuilder, RouteAttempt,
-        SetConfigResponseDTO, WebAppState, decrypt,
+        ApiMethod, Encryptable, EncryptedRejection, NestedAppWithWebAppState, NestedAppWithWebAppStateBuilder, RouteAttempt, SetConfigResponseDTO,
+        WebAppState, decrypt, extract_web_app_request, write_rejection,
     },
     prelude::*,
 };
@@ -108,17 +109,6 @@ impl NestedAppWithWebAppStateBuilder<ConsoleAppState> for NestedAppBuilder {
 
 pub struct ConsoleWebService;
 
-async fn extract_web_app_request<T, R: Read>(
-    state: &WebAppState<ConsoleAppState>,
-    request_parts: RequestParts<'_>,
-    request_body: RequestBody<'_, R>,
-) -> Result<T, EncryptedRejection>
-where
-    T: for<'r> FromRequest<'r, WebAppState<ConsoleAppState>, Rejection = EncryptedRejection>,
-{
-    T::from_request(state, request_parts, request_body).await
-}
-
 async fn write_ok<R: Read, W: ResponseWriter<Error = R::Error>>(
     body_connection: RequestBodyConnection<'_, R>,
     response_writer: W,
@@ -137,19 +127,6 @@ async fn write_empty_response<R: Read, W: ResponseWriter<Error = R::Error>>(
     response_writer
         .write_response(body_connection.finalize().await?, Response::new(status_code, ""))
         .await
-}
-
-async fn write_rejection<R, W, Rejection>(
-    body_connection: RequestBodyConnection<'_, R>,
-    response_writer: W,
-    rejection: Rejection,
-) -> Result<ResponseSent, W::Error>
-where
-    R: Read,
-    W: ResponseWriter<Error = R::Error>,
-    Rejection: IntoResponse,
-{
-    rejection.write_to(body_connection.finalize().await?, response_writer).await
 }
 
 async fn handle_web_app_post<T, R, W, Handler, HandlerFuture>(
@@ -174,14 +151,6 @@ where
 
     let payload = handler(key, app_state, input).await;
     write_ok(request.body_connection, response_writer, payload).await
-}
-
-macro_rules! box_route_future {
-    ($body:expr) => {{
-        let route = alloc::boxed::Box::pin(async move { $body });
-        framework::framework_web_app::log_boxed_route_future_state(core::mem::size_of_val(route.as_ref().get_ref()));
-        RouteAttempt::Handled(route.await)
-    }};
 }
 
 impl NestedAppWithWebAppState<ConsoleAppState> for ConsoleWebService {
@@ -375,21 +344,6 @@ impl NestedAppWithWebAppState<ConsoleAppState> for ConsoleWebService {
                 response_writer,
             },
         }
-    }
-
-    async fn handle_fallback<'p, 'r, R, W>(
-        &self,
-        state: &WebAppState<ConsoleAppState>,
-        path: Path<'p>,
-        request: Request<'r, R>,
-        response_writer: W,
-        default_fallback: &CustomNotFound,
-    ) -> Result<ResponseSent, W::Error>
-    where
-        R: Read,
-        W: ResponseWriter<Error = R::Error>,
-    {
-        default_fallback.call_path_router_service(state, (), path, request, response_writer).await
     }
 }
 
@@ -1069,7 +1023,7 @@ async fn handle_spool_kinfo<R: Read, W: ResponseWriter<Error = R::Error>>(
     key: &'static RefCell<Vec<u8>>,
     app_state: ConsoleAppState,
 ) -> Result<ResponseSent, W::Error> {
-    let get_spool_kinfo = match extract_web_app_request::<GetSpoolKInfoDTO, _>(state, request.parts, request.body_connection.body()).await {
+    let get_spool_kinfo = match extract_web_app_request::<GetSpoolKInfoDTO, _, _>(state, request.parts, request.body_connection.body()).await {
         Ok(value) => value,
         Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
     };
@@ -1097,7 +1051,7 @@ async fn handle_store_restore_delete<R: Read, W: ResponseWriter<Error = R::Error
     response_writer: W,
     key: &'static RefCell<Vec<u8>>,
 ) -> Result<ResponseSent, W::Error> {
-    let RestoreDeleteDTO {} = match extract_web_app_request::<RestoreDeleteDTO, _>(state, request.parts, request.body_connection.body()).await {
+    let RestoreDeleteDTO {} = match extract_web_app_request::<RestoreDeleteDTO, _, _>(state, request.parts, request.body_connection.body()).await {
         Ok(value) => value,
         Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
     };
@@ -1121,7 +1075,7 @@ async fn handle_storage_config_post<R: Read, W: ResponseWriter<Error = R::Error>
     response_writer: W,
     key: &'static RefCell<Vec<u8>>,
 ) -> Result<ResponseSent, W::Error> {
-    let storage_config = match extract_web_app_request::<StorageConfig, _>(state, request.parts, request.body_connection.body()).await {
+    let storage_config = match extract_web_app_request::<StorageConfig, _, _>(state, request.parts, request.body_connection.body()).await {
         Ok(value) => value,
         Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
     };
@@ -1143,7 +1097,7 @@ async fn handle_dashboard_config_post<R: Read, W: ResponseWriter<Error = R::Erro
     response_writer: W,
     key: &'static RefCell<Vec<u8>>,
 ) -> Result<ResponseSent, W::Error> {
-    let dashboard_config = match extract_web_app_request::<DashboardConfigDTO, _>(state, request.parts, request.body_connection.body()).await {
+    let dashboard_config = match extract_web_app_request::<DashboardConfigDTO, _, _>(state, request.parts, request.body_connection.body()).await {
         Ok(value) => value,
         Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
     };
@@ -1188,7 +1142,7 @@ async fn handle_set_tag_location<R: Read, W: ResponseWriter<Error = R::Error>>(
     response_writer: W,
     key: &'static RefCell<Vec<u8>>,
 ) -> Result<ResponseSent, W::Error> {
-    let set_tag_location = match extract_web_app_request::<SetTagLocationDTO, _>(state, request.parts, request.body_connection.body()).await {
+    let set_tag_location = match extract_web_app_request::<SetTagLocationDTO, _, _>(state, request.parts, request.body_connection.body()).await {
         Ok(value) => value,
         Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
     };
@@ -1235,7 +1189,7 @@ async fn handle_spool_location<R: Read, W: ResponseWriter<Error = R::Error>>(
     response_writer: W,
     key: &'static RefCell<Vec<u8>>,
 ) -> Result<ResponseSent, W::Error> {
-    let set_spool_location = match extract_web_app_request::<SetSpoolLocationDTO, _>(state, request.parts, request.body_connection.body()).await {
+    let set_spool_location = match extract_web_app_request::<SetSpoolLocationDTO, _, _>(state, request.parts, request.body_connection.body()).await {
         Ok(value) => value,
         Err(err) => return write_rejection(request.body_connection, response_writer, err).await,
     };
