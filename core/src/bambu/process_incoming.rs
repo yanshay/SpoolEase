@@ -269,12 +269,21 @@ impl BambuPrinter {
             && let Some(ref filaments) = print.filaments
         {
             // filaments is really calibrations
+            let mut updated_calibrations = Vec::new();
+            for filament in filaments {
+                let Some(calibration) = Calibration::from(filament, nozzle_diameter) else {
+                    warn!(
+                        "[{}] Ignoring extrusion_cali_get for nozzle {nozzle_diameter}: missing cali_idx",
+                        self.printer_number
+                    );
+                    return false;
+                };
+                updated_calibrations.push(calibration);
+            }
+
             change_made = true;
             self.calibrations.retain(|cal| &cal.diameter != nozzle_diameter);
-            for filament in filaments {
-                let calibration = Calibration::from(filament, nozzle_diameter);
-                self.calibrations.push(calibration);
-            }
+            self.calibrations.extend(updated_calibrations);
             self.calibrations_dirty = true;
         }
 

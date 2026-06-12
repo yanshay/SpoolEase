@@ -46,7 +46,7 @@ pub struct Filament {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub setting_id: Option<String>,
     // pub tray_id: Option<i32>, // ??? why is it here? In extrusion_cali_set it can exist (case when adding new calibration)
-    pub cali_idx: i32, // Need to switch to optional since in extrusion_cali_set it is missing at least sometimes (case when adding new calibration)
+    pub cali_idx: Option<i32>, // omitted by extrusion_cali_set ACKs; required for usable extrusion_cali_get entries
     pub nozzle_id: Option<String>,
     pub extruder_id: Option<i32>,
 }

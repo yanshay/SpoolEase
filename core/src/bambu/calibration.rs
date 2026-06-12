@@ -40,9 +40,9 @@ impl Calibration {
             NozzleType::HighFlow
         }
     }
-    pub fn from(v: &bambu_api::Filament, diameter: &str) -> Self {
+    pub fn from(v: &bambu_api::Filament, diameter: &str) -> Option<Self> {
         // this "Filament" in bambu_api is really calibrations, bambulab naming ...
-        Self {
+        Some(Self {
             extruder: v.extruder_id.unwrap_or_default(),
             nozzle_id: v.nozzle_id.clone().unwrap_or_default(),
             diameter: diameter.to_string(),
@@ -50,8 +50,8 @@ impl Calibration {
             name: v.name.clone(),
             k_value: formatted_k_value(&v.k_value),
             setting_id: v.setting_id.clone(),
-            cali_idx: v.cali_idx,
-        }
+            cali_idx: v.cali_idx?,
+        })
     }
 
     pub fn _new_minimal(diameter: &str, k_value: &str, filament_id: &str, setting_id: &str, name: &str, cali_idx: i32) -> Self {
