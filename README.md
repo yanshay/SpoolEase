@@ -2,17 +2,20 @@
 
 SpoolEase is a smart add-on system for Bambu Lab 3D printers that adds intelligence and control to every filament spool.
 
+**For the most up to date information please check [spoolease.io](https://www.spoolease.io)**  
+
 It features:
 - NFC tags for automatic spool identification
-- [**Comprehensive spool inventory management system**](https://docs.spoolease.io/docs/quickstart/inventory-ui-intro) - keeping your spools organized
-- [**Precise Filament Weight Tracking**](https://docs.spoolease.io/docs/full-guide/spool-weight-tracking) using (1) weight scale, (2) print usage monitoring, and (3) a smart workflow - so you can tell how much filament is available in every spool
-- [**Storage System Management**](https://docs.spoolease.io/docs/full-guide/storage-system) - quickly find where your spools are using NFC based location tracking and seamless workflow to keep location information up to date
+- [**Comprehensive spool inventory management system**](https://www.spoolease.io/docs/quickstart/inventory-ui-intro) - keeping your spools organized
+- [**Precise Filament Weight Tracking**](https://www.spoolease.io/docs/full-guide/spool-weight-tracking) using (1) weight scale, (2) print usage monitoring, and (3) a smart workflow - so you can tell how much filament is available in every spool
+- [**Custom Bambu Studio](https://www.spoolease.io/docs/full-guide/custom-bambustudio) - an enhanced Bambu Studio with new features to take advantage of SpoolEase information, as well as hosted SpoolEase application inside the slicer [video](https://www.youtube.com/watch?v=ftYzWrAR-4w)  
+- [**Storage System Management**](https://www.spoolease.io/docs/full-guide/storage-system) - quickly find where your spools are using NFC based location tracking and seamless workflow to keep location information up to date
 - **Automatic slot configuration** for material, color, pressure advance (K)
-- [**Printers Monitoring**](https://docs.spoolease.io/docs/full-guide/printers-monitoring) - the essentials for monitoring printers, prints progress and AMS units status
-- [**Configurable Dashboard**](https://docs.spoolease.io/docs/full-guide/dashboard) - get the big picture of your spools inventory
-- [**Virtual Spool Label**](https://docs.spoolease.io/docs/quickstart/view-tag-info) for viewing spool info on your mobile device
+- [**Printers Monitoring**](https://www.spoolease.io/docs/full-guide/printers-monitoring) - the essentials for monitoring printers, prints progress and AMS units status
+- [**Configurable Dashboard**](https://www.spoolease.io/docs/full-guide/dashboard) - get the big picture of your spools inventory
+- [**Virtual Spool Label**](https://www.spoolease.io/docs/quickstart/view-tag-info) for viewing spool info on your mobile device
 - Import and support for Bambu Lab Spools RFID tag
-- Software support for OpenPrintTag (see support scope in [Register OpenPrintTag Spools](https://docs.spoolease.io/docs/quickstart/register-openprinttag-spools))
+- Software support for OpenPrintTag (see support scope in [Register OpenPrintTag Spools](https://www.spoolease.io/docs/quickstart/register-openprinttag-spools))
 - Compatibility with your slicer filament settings
 - Even serves as **backup for your pressure advance settings** (for when the printer loses them — and yes, it happens)
 
@@ -30,8 +33,7 @@ SpoolEase works well together with the [SpoolEase NFC tag holder](https://makerw
 
 And most importantly, even though it’s an open-source project, it’s fun and easy to build and surprisingly simple to set up!
 
-- [Documentation](https://docs.spoolease.io/docs/welcome)
-- [Flashing Web Site](https://www.spoolease.io)
+- [SpoolEase Web Site - Documentation & Flashing](https://www.spoolease.io)
 - [Reddit](https://www.reddit.com/r/SpoolEase/)
 - [Discord Server](https://discord.gg/6brKUCERcQ)
 
@@ -119,16 +121,16 @@ If you're interested in commercial licensing, redistribution rights, or other ac
 **Important:** Make Sure to Use Follow Docuemntation for Your Version.  
 
 - **SpoolEase Console**  
-  [Build](https://docs.spoolease.io/docs/build-setup/console-build)  
-  [Setup](https://docs.spoolease.io/docs/build-setup/console-setup)  
+  [Build](https://www.spoolease.io/docs/build-setup/console-build)  
+  [Setup](https://www.spoolease.io/docs/build-setup/console-setup)  
 
 - **SpoolEase Scale**  
-  [Build](https://docs.spoolease.io/docs/build-setup/scale-build)  
-  [Setup](https://docs.spoolease.io/docs/build-setup/scale-setup)
+  [Build](https://www.spoolease.io/docs/build-setup/scale-build)  
+  [Setup](https://www.spoolease.io/docs/build-setup/scale-setup)
 
 - **System Information**  
-  [Usage](https://docs.spoolease.io/docs/quickstart/basic-usage-flows)  
-  [Troubleshooting](https://docs.spoolease.io/docs/troubleshooting)
+  [Usage](https://www.spoolease.io/docs/quickstart/basic-usage-flows)  
+  [Troubleshooting](https://www.spoolease.io/docs/troubleshooting)
 
 ## Third Party Attributions
 SpoolScale uses the following sources for it's spools weights catalog:  
