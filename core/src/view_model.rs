@@ -4064,19 +4064,21 @@ async fn load_persistent_printer_state(
     view_model: &Rc<RefCell<ViewModel>>,
     store: &Rc<Store>,
     manager_index: usize,
-) -> Result<bool, String> {
+) -> Result<bool, printer_domain::PrinterPersistentStateLoadError> {
     let (printer_number, path) = {
         let view_model_borrow = view_model.borrow();
         let printer_manager = view_model_borrow.printer_manager.borrow();
         let Some(printer_number) = printer_manager.printer_number_at(manager_index) else {
-            return Err(format!("Unknown printer index {manager_index}"));
+            return Err(printer_domain::PrinterPersistentStateLoadError::Other(format!(
+                "Unknown printer index {manager_index}"
+            )));
         };
         let Some(path) = printer_manager.persistent_state_path_at(manager_index) else {
             return Ok(false);
         };
         (printer_number, path)
     };
-    validate_persistent_printer_state_path(view_model, manager_index, &path)?;
+    validate_persistent_printer_state_path(view_model, manager_index, &path).map_err(printer_domain::PrinterPersistentStateLoadError::Other)?;
 
     let mut err_str = String::new();
     for trial in 1..=3 {
@@ -4106,7 +4108,12 @@ async fn load_persistent_printer_state(
 
         if let Err(err) = serde_json::from_str::<printer_domain::PrinterStateFile>(&state_str) {
             quarantine_bad_persistent_printer_state(framework, &path, &state_str).await;
-            return Err(format!("Failed to parse printer state: {err}"));
+            term_error!("[{}] Failed to parse printer state in file {} : {}", printer_number, path, err);
+            error!("[{}] Printer state file content: {}", printer_number, state_str);
+            return Err(printer_domain::PrinterPersistentStateLoadError::Parse(format!(
+                "[{}] Failed to Parse Printer State",
+                printer_number
+            )));
         }
 
         view_model
@@ -4118,7 +4125,7 @@ async fn load_persistent_printer_state(
         return Ok(true);
     }
 
-    Err(err_str)
+    Err(printer_domain::PrinterPersistentStateLoadError::Other(err_str))
 }
 
 fn refresh_selected_printer_after_state_restore(view_model: &Rc<RefCell<ViewModel>>, manager_index: usize) {
@@ -4272,9 +4279,15 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
         match load_persistent_printer_state(&framework, &view_model, &store, manager_index).await {
             Ok(true) => refresh_selected_printer_after_state_restore(&view_model, manager_index),
             Ok(false) => {}
-            Err(err) => view_model
-                .borrow()
-                .message_box("Restore Print State Notice", &err, "", crate::app::StatusType::Error, 0),
+            Err(err) => {
+                let (message, text2) = match err {
+                    printer_domain::PrinterPersistentStateLoadError::Parse(message) => (message, "Just upgraded? That's probably Ok.\nMore information in the release notes."),
+                    printer_domain::PrinterPersistentStateLoadError::Other(message) => (message, ""),
+                };
+                view_model
+                    .borrow()
+                    .message_box("Restore Print State Notice", &message, text2, crate::app::StatusType::Error, 0)
+            }
         }
     }
     restore_printer_runtime_states(&framework, &view_model, num_of_printers).await;

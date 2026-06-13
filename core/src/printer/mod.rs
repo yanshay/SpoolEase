@@ -271,6 +271,12 @@ pub struct PrinterStateFile {
 
 pub const PRINTER_STATE_FILE_VERSION: u32 = 1;
 
+#[derive(Debug)]
+pub enum PrinterPersistentStateLoadError {
+    Parse(String),
+    Other(String),
+}
+
 pub fn slot_in_snapshot_mut<'a>(snapshot: &'a mut PrinterSnapshot, slot_id: &SlotId) -> Option<&'a mut MaterialSlotSnapshot> {
     snapshot
         .slot_groups
@@ -446,7 +452,7 @@ pub trait PrinterDriver {
     fn private_state_dirty(&self) -> bool {
         false
     }
-    fn load_private_state(&mut self, _state: Option<Value>, _store: &Rc<Store>) -> Result<(), String> {
+    fn load_private_state(&mut self, _state: Option<Value>, _store: &Rc<Store>) -> Result<(), PrinterPersistentStateLoadError> {
         Ok(())
     }
     fn adjust_loaded_snapshot(&self, _snapshot: &mut PrinterSnapshot) {}

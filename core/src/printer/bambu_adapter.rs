@@ -32,9 +32,10 @@ use crate::store::Store;
 use super::{
     DriverSpecificCommand, DriverSpecificQuery, DriverSpecificQueryResult, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind,
     MaterialSlotSnapshot, PrintControlCommand, PrintSnapshot, PrintState, PrinterCapabilities, PrinterChange, PrinterCommand, PrinterDriver,
-    PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterResult,
-    PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner,
-    SlotAssignMode, SlotGroupDisplayGroup, SlotGroupDriverInfo, SlotGroupKind, SlotGroupSnapshot, SlotId, SlotState, slot_in_snapshot_mut,
+    PrinterDriverKind, PrinterError, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver,
+    PrinterPersistentStateLoadError, PrinterResult, PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind, PrinterSnapshot,
+    PrinterSnapshotState, PrinterSnapshotStateInner, SlotAssignMode, SlotGroupDisplayGroup, SlotGroupDriverInfo, SlotGroupKind, SlotGroupSnapshot,
+    SlotId, SlotState, slot_in_snapshot_mut,
 };
 
 type PrinterObserverList = Rc<RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>>;
@@ -977,7 +978,7 @@ impl PrinterDriver for BambuPrinterDriver {
         printer.printer_persistent_state_store_blocked() || printer.printer_persistent_state_dirty()
     }
 
-    fn load_private_state(&mut self, state: Option<Value>, store: &Rc<Store>) -> Result<(), String> {
+    fn load_private_state(&mut self, state: Option<Value>, store: &Rc<Store>) -> Result<(), PrinterPersistentStateLoadError> {
         let Some(state) = state else {
             return Ok(());
         };

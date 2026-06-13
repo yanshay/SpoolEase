@@ -8,9 +8,9 @@ use crate::store::Store;
 
 use super::{
     DriverSpecificQuery, DriverSpecificQueryResult, PRINTER_STATE_FILE_VERSION, PrinterCapabilities, PrinterCommand, PrinterDriver, PrinterError,
-    PrinterId, PrinterObserver, PrinterPersistentStatePayload, PrinterResult, PrinterRuntimePersistenceFuture, PrinterRuntimePersistenceRequestKind,
-    PrinterSnapshot, PrinterSnapshotState, PrinterStateFile, SlotId, bambu_adapter::BambuPrinterDriver, fake_driver::FakePrinterDriver,
-    sanitize_loaded_snapshot,
+    PrinterId, PrinterObserver, PrinterPersistentStateLoadError, PrinterPersistentStatePayload, PrinterResult, PrinterRuntimePersistenceFuture,
+    PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterSnapshotState, PrinterStateFile, SlotId, bambu_adapter::BambuPrinterDriver,
+    fake_driver::FakePrinterDriver, sanitize_loaded_snapshot,
 };
 
 #[derive(Default)]
@@ -144,31 +144,44 @@ impl PrinterManager {
             .collect()
     }
 
-    pub fn load_persistent_state_at(&mut self, index: usize, state_json: &str, store: &Rc<Store>) -> Result<(), String> {
-        let driver = self.printers.get_mut(index).ok_or_else(|| format!("Unknown printer index {index}"))?;
-        let mut state = serde_json::from_str::<PrinterStateFile>(state_json).map_err(|err| format!("Failed to parse printer state: {err}"))?;
+    pub fn load_persistent_state_at(&mut self, index: usize, state_json: &str, store: &Rc<Store>) -> Result<(), PrinterPersistentStateLoadError> {
+        let driver = self
+            .printers
+            .get_mut(index)
+            .ok_or_else(|| PrinterPersistentStateLoadError::Other(format!("Unknown printer index {index}")))?;
+        let mut state = serde_json::from_str::<PrinterStateFile>(state_json)
+            .map_err(|err| PrinterPersistentStateLoadError::Parse(format!("Failed to parse printer state: {err}")))?;
         if state.version != PRINTER_STATE_FILE_VERSION {
-            return Err(format!("Unsupported printer state version {}", state.version));
+            return Err(PrinterPersistentStateLoadError::Other(format!(
+                "Unsupported printer state version {}",
+                state.version
+            )));
         }
         if state.printer_id != *driver.id() {
-            return Err(format!(
+            return Err(PrinterPersistentStateLoadError::Other(format!(
                 "State file belongs to {}, not {}",
                 state.printer_id.as_str(),
                 driver.id().as_str()
-            ));
+            )));
         }
         if state.driver_kind != driver.kind() {
-            return Err(format!("State file has unexpected driver kind {:?}", state.driver_kind));
+            return Err(PrinterPersistentStateLoadError::Other(format!(
+                "State file has unexpected driver kind {:?}",
+                state.driver_kind
+            )));
         }
         if state.generic.id != state.printer_id {
-            return Err(format!(
+            return Err(PrinterPersistentStateLoadError::Other(format!(
                 "State file generic snapshot belongs to {}, not {}",
                 state.generic.id.as_str(),
                 state.printer_id.as_str()
-            ));
+            )));
         }
         if state.generic.kind != state.driver_kind {
-            return Err(format!("State file generic snapshot has unexpected driver kind {:?}", state.generic.kind));
+            return Err(PrinterPersistentStateLoadError::Other(format!(
+                "State file generic snapshot has unexpected driver kind {:?}",
+                state.generic.kind
+            )));
         }
 
         let removed_missing_spools = Self::clear_missing_spool_ids(&mut state.generic, store);

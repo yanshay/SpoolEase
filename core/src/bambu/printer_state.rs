@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::{
     bambu::{BambuPrinter, tray::Tray},
+    printer::PrinterPersistentStateLoadError,
     store::Store,
 };
 
@@ -52,7 +53,7 @@ pub struct BambuPersistentDirtyState {
 }
 
 impl BambuPrinter {
-    pub fn load_printer_private_state_value(&mut self, state: Value, store: &Rc<Store>) -> Result<(), String> {
+    pub fn load_printer_private_state_value(&mut self, state: Value, store: &Rc<Store>) -> Result<(), PrinterPersistentStateLoadError> {
         match serde_json::from_value::<PrinterPersistentState<'static>>(state) {
             Ok(printer_state) => {
                 self.init_printer_persistent_state(printer_state, store);
@@ -60,10 +61,10 @@ impl BambuPrinter {
             }
             Err(err) => {
                 error!("[{}] Failed to parse printer private state: {}", self.printer_number, err);
-                Err(format!(
-                    "[{}] Failed to Parse Printer Private State (Check Terminal for More Info)",
+                Err(PrinterPersistentStateLoadError::Parse(format!(
+                    "[{}] Failed to Parse Printer State",
                     self.printer_number
-                ))
+                )))
             }
         }
     }
