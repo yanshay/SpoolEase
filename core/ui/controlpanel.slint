@@ -101,7 +101,7 @@ export component ControlPanelBase inherits HorizontalLayout {
             Text {
                 color: Utils.contrasting_color(parent.background);
                 font-size: 20px;
-                text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? "Scale Disconnected" : AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Scale Not Calibrated" : AppState.spool-scale-state == SpoolScaleState.Connected ? "Scale Connected" : AppState.spool-scale-state == SpoolScaleState.Loaded ? weight-display() : "";
+                text: AppState.spool-scale-state == SpoolScaleState.Disconnected ? AppState.spool-scale-source-label() + "Scale Disconnected" : AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? AppState.spool-scale-source-label() + "Scale Not Calibrated" : AppState.spool-scale-state == SpoolScaleState.Connected ? AppState.spool-scale-source-label() + "Scale Connected" : AppState.spool-scale-state == SpoolScaleState.Loaded ? AppState.spool-scale-source-weight-label() + weight-display() : "";
             }
         }
 

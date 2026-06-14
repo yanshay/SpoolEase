@@ -3,6 +3,7 @@ use core::cell::RefCell;
 use alloc::rc::Rc;
 use embassy_net::Stack;
 use embedded_hal_bus::spi::ExclusiveDevice;
+use esp_hal::gpio::AnyPin;
 
 use framework::prelude::*;
 
@@ -26,6 +27,8 @@ pub fn init_app(
         ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
     >,
     irq: Option<esp_hal::gpio::Input<'static>>,
+    local_hx711_sck: Option<AnyPin<'static>>,
+    local_hx711_dt: Option<AnyPin<'static>>,
 ) -> Rc<RefCell<ViewModel>> {
     // == Setup ViewModel =============================================================
     crate::view_model::ViewModel::new(
@@ -37,5 +40,7 @@ pub fn init_app(
         app_config.clone(),
         spi_device,
         irq,
+        local_hx711_sck,
+        local_hx711_dt,
     )
 }

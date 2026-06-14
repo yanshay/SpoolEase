@@ -183,6 +183,20 @@ button.add-btn {
   border-color: #1890ff;
 }
 
+.scale-form {
+  border: 1px solid #eee;
+  padding: 15px;
+  margin-bottom: 15px;
+  border-radius: 5px;
+  background-color: #f9f9f9;
+  position: relative;
+}
+
+.scale-form.default {
+  background-color: #e6f7ff;
+  border-color: #1890ff;
+}
+
 .ip-container {
   display: flex;
   gap: 5px;

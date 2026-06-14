@@ -16,6 +16,7 @@ use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Timer, with_timeout};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use embedded_sdmmc::asynchronous::LfnBuffer;
+use esp_hal::gpio::AnyPin;
 use hashbrown::HashMap;
 use ndef_rs::NdefMessage;
 use serde::{Deserialize, Serialize};
@@ -49,7 +50,7 @@ use crate::printer::{
 };
 use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
-use crate::spool_scale::{self, ScaleWeight, SpoolScaleObserver};
+use crate::spool_scale::{self, ScaleSource, ScaleStatus, ScaleWeight, SpoolScaleObserver};
 use crate::ssdp::{SSDPPubSubChannel, ssdp_task};
 use crate::store::{BackupMeta, FileMeta, Store, StoreObserver, store_safe_time_now};
 
@@ -453,6 +454,8 @@ impl ViewModel {
             ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
         >,
         irq: Option<esp_hal::gpio::Input<'static>>,
+        local_hx711_sck: Option<AnyPin<'static>>,
+        local_hx711_dt: Option<AnyPin<'static>>,
     ) -> Rc<RefCell<ViewModel>> {
         let spawner = framework.borrow().spawner;
         // Setup Terminal
@@ -481,7 +484,15 @@ impl ViewModel {
         let store = Store::new(framework.clone());
 
         // Initialize spool_scale_model
-        let spool_scale_model = crate::spool_scale::init(framework.clone(), app_config.clone(), stack, spawner, ssdp_pub_sub);
+        let spool_scale_model = crate::spool_scale::init(
+            framework.clone(),
+            app_config.clone(),
+            stack,
+            spawner,
+            ssdp_pub_sub,
+            local_hx711_sck,
+            local_hx711_dt,
+        );
 
         let app_async_tasks_channel = Rc::new(AppAsyncTasksChannel::new());
 
@@ -521,6 +532,51 @@ impl ViewModel {
 
         // Done
         view_model_rc
+    }
+
+    fn ui_scale_source(source: ScaleSource) -> crate::app::SpoolScaleSource {
+        match source {
+            ScaleSource::Local => crate::app::SpoolScaleSource::Local,
+            ScaleSource::Remote => crate::app::SpoolScaleSource::Remote,
+        }
+    }
+
+    fn scale_source_from_ui(source: crate::app::SpoolScaleSource) -> ScaleSource {
+        match source {
+            crate::app::SpoolScaleSource::Local => ScaleSource::Local,
+            crate::app::SpoolScaleSource::Remote => ScaleSource::Remote,
+        }
+    }
+
+    fn ui_scale_status(status: ScaleStatus) -> crate::app::SpoolScaleState {
+        match status {
+            ScaleStatus::NotAvailable => crate::app::SpoolScaleState::NotAvailable,
+            ScaleStatus::Unknown => crate::app::SpoolScaleState::Unknown,
+            ScaleStatus::Uncalibrated => crate::app::SpoolScaleState::Uncalibrated,
+            ScaleStatus::Disconnected => crate::app::SpoolScaleState::Disconnected,
+            ScaleStatus::Connected => crate::app::SpoolScaleState::Connected,
+            ScaleStatus::Empty => crate::app::SpoolScaleState::Empty,
+            ScaleStatus::Loaded => crate::app::SpoolScaleState::Loaded,
+        }
+    }
+
+    fn update_calibration_scale_ui(
+        ui_app_state: &crate::app::AppState<'_>,
+        spool_scale_model: &Rc<RefCell<spool_scale::SpoolScale>>,
+        source: ScaleSource,
+    ) {
+        let source_state = spool_scale_model.borrow().source_state(source);
+        ui_app_state.set_calibration_scale_source(Self::ui_scale_source(source));
+        ui_app_state.set_calibration_scale_state(Self::ui_scale_status(source_state.state));
+        ui_app_state.set_calibration_scale_raw_data(source_state.raw_data);
+    }
+
+    fn update_calibration_status_if_selected(&self, source: ScaleSource, status: ScaleStatus) {
+        let ui = self.ui_weak.unwrap();
+        let ui_app_state = ui.global::<crate::app::AppState>();
+        if ui_app_state.get_calibration_scale_source() == Self::ui_scale_source(source) {
+            ui_app_state.set_calibration_scale_state(Self::ui_scale_status(status));
+        }
     }
 
     pub fn message_box(&self, title: &str, text: &str, text2: &str, status_type: crate::app::StatusType, timeout: i32) {
@@ -979,18 +1035,55 @@ impl ViewModel {
         });
 
         // Spool Scale
-        let scale_available = if let Some(scale_config) = &self.app_config.borrow().configured_scale {
-            scale_config.available
-        } else {
-            false
-        };
+        let scale_available = self.app_config.borrow().is_scale_available();
+        ui_app_state.set_remote_scale_configured(self.app_config.borrow().remote_scale_available());
+        ui_app_state.set_local_scale_configured(self.app_config.borrow().local_scale_available());
+        ui_app_state.set_spool_scale_show_source(self.app_config.borrow().show_scale_source_selection());
         if !scale_available {
             ui_app_state.set_spool_scale_state(crate::app::SpoolScaleState::NotAvailable);
         }
         let moved_spool_scale_model = self.spool_scale_model.clone();
-        ui_app_backend.on_calibrate_scale(move |weight| {
-            moved_spool_scale_model.borrow_mut().calibrate(weight);
+        ui_app_backend.on_calibrate_scale(move |source, weight| {
+            let source = Self::scale_source_from_ui(source);
+            moved_spool_scale_model.borrow_mut().calibrate(source, weight);
         });
+
+        let calibration_source = if self.app_config.borrow().local_scale_available() {
+            ScaleSource::Local
+        } else {
+            ScaleSource::Remote
+        };
+        Self::update_calibration_scale_ui(&ui_app_state, &self.spool_scale_model, calibration_source);
+
+        let moved_ui = self.ui_weak.clone();
+        let moved_spool_scale_model = self.spool_scale_model.clone();
+        ui_app_backend.on_select_calibration_scale_source(move |source| {
+            let source = ViewModel::scale_source_from_ui(source);
+            let ui = moved_ui.unwrap();
+            let ui_app_state = ui.global::<crate::app::AppState>();
+            ViewModel::update_calibration_scale_ui(&ui_app_state, &moved_spool_scale_model, source);
+        });
+
+        let effective_scale_state = self.spool_scale_model.borrow().effective_state();
+        if let Some(source) = effective_scale_state.source {
+            let ui_source = Self::ui_scale_source(source);
+            match effective_scale_state.state {
+                ScaleStatus::NotAvailable | ScaleStatus::Unknown => (),
+                ScaleStatus::Connected => ui_app_state.invoke_spool_scale_connected(ui_source),
+                ScaleStatus::Disconnected => ui_app_state.invoke_spool_scale_disconnected(ui_source),
+                ScaleStatus::Uncalibrated => ui_app_state.invoke_spool_scale_uncalibrated(ui_source),
+                ScaleStatus::Empty => ui_app_state.invoke_spool_scale_load_removed(ui_source),
+                ScaleStatus::Loaded => {
+                    let (weight, stable) = match effective_scale_state.weight {
+                        ScaleWeight::Stable(weight) => (weight, true),
+                        ScaleWeight::Unstable(weight) => (weight, false),
+                        ScaleWeight::Unknown => (0, false),
+                    };
+                    ui_app_state.invoke_spool_scale_loaded(ui_source, weight, stable);
+                }
+            }
+            ui_app_state.invoke_spool_scale_raw_samples_avg(ui_source, effective_scale_state.raw_data);
+        }
 
         let moved_spool_scale_model = self.spool_scale_model.clone();
         ui_app_backend.on_get_connected_scale_info(move || {
@@ -3864,60 +3957,85 @@ impl TerminalObserver for TerminalViewModel {
 }
 
 impl SpoolScaleObserver for ViewModel {
-    fn on_scale_loaded(&mut self, weight: i32) {
+    fn on_scale_loaded(&mut self, source: ScaleSource, weight: i32, stable: bool) {
         info!("Scale loaded with {weight} g");
         self.framework.borrow().undim_display();
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppState>()
-            .invoke_spool_scale_loaded(weight, false);
+            .invoke_spool_scale_loaded(Self::ui_scale_source(source), weight, stable);
+        self.update_calibration_status_if_selected(source, ScaleStatus::Loaded);
     }
 
-    fn on_scale_load_changed_stable(&mut self, weight: i32) {
+    fn on_scale_load_changed_stable(&mut self, source: ScaleSource, weight: i32) {
         debug!("Scale load changed to stable {weight}");
         self.framework.borrow().undim_display();
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppState>()
-            .invoke_spool_scale_load_changed(weight, true);
+            .invoke_spool_scale_load_changed(Self::ui_scale_source(source), weight, true);
+        self.update_calibration_status_if_selected(source, ScaleStatus::Loaded);
     }
 
-    fn on_scale_load_changed_unstable(&mut self, weight: i32) {
+    fn on_scale_load_changed_unstable(&mut self, source: ScaleSource, weight: i32) {
         debug!("Scale load changed to unstable {weight}");
         self.framework.borrow().undim_display();
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppState>()
-            .invoke_spool_scale_load_changed(weight, false);
+            .invoke_spool_scale_load_changed(Self::ui_scale_source(source), weight, false);
+        self.update_calibration_status_if_selected(source, ScaleStatus::Loaded);
     }
 
-    fn on_scale_load_removed(&mut self) {
+    fn on_scale_load_removed(&mut self, source: ScaleSource) {
         debug!("Scale load removed");
         self.framework.borrow().undim_display();
-        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_load_removed();
-    }
-
-    fn on_scale_raw_samples_avg(&mut self, raw_data: i32) {
         self.ui_weak
             .unwrap()
             .global::<crate::app::AppState>()
-            .invoke_spool_scale_raw_samples_avg(raw_data);
+            .invoke_spool_scale_load_removed(Self::ui_scale_source(source));
+        self.update_calibration_status_if_selected(source, ScaleStatus::Empty);
     }
 
-    fn on_scale_connected(&mut self) {
+    fn on_scale_raw_samples_avg(&mut self, source: ScaleSource, raw_data: i32) {
+        let ui = self.ui_weak.unwrap();
+        let ui_app_state = ui.global::<crate::app::AppState>();
+        ui_app_state.invoke_spool_scale_raw_samples_avg(Self::ui_scale_source(source), raw_data);
+        if ui_app_state.get_calibration_scale_source() == Self::ui_scale_source(source) {
+            ui_app_state.set_calibration_scale_raw_data(raw_data);
+        }
+    }
+
+    fn on_scale_connected(&mut self, source: ScaleSource) {
         debug!("Scale connected");
-        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_connected();
-        let _ = self.spool_scale_model.borrow().tags_in_store(self.store.tags_in_store());
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppState>()
+            .invoke_spool_scale_connected(Self::ui_scale_source(source));
+        self.update_calibration_status_if_selected(source, ScaleStatus::Connected);
+        if source == ScaleSource::Remote {
+            if let Ok(spool_scale_model) = self.spool_scale_model.try_borrow() {
+                let _ = spool_scale_model.tags_in_store(self.store.tags_in_store());
+            }
+        }
     }
 
-    fn on_scale_disconnected(&mut self) {
+    fn on_scale_disconnected(&mut self, source: ScaleSource) {
         debug!("Scale disconnected");
-        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_disconnected();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppState>()
+            .invoke_spool_scale_disconnected(Self::ui_scale_source(source));
+        self.update_calibration_status_if_selected(source, ScaleStatus::Disconnected);
     }
 
-    fn on_scale_uncalibrated(&mut self) {
+    fn on_scale_uncalibrated(&mut self, source: ScaleSource) {
         debug!("Scale uncalibrated");
-        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_uncalibrated();
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppState>()
+            .invoke_spool_scale_uncalibrated(Self::ui_scale_source(source));
+        self.update_calibration_status_if_selected(source, ScaleStatus::Uncalibrated);
     }
 
     fn on_term_text(&mut self, text: &str) {
@@ -4281,7 +4399,9 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
             Ok(false) => {}
             Err(err) => {
                 let (message, text2) = match err {
-                    printer_domain::PrinterPersistentStateLoadError::Parse(message) => (message, "Just upgraded? That's probably Ok.\nMore information in the release notes."),
+                    printer_domain::PrinterPersistentStateLoadError::Parse(message) => {
+                        (message, "Just upgraded? That's probably Ok.\nMore information in the release notes.")
+                    }
                     printer_domain::PrinterPersistentStateLoadError::Other(message) => (message, ""),
                 };
                 view_model

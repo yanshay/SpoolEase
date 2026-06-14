@@ -38,7 +38,7 @@ use shared::gcode_analysis_task::Fetch3mf;
 use crate::app_config::{
     AiProviderAvailability, AiProviderId, ApiTokenMetadata, AppConfig, BackupConfig, BackupStatus, BambuPrinterConfig, DefaultPrinterConfig,
     DeviceCertificateGenerationRequest, DeviceCertificateLeafRequest, DeviceCertificateStatus, FILAMENT_BRAND_NAMES, FakePrinterConfig,
-    PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, UseAmsScan,
+    PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, ScaleSourceConfig, UseAmsScan,
 };
 use crate::bambu::bambu_api::PrintCommand;
 use crate::bambu::calibration::KInfo;
@@ -1686,6 +1686,10 @@ encrypted_input!(DashboardConfigDTO);
 #[derive(serde::Deserialize, serde::Serialize)]
 struct ScaleConfigDTO {
     available: bool,
+    #[serde(default)]
+    local_scale_available: bool,
+    #[serde(default)]
+    preferred_scale_source: ScaleSourceConfig,
     name: Option<String>,
     ip: Option<String>,
     key: Option<String>,
@@ -1696,6 +1700,8 @@ impl From<ScaleConfigDTO> for ScaleConfig {
     fn from(v: ScaleConfigDTO) -> Self {
         Self {
             available: v.available,
+            local_scale_available: v.local_scale_available,
+            preferred_scale_source: v.preferred_scale_source,
             ip: v.ip.and_then(|s| s.parse::<Ipv4Addr>().ok()),
             name: v.name.filter(|s| !s.is_empty()),
             key: v.key.filter(|s| !s.is_empty()),
@@ -1706,6 +1712,8 @@ impl From<&ScaleConfig> for ScaleConfigDTO {
     fn from(v: &ScaleConfig) -> Self {
         Self {
             available: v.available,
+            local_scale_available: v.local_scale_available,
+            preferred_scale_source: v.preferred_scale_source.clone(),
             ip: v.ip.map(|ip| ip.to_string()),
             name: v.name.clone(),
             key: v.key.clone(),

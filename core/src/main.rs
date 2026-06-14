@@ -21,6 +21,7 @@ mod certgen;
 mod color_utils;
 mod csvdb;
 mod filament_staging;
+mod hx711_gpio;
 mod my_mqtt;
 mod printer;
 mod settings;
@@ -498,6 +499,13 @@ async fn main(spawner: Spawner) {
     #[cfg(feature = "jc8048w550c")]
     let (pn532_spi_device, pn532_irq) = (None, None);
 
+    let (local_hx711_sck, local_hx711_dt): (Option<esp_hal::gpio::AnyPin<'static>>, Option<esp_hal::gpio::AnyPin<'static>>) =
+        if app_config.borrow().local_scale_available() {
+            (Some(peripherals.GPIO43.into()), Some(peripherals.GPIO44.into()))
+        } else {
+            (None, None)
+        };
+
     // == Configure App ===============================================================
     // This initializes all the applicative stuff, and is provided with all the required hw access
 
@@ -508,6 +516,8 @@ async fn main(spawner: Spawner) {
         app_config.clone(),
         pn532_spi_device,
         pn532_irq,
+        local_hx711_sck,
+        local_hx711_dt,
     );
 
     // == Setup Web Application and Run Web Server ====================================

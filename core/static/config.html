@@ -208,83 +208,74 @@
 
       <!-- Scale Settings -->
       <div class="section" id="scale-section">
-        <h2 class="section-title">Scale Settings</h2>
-        <div class="form-row" style="display: flex; flex-direction: row; gap: 6px;">
-          <input type="Checkbox" id="scale-available"><label for="scale-available">SpoolEase Scale Available</label>
-        </div>
+        <h2 class="section-title">Scales Settings</h2>
 
-        <div class="form-row">
-          <label for="scale-key"
-            >Scale Security Key: *
-            </label
-          >
-          <input
-            type="text"
-            id="scale-key"
-            placeholder="Enter Scale Security Key - MUST NOT BE EMPTY"
-            autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off"
-          />
-        </div>
+        <div class="scale-form" data-scale-source="Remote">
+          <h3>Separate Scale Unit</h3>
+          <div class="form-row" style="display: flex; flex-direction: row; gap: 6px;">
+            <input type="checkbox" id="scale-available"><label for="scale-available">SpoolEase Scale Available</label>
+          </div>
 
+          <div class="form-row">
+            <label for="scale-key">Scale Security Key: *</label>
+            <input
+              type="text"
+              id="scale-key"
+              placeholder="Enter Scale Security Key - MUST NOT BE EMPTY"
+              autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off"
+            />
+          </div>
 
-        <div class="form-row">
-          <label for="scale-name"
-            >Scale Device Name:<span
-              >Optional, in case of several scales</span
+          <div class="form-row">
+            <label for="scale-name"
+              >Scale Device Name:<span
+                >Optional, in case of several scales</span
+              ></label
+            >
+            <input
+              type="text"
+              id="scale-name"
+              placeholder="Enter Scale Device Name"
+              autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off"
+            />
+          </div>
+
+          <div class="form-row">
+            <label
+            >Scale IP Address:<span
+              >Optional, instead of auto discovery</span
             ></label
           >
-          <input
-            type="text"
-            id="scale-name"
-            placeholder="Enter Scale Device Name"
-            autocomplete="off" spellcheck="false" autocapitalize="off" autocorrect="off"
-          />
+            <div class="ip-container">
+              <div class="ip-segment">
+                <input type="text" class="ip-part" maxlength="3" placeholder="000" />
+              </div>
+              <div class="ip-segment">
+                <input type="text" class="ip-part" maxlength="3" placeholder="000" />
+              </div>
+              <div class="ip-segment">
+                <input type="text" class="ip-part" maxlength="3" placeholder="000" />
+              </div>
+              <div class="ip-segment">
+                <input type="text" class="ip-part" maxlength="3" placeholder="000" />
+              </div>
+            </div>
+            <div class="error-message ip-error">
+              IP requires name to be provided
+            </div>
+          </div>
+
+          <button class="default-btn scale-default-btn" type="button" onclick="setScaleDefault('Remote')">Set as Default</button>
         </div>
 
-        <div class="form-row">
-          <label
-          >Scale IP Address:<span
-            >Optional, instead of auto discovery</span
-          ></label
-        >
-        <div class="ip-container">
-          <div class="ip-segment">
-            <input
-              type="text"
-              class="ip-part"
-              maxlength="3"
-              placeholder="000"
-            />
+        <div class="scale-form" data-scale-source="Local">
+          <h3>Console Attached Scale</h3>
+          <div class="form-row" style="display: flex; flex-direction: row; gap: 6px;">
+            <input type="checkbox" id="local-scale-available"><label for="local-scale-available">Local HX711 Scale Available</label>
           </div>
-          <div class="ip-segment">
-            <input
-              type="text"
-              class="ip-part"
-              maxlength="3"
-              placeholder="000"
-            />
-          </div>
-          <div class="ip-segment">
-            <input
-              type="text"
-              class="ip-part"
-              maxlength="3"
-              placeholder="000"
-            />
-          </div>
-          <div class="ip-segment">
-            <input
-              type="text"
-              class="ip-part"
-              maxlength="3"
-              placeholder="000"
-            />
-          </div>
+
+          <button class="default-btn scale-default-btn" type="button" onclick="setScaleDefault('Local')">Set as Default</button>
         </div>
-        <div class="error-message ip-error">
-          IP requires name to be provided
-        </div>
-      </div>
 
       <button
         id="scale-apply"
@@ -765,7 +756,10 @@ ProtoPasta 500g - Cardboard - 84g,84"
         setupChangeListeners("spools-section", "spools-apply");
         setupChangeListeners("filaments-section", "filaments-apply");
         setupChangeListeners("scale-section", "scale-apply");
+        document.getElementById("scale-available").addEventListener("change", updateScaleDefaultButtons);
+        document.getElementById("local-scale-available").addEventListener("change", updateScaleDefaultButtons);
         setupChangeListeners("device-name-section", "device-name-apply");
+        updateScaleDefaultButtons();
         // Setup IP fields
         setupIPFields(document.querySelectorAll(".ip-part"));
 
@@ -1536,6 +1530,8 @@ ProtoPasta 500g - Cardboard - 84g,84"
         const key = document.getElementById("scale-key").value;
         const name = document.getElementById("scale-name").value;
         const available = document.getElementById("scale-available").checked; 
+        const local_scale_available = document.getElementById("local-scale-available").checked; 
+        const preferred_scale_source = normalizeScaleDefault();
         const ipParts = Array.from(scaleForm.querySelectorAll(".ip-part"));
         const ipValid = ipParts.every((part) => part.value.trim() !== "");
 
@@ -1545,19 +1541,73 @@ ProtoPasta 500g - Cardboard - 84g,84"
         }
 
         const applyButton = document.getElementById("scale-apply");
-        const data = { available, name, ip, key };
+        const data = { available, local_scale_available, preferred_scale_source, name, ip, key };
         sendConfigData("/api/scale-config", data, applyButton);
+      }
+
+      let defaultScaleSource = "Local";
+
+      function normalizeScaleDefault() {
+        const remoteAvailable = document.getElementById("scale-available").checked;
+        const localAvailable = document.getElementById("local-scale-available").checked;
+        if (remoteAvailable && localAvailable) {
+          if (defaultScaleSource !== "Local" && defaultScaleSource !== "Remote") {
+            defaultScaleSource = "Local";
+          }
+        } else if (localAvailable) {
+          defaultScaleSource = "Local";
+        } else if (remoteAvailable) {
+          defaultScaleSource = "Remote";
+        } else {
+          defaultScaleSource = "Local";
+        }
+        return defaultScaleSource;
+      }
+
+      function setScaleDefault(source) {
+        defaultScaleSource = source;
+        updateScaleDefaultButtons();
+        document.getElementById("scale-apply").disabled = false;
+      }
+
+      function updateScaleDefaultButtons() {
+        const remoteAvailable = document.getElementById("scale-available").checked;
+        const localAvailable = document.getElementById("local-scale-available").checked;
+        const showDefaultSelection = remoteAvailable && localAvailable;
+        normalizeScaleDefault();
+
+        document.querySelectorAll(".scale-form").forEach((form) => {
+          const source = form.dataset.scaleSource;
+          const defaultBtn = form.querySelector(".scale-default-btn");
+          form.classList.remove("default");
+          defaultBtn.classList.remove("active");
+          defaultBtn.textContent = "Set as Default";
+          defaultBtn.style.display = showDefaultSelection ? "inline-block" : "none";
+
+          if (showDefaultSelection && source === defaultScaleSource) {
+            form.classList.add("default");
+            defaultBtn.classList.add("active");
+            defaultBtn.textContent = "Default Scale";
+          }
+        });
       }
 
       async function fetchScaleInitialConfig() {
         const scaleForm = document.getElementById("scale-section");
         const data = await fetchInitialSectionConfig("scale");
 
+        if (!data) {
+          return;
+        }
+
         if (data.available) {
           document.getElementById("scale-available").checked = data.available;
         } else {
           document.getElementById("scale-available").checked = false;
         }
+        document.getElementById("local-scale-available").checked = !!data.local_scale_available;
+        defaultScaleSource = data.preferred_scale_source || "Local";
+        updateScaleDefaultButtons();
         // Set IP if available
         if (data.ip) {
           const ipParts = data.ip.split(".");
@@ -1568,12 +1618,8 @@ ProtoPasta 500g - Cardboard - 84g,84"
           }
         }
 
-        if (data) {
-          document.getElementById("scale-name").value = data.name;
-        }
-        if (data) {
-          document.getElementById("scale-key").value = data.key;
-        }
+        document.getElementById("scale-name").value = data.name;
+        document.getElementById("scale-key").value = data.key;
       }
     </script>
 

@@ -15,6 +15,7 @@ use serde::{Deserialize, Deserializer, Serializer};
 
 use framework::prelude::*;
 use shared::gcode_analysis_task::Fetch3mf;
+use shared::load_cell::LoadCellCalibrationConfig;
 
 use crate::certgen::{self, CertificateValidity, DEFAULT_CA_SUBJECT};
 use crate::printer::{PrinterDriverKind, PrinterId};
@@ -29,6 +30,7 @@ const PRINTER_CONFIG_KEY: &str = "_printer_"; // for backwards compatibility
 const PRINTERS_CONFIG_KEY: &str = "_printers_";
 const DEFAULT_PRINTER_CONFIG_KEY: &str = "_default_printer_";
 const SCALE_CONFIG_KEY: &str = "_scale_"; // for backwards compatibility
+const LOCAL_SCALE_CALIBRATION_CONFIG_KEY: &str = "_local_scale_calibration_";
 
 // const PREVIOUSLY_USED_CORES_CONFIG_KEY: &str = "prev_cores";
 const USER_CORES_CONFIG_KEY: &str = "user_cores";
@@ -532,8 +534,19 @@ impl From<StoredDefaultPrinterConfig> for DefaultPrinterConfig {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Default, PartialEq, Debug, Clone)]
+pub enum ScaleSourceConfig {
+    #[default]
+    Local,
+    Remote,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Default, PartialEq, Debug, Clone)]
 pub struct ScaleConfig {
     pub available: bool,
+    #[serde(default)]
+    pub local_scale_available: bool,
+    #[serde(default)]
+    pub preferred_scale_source: ScaleSourceConfig,
     pub name: Option<String>,
     #[serde(serialize_with = "serialize_option_ipv4", deserialize_with = "deserialize_option_ipv4")]
     pub ip: Option<Ipv4Address>,
@@ -546,6 +559,7 @@ pub struct AppConfig {
     pub configured_printers: PrintersConfig,
     pub configured_default_printer: DefaultPrinterConfig,
     pub configured_scale: Option<ScaleConfig>,
+    pub configured_local_scale_calibration: Option<LoadCellCalibrationConfig>,
     pub scale_encryption_key: &'static RefCell<Vec<u8>>,
 
     config_processed_ok: Option<bool>,
@@ -614,6 +628,7 @@ impl AppConfig {
             configured_printers: PrintersConfig { printers: Vec::new() },
             configured_default_printer: DefaultPrinterConfig { printer_id: None },
             configured_scale: None,
+            configured_local_scale_calibration: None,
             scale_encryption_key: crate::mk_static!(RefCell<Vec<u8>>, RefCell::new(alloc::vec![])),
 
             config_processed_ok: None,
@@ -724,6 +739,13 @@ impl AppConfig {
         {
             self.configured_scale = Some(scale_config);
             self.update_scale_encryption_key();
+        }
+
+        let config = self.framework.borrow_mut().fetch(String::from(LOCAL_SCALE_CALIBRATION_CONFIG_KEY));
+        if let Ok(Some(calibration_store)) = config
+            && let Ok(calibration_config) = serde_json::from_str::<LoadCellCalibrationConfig>(&calibration_store)
+        {
+            self.configured_local_scale_calibration = Some(calibration_config);
         }
 
         let mut section = String::from("");
@@ -841,8 +863,22 @@ impl AppConfig {
         Ok(())
     }
 
-    pub fn set_scale_config(&mut self, scale_config: ScaleConfig) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
-        if !scale_config.available && scale_config.name.is_none() && scale_config.ip.is_none() {
+    pub fn set_scale_config(&mut self, mut scale_config: ScaleConfig) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        scale_config.preferred_scale_source = if scale_config.local_scale_available && scale_config.available {
+            scale_config.preferred_scale_source
+        } else if scale_config.local_scale_available {
+            ScaleSourceConfig::Local
+        } else if scale_config.available {
+            ScaleSourceConfig::Remote
+        } else {
+            ScaleSourceConfig::Local
+        };
+
+        if !scale_config.local_scale_available {
+            self.clear_local_scale_calibration_config()?;
+        }
+
+        if !scale_config.available && !scale_config.local_scale_available && scale_config.name.is_none() && scale_config.ip.is_none() {
             self.framework.borrow().remove(SCALE_CONFIG_KEY.to_string())?;
             self.configured_scale = None;
         } else {
@@ -851,6 +887,31 @@ impl AppConfig {
             self.configured_scale = Some(scale_config);
         }
         self.update_scale_encryption_key();
+        Ok(())
+    }
+
+    pub fn clear_local_scale_calibration_config(&mut self) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        self.framework.borrow().remove(LOCAL_SCALE_CALIBRATION_CONFIG_KEY.to_string())?;
+        self.configured_local_scale_calibration = None;
+        Ok(())
+    }
+
+    pub fn set_local_scale_calibration_config(
+        &mut self,
+        zero_loadcell: i32,
+        calib_weight: i32,
+        calib_loadcell: i32,
+    ) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
+        let calibration_config = LoadCellCalibrationConfig {
+            zero_loadcell,
+            calib_weight,
+            calib_loadcell,
+        };
+        let calibration_store = serde_json::to_string(&calibration_config).unwrap();
+        self.framework
+            .borrow()
+            .store(String::from(LOCAL_SCALE_CALIBRATION_CONFIG_KEY), calibration_store)?;
+        self.configured_local_scale_calibration = Some(calibration_config);
         Ok(())
     }
 
@@ -1317,11 +1378,35 @@ impl AppConfig {
 
     #[allow(dead_code)]
     pub fn is_scale_available(&self) -> bool {
-        let mut available = false;
-        if let Some(scale_config) = &self.configured_scale {
-            available = scale_config.available;
+        self.remote_scale_available() || self.local_scale_available()
+    }
+
+    pub fn remote_scale_available(&self) -> bool {
+        self.configured_scale.as_ref().map(|scale_config| scale_config.available).unwrap_or(false)
+    }
+
+    pub fn local_scale_available(&self) -> bool {
+        self.configured_scale
+            .as_ref()
+            .map(|scale_config| scale_config.local_scale_available)
+            .unwrap_or(false)
+    }
+
+    pub fn show_scale_source_selection(&self) -> bool {
+        self.remote_scale_available() && self.local_scale_available()
+    }
+
+    pub fn preferred_scale_source(&self) -> ScaleSourceConfig {
+        if self.show_scale_source_selection() {
+            self.configured_scale
+                .as_ref()
+                .map(|scale_config| scale_config.preferred_scale_source.clone())
+                .unwrap_or_default()
+        } else if self.local_scale_available() {
+            ScaleSourceConfig::Local
+        } else {
+            ScaleSourceConfig::Remote
         }
-        available
     }
 }
 

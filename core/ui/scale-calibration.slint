@@ -1,14 +1,60 @@
 import { MyButton, Title } from "framework/widgets.slint";
 import { NumPad } from "numpad.slint";
-import { AppBackend, AppState, SpoolScaleState } from "app.slint";
+import { FrameworkState } from "framework/framework.slint";
+import { AppBackend, AppState, SpoolScaleSource, SpoolScaleState } from "app.slint";
+import { MultiColorTitle } from "spool-display.slint";
 
 export component ScaleCalibration inherits VerticalLayout {
         callback ok-clicked;
         callback cancel-clicked;
+        property <SpoolScaleSource> selected-source: AppState.calibration-scale-source;
+        property <length> title-height: 40px;
 
-        my-title:= Title {
-          height: 40px;
-          property <string> calibration-status:AppState.spool-scale-state == SpoolScaleState.Uncalibrated ? "Uncalibrated (\{AppState.spool-scale-raw-data})" : "Calibrated";
+        changed selected-source => {
+          AppBackend.select-calibration-scale-source(selected-source);
+        }
+
+        pure function source-name(source: SpoolScaleSource) -> string {
+          return source == SpoolScaleSource.Local ? "Local" : "Remote";
+        }
+
+        pure function source-title(source: SpoolScaleSource) -> string {
+          if root.selected-source == source && AppState.calibration-scale-state == SpoolScaleState.Uncalibrated {
+            return "\{root.source-name(source)}: \{AppState.calibration-scale-raw-data}";
+          }
+          return root.source-name(source) + " Calibration";
+        }
+
+        if AppState.local-scale-configured && AppState.remote-scale-configured: HorizontalLayout {
+          vertical-stretch: 0;
+          height: root.title-height;
+          MultiColorTitle {
+              width: FrameworkState.display-width / 2;
+              push-button: true;
+              pushed: root.selected-source == SpoolScaleSource.Local;
+              text: root.source-title(SpoolScaleSource.Local);
+              colors: [#90ee90];
+              fallback-color: lightgreen;
+              pressed => {
+                  root.selected-source = SpoolScaleSource.Local;
+              }
+          }
+          MultiColorTitle {
+              width: FrameworkState.display-width / 2;
+              push-button: true;
+              pushed: root.selected-source == SpoolScaleSource.Remote;
+              text: root.source-title(SpoolScaleSource.Remote);
+              colors: [#87cefa];
+              fallback-color: lightskyblue;
+              pressed => {
+                  root.selected-source = SpoolScaleSource.Remote;
+              }
+          }
+        }
+
+        if !(AppState.local-scale-configured && AppState.remote-scale-configured): Title {
+          height: root.title-height;
+          property <string> calibration-status: AppState.calibration-scale-state == SpoolScaleState.Uncalibrated ? "Uncalibrated (\{AppState.calibration-scale-raw-data})" : "Calibrated";
           text: "Scale Calibration - \{calibration-status}";
         }
         HorizontalLayout {
@@ -21,7 +67,7 @@ export component ScaleCalibration inherits VerticalLayout {
                   padding-right: 5px;
                   Rectangle {
                     Text {
-                      max-height: (root.height - my-title.height) / 5;
+                      max-height: (root.height - root.title-height) / 5;
                       width: parent.width;
                       font-size: 20px;
                         horizontal-alignment: left;
@@ -29,16 +75,16 @@ export component ScaleCalibration inherits VerticalLayout {
                         wrap: word-wrap;
                     }
                   }
-                  MyButton {
-                      height: (root.height - my-title.height) / 5;
-                      text: "Press Tare";
-                      clicked => {
-                         AppBackend.calibrate-scale(0);
-                      }
-                  }
+                   MyButton {
+                       height: (root.height - root.title-height) / 5;
+                       text: "Press Tare";
+                       clicked => {
+                          AppBackend.calibrate-scale(root.selected-source, 0);
+                       }
+                   }
                   Rectangle {
                     Text {
-                      max-height: (root.height - my-title.height) / 5 * 2;
+                      max-height: (root.height - root.title-height) / 5 * 2;
                       width: parent.width;
                       font-size: 20px;
                         horizontal-alignment: left;
@@ -47,7 +93,7 @@ export component ScaleCalibration inherits VerticalLayout {
                     }
                   }
                   MyButton {
-                      height: (root.height - my-title.height) / 5;
+                      height: (root.height - root.title-height) / 5;
                       text: "or... Cancel";
                       clicked => { root.cancel-clicked(); }
                   }
@@ -55,11 +101,11 @@ export component ScaleCalibration inherits VerticalLayout {
             }
 
             numpad := NumPad {
-                height: root.height - my-title.height;
+                height: root.height - root.title-height;
                 title: "Calibration Weight";
                 ok-clicked => { 
                   root.ok-clicked(); 
-                  AppBackend.calibrate-scale(self.number);
+                  AppBackend.calibrate-scale(root.selected-source, self.number);
                 }
             }
         }

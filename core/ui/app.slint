@@ -152,6 +152,11 @@ export enum SpoolScaleState {
   Loaded,
 }
 
+export enum SpoolScaleSource {
+  Local,
+  Remote,
+}
+
 export enum StatusType {
   Normal,
   Success,
@@ -176,7 +181,8 @@ export global AppBackend {
     callback read-tag-mode();
     callback web-config-web-app();
     callback select-printer(printer-id: string);
-    callback calibrate-scale(weight: int);
+    callback select-calibration-scale-source(source: SpoolScaleSource);
+    callback calibrate-scale(source: SpoolScaleSource, weight: int);
     pure callback get-connected-scale-info() -> string;
     pure callback get-available-scales-info() -> [string];
     callback import-definition-tag-to-inventory(tag-definition-type: string, tag-definition-info: string, empty-spool-weight: int, spool-is-full: bool);
@@ -455,9 +461,16 @@ export global AppState {
     }
 
     in-out property <SpoolScaleState> spool-scale-state: SpoolScaleState.Unknown;
+    in-out property <SpoolScaleSource> spool-scale-source: SpoolScaleSource.Remote;
+    in-out property <bool> spool-scale-show-source: false;
+    in-out property <bool> local-scale-configured: false;
+    in-out property <bool> remote-scale-configured: false;
     in-out property <int> spool-scale-weight: 0;
     in-out property <bool> spool-scale-weight-stable: false;
     in-out property <int> spool-scale-raw-data: 0;
+    in-out property <SpoolScaleSource> calibration-scale-source: SpoolScaleSource.Local;
+    in-out property <SpoolScaleState> calibration-scale-state: SpoolScaleState.Unknown;
+    in-out property <int> calibration-scale-raw-data: 0;
     in-out property <bool> spool-scale-flash: false;
     in-out property <SpoolScaleState> spool-scale-after-flash-state: SpoolScaleState.Unknown;
 
@@ -915,25 +928,43 @@ export global AppState {
         return self.spool-scale-state == SpoolScaleState.Connected || self.spool-scale-state == SpoolScaleState.Empty || self.spool-scale-state == SpoolScaleState.Loaded || self.spool-scale-state == SpoolScaleState.Disconnected;
     }
 
-    public function spool-scale-connected() {
+    pure public function spool-scale-source-label() -> string {
+        if !self.spool-scale-show-source {
+            return "";
+        }
+        return self.spool-scale-source == SpoolScaleSource.Local ? "Local " : "Remote ";
+    }
+
+    pure public function spool-scale-source-weight-label() -> string {
+        if !self.spool-scale-show-source {
+            return "";
+        }
+        return self.spool-scale-source == SpoolScaleSource.Local ? "Local: " : "Remote: ";
+    }
+
+    public function spool-scale-connected(source: SpoolScaleSource) {
+        self.spool-scale-source = source;
         self.spool-scale-state = SpoolScaleState.Connected;
         self.spool-scale-flash = true;
         self.spool-scale-after-flash-state = SpoolScaleState.Empty;
     }
 
-    public function spool-scale-disconnected() {
+    public function spool-scale-disconnected(source: SpoolScaleSource) {
+        self.spool-scale-source = source;
         self.spool-scale-state = SpoolScaleState.Disconnected;
         self.spool-scale-flash = false;
         self.spool-scale-after-flash-state = SpoolScaleState.Disconnected;
     }
 
-    public function spool-scale-uncalibrated() {
+    public function spool-scale-uncalibrated(source: SpoolScaleSource) {
+        self.spool-scale-source = source;
         self.spool-scale-state = SpoolScaleState.Uncalibrated;
         self.spool-scale-flash = false;
         self.spool-scale-after-flash-state = SpoolScaleState.Uncalibrated;
     }
 
-    public function spool-scale-loaded(weight: int, stable: bool) {
+    public function spool-scale-loaded(source: SpoolScaleSource, weight: int, stable: bool) {
+        self.spool-scale-source = source;
         self.spool-scale-state = SpoolScaleState.Loaded;
         self.spool-scale-weight = weight;
         self.spool-scale-weight-stable = stable;
@@ -941,20 +972,23 @@ export global AppState {
         self.spool-scale-after-flash-state = SpoolScaleState.Loaded;
     }
 
-    public function spool-scale-load-changed(weight: int, stable: bool) {
+    public function spool-scale-load-changed(source: SpoolScaleSource, weight: int, stable: bool) {
         // This is only case of load changed, NOT removed
+        self.spool-scale-source = source;
         self.spool-scale-weight = weight;
         self.spool-scale-weight-stable = stable;
     }
 
-    public function spool-scale-load-removed() {
+    public function spool-scale-load-removed(source: SpoolScaleSource) {
+        self.spool-scale-source = source;
         self.spool-scale-state = SpoolScaleState.Empty;
         self.spool-scale-weight = 0;
         self.spool-scale-weight-stable = false;
         self.spool-scale-flash = false;
         self.spool-scale-after-flash-state = SpoolScaleState.Empty;
     }
-    public function spool_scale_raw_samples_avg(raw-data: int) {
+    public function spool_scale_raw_samples_avg(source: SpoolScaleSource, raw-data: int) {
+        self.spool-scale-source = source;
         self.spool-scale-raw-data = raw-data;
     }
 

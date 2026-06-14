@@ -8,6 +8,7 @@ pub mod scale;
 
 pub mod gcode_analysis;
 pub mod gcode_analysis_task;
+pub mod load_cell;
 pub mod my_ftp;
 pub mod nfc;
 pub mod pn532_ext;
