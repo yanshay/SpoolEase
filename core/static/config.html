@@ -268,7 +268,7 @@
           <button class="default-btn scale-default-btn" type="button" onclick="setScaleDefault('Remote')">Set as Default</button>
         </div>
 
-        <div class="scale-form" data-scale-source="Local">
+        <div class="scale-form" data-scale-source="Local" style="display: none;">
           <h3>Console Attached Scale</h3>
           <div class="form-row" style="display: flex; flex-direction: row; gap: 6px;">
             <input type="checkbox" id="local-scale-available"><label for="local-scale-available">Local HX711 Scale Available</label>
@@ -758,6 +758,9 @@ ProtoPasta 500g - Cardboard - 84g,84"
         setupChangeListeners("scale-section", "scale-apply");
         document.getElementById("scale-available").addEventListener("change", updateScaleDefaultButtons);
         document.getElementById("local-scale-available").addEventListener("change", updateScaleDefaultButtons);
+        if (hasHashFlag("advanced")) {
+          document.querySelector('[data-scale-source="Local"]').style.display = "";
+        }
         setupChangeListeners("device-name-section", "device-name-apply");
         updateScaleDefaultButtons();
         // Setup IP fields
