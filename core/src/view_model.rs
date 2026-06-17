@@ -3269,11 +3269,18 @@ impl ViewModel {
                         slots: group
                             .slots
                             .iter()
-                            .map(|slot| ApiPrinterSlot {
-                                id: slot.id.as_str().to_string(),
-                                native_id: slot.native_id.clone(),
-                                spool_id: slot.spool_id.clone(),
-                                weight_net: self.weight_left_snapshot(slot).filter(|weight| weight.is_finite()),
+                            .map(|slot| {
+                                let spool = slot.spool_id.as_ref().and_then(|spool_id| self.store.get_spool_by_id(spool_id));
+                                ApiPrinterSlot {
+                                    id: slot.id.as_str().to_string(),
+                                    native_id: slot.native_id.clone(),
+                                    spool_id: slot.spool_id.clone(),
+                                    spool_brand: spool.as_ref().map(|spool| spool.brand.clone()),
+                                    spool_material_type: spool.as_ref().map(|spool| spool.material_type.clone()),
+                                    spool_material_subtype: spool.as_ref().map(|spool| spool.material_subtype.clone()),
+                                    spool_color_name: spool.as_ref().map(|spool| spool.color_name.clone()),
+                                    weight_net: self.weight_left_snapshot(slot).filter(|weight| weight.is_finite()),
+                                }
                             })
                             .collect(),
                     })

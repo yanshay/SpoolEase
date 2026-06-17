@@ -30,5 +30,9 @@ pub struct ApiPrinterSlot {
     pub id: String,
     pub native_id: Option<String>,
     pub spool_id: Option<String>,
+    pub spool_brand: Option<String>,
+    pub spool_material_type: Option<String>,
+    pub spool_material_subtype: Option<String>,
+    pub spool_color_name: Option<String>,
     pub weight_net: Option<f32>,
 }
