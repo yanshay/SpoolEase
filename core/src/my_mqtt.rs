@@ -609,21 +609,27 @@ pub async fn generic_mqtt_task<
                         term_error!("[{}] TLS Error on receive {:?}", printer_log_id, e);
                         disconnected = true;
                     }
+                    Err(MyMqttError::Eof) => {
+                        term_error!("[{}] MQTT Recv: socket closed", printer_log_id);
+                        disconnected = true;
+                    }
                     Err(e) => {
                         term_error!("[{}] MQTT Recv: Error {:?}", printer_log_id, e);
                     }
                 },
                 // Second: Write Request
                 Either3::Second(packet) => match mqttrust::Packet::try_from(&packet) {
-                    Ok(p) => {
-                        match my_mqtt.write(p).await {
-                            Ok(_) => (),
-                            Err(err) => {
-                                error!("Error sending MQTT message: {err:?}");
-                                // disconnected = true
+                    Ok(p) => match my_mqtt.write(p).await {
+                        Ok(_) => (),
+                        Err(err) => {
+                            let disconnected_write_error =
+                                matches!(err, MyMqttError::TlsError(_) | MyMqttError::WriteTimeoutError | MyMqttError::Eof);
+                            error!("Error sending MQTT message: {err:?}");
+                            if disconnected_write_error {
+                                disconnected = true;
                             }
                         }
-                    }
+                    },
                     Err(e) => {
                         term_error!("[{}] Error converting between internal packets on write {:?}", printer_log_id, e);
                     }

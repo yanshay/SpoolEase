@@ -983,11 +983,13 @@ pub async fn incoming_messages_task(read_packets: Rc<ReadPacketsPubSub>, bambu_p
     let log_level = bambu_printer.borrow().log_filter;
 
     let mut printer_known_to_be_up = false;
+    let mut connectivity_probe_pending = false;
     loop {
         let wait_res = with_timeout(Duration::from_secs(KEEP_ALIVE_SEC as u64), subscriber.next_message_pure()).await;
         match wait_res {
             Ok(packet) => {
                 printer_known_to_be_up = true;
+                connectivity_probe_pending = false;
                 if let Ok(p) = mqttrust::Packet::try_from(&packet) {
                     #[allow(clippy::single_match)]
                     match p {
@@ -1082,11 +1084,24 @@ pub async fn incoming_messages_task(read_packets: Rc<ReadPacketsPubSub>, bambu_p
             }
             Err(_) => {
                 // always TimeoutError
-                if printer_known_to_be_up {
+                if connectivity_probe_pending {
+                    printer_known_to_be_up = false;
+                    connectivity_probe_pending = false;
+                    if bambu_printer.borrow().printer_connectivity_ok == Some(false) {
+                        continue;
+                    }
+                    if log_level >= log::Level::Warn {
+                        warn!("[{}] Printer connectivity issues confirmed, reconnecting", printer_log_id);
+                    }
+                    let restart_printer = bambu_printer.borrow().restart_printer.clone();
+                    bambu_printer.borrow_mut().report_printer_connectivity(false);
+                    restart_printer.signal(0);
+                } else if printer_known_to_be_up {
                     if log_level >= log::Level::Warn {
                         warn!("[{}] Printer connectivity issues suspected (uncertain), checking", printer_log_id);
                     }
                     BambuPrinter::request_full_update_async(&bambu_printer).await;
+                    connectivity_probe_pending = true;
                     printer_known_to_be_up = false;
                 }
             }
