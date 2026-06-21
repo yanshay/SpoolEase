@@ -2,6 +2,155 @@ import { AppConsts, AppBackend, AppState, SpoolScaleState, SpoolStagingState  } 
 import { Utils } from "utils.slint";
 import { MyText, MyButton } from "framework/widgets.slint";
 
+export struct ScrollPill {
+    text: string,
+    background: color,
+    foreground: color,
+}
+
+component Pill inherits Rectangle {
+    in property <ScrollPill> pill;
+    in property <length> horizontal-padding: 9px;
+    in property <length> pill-height: 22px;
+    in property <length> font-size: 15px;
+
+    height: pill-height;
+    width: label.preferred-width + horizontal-padding * 2;
+    border-radius: self.height / 2;
+    background: pill.background;
+
+    label := Text {
+        x: root.horizontal-padding;
+        width: root.width - root.horizontal-padding * 2;
+        height: root.height;
+        text: root.pill.text;
+        color: root.pill.foreground;
+        font-size: root.font-size;
+        font-weight: 600;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        wrap: no-wrap;
+    }
+}
+
+component PillSlot inherits Rectangle {
+    in property <ScrollPill> pill;
+    in property <length> pill-height: 22px;
+    in property <length> pill-padding-x: 9px;
+    in property <length> pill-spacing: 6px;
+    in property <length> pill-font-size: 15px;
+
+    height: pill-height;
+    width: pill.text.is-empty ? 0px : measure.preferred-width + pill-padding-x * 2 + pill-spacing;
+
+    measure := Text {
+        visible: false;
+        text: root.pill.text;
+        font-size: root.pill-font-size;
+        font-weight: 600;
+        wrap: no-wrap;
+    }
+
+    if !pill.text.is-empty: Pill {
+        pill: root.pill;
+        pill-height: root.pill-height;
+        horizontal-padding: root.pill-padding-x;
+        font-size: root.pill-font-size;
+    }
+}
+
+component PillRow inherits HorizontalLayout {
+    in property <[ScrollPill]> pills;
+    in property <length> pill-height: 22px;
+    in property <length> pill-padding-x: 9px;
+    in property <length> pill-spacing: 6px;
+    in property <length> pill-font-size: 15px;
+
+    height: pill-height;
+    spacing: 0px;
+    alignment: start;
+
+    for p in root.pills: PillSlot {
+        pill: p;
+        pill-height: root.pill-height;
+        pill-padding-x: root.pill-padding-x;
+        pill-spacing: root.pill-spacing;
+        pill-font-size: root.pill-font-size;
+    }
+}
+
+export component ScrollingPills inherits Rectangle {
+    in property <[ScrollPill]> pills: [];
+    in property <length> pill-height: 22px;
+    in property <length> pill-padding-x: 9px;
+    in property <length> pill-spacing: 6px;
+    in property <length> pill-font-size: 15px;
+    in property <length> repeat-gap: 24px;
+    in property <length> scroll-step: 2px;
+    in property <duration> scroll-interval: 40ms;
+
+    height: content-width > 0px ? pill-height + 4px : 0px;
+    clip: true;
+    background: transparent;
+
+    measurer := PillRow {
+        visible: false;
+        pills: root.pills;
+        pill-height: root.pill-height;
+        pill-padding-x: root.pill-padding-x;
+        pill-spacing: root.pill-spacing;
+        pill-font-size: root.pill-font-size;
+    }
+
+    property <length> content-width: measurer.preferred-width;
+    property <length> travel-width: content-width + repeat-gap;
+    property <bool> scroll-started: false;
+    property <length> scroll-offset: 0px;
+
+    scroll-timer := Timer {
+        interval: root.scroll-interval;
+        running: root.content-width > 0px;
+        triggered() => {
+            if root.content-width > root.width {
+                if !root.scroll-started {
+                    root.scroll-started = true;
+                    root.scroll-offset = -root.width;
+                }
+
+                root.scroll-offset += root.scroll-step;
+                if root.scroll-offset >= root.travel-width {
+                    root.scroll-offset -= root.travel-width;
+                }
+            } else {
+                root.scroll-started = false;
+                root.scroll-offset = 0px;
+            }
+        }
+    }
+
+    first-row := PillRow {
+        x: root.content-width > root.width ? (root.scroll-started ? -root.scroll-offset : root.width) : (root.width - root.content-width) / 2;
+        y: (root.height - root.pill-height) / 2;
+        width: root.content-width;
+        pills: root.pills;
+        pill-height: root.pill-height;
+        pill-padding-x: root.pill-padding-x;
+        pill-spacing: root.pill-spacing;
+        pill-font-size: root.pill-font-size;
+    }
+
+    PillRow {
+        x: root.content-width > root.width ? first-row.x + root.travel-width : root.width + root.repeat-gap;
+        y: first-row.y;
+        width: root.content-width;
+        pills: root.pills;
+        pill-height: root.pill-height;
+        pill-padding-x: root.pill-padding-x;
+        pill-spacing: root.pill-spacing;
+        pill-font-size: root.pill-font-size;
+    }
+}
+
 export enum WeightDisplayContent {
   NetGross,
   Gross,
@@ -127,4 +276,3 @@ export component TitledText inherits Rectangle {
         }
     }
 }
-

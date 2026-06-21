@@ -3,6 +3,7 @@ import { MyButton } from "framework/widgets.slint";
 import { AppConsts, AppBackend, AppState, StatusType, ControlState, SpoolScaleState, SpoolStagingState } from "app.slint";
 import { Utils } from "utils.slint";
 import { SpoolStaging } from "spoolstaging.slint";
+import { ScrollingPills } from "app-widgets.slint";
 
 
 export component ControlPanelBase inherits HorizontalLayout {
@@ -111,16 +112,35 @@ export component ControlPanelBase inherits HorizontalLayout {
             border-width: text-border-width;
             border-color: black;
             VerticalLayout {
-                alignment: center;
-                for message-text in message-lines: Rectangle {
+                alignment: stretch;
+                Rectangle {
                     background: transparent;
-                    preferred-height: message-text == "" ? 0px : 30px;
-                    if message-text != "": Text {
-                        horizontal-alignment: center;
-                        font-size: 20px;
-                        text: message-text;
-                        color: message-color == black ? Utils.contrasting_color(lines-rect.background) : message-color;
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        alignment: center;
+                        for message-text in message-lines: Rectangle {
+                            background: transparent;
+                            preferred-height: message-text == "" ? 0px : 30px;
+                            if message-text != "": Text {
+                                horizontal-alignment: center;
+                                font-size: 20px;
+                                text: message-text;
+                                color: message-color == black ? Utils.contrasting_color(lines-rect.background) : message-color;
+                            }
+                        }
                     }
+                }
+
+                ScrollingPills {
+                    pills: [
+                        // { text: "PLA+Something", background: #2f80ed, foreground: #ffffff },
+                        // { text: "Printing", background: #27ae60, foreground: #ffffff },
+                        // { text: "Warning", background: #f2994a, foreground: #000000 },
+                        // { text: AppState.spool-staging-state == SpoolStagingState.Scanned ? "Staging Loaded" : "", background: #eb5757, foreground: #ffffff },
+                        // { text: "0.4mm", background: #f2c94c, foreground: #000000 },
+                        // { text: "Dry Box", background: #56ccf2, foreground: #000000 },
+                        // { text: "Ready", background: #9b51e0, foreground: #ffffff },
+                    ];
                 }
             }
         }
