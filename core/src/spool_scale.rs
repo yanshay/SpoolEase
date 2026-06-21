@@ -155,6 +155,10 @@ pub trait SpoolScaleObserver {
     fn on_scale_connected(&mut self, source: ScaleSource);
     fn on_scale_disconnected(&mut self, source: ScaleSource);
     fn on_scale_uncalibrated(&mut self, source: ScaleSource);
+    fn on_scale_unknown(&mut self, source: ScaleSource);
+    fn on_scale_not_available(&mut self);
+    fn on_scale_source_status(&mut self, source: ScaleSource, status: ScaleStatus);
+    fn on_remote_scale_connected(&mut self);
     fn on_term_text(&mut self, text: &str);
     fn on_tag_status(&mut self, status: &shared::spool_tag::Status);
     fn on_pn532_status(&mut self, status: bool);
@@ -212,9 +216,7 @@ impl SpoolScale {
             .unwrap_or_else(|e| error!("Error storing local scale calibration {e:?}"));
         self.local_tare_during_calibration = None;
         let read_weight = load_cell.borrow().immediate_read();
-        self.local.state = ScaleUiState::Loaded;
-        self.local.weight = ScaleWeight::Unstable(read_weight);
-        self.publish_effective_state();
+        self.set_source_loaded(ScaleSource::Local, read_weight);
     }
 
     pub fn button_response(&self, success: bool) {
@@ -384,11 +386,13 @@ impl SpoolScale {
         }
 
         let Some(source) = next.source else {
+            self.notify_scale_not_available();
             return;
         };
 
         match next.snapshot.state {
-            ScaleUiState::NotAvailable | ScaleUiState::Unknown => (),
+            ScaleUiState::NotAvailable => self.notify_scale_not_available(),
+            ScaleUiState::Unknown => self.notify_scale_unknown(source),
             ScaleUiState::Connected => self.notify_scale_connected(source),
             ScaleUiState::Disconnected => self.notify_scale_disconnected(source),
             ScaleUiState::Uncalibrated => self.notify_scale_uncalibrated(source),
@@ -439,6 +443,7 @@ impl SpoolScale {
     fn set_source_connected(&mut self, source: ScaleSource) {
         let snapshot = self.snapshot_for_mut(source);
         snapshot.state = ScaleUiState::Connected;
+        self.notify_scale_source_status(source, ScaleStatus::Connected);
         self.publish_effective_state();
     }
 
@@ -446,6 +451,7 @@ impl SpoolScale {
         let snapshot = self.snapshot_for_mut(source);
         snapshot.state = ScaleUiState::Disconnected;
         snapshot.weight = ScaleWeight::Unknown;
+        self.notify_scale_source_status(source, ScaleStatus::Disconnected);
         self.publish_effective_state();
     }
 
@@ -453,21 +459,21 @@ impl SpoolScale {
         let snapshot = self.snapshot_for_mut(source);
         snapshot.state = ScaleUiState::Uncalibrated;
         snapshot.weight = ScaleWeight::Unknown;
+        self.notify_scale_source_status(source, ScaleStatus::Uncalibrated);
         self.publish_effective_state();
     }
 
     fn set_source_raw_samples_avg(&mut self, source: ScaleSource, raw_data: i32) {
         let snapshot = self.snapshot_for_mut(source);
         snapshot.raw_data = raw_data;
-        if self.compute_effective().source == Some(source) {
-            self.notify_scale_raw_samples_avg(source, raw_data);
-        }
+        self.notify_scale_raw_samples_avg(source, raw_data);
     }
 
     fn set_source_loaded(&mut self, source: ScaleSource, weight: i32) {
         let snapshot = self.snapshot_for_mut(source);
         snapshot.state = ScaleUiState::Loaded;
         snapshot.weight = ScaleWeight::Unstable(weight);
+        self.notify_scale_source_status(source, ScaleStatus::Loaded);
         self.publish_effective_state();
     }
 
@@ -475,6 +481,7 @@ impl SpoolScale {
         let snapshot = self.snapshot_for_mut(source);
         snapshot.state = ScaleUiState::Loaded;
         snapshot.weight = ScaleWeight::Unstable(weight);
+        self.notify_scale_source_status(source, ScaleStatus::Loaded);
         self.publish_effective_state();
     }
 
@@ -482,6 +489,7 @@ impl SpoolScale {
         let snapshot = self.snapshot_for_mut(source);
         snapshot.state = ScaleUiState::Loaded;
         snapshot.weight = ScaleWeight::Stable(weight);
+        self.notify_scale_source_status(source, ScaleStatus::Loaded);
         self.publish_effective_state();
     }
 
@@ -489,6 +497,7 @@ impl SpoolScale {
         let snapshot = self.snapshot_for_mut(source);
         snapshot.state = ScaleUiState::Empty;
         snapshot.weight = ScaleWeight::Stable(0);
+        self.notify_scale_source_status(source, ScaleStatus::Empty);
         self.publish_effective_state();
     }
 
@@ -556,17 +565,12 @@ impl SpoolScale {
             );
         }
     }
-    pub fn connected(&self) {
-        // don't change to &mut, if changed will panic on borrow since during connect notification sending data back to scale that needs borrow
-        // one solution is to pass reference to self to the object being notified so it can use it instead of borrowing (maybe possible)
-        if self.preferred_source == ScaleSource::Remote || !self.source_is_configured(ScaleSource::Local) {
-            self.notify_scale_connected(ScaleSource::Remote);
-        }
+    pub fn remote_connected(&mut self) {
+        self.set_source_connected(ScaleSource::Remote);
     }
-    pub fn mark_remote_connected(&mut self) {
-        self.remote.state = ScaleUiState::Connected;
-        self.effective = self.compute_effective();
-        self.weight = self.effective.snapshot.weight;
+
+    pub fn notify_remote_connection_established(&self) {
+        self.notify_remote_scale_connected();
     }
     pub fn disconnected(&mut self) {
         self.set_source_disconnected(ScaleSource::Remote);
@@ -624,6 +628,30 @@ impl SpoolScale {
         for weak_observer in self.observers.iter() {
             let observer = weak_observer.upgrade().unwrap();
             observer.borrow_mut().on_scale_uncalibrated(source);
+        }
+    }
+    pub fn notify_scale_unknown(&self, source: ScaleSource) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_scale_unknown(source);
+        }
+    }
+    pub fn notify_scale_not_available(&self) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_scale_not_available();
+        }
+    }
+    pub fn notify_scale_source_status(&self, source: ScaleSource, status: ScaleStatus) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_scale_source_status(source, status);
+        }
+    }
+    pub fn notify_remote_scale_connected(&self) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_remote_scale_connected();
         }
     }
     pub fn notify_term_text(&self, text: &str) {
@@ -1063,8 +1091,8 @@ pub async fn spool_scale_task(
 
         term_info!("Connection with SpoolScale established");
 
-        spool_scale_rc.borrow_mut().mark_remote_connected();
-        spool_scale_rc.borrow().connected();
+        spool_scale_rc.borrow_mut().remote_connected();
+        spool_scale_rc.borrow().notify_remote_connection_established();
 
         'send_recv_loop: loop {
             // max timeout_for_ping need to be less than above WithTimeout wrapper

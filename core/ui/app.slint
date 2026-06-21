@@ -949,6 +949,23 @@ export global AppState {
         self.spool-scale-after-flash-state = SpoolScaleState.Empty;
     }
 
+    public function spool-scale-unknown(source: SpoolScaleSource) {
+        self.spool-scale-source = source;
+        self.spool-scale-state = SpoolScaleState.Unknown;
+        self.spool-scale-weight = 0;
+        self.spool-scale-weight-stable = false;
+        self.spool-scale-flash = false;
+        self.spool-scale-after-flash-state = SpoolScaleState.Unknown;
+    }
+
+    public function spool-scale-not-available() {
+        self.spool-scale-state = SpoolScaleState.NotAvailable;
+        self.spool-scale-weight = 0;
+        self.spool-scale-weight-stable = false;
+        self.spool-scale-flash = false;
+        self.spool-scale-after-flash-state = SpoolScaleState.NotAvailable;
+    }
+
     public function spool-scale-disconnected(source: SpoolScaleSource) {
         self.spool-scale-source = source;
         self.spool-scale-state = SpoolScaleState.Disconnected;
@@ -988,7 +1005,6 @@ export global AppState {
         self.spool-scale-after-flash-state = SpoolScaleState.Empty;
     }
     public function spool_scale_raw_samples_avg(source: SpoolScaleSource, raw-data: int) {
-        self.spool-scale-source = source;
         self.spool-scale-raw-data = raw-data;
     }
 

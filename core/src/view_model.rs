@@ -1068,7 +1068,8 @@ impl ViewModel {
         if let Some(source) = effective_scale_state.source {
             let ui_source = Self::ui_scale_source(source);
             match effective_scale_state.state {
-                ScaleStatus::NotAvailable | ScaleStatus::Unknown => (),
+                ScaleStatus::NotAvailable => ui_app_state.invoke_spool_scale_not_available(),
+                ScaleStatus::Unknown => ui_app_state.invoke_spool_scale_unknown(ui_source),
                 ScaleStatus::Connected => ui_app_state.invoke_spool_scale_connected(ui_source),
                 ScaleStatus::Disconnected => ui_app_state.invoke_spool_scale_disconnected(ui_source),
                 ScaleStatus::Uncalibrated => ui_app_state.invoke_spool_scale_uncalibrated(ui_source),
@@ -1095,7 +1096,7 @@ impl ViewModel {
                 };
                 format!("{} - {}", connected_scale.1, scale_name).to_shared_string()
             } else {
-                "<No Scale Connected>".to_shared_string()
+                "<No Remote Scale Connected>".to_shared_string()
             }
         });
 
@@ -4020,11 +4021,6 @@ impl SpoolScaleObserver for ViewModel {
             .global::<crate::app::AppState>()
             .invoke_spool_scale_connected(Self::ui_scale_source(source));
         self.update_calibration_status_if_selected(source, ScaleStatus::Connected);
-        if source == ScaleSource::Remote {
-            if let Ok(spool_scale_model) = self.spool_scale_model.try_borrow() {
-                let _ = spool_scale_model.tags_in_store(self.store.tags_in_store());
-            }
-        }
     }
 
     fn on_scale_disconnected(&mut self, source: ScaleSource) {
@@ -4043,6 +4039,30 @@ impl SpoolScaleObserver for ViewModel {
             .global::<crate::app::AppState>()
             .invoke_spool_scale_uncalibrated(Self::ui_scale_source(source));
         self.update_calibration_status_if_selected(source, ScaleStatus::Uncalibrated);
+    }
+
+    fn on_scale_unknown(&mut self, source: ScaleSource) {
+        debug!("Scale unknown");
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppState>()
+            .invoke_spool_scale_unknown(Self::ui_scale_source(source));
+        self.update_calibration_status_if_selected(source, ScaleStatus::Unknown);
+    }
+
+    fn on_scale_not_available(&mut self) {
+        debug!("Scale not available");
+        self.ui_weak.unwrap().global::<crate::app::AppState>().invoke_spool_scale_not_available();
+    }
+
+    fn on_scale_source_status(&mut self, source: ScaleSource, status: ScaleStatus) {
+        self.update_calibration_status_if_selected(source, status);
+    }
+
+    fn on_remote_scale_connected(&mut self) {
+        if let Ok(spool_scale_model) = self.spool_scale_model.try_borrow() {
+            let _ = spool_scale_model.tags_in_store(self.store.tags_in_store());
+        }
     }
 
     fn on_term_text(&mut self, text: &str) {
