@@ -1,6 +1,6 @@
 # SpoolEase System
 
-SpoolEase is a smart add-on system for Bambu Lab 3D printers that adds intelligence and control to every filament spool.
+SpoolEase is a comprehensive filament manager solution that tracks spool inventory, remaining weight, storage locations, and printer slots in one localy hosted filament manager. SpoolEase helps manage any filament brand, monitor printers, and avoid running out of filament mid-print, powered by NFC/RFID. It also has tight integration with Bambu Lab printers and Bambu Studio.
 
 **For the most up to date information please check [spoolease.io](https://www.spoolease.io)**  
 
