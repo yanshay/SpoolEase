@@ -4,15 +4,37 @@ SpoolEase is a smart add-on system for Bambu Lab 3D printers that adds intellige
 
 **For the most up to date information please check [spoolease.io](https://www.spoolease.io)**  
 
+## Inventory Management (Press to Enlarge)
+<a href="readme/inventory-main.png">
+  <img src="readme/inventory-main.png">
+</a>
+
 It features:
 - NFC tags for automatic spool identification
 - [**Comprehensive spool inventory management system**](https://www.spoolease.io/docs/quickstart/inventory-ui-intro) - keeping your spools organized
 - [**Precise Filament Weight Tracking**](https://www.spoolease.io/docs/full-guide/spool-weight-tracking) using (1) weight scale, (2) print usage monitoring, and (3) a smart workflow - so you can tell how much filament is available in every spool
-- [**Custom Bambu Studio](https://www.spoolease.io/docs/full-guide/custom-bambustudio) - an enhanced Bambu Studio with new features to take advantage of SpoolEase information, as well as hosted SpoolEase application inside the slicer [video](https://www.youtube.com/watch?v=ftYzWrAR-4w)  
+- [**Custom Bambu Studio**](https://www.spoolease.io/docs/full-guide/custom-bambustudio) - an enhanced Bambu Studio with new features to take advantage of SpoolEase information, as well as hosted SpoolEase application inside the slicer [video](https://www.youtube.com/watch?v=ftYzWrAR-4w)  
 - [**Storage System Management**](https://www.spoolease.io/docs/full-guide/storage-system) - quickly find where your spools are using NFC based location tracking and seamless workflow to keep location information up to date
 - **Automatic slot configuration** for material, color, pressure advance (K)
+
+| While Printing (Weight Tracking in AMS) | Weighting Spool for Available  Filament|
+|:--------:|:---------:|
+| ![Printing](readme/printing.png) | ![Scale](readme/scale-loaded.png) |
+| Spool Operations | Spool Information |
+| ![Staging Operations](readme/staging-more.png) | ![Spool Information](readme/spool-information.png) |
+
 - [**Printers Monitoring**](https://www.spoolease.io/docs/full-guide/printers-monitoring) - the essentials for monitoring printers, prints progress and AMS units status
+
+<a href="readme/printer-monitoring-overview.png">
+  <img src="readme/printer-monitoring-overview.png">
+</a>
+
 - [**Configurable Dashboard**](https://www.spoolease.io/docs/full-guide/dashboard) - get the big picture of your spools inventory
+
+<a href="readme/dashboard-overview.png">
+  <img src="readme/dashboard-overview.png">
+</a>
+
 - [**Virtual Spool Label**](https://www.spoolease.io/docs/quickstart/view-tag-info) for viewing spool info on your mobile device
 - Import and support for Bambu Lab Spools RFID tag
 - Software support for OpenPrintTag (see support scope in [Register OpenPrintTag Spools](https://www.spoolease.io/docs/quickstart/register-openprinttag-spools))
@@ -46,28 +68,6 @@ If you find it valuable or helpful, please **Boost** the 3D models on MakerWorld
     <img src="https://api.star-history.com/svg?repos=yanshay/spoolease&type=Date)" height="300px">
   </a>
 </div>
-
-## Inventory Management (Press to Enlarge)
-<a href="readme/inventory-main.png">
-  <img src="readme/inventory-main.png">
-</a>
-
-## Dashboarding
-<a href="readme/dashboard-overview.png">
-  <img src="readme/dashboard-overview.png">
-</a>
-
-## Printers Monitoring
-<a href="readme/printer-monitoring-overview.png">
-  <img src="readme/printer-monitoring-overview.png">
-</a>
-
-## A Few SpoolEase Console Screenshots
-| While Printing (Weight Tracking in AMS) | Weighting Spool for Available  Filament|
-|:--------:|:---------:|
-| ![Printing](readme/printing.png) | ![Scale](readme/scale-loaded.png) |
-| Spool Operations | Spool Information |
-| ![Staging Operations](readme/staging-more.png) | ![Spool Information](readme/spool-information.png) |
 
 ## Press Below for (outdated) Video Demonstration of SpoolEase Console  
 **SpoolEase now offers far more features than shown in these videos! See the latest in the docs.**
