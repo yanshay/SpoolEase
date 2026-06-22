@@ -14,6 +14,14 @@ It features:
 - [**Comprehensive spool inventory management system**](https://www.spoolease.io/docs/quickstart/inventory-ui-intro) - keeping your spools organized
 - [**Precise Filament Weight Tracking**](https://www.spoolease.io/docs/full-guide/spool-weight-tracking) using (1) weight scale, (2) print usage monitoring, and (3) a smart workflow - so you can tell how much filament is available in every spool
 - [**Custom Bambu Studio**](https://www.spoolease.io/docs/full-guide/custom-bambustudio) - an enhanced Bambu Studio with new features to take advantage of SpoolEase information, as well as hosted SpoolEase application inside the slicer [video](https://www.youtube.com/watch?v=ftYzWrAR-4w)  
+
+## Press Below for Video Demonstration of Custom Bambu Studio Demo  
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=ftYzWrAR-4w">
+    <img src="readme/custom-bambu-studio.jpg" height="400px">
+  </a>
+</div>
+
 - [**Storage System Management**](https://www.spoolease.io/docs/full-guide/storage-system) - quickly find where your spools are using NFC based location tracking and seamless workflow to keep location information up to date
 - **Automatic slot configuration** for material, color, pressure advance (K)
 
@@ -49,7 +57,28 @@ It features:
 
 The system includes two products:  
 - **SpoolEase Console** – The main hub with a display, managing inventory, weight tracking, AMS/External slot configuration, and showing AMS/External filament status.
+
+## Press Below for (outdated) Video Demonstration of SpoolEase Console  
+**SpoolEase now offers far more features than shown in these videos! See the latest in the docs.**
+
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=WKIBzVbrhOg">
+    <img src="https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg" height="400px">
+  </a>
+  <a href="">
+    <img src="readme/virtual-tag.png" height="400px">
+  </a>
+</div>
+
 - **SpoolEase Scale** – Measures spool weight and feeds data to the Console.
+
+## Press Below for Video Demonstration of SpoolEase Scale
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=3tB1VMCOK6c">
+    <img src="readme/scale-youtube-cover.jpg" height="400px">
+  </a>
+</div>
+
 
 SpoolEase works well together with the [SpoolEase NFC tag holder](https://makerworld.com/en/models/2050083) that supports easily swappable NFC tag, material type and spool-id labels for spool reuse purpose.
 
@@ -66,25 +95,6 @@ If you find it valuable or helpful, please **Boost** the 3D models on MakerWorld
 <div align="center">
   <a href="https://www.star-history.com/#yanshay/spoolease&Date">
     <img src="https://api.star-history.com/svg?repos=yanshay/spoolease&type=Date)" height="300px">
-  </a>
-</div>
-
-## Press Below for (outdated) Video Demonstration of SpoolEase Console  
-**SpoolEase now offers far more features than shown in these videos! See the latest in the docs.**
-
-<div align="center">
-  <a href="https://www.youtube.com/watch?v=WKIBzVbrhOg">
-    <img src="https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg" height="400px">
-  </a>
-  <a href="">
-    <img src="readme/virtual-tag.png" height="400px">
-  </a>
-</div>
-
-## Press Below for Video Demonstration of SpoolEase Scale
-<div align="center">
-  <a href="https://www.youtube.com/watch?v=3tB1VMCOK6c">
-    <img src="readme/scale-youtube-cover.jpg" height="400px">
   </a>
 </div>
 
