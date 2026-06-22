@@ -30,20 +30,25 @@ It features:
 | ![Printing](readme/printing.png) | ![Scale](readme/scale-loaded.png) |
 | Spool Operations | Spool Information |
 | ![Staging Operations](readme/staging-more.png) | ![Spool Information](readme/spool-information.png) |
-
+  
 - [**Printers Monitoring**](https://www.spoolease.io/docs/full-guide/printers-monitoring) - the essentials for monitoring printers, prints progress and AMS units status
 
 <a href="readme/printer-monitoring-overview.png">
   <img src="readme/printer-monitoring-overview.png">
 </a>
-
+  
 - [**Configurable Dashboard**](https://www.spoolease.io/docs/full-guide/dashboard) - get the big picture of your spools inventory
 
 <a href="readme/dashboard-overview.png">
   <img src="readme/dashboard-overview.png">
 </a>
-
+  
 - [**Virtual Spool Label**](https://www.spoolease.io/docs/quickstart/view-tag-info) for viewing spool info on your mobile device
+
+  <a href="">
+    <img src="readme/virtual-tag.png" height="400px">
+  </a>
+
 - Import and support for Bambu Lab Spools RFID tag
 - Software support for OpenPrintTag (see support scope in [Register OpenPrintTag Spools](https://www.spoolease.io/docs/quickstart/register-openprinttag-spools))
 - Compatibility with your slicer filament settings
@@ -65,9 +70,6 @@ The system includes two products:
   <a href="https://www.youtube.com/watch?v=WKIBzVbrhOg">
     <img src="https://img.youtube.com/vi/WKIBzVbrhOg/0.jpg" height="400px">
   </a>
-  <a href="">
-    <img src="readme/virtual-tag.png" height="400px">
-  </a>
 </div>
 
 - **SpoolEase Scale** – Measures spool weight and feeds data to the Console.
@@ -79,9 +81,14 @@ The system includes two products:
   </a>
 </div>
 
-
+  
 SpoolEase works well together with the [SpoolEase NFC tag holder](https://makerworld.com/en/models/2050083) that supports easily swappable NFC tag, material type and spool-id labels for spool reuse purpose.
 
+  <a href="">
+    <img src="readme/spoolease-tag-holder.png" height="400px">
+  </a>
+
+  
 And most importantly, even though it’s an open-source project, it’s fun and easy to build and surprisingly simple to set up!
 
 - [SpoolEase Web Site - Documentation & Flashing](https://www.spoolease.io)
