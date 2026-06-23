@@ -1,4 +1,4 @@
-# SpoolEase System
+# SpoolEase Filament Manager
 
 SpoolEase is a comprehensive filament manager solution that tracks spool inventory, remaining weight, storage locations, and printer slots in one localy hosted filament manager. SpoolEase helps manage any filament brand, monitor printers, and avoid running out of filament mid-print, powered by NFC/RFID. It also has tight integration with Bambu Lab printers and Bambu Studio.
 
