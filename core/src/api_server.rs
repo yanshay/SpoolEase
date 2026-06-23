@@ -20,6 +20,7 @@ use crate::{
         API_REQUEST_BODY_MAX_BYTES, API_SERVER_HTTP_BUFFER_BYTES, API_SERVER_HTTP_RETAINED_BUFFERS, API_SERVER_HTTPS, API_SERVER_NUM_LISTENERS,
         API_SERVER_PORT, API_SERVER_TCP_RX_BUFFER_BYTES, API_SERVER_TCP_TX_BUFFER_BYTES,
     },
+    slicer_ws::SlicerWsProxy,
     view_model::ViewModel,
 };
 
@@ -32,6 +33,7 @@ pub struct ApiServerState {
     pub framework: Rc<RefCell<Framework>>,
     pub app_config: Rc<RefCell<AppConfig>>,
     pub view_model: Rc<RefCell<ViewModel>>,
+    pub slicer_ws_proxy: &'static SlicerWsProxy,
     pub request_body_max_bytes: usize,
 }
 
@@ -65,6 +67,7 @@ pub fn init_api_server(
     framework: Rc<RefCell<Framework>>,
     app_config: Rc<RefCell<AppConfig>>,
     view_model: Rc<RefCell<ViewModel>>,
+    slicer_ws_proxy: &'static SlicerWsProxy,
     spawner: Spawner,
     tls_certificate: &'static str,
     tls_private_key: &'static str,
@@ -79,6 +82,7 @@ pub fn init_api_server(
             framework: framework.clone(),
             app_config: app_config.clone(),
             view_model: view_model.clone(),
+            slicer_ws_proxy,
             request_body_max_bytes: API_REQUEST_BODY_MAX_BYTES,
         }
     );

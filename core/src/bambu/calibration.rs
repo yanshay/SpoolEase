@@ -390,9 +390,12 @@ pub async fn fix_k_on_restart(
                     *set_tray,
                 );
 
-                if !bambu_printer.borrow().is_locked() {
+                let is_locked = bambu_printer.borrow().is_locked();
+                if !is_locked {
                     let payload = bambu_printer.borrow_mut().printer_message(&mut cmd);
                     BambuPrinter::publish_payload_async(&bambu_printer, payload).await;
+                } else {
+                    let _ = bambu_printer.borrow().proxy_command_to_slicer(&cmd);
                 }
                 Timer::after_millis(250).await;
             }

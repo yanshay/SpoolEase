@@ -25,6 +25,7 @@ mod hx711_gpio;
 mod my_mqtt;
 mod printer;
 mod settings;
+mod slicer_ws;
 mod spool_record;
 mod spool_scale;
 mod spools_storage;
@@ -381,6 +382,7 @@ async fn main(spawner: Spawner) {
     let ui: &mut crate::app::AppWindow = mk_static!(crate::app::AppWindow, crate::app::create_slint_app());
 
     let app_config = Rc::new(RefCell::new(AppConfig::new(framework.clone())));
+    let slicer_ws_proxy = slicer_ws::init_slicer_ws_proxy();
 
     // == Mark current app ota is working =============================================
     let boot_partition;
@@ -592,6 +594,7 @@ async fn main(spawner: Spawner) {
         framework.clone(),
         app_config.clone(),
         view_model.clone(),
+        slicer_ws_proxy,
         spawner,
         api_tls_certificate,
         api_tls_private_key,

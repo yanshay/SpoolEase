@@ -308,7 +308,10 @@ impl BambuPrinter {
             }
         }
         if self.locked_mode != prev_lock_mode {
-            info!("Printer locked mode changed from {:?} to {:?}", prev_lock_mode, self.locked_mode);
+            info!(
+                "[{}] Printer locked mode changed from {:?} to {:?}: printer_mode={:?} fun={:?}",
+                self.printer_number, prev_lock_mode, self.locked_mode, self.printer_mode, print.fun
+            );
         }
         // Get a snapshot of current trays and diameter before any later change, to later be able to update cali_idx if removed
         // leave this section here because later changes will affect it (like self.nozzle_diameter)

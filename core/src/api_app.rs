@@ -4,13 +4,14 @@ use framework::{
     framework_web_app::{ApiMethod, BodyReadRejection, read_limited_body, write_rejection},
 };
 use picoserve::{
-    ResponseSent,
     extract::FromRequest,
+    ResponseSent,
     io::Read,
     request::{Path, Request, RequestBody, RequestParts},
     response::{
         IntoResponse, ResponseWriter, StatusCode,
         chunked::{ChunkWriter, ChunkedResponse, ChunksWritten},
+        ws,
     },
     routing::PathRouterService,
 };
@@ -66,6 +67,9 @@ impl PathRouterService<ApiServerState> for ApiServerWebService {
             }
             (ApiMethod::Post, "/api/internal/store-backup/mark-completed") => {
                 box_route_future!(handle_store_backup_mark_completed(state, request, response_writer).await)
+            }
+            (ApiMethod::Get, "/api/internal/slicer/ws") => {
+                box_route_future!(handle_slicer_ws_get(state, request, response_writer).await)
             }
             _ => box_route_future!(write_not_found(request, response_writer).await),
         };
@@ -291,6 +295,22 @@ async fn handle_store_backup_mark_completed<R: Read, W: ResponseWriter<Error = R
         ),
     };
     response.write_to(request.body_connection.finalize().await?, response_writer).await
+}
+
+async fn handle_slicer_ws_get<R: Read, W: ResponseWriter<Error = R::Error>>(
+    state: &ApiServerState,
+    mut request: Request<'_, R>,
+    response_writer: W,
+) -> Result<ResponseSent, W::Error> {
+    let upgrade = match ws::WebSocketUpgrade::from_request(state, request.parts, request.body_connection.body()).await {
+        Ok(upgrade) => upgrade,
+        Err(err) => return err.write_to(request.body_connection.finalize().await?, response_writer).await,
+    };
+
+    upgrade
+        .on_upgrade(state.slicer_ws_proxy.handler())
+        .write_to(request.body_connection.finalize().await?, response_writer)
+        .await
 }
 
 async fn write_unauthorized<R: Read, W: ResponseWriter<Error = R::Error>>(

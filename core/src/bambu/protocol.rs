@@ -52,8 +52,8 @@ impl BambuPrinter {
 
     pub(super) fn pre_message_send(&self, payload: &mut String) {
         //first log, only then fix
-        if self.log_filter >= log::Level::Debug {
-            debug!("[{}] MQTT Publish: {}", self.printer_number, payload);
-        }
+        // if self.log_filter >= log::Level::Debug {
+        debug!("[{}] MQTT Publish: {}", self.printer_number, payload);
+        // }
     }
 }

@@ -110,7 +110,7 @@ edge-captive = { version = "0.7.0" }
 edge-ws = { version = "0.7.0" } 
 
 # picoserve = {version = "0.14.1", git = "https://github.com/sammhicks/picoserve", rev = "5d40ea410efa4c2e313cfaa19f62f844ece1fd55", features = ["alloc", "embassy"] }
-picoserve = {version = "0.18.0", features = ["alloc", "embassy", "json"] }
+picoserve = {version = "0.18.0", features = ["alloc", "embassy", "json", "ws"] }
 
 
 # Utility crates

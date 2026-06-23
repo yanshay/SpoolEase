@@ -5,26 +5,80 @@ use alloc::{
     rc::Rc,
     string::{String, ToString},
 };
-use framework::{error, info};
+use framework::{debug, error, info, warn};
 use mqttrust::QoS;
+use serde::Serialize;
 
 use crate::{
     bambu::{
         BambuPrinter, FilamentInfo,
         bambu_api::{
             AmsFilamentSettingCommand, ExtrusionCaliGetCommand, ExtrusionCaliSelCommand, ExtrusionCaliSetCommand, GetVersionCommand, PrintCommand,
-            PrinterCommand, PushAllCommand,
+            MqttCommand, PrinterCommand, PushAllCommand,
         },
     },
     my_mqtt::BufferedMqttPacket,
     spool_record::FullSpoolRecord,
 };
 
+fn json_field_string(value: Option<&serde_json::Value>) -> String {
+    match value {
+        Some(value) if value.is_string() => value.as_str().unwrap_or("-").to_string(),
+        Some(value) if !value.is_null() => value.to_string(),
+        _ => "-".to_string(),
+    }
+}
+
+fn payload_summary(payload: &str) -> (String, String) {
+    let Ok(payload) = serde_json::from_str::<serde_json::Value>(payload) else {
+        return ("-".to_string(), "-".to_string());
+    };
+    let print = payload.get("print");
+    (
+        json_field_string(print.and_then(|print| print.get("command"))),
+        json_field_string(print.and_then(|print| print.get("sequence_id"))),
+    )
+}
+
 impl BambuPrinter {
     // TODO: Unify sending messages, no need for two functions
 
+    pub(crate) fn proxy_command_to_slicer<T: Serialize>(&self, cmd: &T) -> bool {
+        let mut payload = match serde_json::to_string(cmd) {
+            Ok(payload) => payload,
+            Err(err) => {
+                error!("[{}] Failed to serialize slicer-proxied printer command: {err:?}", self.printer_number);
+                return false;
+            }
+        };
+
+        let (command, sequence_id) = payload_summary(&payload);
+        debug!(
+            "[{}] Forwarding next MQTT request through Studio",
+            self.printer_number
+        );
+        self.pre_message_send(&mut payload);
+
+        let accepted = crate::slicer_ws::proxy_printer_json(&self.printer_serial, &payload);
+        if !accepted {
+            warn!("[{}] Slicer proxy dropped message before Studio send: command={command} sequence_id={sequence_id}", self.printer_number);
+        }
+        accepted
+    }
+
+    fn publish_or_proxy_when_locked<T: Serialize + MqttCommand>(&mut self, cmd: &mut T) {
+        let locked = self.is_locked();
+        if locked {
+            let _ = self.proxy_command_to_slicer(cmd);
+        } else {
+            let payload = self.printer_message(cmd);
+            self.publish_payload(payload);
+        }
+    }
+
     pub fn publish_payload(&self, mut payload: String) {
         self.pre_message_send(&mut payload);
+        let payload_bytes = payload.len();
         let topic_name = format!("device/{}/request", &self.printer_serial);
         let topic_name = topic_name.as_str();
 
@@ -37,7 +91,9 @@ impl BambuPrinter {
             payload: payload.as_bytes(),
         });
         let message = BufferedMqttPacket::try_from(packet).unwrap();
-        let _ = self.write_packets.try_send(message);
+        if self.write_packets.try_send(message).is_err() {
+            error!("[{}] Direct MQTT publish failed to queue to printer writer: bytes={payload_bytes}", self.printer_number);
+        }
     }
 
     // TODO: Unify sending messages, no need for two functions
@@ -99,16 +155,18 @@ impl BambuPrinter {
         // Is this command also causing errors when printer is locked?
 
         let mut cmd = ExtrusionCaliGetCommand::new(nozzle_diameter);
-        let payload = self.printer_message(&mut cmd);
-        if !self.is_locked() {
-            self.publish_payload(payload);
-        }
+        self.publish_or_proxy_when_locked(&mut cmd);
     }
 
     pub async fn fetch_filament_calibrations_async(bambu_printer: &Rc<RefCell<BambuPrinter>>, nozzle_diameter: &str) {
         let mut cmd = ExtrusionCaliGetCommand::new(nozzle_diameter);
-        let payload = bambu_printer.borrow_mut().printer_message(&mut cmd);
-        BambuPrinter::publish_payload_async(bambu_printer, payload).await;
+        let locked = bambu_printer.borrow().is_locked();
+        if locked {
+            let _ = bambu_printer.borrow().proxy_command_to_slicer(&cmd);
+        } else {
+            let payload = bambu_printer.borrow_mut().printer_message(&mut cmd);
+            BambuPrinter::publish_payload_async(bambu_printer, payload).await;
+        }
     }
 
     pub fn reset_tray(&mut self, tray_id: i32) {
@@ -124,10 +182,7 @@ impl BambuPrinter {
             0,
             0,
         );
-        if !self.is_locked() {
-            let payload = self.printer_message(&mut cmd);
-            self.publish_payload(payload);
-        }
+        self.publish_or_proxy_when_locked(&mut cmd);
 
         if let Some(extruder_id) = self.get_unique_extruder_id_for_tray(tray_id) {
             let mut cmd = ExtrusionCaliSelCommand::new(
@@ -138,10 +193,7 @@ impl BambuPrinter {
                 "", // tray_info_idx is filament_id in this command
                 Some(-1),
             );
-            if !self.is_locked() {
-                let payload = self.printer_message(&mut cmd);
-                self.publish_payload(payload);
-            }
+            self.publish_or_proxy_when_locked(&mut cmd);
         } else {
             // Defensive support only: real FTS internal AMS groups are ambiguous, while non-FTS groups should be uniquely bound.
             info!(
@@ -188,10 +240,7 @@ impl BambuPrinter {
                 filament.nozzle_temp_min,
                 filament.nozzle_temp_max,
             );
-            if !self.is_locked() {
-                let payload = self.printer_message(&mut cmd);
-                self.publish_payload(payload);
-            }
+            self.publish_or_proxy_when_locked(&mut cmd);
 
             // Send printer pressure advance
 
@@ -208,10 +257,7 @@ impl BambuPrinter {
                         Some(-1)
                     },
                 );
-                if !self.is_locked() {
-                    let payload = self.printer_message(&mut cmd);
-                    self.publish_payload(payload);
-                }
+                self.publish_or_proxy_when_locked(&mut cmd);
             } else {
                 // Defensive support only: real FTS internal AMS groups are ambiguous, while non-FTS groups should be uniquely bound.
                 info!(
