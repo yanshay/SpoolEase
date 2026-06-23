@@ -10,9 +10,8 @@ use serde::Serialize;
 use static_cell::StaticCell;
 
 use crate::settings::{
-    SLICER_WS_DISCONNECT_QUEUE_GRACE_MS, SLICER_WS_INITIAL_QUEUE_GRACE_MS, SLICER_WS_MAX_QUEUED_MESSAGES,
-    SLICER_WS_MAX_MISSED_HEARTBEATS, SLICER_WS_MESSAGE_BUFFER_BYTES, SLICER_WS_PING_INTERVAL_BASE_MS,
-    SLICER_WS_PING_INTERVAL_JITTER_MS,
+    SLICER_WS_DISCONNECT_QUEUE_GRACE_MS, SLICER_WS_INITIAL_QUEUE_GRACE_MS, SLICER_WS_MAX_MISSED_HEARTBEATS, SLICER_WS_MAX_QUEUED_MESSAGES,
+    SLICER_WS_MESSAGE_BUFFER_BYTES, SLICER_WS_PING_INTERVAL_BASE_MS, SLICER_WS_PING_INTERVAL_JITTER_MS,
 };
 
 static SLICER_WS_PROXY_CELL: StaticCell<SlicerWsProxy> = StaticCell::new();
@@ -130,7 +129,9 @@ impl SlicerWsProxy {
         let mut state = match self.state.try_lock() {
             Ok(state) => state,
             Err(_) => {
-                warn!("Slicer WebSocket queue is busy; dropping printer message: printer={printer_serial} command={command} sequence_id={sequence_id}");
+                warn!(
+                    "Slicer WebSocket queue is busy; dropping printer message: printer={printer_serial} command={command} sequence_id={sequence_id}"
+                );
                 return false;
             }
         };
@@ -143,7 +144,9 @@ impl SlicerWsProxy {
                         warn!("Slicer WebSocket initial connection grace expired; clearing queued printer messages");
                         state.queued_messages.clear();
                     }
-                    warn!("Slicer WebSocket has not connected within initial grace period; dropping printer message: printer={printer_serial} command={command} sequence_id={sequence_id}");
+                    warn!(
+                        "Slicer WebSocket has not connected within initial grace period; dropping printer message: printer={printer_serial} command={command} sequence_id={sequence_id}"
+                    );
                     return false;
                 }
             } else {
@@ -157,7 +160,9 @@ impl SlicerWsProxy {
                         warn!("Slicer WebSocket reconnect grace expired; clearing queued printer messages");
                         state.queued_messages.clear();
                     }
-                    warn!("Slicer WebSocket is disconnected beyond grace period; dropping printer message: printer={printer_serial} command={command} sequence_id={sequence_id}");
+                    warn!(
+                        "Slicer WebSocket is disconnected beyond grace period; dropping printer message: printer={printer_serial} command={command} sequence_id={sequence_id}"
+                    );
                     return false;
                 }
             }

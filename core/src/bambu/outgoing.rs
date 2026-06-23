@@ -13,8 +13,8 @@ use crate::{
     bambu::{
         BambuPrinter, FilamentInfo,
         bambu_api::{
-            AmsFilamentSettingCommand, ExtrusionCaliGetCommand, ExtrusionCaliSelCommand, ExtrusionCaliSetCommand, GetVersionCommand, PrintCommand,
-            MqttCommand, PrinterCommand, PushAllCommand,
+            AmsFilamentSettingCommand, ExtrusionCaliGetCommand, ExtrusionCaliSelCommand, ExtrusionCaliSetCommand, GetVersionCommand, MqttCommand,
+            PrintCommand, PrinterCommand, PushAllCommand,
         },
     },
     my_mqtt::BufferedMqttPacket,
@@ -53,15 +53,15 @@ impl BambuPrinter {
         };
 
         let (command, sequence_id) = payload_summary(&payload);
-        debug!(
-            "[{}] Forwarding next MQTT request through Studio",
-            self.printer_number
-        );
+        debug!("[{}] Forwarding next MQTT request through Studio", self.printer_number);
         self.pre_message_send(&mut payload);
 
         let accepted = crate::slicer_ws::proxy_printer_json(&self.printer_serial, &payload);
         if !accepted {
-            warn!("[{}] Slicer proxy dropped message before Studio send: command={command} sequence_id={sequence_id}", self.printer_number);
+            warn!(
+                "[{}] Slicer proxy dropped message before Studio send: command={command} sequence_id={sequence_id}",
+                self.printer_number
+            );
         }
         accepted
     }
@@ -92,7 +92,10 @@ impl BambuPrinter {
         });
         let message = BufferedMqttPacket::try_from(packet).unwrap();
         if self.write_packets.try_send(message).is_err() {
-            error!("[{}] Direct MQTT publish failed to queue to printer writer: bytes={payload_bytes}", self.printer_number);
+            error!(
+                "[{}] Direct MQTT publish failed to queue to printer writer: bytes={payload_bytes}",
+                self.printer_number
+            );
         }
     }
 
