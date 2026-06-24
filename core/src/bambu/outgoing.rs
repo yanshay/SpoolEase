@@ -143,15 +143,19 @@ impl BambuPrinter {
     #[allow(dead_code)]
     pub fn request_printer_command_sync(&mut self, command: PrintCommand) {
         let mut cmd = PrinterCommand::new(command);
-        let payload = self.printer_message(&mut cmd);
-        self.publish_payload(payload);
+        self.publish_or_proxy_when_locked(&mut cmd);
     }
 
     #[allow(dead_code)]
     pub async fn request_printer_command_async(bambu_printer: &Rc<RefCell<BambuPrinter>>, command: PrintCommand) {
         let mut cmd = PrinterCommand::new(command);
-        let payload = bambu_printer.borrow_mut().printer_message(&mut cmd);
-        BambuPrinter::publish_payload_async(bambu_printer, payload).await;
+        let locked = bambu_printer.borrow().is_locked();
+        if locked {
+            let _ = bambu_printer.borrow().proxy_command_to_slicer(&cmd);
+        } else {
+            let payload = bambu_printer.borrow_mut().printer_message(&mut cmd);
+            BambuPrinter::publish_payload_async(bambu_printer, payload).await;
+        }
     }
 
     pub fn fetch_filament_calibrations(&mut self, nozzle_diameter: &str) {
@@ -292,8 +296,7 @@ impl BambuPrinter {
         name: &str,
     ) {
         let mut cmd = ExtrusionCaliSetCommand::new(extruder_id, nozzle_diameter, nozzle_id, filament_id, setting_id, k_value, name);
-        let payload = self.printer_message(&mut cmd);
-        self.publish_payload(payload);
+        self.publish_or_proxy_when_locked(&mut cmd);
     }
 
     pub fn get_quad_for_set_filament_from_tray_id(&self, tray_id: i32) -> (i32, i32, i32, i32) {
