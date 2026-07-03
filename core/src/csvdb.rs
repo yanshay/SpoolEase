@@ -445,28 +445,46 @@ where
         let final_offset;
         let mut sdcard = self.sdcard.lock().await;
 
-        let min_offset = if already_exist {
-            // Replacements are written after the old record, so latest-offset-wins recovery remains valid.
-            Some(prev_offset + prev_length as u32)
+        if already_exist && serialized_len <= prev_length {
+            final_offset = prev_offset;
+            if serialized_len == prev_length {
+                sdcard
+                    .write_file_bytes(&db_file_name, prev_offset, &buffer[..serialized_len], false)
+                    .await
+                    .context(StoreSnafu)?;
+            } else {
+                let remaining_len = prev_length - serialized_len;
+                let mut overwrite_buffer = Vec::with_capacity(prev_length);
+                overwrite_buffer.extend_from_slice(&buffer[..serialized_len]);
+                overwrite_buffer.extend_from_slice(&Self::empty_record_buffer(remaining_len));
+                sdcard
+                    .write_file_bytes(&db_file_name, prev_offset, &overwrite_buffer, false)
+                    .await
+                    .context(StoreSnafu)?;
+                Self::add_free_range(&mut self.free_ranges.borrow_mut(), prev_offset + serialized_len as u32, remaining_len);
+            }
         } else {
-            None
-        };
+            let free_range = {
+                let free_ranges = self.free_ranges.borrow();
+                Self::find_free_range(&free_ranges, serialized_len, None).map(|index| (index, free_ranges[index].offset))
+            };
 
-        let free_range = {
-            let free_ranges = self.free_ranges.borrow();
-            Self::find_free_range(&free_ranges, serialized_len, min_offset).map(|index| (index, free_ranges[index].offset))
-        };
+            if let Some((free_range_index, free_range_offset)) = free_range {
+                // Once we try writing into a free range, it is no longer known-clean if the write fails.
+                Self::consume_free_range(&mut self.free_ranges.borrow_mut(), free_range_index, serialized_len);
+                sdcard
+                    .write_file_bytes(&db_file_name, free_range_offset, &buffer[..serialized_len], false)
+                    .await
+                    .context(StoreSnafu)?;
+                final_offset = free_range_offset;
+            } else {
+                final_offset = sdcard.append_bytes(&db_file_name, &buffer[..serialized_len]).await.context(StoreSnafu)?;
+            }
 
-        if let Some((free_range_index, free_range_offset)) = free_range {
-            // Once we try writing into a free range, it is no longer known-clean if the write fails.
-            Self::consume_free_range(&mut self.free_ranges.borrow_mut(), free_range_index, serialized_len);
-            sdcard
-                .write_file_bytes(&db_file_name, free_range_offset, &buffer[..serialized_len], false)
-                .await
-                .context(StoreSnafu)?;
-            final_offset = free_range_offset;
-        } else {
-            final_offset = sdcard.append_bytes(&db_file_name, &buffer[..serialized_len]).await.context(StoreSnafu)?;
+            if already_exist {
+                Self::write_empty_range(&mut sdcard, &db_file_name, prev_offset, prev_length).await?;
+                Self::add_free_range(&mut self.free_ranges.borrow_mut(), prev_offset, prev_length);
+            }
         }
 
         {
@@ -484,14 +502,6 @@ where
                 };
                 records_borrow.insert(csv_record_info.data.id().clone(), csv_record_info);
             }
-        }
-
-        if already_exist
-            && Self::write_empty_range(&mut sdcard, &db_file_name, prev_offset, prev_length)
-                .await
-                .is_ok()
-        {
-            Self::add_free_range(&mut self.free_ranges.borrow_mut(), prev_offset, prev_length);
         }
 
         Ok(!already_exist)
