@@ -14,9 +14,13 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use snafu::prelude::*;
 
 use framework::{
+    info,
     prelude::{SDCardStore, SDCardStoreErrorSource},
     sdcard_store::Error as SDCardStoreError,
+    warn,
 };
+
+use crate::utils::sha256_hex;
 
 #[derive(Snafu)]
 pub enum CsvDbError {
@@ -47,7 +51,7 @@ impl core::fmt::Debug for CsvDbError {
 
 fn store_error_is_not_found(error: &SDCardStoreErrorSource) -> bool {
     match error {
-        SDCardStoreError::Open { source, .. } | SDCardStoreError::ChangeDir { source, .. } => {
+        SDCardStoreError::Open { source, .. } | SDCardStoreError::ChangeDir { source, .. } | SDCardStoreError::Delete { source, .. } => {
             matches!(&source.0, embedded_sdmmc::asynchronous::Error::NotFound)
         }
         _ => false,
@@ -81,9 +85,69 @@ pub struct CsvDbInner {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub struct CsvDbCompactionConfig {
+    pub min_file_size_bytes: usize,
+    pub max_waste_percent: usize,
+    pub max_waste_bytes: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct CsvDbCompactionStats {
+    file_size_bytes: usize,
+    live_bytes: usize,
+    free_bytes: usize,
+    stale_bytes: usize,
+}
+
+impl CsvDbCompactionStats {
+    fn waste_bytes(self) -> usize {
+        self.free_bytes.saturating_add(self.stale_bytes)
+    }
+
+    fn waste_percent(self) -> usize {
+        if self.file_size_bytes == 0 {
+            0
+        } else {
+            self.waste_bytes().saturating_mul(100) / self.file_size_bytes
+        }
+    }
+
+    fn should_compact(self, config: CsvDbCompactionConfig) -> bool {
+        self.file_size_bytes >= config.min_file_size_bytes
+            && (self.waste_percent() >= config.max_waste_percent || self.waste_bytes() >= config.max_waste_bytes)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
 struct FreeRange {
     offset: u32,
     length: usize,
+}
+
+struct ParsedCsvDb<T>
+where
+    T: CsvDbId + Serialize + DeserializeOwned + PartialEq + core::fmt::Debug,
+{
+    records: HashMap<String, CsvRecordInfo<T>>,
+    free_ranges: Vec<FreeRange>,
+    stale_ranges: Vec<FreeRange>,
+    stats: CsvDbCompactionStats,
+}
+
+#[derive(Clone, Debug)]
+pub struct CsvDbCompactionFailure {
+    pub details: String,
+}
+
+enum CsvDbCompactionReplaceResult<T>
+where
+    T: CsvDbId + Serialize + DeserializeOwned + PartialEq + core::fmt::Debug,
+{
+    Completed {
+        parsed: ParsedCsvDb<T>,
+        failure: Option<CsvDbCompactionFailure>,
+    },
+    Skipped(CsvDbCompactionFailure),
 }
 
 pub struct CsvDb<T, SPI: SpiDevice, const MAX_DIRS: usize, const MAX_FILES: usize>
@@ -287,36 +351,20 @@ where
         Ok(())
     }
 
-    // TODO: packing is risky under certain sdcard errors since it does truncate first.
-    // a proper packing should create dbname.new, then rename name.db to name.old, then rename dbname.new to dbname.db and then remove dbname.old
-    // and deal with potential failures during and inbetween these operations
-    pub async fn start(&mut self, backup: bool, pack: bool) -> Result<(), CsvDbError> {
-        // Now read db file
-
-        let mut sdcard = self.sdcard.lock().await;
-        let db_filename = self.inner.borrow().db_file_name.clone();
-        let db_bytes = match sdcard.read_file_bytes(&db_filename).await {
-            Ok(db_bytes) => db_bytes,
-            Err(err) if store_error_is_not_found(&err) => Vec::new(),
-            Err(err) => return Err(CsvDbError::Store { source: err }),
-        };
-        let db_str = core::str::from_utf8(&db_bytes).context(Utf8Snafu)?;
+    fn parse_db_str(_db_filename: &str, db_str: &str, min_capacity: usize) -> Result<ParsedCsvDb<T>, CsvDbError> {
         let mut reader = serde_csv_core::Reader::<256>::new(); // 100 is max field size
         let mut nread = 0;
-        let mut _data_nread = 0;
-        let mut _empty_nread = 0;
-        let mut records = self.records.take();
-        records.clear();
-        let mut free_ranges = self.free_ranges.take();
-        free_ranges.clear();
+        let mut free_bytes = 0;
+        let mut stale_bytes = 0;
+        let mut records = HashMap::<String, CsvRecordInfo<T>>::with_capacity(min_capacity);
+        let mut free_ranges = Vec::with_capacity(min_capacity);
         let mut stale_ranges = Vec::<FreeRange>::new();
         for line in db_str.lines() {
             let line_length = line.len() + 1;
             if line.is_empty() || line.chars().all(|c| c == '-') {
-                _empty_nread += line_length;
+                free_bytes += line_length;
                 Self::add_free_range(&mut free_ranges, nread as u32, line_length);
             } else {
-                _data_nread += line_length;
                 let (record, _record_length) = reader.deserialize::<T>(line.as_bytes()).context(DeserializeSnafu { record: line })?;
                 let record_info = CsvRecordInfo {
                     data: record,
@@ -326,6 +374,7 @@ where
                 let record_id = record_info.data.id().clone();
                 if let Some(previous_record_info) = records.insert(record_id, record_info) {
                     // Later duplicates win. The older visible row is cleaned after the file is fully loaded.
+                    stale_bytes += previous_record_info.length_in_file;
                     stale_ranges.push(FreeRange {
                         offset: previous_record_info.offset,
                         length: previous_record_info.length_in_file,
@@ -335,90 +384,343 @@ where
             nread += line_length;
         }
 
-        // Don't copy in case records are empty (so not destroy old backup)
-        if backup && !records.is_empty() {
-            let db_filename_prefix = db_filename.strip_suffix(".db").ok_or_else(|| CsvDbError::Internal {
-                details: "DB filename doesn't end with '.db.'".to_string(),
-            })?;
-            let backup_file_name = format!("{}.db1", db_filename_prefix);
-            sdcard.create_write_file_str(&backup_file_name, db_str).await.context(StoreSnafu)?;
+        let live_bytes = records.values().map(|record| record.length_in_file).sum();
+        Ok(ParsedCsvDb {
+            records,
+            free_ranges,
+            stale_ranges,
+            stats: CsvDbCompactionStats {
+                file_size_bytes: db_str.len(),
+                live_bytes,
+                free_bytes,
+                stale_bytes,
+            },
+        })
+    }
+
+    fn build_compacted_file(records: &HashMap<String, CsvRecordInfo<T>>, max_record_width: usize) -> Result<Vec<u8>, CsvDbError> {
+        let mut record_buffer = alloc::vec![0u8; max_record_width];
+        let mut writer = serde_csv_core::Writer::new();
+        let mut length_required = 0;
+        for record in records.values() {
+            let serialized_len = writer.serialize(&record.data, record_buffer.as_mut_slice()).context(SerializeSnafu)?;
+            length_required += serialized_len;
         }
 
-        // Now pack if requested
-        // Check items size and not use current size in case of type change and serialize longer than original read data
-        // Don't pack if empty (in case of some error missed when reading file and no records read)
-        if pack && !records.is_empty() {
-            // TODO: use the save_all_records_only_before_use instead this code after see it is ok
-            let mut record_buffer = alloc::vec![0u8;self.inner.borrow().max_record_width];
-            let mut writer = serde_csv_core::Writer::new();
-            let mut length_required = 0;
-            for record in records.iter() {
-                let serialized_len = writer.serialize(&record.1.data, record_buffer.as_mut_slice()).context(SerializeSnafu)?;
-                length_required += serialized_len;
+        let mut file_buffer = alloc::vec![0u8; length_required];
+        let mut pos = 0;
+        for record in records.values() {
+            let length_written = writer.serialize(&record.data, &mut file_buffer[pos..]).context(SerializeSnafu)?;
+            pos += length_written;
+        }
+
+        Ok(file_buffer)
+    }
+
+    fn split_parent_child(path: &str) -> Result<(String, String), CsvDbError> {
+        let trimmed = path.trim_end_matches('/');
+        let Some(index) = trimmed.rfind('/') else {
+            return Err(CsvDbError::Internal {
+                details: format!("Path '{path}' has no parent directory"),
+            });
+        };
+        let child = &trimmed[index + 1..];
+        if child.is_empty() {
+            return Err(CsvDbError::Internal {
+                details: format!("Path '{path}' has no file name"),
+            });
+        }
+
+        let parent = if index == 0 { "/" } else { &trimmed[..index] };
+        Ok((parent.to_string(), child.to_string()))
+    }
+
+    fn db_artifact_filename(db_filename: &str, extension: &str) -> Result<String, CsvDbError> {
+        let db_filename_prefix = db_filename.strip_suffix(".db").ok_or_else(|| CsvDbError::Internal {
+            details: "DB filename doesn't end with '.db'".to_string(),
+        })?;
+        Ok(format!("{db_filename_prefix}.{extension}"))
+    }
+
+    async fn delete_file_if_exists(sdcard: &mut SDCardStore<SPI, MAX_DIRS, MAX_FILES>, path: &str) -> Result<(), CsvDbError> {
+        match sdcard.delete_file(path).await {
+            Ok(()) => Ok(()),
+            Err(err) if store_error_is_not_found(&err) => Ok(()),
+            Err(err) => Err(CsvDbError::Store { source: err }),
+        }
+    }
+
+    async fn recover_missing_db_from_old(sdcard: &mut SDCardStore<SPI, MAX_DIRS, MAX_FILES>, db_filename: &str) -> Result<(), CsvDbError> {
+        if sdcard.file_exists(db_filename).await.context(StoreSnafu)? {
+            return Ok(());
+        }
+
+        let old_filename = Self::db_artifact_filename(db_filename, "old")?;
+        if !sdcard.file_exists(&old_filename).await.context(StoreSnafu)? {
+            return Ok(());
+        }
+
+        let (parent, db_child) = Self::split_parent_child(db_filename)?;
+        let (_, old_child) = Self::split_parent_child(&old_filename)?;
+        warn!("Recovering missing {db_filename} from {old_filename}");
+        sdcard.rename_entry_in_dir(&parent, &old_child, &db_child).await.context(StoreSnafu)
+    }
+
+    async fn cleanup_compaction_artifacts(sdcard: &mut SDCardStore<SPI, MAX_DIRS, MAX_FILES>, db_filename: &str) {
+        let new_filename = Self::db_artifact_filename(db_filename, "new");
+        let old_filename = Self::db_artifact_filename(db_filename, "old");
+        for path in [new_filename, old_filename] {
+            let Ok(path) = path else {
+                continue;
+            };
+            if let Err(err) = Self::delete_file_if_exists(sdcard, &path).await {
+                warn!("Failed cleaning up compaction artifact {path}: {err:?}");
             }
-            let mut file_buffer = alloc::vec![b'-'; length_required];
-            let mut pos = 0;
-            for record in records.iter_mut() {
-                let length_written = writer.serialize(&record.1.data, &mut file_buffer[pos..]).context(SerializeSnafu)?;
-                record.1.offset = pos as u32;
-                record.1.length_in_file = length_written;
-                pos += length_written;
+        }
+    }
+
+    async fn safe_replace_with_compacted_file(
+        sdcard: &mut SDCardStore<SPI, MAX_DIRS, MAX_FILES>,
+        db_filename: &str,
+        compacted_file: Vec<u8>,
+        expected_records: usize,
+        min_capacity: usize,
+    ) -> Result<CsvDbCompactionReplaceResult<T>, CsvDbError> {
+        let new_filename = Self::db_artifact_filename(db_filename, "new")?;
+        let old_filename = Self::db_artifact_filename(db_filename, "old")?;
+        let (parent, db_child) = Self::split_parent_child(db_filename)?;
+        let (_, new_child) = Self::split_parent_child(&new_filename)?;
+        let (_, old_child) = Self::split_parent_child(&old_filename)?;
+        let expected_sha = sha256_hex(&compacted_file);
+
+        if let Err(err) = sdcard.create_write_file_bytes(&new_filename, &compacted_file).await {
+            let details = format!("failed writing {new_filename}: {err:?}");
+            warn!("Compaction skipped: {details}");
+            return Ok(CsvDbCompactionReplaceResult::Skipped(CsvDbCompactionFailure { details }));
+        }
+        drop(compacted_file);
+
+        let new_file_bytes = match sdcard.read_file_bytes(&new_filename).await {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                let details = format!("failed reading {new_filename}: {err:?}");
+                warn!("Compaction skipped: {details}");
+                let _ = Self::delete_file_if_exists(sdcard, &new_filename).await;
+                return Ok(CsvDbCompactionReplaceResult::Skipped(CsvDbCompactionFailure { details }));
             }
-            sdcard.create_write_file_bytes(&db_filename, &file_buffer).await.context(StoreSnafu)?;
-            free_ranges.clear();
-        } else {
-            // Packing removes stale duplicates by rewriting active records only. Without packing,
-            // dash older duplicates now so users do not see obsolete rows in the CSV file.
-            for stale_range in stale_ranges {
-                if Self::write_empty_range(&mut sdcard, &db_filename, stale_range.offset, stale_range.length)
-                    .await
-                    .is_ok()
-                {
-                    Self::add_free_range(&mut free_ranges, stale_range.offset, stale_range.length);
+        };
+        let actual_sha = sha256_hex(&new_file_bytes);
+        if actual_sha != expected_sha {
+            let details = format!("verification hash mismatch for {new_filename}: expected {expected_sha}, got {actual_sha}");
+            warn!("Compaction skipped: {details}");
+            let _ = Self::delete_file_if_exists(sdcard, &new_filename).await;
+            return Ok(CsvDbCompactionReplaceResult::Skipped(CsvDbCompactionFailure { details }));
+        }
+        let parsed_new_file = {
+            let new_file_str = match core::str::from_utf8(&new_file_bytes) {
+                Ok(str) => str,
+                Err(err) => {
+                    let details = format!("{new_filename} is not valid UTF-8: {err}");
+                    warn!("Compaction skipped: {details}");
+                    let _ = Self::delete_file_if_exists(sdcard, &new_filename).await;
+                    return Ok(CsvDbCompactionReplaceResult::Skipped(CsvDbCompactionFailure { details }));
+                }
+            };
+            match Self::parse_db_str(&new_filename, new_file_str, min_capacity) {
+                Ok(parsed) if parsed.records.len() == expected_records => parsed,
+                Ok(parsed) => {
+                    let details = format!("{new_filename} has {} records, expected {}", parsed.records.len(), expected_records);
+                    warn!("Compaction skipped: {details}");
+                    let _ = Self::delete_file_if_exists(sdcard, &new_filename).await;
+                    return Ok(CsvDbCompactionReplaceResult::Skipped(CsvDbCompactionFailure { details }));
+                }
+                Err(err) => {
+                    let details = format!("{new_filename} failed validation: {err:?}");
+                    warn!("Compaction skipped: {details}");
+                    let _ = Self::delete_file_if_exists(sdcard, &new_filename).await;
+                    return Ok(CsvDbCompactionReplaceResult::Skipped(CsvDbCompactionFailure { details }));
+                }
+            }
+        };
+        drop(new_file_bytes);
+
+        if let Err(err) = Self::delete_file_if_exists(sdcard, &old_filename).await {
+            let details = format!("failed clearing old backup {old_filename}: {err:?}");
+            warn!("Compaction skipped: {details}");
+            let _ = Self::delete_file_if_exists(sdcard, &new_filename).await;
+            return Ok(CsvDbCompactionReplaceResult::Skipped(CsvDbCompactionFailure { details }));
+        }
+
+        if let Err(err) = sdcard.rename_entry_in_dir(&parent, &db_child, &old_child).await {
+            let details = format!("failed renaming {db_filename} to {old_filename}: {err:?}");
+            warn!("Compaction skipped: {details}");
+            let _ = Self::delete_file_if_exists(sdcard, &new_filename).await;
+            return Ok(CsvDbCompactionReplaceResult::Skipped(CsvDbCompactionFailure { details }));
+        }
+
+        if let Err(err) = sdcard.rename_entry_in_dir(&parent, &new_child, &db_child).await {
+            let details = format!("failed renaming {new_filename} to {db_filename}: {err:?}");
+            warn!("Compaction failed: {details}");
+            match sdcard.rename_entry_in_dir(&parent, &old_child, &db_child).await {
+                Ok(()) => {
+                    let _ = Self::delete_file_if_exists(sdcard, &new_filename).await;
+                    return Ok(CsvDbCompactionReplaceResult::Skipped(CsvDbCompactionFailure { details }));
+                }
+                Err(rollback_err) => {
+                    return Err(CsvDbError::Internal {
+                        details: format!("Compaction left {db_filename} unavailable; rollback from {old_filename} failed: {rollback_err:?}"),
+                    });
                 }
             }
         }
 
-        *self.records.borrow_mut() = records;
-        *self.free_ranges.borrow_mut() = free_ranges;
+        let cleanup_failure = if let Err(err) = Self::delete_file_if_exists(sdcard, &old_filename).await {
+            let details = format!("compaction completed, but failed deleting {old_filename}: {err:?}");
+            warn!("{details}");
+            Some(CsvDbCompactionFailure { details })
+        } else {
+            None
+        };
 
-        Ok(())
+        Ok(CsvDbCompactionReplaceResult::Completed {
+            parsed: parsed_new_file,
+            failure: cleanup_failure,
+        })
+    }
+
+    pub async fn start(&mut self, backup: bool, pack: bool) -> Result<(), CsvDbError> {
+        self.start_inner(backup, pack, None).await.map(|_| ())
+    }
+
+    pub async fn start_with_compaction(
+        &mut self,
+        backup: bool,
+        compaction_config: CsvDbCompactionConfig,
+    ) -> Result<Option<CsvDbCompactionFailure>, CsvDbError> {
+        self.start_inner(backup, false, Some(compaction_config)).await
+    }
+
+    async fn start_inner(
+        &mut self,
+        backup: bool,
+        force_compaction: bool,
+        compaction_config: Option<CsvDbCompactionConfig>,
+    ) -> Result<Option<CsvDbCompactionFailure>, CsvDbError> {
+        // Now read db file
+
+        let mut sdcard = self.sdcard.lock().await;
+        let db_filename = self.inner.borrow().db_file_name.clone();
+        let records_capacity = self.records.borrow().capacity();
+        Self::recover_missing_db_from_old(&mut sdcard, &db_filename).await?;
+        let db_bytes = match sdcard.read_file_bytes(&db_filename).await {
+            Ok(db_bytes) => db_bytes,
+            Err(err) if store_error_is_not_found(&err) => Vec::new(),
+            Err(err) => return Err(CsvDbError::Store { source: err }),
+        };
+        let mut parsed = {
+            let db_str = core::str::from_utf8(&db_bytes).context(Utf8Snafu)?;
+            let parsed = Self::parse_db_str(&db_filename, db_str, records_capacity)?;
+
+            // Don't copy in case records are empty (so not destroy old backup)
+            if backup && !parsed.records.is_empty() {
+                let backup_file_name = Self::db_artifact_filename(&db_filename, "db1")?;
+                sdcard.create_write_file_str(&backup_file_name, db_str).await.context(StoreSnafu)?;
+                Self::cleanup_compaction_artifacts(&mut sdcard, &db_filename).await;
+            }
+
+            parsed
+        };
+        drop(db_bytes);
+
+        let should_compact =
+            !parsed.records.is_empty() && (force_compaction || compaction_config.map(|config| parsed.stats.should_compact(config)).unwrap_or(false));
+        let mut compaction_completed = false;
+        let mut compaction_failure = None;
+        if should_compact {
+            info!(
+                "Compacting {}: size={} live={} waste={} waste_percent={} free={} stale={}",
+                db_filename,
+                parsed.stats.file_size_bytes,
+                parsed.stats.live_bytes,
+                parsed.stats.waste_bytes(),
+                parsed.stats.waste_percent(),
+                parsed.stats.free_bytes,
+                parsed.stats.stale_bytes
+            );
+            let max_record_width = self.inner.borrow().max_record_width;
+            match Self::build_compacted_file(&parsed.records, max_record_width) {
+                Ok(compacted_file) => {
+                    let compacted_file_len = compacted_file.len();
+                    match Self::safe_replace_with_compacted_file(&mut sdcard, &db_filename, compacted_file, parsed.records.len(), records_capacity)
+                        .await?
+                    {
+                        CsvDbCompactionReplaceResult::Completed {
+                            parsed: compacted_db,
+                            failure,
+                        } => {
+                            info!(
+                                "Compacted {} from {} to {} bytes",
+                                db_filename, parsed.stats.file_size_bytes, compacted_file_len
+                            );
+                            parsed = compacted_db;
+                            compaction_completed = true;
+                            if failure.is_some() {
+                                compaction_failure = failure;
+                            }
+                        }
+                        CsvDbCompactionReplaceResult::Skipped(failure) => {
+                            compaction_failure = Some(failure);
+                        }
+                    }
+                }
+                Err(err) => {
+                    let details = format!("failed building compacted content for {db_filename}: {err:?}");
+                    warn!("Compaction skipped: {details}");
+                    compaction_failure = Some(CsvDbCompactionFailure { details });
+                }
+            }
+        }
+
+        if !compaction_completed {
+            // Packing removes stale duplicates by rewriting active records only. Without packing,
+            // dash older duplicates now so users do not see obsolete rows in the CSV file.
+            for stale_range in parsed.stale_ranges.iter() {
+                if Self::write_empty_range(&mut sdcard, &db_filename, stale_range.offset, stale_range.length)
+                    .await
+                    .is_ok()
+                {
+                    Self::add_free_range(&mut parsed.free_ranges, stale_range.offset, stale_range.length);
+                }
+            }
+        }
+
+        *self.records.borrow_mut() = parsed.records;
+        *self.free_ranges.borrow_mut() = parsed.free_ranges;
+
+        Ok(compaction_failure)
     }
 
     pub async fn save_all_records_only_before_use(&self) -> Result<(), CsvDbError> {
-        let (file_buffer, record_positions) = {
-            let mut record_buffer = alloc::vec![0u8;self.inner.borrow().max_record_width];
-            let mut writer = serde_csv_core::Writer::new();
-            let mut length_required = 0;
+        let max_record_width = self.inner.borrow().max_record_width;
+        let records_capacity = self.records.borrow().capacity();
+        let (file_buffer, expected_records) = {
             let records = self.records.borrow();
-            for record in records.iter() {
-                let serialized_len = writer.serialize(&record.1.data, record_buffer.as_mut_slice()).context(SerializeSnafu)?;
-                length_required += serialized_len;
-            }
-            let mut file_buffer = alloc::vec![b'-'; length_required];
-            let mut pos = 0;
-            let mut record_positions = Vec::with_capacity(records.len());
-            for record in records.iter() {
-                let length_written = writer.serialize(&record.1.data, &mut file_buffer[pos..]).context(SerializeSnafu)?;
-                record_positions.push((record.0.clone(), pos as u32, length_written));
-                pos += length_written;
-            }
-
-            (file_buffer, record_positions)
+            (Self::build_compacted_file(&records, max_record_width)?, records.len())
         };
 
         let db_filename = self.inner.borrow().db_file_name.clone();
         let mut sdcard = self.sdcard.lock().await;
-        sdcard.create_write_file_bytes(&db_filename, &file_buffer).await.context(StoreSnafu)?;
-
-        let mut records = self.records.borrow_mut();
-        for (id, offset, length) in record_positions {
-            if let Some(record) = records.get_mut(&id) {
-                record.offset = offset;
-                record.length_in_file = length;
+        let parsed = match Self::safe_replace_with_compacted_file(&mut sdcard, &db_filename, file_buffer, expected_records, records_capacity).await? {
+            CsvDbCompactionReplaceResult::Completed { parsed, .. } => parsed,
+            CsvDbCompactionReplaceResult::Skipped(failure) => {
+                return Err(CsvDbError::Internal {
+                    details: format!("Safe rewrite of {db_filename} did not complete: {}", failure.details),
+                });
             }
-        }
-        self.free_ranges.borrow_mut().clear();
+        };
+
+        *self.records.borrow_mut() = parsed.records;
+        *self.free_ranges.borrow_mut() = parsed.free_ranges;
         Ok(())
     }
     pub async fn update_version(&self, version: &str) -> Result<(), CsvDbError> {

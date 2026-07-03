@@ -24,7 +24,7 @@ use framework::{
 
 use crate::{
     bambu::calibration::KInfo,
-    csvdb::{CsvDb, CsvDbError},
+    csvdb::{CsvDb, CsvDbCompactionConfig, CsvDbError},
     spools_storage::{StorageConfig, TagLocationRecord},
     utils::hash_string_list,
     view_model::ViewModel,
@@ -34,6 +34,11 @@ use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 
 const SPOOLS_STORE_VER: &str = "1.1.0";
 const LOCATIONS_STORE_VER: &str = "1.0.0";
+const SPOOLS_DB_COMPACTION_CONFIG: CsvDbCompactionConfig = CsvDbCompactionConfig {
+    min_file_size_bytes: 64 * 1024,
+    max_waste_percent: 50,
+    max_waste_bytes: 64 * 1024,
+};
 
 #[derive(Snafu, Debug)]
 pub enum StoreError {
@@ -941,8 +946,18 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
         )
         .await
         {
-            Ok(mut db) => match db.start(true, false).await {
-                Ok(_) => {
+            Ok(mut db) => match db.start_with_compaction(true, SPOOLS_DB_COMPACTION_CONFIG).await {
+                Ok(compaction_failure) => {
+                    if let Some(compaction_failure) = compaction_failure {
+                        term_error!("Spools DB compaction failed: {}", compaction_failure.details);
+                        view_model.borrow().message_box(
+                            "Data Store Compaction Notice",
+                            "Spools DB compaction failed, continuing with existing data",
+                            "Please report on Github/Discord !!!",
+                            crate::app::StatusType::Error,
+                            0,
+                        );
+                    }
                     let mut db_version = {
                         let db_inner = db.inner.borrow();
                         db_inner.db_meta.version.clone()
