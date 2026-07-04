@@ -35,9 +35,9 @@ use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 const SPOOLS_STORE_VER: &str = "1.1.0";
 const LOCATIONS_STORE_VER: &str = "1.0.0";
 const SPOOLS_DB_COMPACTION_CONFIG: CsvDbCompactionConfig = CsvDbCompactionConfig {
-    min_file_size_bytes: 64 * 1024,
-    max_waste_percent: 50,
-    max_waste_bytes: 64 * 1024,
+    min_file_size_bytes: 32 * 1024,
+    max_waste_percent: 25,
+    max_waste_bytes: 32 * 1024,
 };
 
 #[derive(Snafu, Debug)]
