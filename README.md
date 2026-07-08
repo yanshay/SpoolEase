@@ -99,10 +99,15 @@ And most importantly, even though it’s an open-source project, it’s fun and 
 A **tremendous** amount of effort has gone into this project and continues to go in.  
 If you find it valuable or helpful, please **Boost** the 3D models on MakerWorld and ⭐ **Star** the GitHub repo.
 
+
 <div align="center">
-  <a href="https://www.star-history.com/#yanshay/spoolease&Date">
-    <img src="https://api.star-history.com/svg?repos=yanshay/spoolease&type=Date)" height="300px">
-  </a>
+<a href="https://www.star-history.com/?repos=yanshay%2Fspoolease&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=yanshay/spoolease&type=date&theme=dark&legend=top-left&sealed_token=MkF_Llt3MWtIrOXGYb2lDQpZfJyrn8_VU1W4k81BHRjaU5n8c41xfe7GhJVmpS1wfugoJq2Z1qrsoDCPMCIznNkCKOaew6LEYgdLZv6oAAbI8O6wbn_FJe2Q9nVszJGLcHbnyzisUep0qEfrOiOYTnaOsKNNZtUfucYN3QgJyriuHBvQZ8DWNSslr2vz" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=yanshay/spoolease&type=date&legend=top-left&sealed_token=MkF_Llt3MWtIrOXGYb2lDQpZfJyrn8_VU1W4k81BHRjaU5n8c41xfe7GhJVmpS1wfugoJq2Z1qrsoDCPMCIznNkCKOaew6LEYgdLZv6oAAbI8O6wbn_FJe2Q9nVszJGLcHbnyzisUep0qEfrOiOYTnaOsKNNZtUfucYN3QgJyriuHBvQZ8DWNSslr2vz" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=yanshay/spoolease&type=date&legend=top-left&sealed_token=MkF_Llt3MWtIrOXGYb2lDQpZfJyrn8_VU1W4k81BHRjaU5n8c41xfe7GhJVmpS1wfugoJq2Z1qrsoDCPMCIznNkCKOaew6LEYgdLZv6oAAbI8O6wbn_FJe2Q9nVszJGLcHbnyzisUep0qEfrOiOYTnaOsKNNZtUfucYN3QgJyriuHBvQZ8DWNSslr2vz" />
+ </picture>
+</a>
 </div>
 
 ---
