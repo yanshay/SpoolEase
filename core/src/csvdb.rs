@@ -159,6 +159,7 @@ where
     pub records: Rc<RefCell<HashMap<String, CsvRecordInfo<T>>>>,
     // Rebuilt on start. These ranges already contain dashed/empty bytes and are safe to overwrite.
     free_ranges: RefCell<Vec<FreeRange>>,
+    operation_lock: Mutex<CriticalSectionRawMutex, ()>,
 }
 
 impl<T, SPI: SpiDevice, const MAX_DIRS: usize, const MAX_FILES: usize> CsvDb<T, SPI, MAX_DIRS, MAX_FILES>
@@ -198,6 +199,7 @@ where
             sdcard: sdcard_input.clone(),
             records: Rc::new(RefCell::new(records)),
             free_ranges: RefCell::new(Vec::with_capacity(min_capacity)),
+            operation_lock: Mutex::new(()),
         })
     }
 
@@ -701,6 +703,7 @@ where
     }
 
     pub async fn save_all_records_only_before_use(&self) -> Result<(), CsvDbError> {
+        let _operation_guard = self.operation_lock.lock().await;
         let max_record_width = self.inner.borrow().max_record_width;
         let records_capacity = self.records.borrow().capacity();
         let (file_buffer, expected_records) = {
@@ -733,6 +736,7 @@ where
     }
 
     pub async fn insert(&self, record: T) -> Result<bool, CsvDbError> {
+        let _operation_guard = self.operation_lock.lock().await;
         let (already_exist, prev_offset, prev_length) = if let Some(v) = self.records.borrow().get(record.id()) {
             if v.data == record {
                 return Ok(false);
@@ -811,6 +815,7 @@ where
 
     #[allow(dead_code)]
     pub async fn delete(&self, id: &str) -> Result<Option<T>, CsvDbError> {
+        let _operation_guard = self.operation_lock.lock().await;
         let (offset, length) = if let Some(v) = self.records.borrow().get(id) {
             (v.offset, v.length_in_file)
         } else {
