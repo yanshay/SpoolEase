@@ -408,6 +408,7 @@ where
         let mut length_required = 0;
         for record in records.values() {
             let serialized_len = writer.serialize(&record.data, record_buffer.as_mut_slice()).context(SerializeSnafu)?;
+            Self::validate_csv_row(&record_buffer[..serialized_len])?;
             length_required += serialized_len;
         }
 
@@ -841,8 +842,18 @@ where
         Ok(length_written)
     }
 
+    fn validate_csv_row(row: &[u8]) -> Result<(), CsvDbError> {
+        let mut reader = serde_csv_core::Reader::<CSV_FIELD_MAX_BYTES>::new();
+        reader.deserialize::<T>(row).context(DeserializeSnafu {
+            record: core::str::from_utf8(row).unwrap_or("<non-utf8 CSV record>").to_string(),
+        })?;
+        Ok(())
+    }
+
     fn calc_csv_row(&self, record: &T, buffer: &mut Vec<u8>) -> Result<usize, CsvDbError> {
         buffer.resize(self.inner.borrow().max_record_width, 0);
-        Self::inner_calc_csv_row(record, buffer)
+        let length_written = Self::inner_calc_csv_row(record, buffer)?;
+        Self::validate_csv_row(&buffer[..length_written])?;
+        Ok(length_written)
     }
 }
