@@ -22,6 +22,8 @@ use framework::{
 
 use crate::utils::sha256_hex;
 
+const CSV_FIELD_MAX_BYTES: usize = 1024;
+
 #[derive(Snafu)]
 pub enum CsvDbError {
     #[snafu(display("SDCard File Operation Error {source:?}"))]
@@ -354,7 +356,7 @@ where
     }
 
     fn parse_db_str(_db_filename: &str, db_str: &str, min_capacity: usize) -> Result<ParsedCsvDb<T>, CsvDbError> {
-        let mut reader = serde_csv_core::Reader::<256>::new(); // 100 is max field size
+        let mut reader = serde_csv_core::Reader::<CSV_FIELD_MAX_BYTES>::new();
         let mut nread = 0;
         let mut free_bytes = 0;
         let mut stale_bytes = 0;

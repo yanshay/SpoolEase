@@ -882,7 +882,7 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
         match CsvDb::<TagLocationRecord, _, FILE_STORE_MAX_DIRS, FILE_STORE_MAX_FILES>::new(
             file_store.clone(),
             "/store/locatags",
-            1024,
+            2048,
             200,
             LOCATIONS_STORE_VER,
         )
@@ -940,7 +940,7 @@ pub async fn store_task(framework: Rc<RefCell<Framework>>, store: Rc<Store>, vie
         match CsvDb::<SpoolRecord, _, FILE_STORE_MAX_DIRS, FILE_STORE_MAX_FILES>::new(
             file_store.clone(),
             "/store/spools",
-            1024,
+            2048,
             200,
             SPOOLS_STORE_VER,
         )
