@@ -174,6 +174,16 @@
         />
       </div>
 
+      <div class="form-row">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <input type="checkbox" id="display-flip" />
+          <label for="display-flip" style="margin: 0;"
+            >Rotate Screen 180&deg;</label
+          >
+        </div>
+        <span>For upside-down mounting. Takes effect after a restart.</span>
+      </div>
+
       <button
         id="display-section-apply"
         type="button"
@@ -656,6 +666,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
             data.dimming_percent;
           document.getElementById("blackout-timeout").value =
             data.blackout_timeout;
+          document.getElementById("display-flip").checked = data.flip;
         }
       }
 
@@ -719,7 +730,13 @@ ProtoPasta 500g - Cardboard - 84g,84"
         const blackout_timeout = parseInt(
           document.getElementById("blackout-timeout").value,
         );
-        const data = { dimming_timeout, dimming_percent, blackout_timeout };
+        const flip = document.getElementById("display-flip").checked;
+        const data = {
+          dimming_timeout,
+          dimming_percent,
+          blackout_timeout,
+          flip,
+        };
         const applyButton = document.getElementById("display-section-apply");
         sendConfigData("/api/display-config", data, applyButton); // Replace with actual server endpoint
       }
