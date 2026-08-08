@@ -288,8 +288,15 @@ async fn main(spawner: Spawner) {
             DMA_CHx: peripherals.DMA_CH2,
         };
 
+        // Deg90 vs Deg270 is a 180 flip - same 480x320 geometry, and the touch orientation follows
+        // the rotation inside the board driver, so nothing downstream needs to change.
+        let display_rotation = if framework.borrow_mut().display_flip_from_flash() {
+            mipidsi::options::Rotation::Deg90
+        } else {
+            mipidsi::options::Rotation::Deg270
+        };
         let display_orientation = mipidsi::options::Orientation::new()
-            .rotate(mipidsi::options::Rotation::Deg270)
+            .rotate(display_rotation)
             .flip_horizontal();
 
         WT32SC01Plus::new(display_peripherals, sdcard_peripherals, display_orientation, framework.clone())
