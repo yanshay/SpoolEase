@@ -103,9 +103,9 @@ If you find it valuable or helpful, please **Boost** the 3D models on MakerWorld
 <div align="center">
 <a href="https://www.star-history.com/?repos=yanshay%2Fspoolease&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=yanshay/spoolease&type=date&theme=dark&legend=top-left&sealed_token=MkF_Llt3MWtIrOXGYb2lDQpZfJyrn8_VU1W4k81BHRjaU5n8c41xfe7GhJVmpS1wfugoJq2Z1qrsoDCPMCIznNkCKOaew6LEYgdLZv6oAAbI8O6wbn_FJe2Q9nVszJGLcHbnyzisUep0qEfrOiOYTnaOsKNNZtUfucYN3QgJyriuHBvQZ8DWNSslr2vz" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=yanshay/spoolease&type=date&legend=top-left&sealed_token=MkF_Llt3MWtIrOXGYb2lDQpZfJyrn8_VU1W4k81BHRjaU5n8c41xfe7GhJVmpS1wfugoJq2Z1qrsoDCPMCIznNkCKOaew6LEYgdLZv6oAAbI8O6wbn_FJe2Q9nVszJGLcHbnyzisUep0qEfrOiOYTnaOsKNNZtUfucYN3QgJyriuHBvQZ8DWNSslr2vz" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=yanshay/spoolease&type=date&legend=top-left&sealed_token=MkF_Llt3MWtIrOXGYb2lDQpZfJyrn8_VU1W4k81BHRjaU5n8c41xfe7GhJVmpS1wfugoJq2Z1qrsoDCPMCIznNkCKOaew6LEYgdLZv6oAAbI8O6wbn_FJe2Q9nVszJGLcHbnyzisUep0qEfrOiOYTnaOsKNNZtUfucYN3QgJyriuHBvQZ8DWNSslr2vz" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=yanshay/spoolease&type=date&theme=dark&legend=top-left&sealed_token=c2DVjfQj8OvJkH7Xzvh6ca2nJRK2NTqy3Yi4_lHHMUZWTmJM_lth134RMhI2jjiPg_k7Jx_QRxdLqoEOOS1e9RH2za3Jti0a5o0PsFu8ZIe7w2jqyrmYiLm2assCXoTrBcKYndkx4xa2t7XFqQtHaCCjlCZ0_oelQmg8w9ex8t6aqS-D6lo9cILezxDs" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=yanshay/spoolease&type=date&legend=top-left&sealed_token=c2DVjfQj8OvJkH7Xzvh6ca2nJRK2NTqy3Yi4_lHHMUZWTmJM_lth134RMhI2jjiPg_k7Jx_QRxdLqoEOOS1e9RH2za3Jti0a5o0PsFu8ZIe7w2jqyrmYiLm2assCXoTrBcKYndkx4xa2t7XFqQtHaCCjlCZ0_oelQmg8w9ex8t6aqS-D6lo9cILezxDs" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=yanshay/spoolease&type=date&legend=top-left&sealed_token=c2DVjfQj8OvJkH7Xzvh6ca2nJRK2NTqy3Yi4_lHHMUZWTmJM_lth134RMhI2jjiPg_k7Jx_QRxdLqoEOOS1e9RH2za3Jti0a5o0PsFu8ZIe7w2jqyrmYiLm2assCXoTrBcKYndkx4xa2t7XFqQtHaCCjlCZ0_oelQmg8w9ex8t6aqS-D6lo9cILezxDs" />
  </picture>
 </a>
 </div>
