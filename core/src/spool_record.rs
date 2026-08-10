@@ -79,6 +79,9 @@ pub struct SpoolRecord {
     pub spools_count: i32,
     #[serde(default, deserialize_with = "deserialize_optional")]
     pub td: Option<f32>,
+    // Explicit record type. Appended last so older records (which lack the column) still parse.
+    #[serde(default, serialize_with = "serialize_optional_bool_yn", deserialize_with = "deserialize_optional_bool_yn")]
+    pub stock: Option<bool>,
     // !!! Don't Forget to set default for any field!
     // pub update_time
     // pub update_tag_fields_time
@@ -181,6 +184,12 @@ const TAG_URL_PREFIX_S1: &str = "https://tag.spoolease.io/S1/"; // starting 0.6.
 impl SpoolRecord {
     pub fn linked_tag_ids(&self) -> impl Iterator<Item = &str> {
         self.tag_id.iter().map(String::as_str).filter(|tag_id| !tag_id.is_empty())
+    }
+    /// Returns true if this record represents a stock/bulk group rather than an individual physical spool.
+    /// A stock record may hold any number of spools, including 0 (nothing spare on hand right now) and 1.
+    /// Records written before `stock` existed have no flag, and fall back to the old rule (`spools_count > 1`).
+    pub fn is_stock(&self) -> bool {
+        self.stock.unwrap_or(self.spools_count > 1)
     }
 
     pub fn to_tag_descriptor_s1(&self, filament_sup_info: &Option<FilamentSupInfo>) -> Option<String> {

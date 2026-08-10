@@ -1820,7 +1820,7 @@ impl ViewModel {
 
     fn ui_load_staging(&self, spool_id: &str) -> SharedString {
         if let Some(spool_rec) = self.store.get_spool_by_id(spool_id) {
-            if spool_rec.spools_count <= 1 {
+            if ! spool_rec.is_stock() {
                 self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Scanned);
                 self.filament_staging.borrow_mut().set_scanned_tag_id(None);
                 self.display_filament_staging(true);
@@ -2099,7 +2099,7 @@ impl ViewModel {
 
     fn ui_can_link_untagged_spool_to_tag(&self, id: &str) -> SharedString {
         if let Some(spool_rec) = self.store.get_spool_by_id(id) {
-            if spool_rec.spools_count <= 1 {
+            if !spool_rec.is_stock() {
                 if !spool_rec.has_valid_tag_id() {
                     SharedString::new()
                 } else {
@@ -2115,7 +2115,7 @@ impl ViewModel {
 
     fn ui_can_link_tagged_spool_to_tag(&self, id: &str) -> SharedString {
         if let Some(spool_rec) = self.store.get_spool_by_id(id) {
-            if spool_rec.spools_count <= 1 {
+            if !spool_rec.is_stock() {
                 if spool_rec.has_valid_tag_id() {
                     SharedString::new()
                 } else {
@@ -2659,7 +2659,7 @@ impl ViewModel {
             let ui = view_model.borrow().ui_weak.unwrap();
             let ui_app_state = ui.global::<crate::app::AppState>();
 
-            if spool_rec.spools_count > 1 {
+            if spool_rec.is_stock() {
                 ui_app_state.invoke_link_tag_to_spool_id_status("Can't link Stock".into());
                 return;
             }

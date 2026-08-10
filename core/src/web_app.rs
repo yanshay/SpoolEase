@@ -890,17 +890,28 @@ async fn handle_spools_add_edit(key: &'static RefCell<Vec<u8>>, state: ConsoleAp
     let store = state.store;
     let mut split_spool = None;
 
+    // Clients before the explicit `stock` flag identified stock by count alone, so fall back to that rule.
+    let is_stock_record = add_spool.stock.unwrap_or(add_spool.spools_count > 1);
+    if is_stock_record {
+        if add_spool.spools_count < 0 {
+            return format!("Stock count can't be negative ({})", add_spool.spools_count);
+        }
+    } else if add_spool.spools_count != 1 {
+        return format!("A spool record holds exactly 1 spool, got {}", add_spool.spools_count);
+    }
     if let Some(split_id) = add_spool.split
         && let Some(splitted_spool) = store.get_spool_by_id(&split_id)
     {
-        if splitted_spool.spools_count - add_spool.spools_count < 1 {
+        if !splitted_spool.is_stock() {
+            return format!("Spool {split_id} isn't a stock record and can't be split");
+        }
+        if add_spool.spools_count < 1 || splitted_spool.spools_count - add_spool.spools_count < 0 {
             return format!(
                 "Spool {split_id} had {} and can't split out {}",
                 splitted_spool.spools_count, add_spool.spools_count
             );
-        } else {
-            split_spool = Some(splitted_spool);
         }
+        split_spool = Some(splitted_spool);
     }
 
     let color_code = add_spool
@@ -950,6 +961,7 @@ async fn handle_spools_add_edit(key: &'static RefCell<Vec<u8>>, state: ConsoleAp
         actual_location: add_spool.actual_location,
         spools_count: add_spool.spools_count,
         td: add_spool.td.filter(|td| td.is_finite() && *td >= 0.0),
+        stock: Some(is_stock_record),
     };
 
     let spool_id = if add_spool_operation {
@@ -989,6 +1001,8 @@ async fn handle_spools_add_edit(key: &'static RefCell<Vec<u8>>, state: ConsoleAp
     if let Some(mut split_spool) = split_spool {
         let split_spool_id = split_spool.id.clone();
         split_spool.spools_count -= add_spool.spools_count;
+        // The remainder stays stock even when it drops to 1 or 0, so stamp the flag on legacy records too.
+        split_spool.stock = Some(true);
         if let Err(err) = store.update_spool(split_spool, None).await {
             error!("Critical: Added new splitted spool/stock but failed to update splitted stock : {err}");
             return err.to_string();
@@ -1890,6 +1904,8 @@ pub struct AddSpoolDTO {
     pub assigned_location: String,
     pub actual_location: String,
     pub spools_count: i32,
+    #[serde(default)]
+    pub stock: Option<bool>,
     pub split: Option<String>,
     pub added_time: Option<i32>,
     #[serde(default)]
