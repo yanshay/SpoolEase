@@ -1,4 +1,5 @@
 {
+  "rust-analyzer.server.path": "/Users/yanshay/.local/share/lvim/mason/bin/rust-analyzer",
   "rust-analyzer.cargo.allTargets": false,
   "rust-analyzer.cargo.allFeatures": false,
   "rust-analyzer.cargo.target": "xtensa-esp32s3-none-elf",

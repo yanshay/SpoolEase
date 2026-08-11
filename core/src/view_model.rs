@@ -24,7 +24,7 @@ use shared::settings::{
     OTA_DOMAIN_DEBUG, OTA_DOMAIN_STABLE, OTA_DOMAIN_UNSTABLE, OTA_TLS_CERTIFICATE, SCALE_DEBUG_OTA_PATH, SCALE_STABLE_OTA_PATH,
     SCALE_UNSTABLE_OTA_PATH,
 };
-use shared::types::AppOtaTrain;
+use shared::types::{AppOtaTrain, WifiSignal};
 use shared::utils::channel_send;
 use slint::{ComponentHandle, Model, SharedString, ToSharedString};
 
@@ -81,9 +81,10 @@ const TITLE_CHECKER_DARK: (u8, u8, u8, u8) = (204, 204, 204, 255);
 #[derive(Clone, Copy, Eq, PartialEq, Hash)]
 enum ControlPanelPillId {
     Wifi,
+    ScaleWifi,
 }
 
-const CONTROL_PANEL_PILL_ORDER: [ControlPanelPillId; 1] = [ControlPanelPillId::Wifi];
+const CONTROL_PANEL_PILL_ORDER: [ControlPanelPillId; 2] = [ControlPanelPillId::Wifi, ControlPanelPillId::ScaleWifi];
 
 #[allow(unused_macros)]
 macro_rules! debugex {
@@ -568,34 +569,62 @@ impl ViewModel {
         self.refresh_control_panel_pills();
     }
 
-    fn wifi_signal_pill(signal: WifiSignalState) -> crate::app::ScrollPill {
+    fn wifi_signal_from_framework(signal: WifiSignalState) -> WifiSignal {
+        match signal {
+            WifiSignalState::Unknown => WifiSignal::Unknown,
+            WifiSignalState::Disconnected => WifiSignal::Disconnected,
+            WifiSignalState::ConnectedNoSignal => WifiSignal::ConnectedNoSignal,
+            WifiSignalState::Connected(strength) => WifiSignal::Connected {
+                rssi_dbm: strength.rssi_dbm,
+                bars: strength.bars,
+            },
+        }
+    }
+
+    fn wifi_signal_pill(label: &str, signal: WifiSignal, show_disconnected: bool) -> Option<crate::app::ScrollPill> {
         let white = Self::pill_color(0xFFFFFF);
         let black = Self::pill_color(0x000000);
         let (text, background, foreground) = match signal {
-            WifiSignalState::Connected(strength) => {
-                let bars = strength.bars.min(4);
+            WifiSignal::Connected { bars, .. } => {
+                let bars = bars.min(4);
                 let (background, foreground) = match bars {
                     4 | 3 => (Self::pill_color(0x27AE60), white),
                     2 => (Self::pill_color(0xF2C94C), black),
                     1 => (Self::pill_color(0xF2994A), black),
                     _ => (Self::pill_color(0xEB5757), white),
                 };
-                (format!("WiFi: {bars}/4"), background, foreground)
+                (format!("{label}: {bars}/4"), background, foreground)
             }
-            WifiSignalState::ConnectedNoSignal => ("WiFi: -/4".to_string(), Self::pill_color(0x607D8B), white),
-            WifiSignalState::Disconnected => ("WiFi: Off".to_string(), Self::pill_color(0xD32F2F), white),
-            WifiSignalState::Unknown => ("WiFi: ?".to_string(), Self::pill_color(0x828282), white),
+            WifiSignal::ConnectedNoSignal => (format!("{label}: -/4"), Self::pill_color(0x607D8B), white),
+            WifiSignal::Disconnected => {
+                if show_disconnected {
+                    (format!("{label}: Off"), Self::pill_color(0xD32F2F), white)
+                } else {
+                    return None;
+                }
+            }
+            WifiSignal::Unknown => (format!("{label}: ?"), Self::pill_color(0x828282), white),
         };
 
-        crate::app::ScrollPill {
+        Some(crate::app::ScrollPill {
             text: SharedString::from(text.as_str()),
             background,
             foreground,
-        }
+        })
     }
 
     fn update_wifi_signal_pill(&self, signal: WifiSignalState) {
-        self.set_control_panel_pill(ControlPanelPillId::Wifi, Self::wifi_signal_pill(signal));
+        if let Some(pill) = Self::wifi_signal_pill("WiFi", Self::wifi_signal_from_framework(signal), true) {
+            self.set_control_panel_pill(ControlPanelPillId::Wifi, pill);
+        }
+    }
+
+    fn update_scale_wifi_signal_pill(&self, signal: WifiSignal) {
+        if let Some(pill) = Self::wifi_signal_pill("Scale", signal, false) {
+            self.set_control_panel_pill(ControlPanelPillId::ScaleWifi, pill);
+        } else {
+            self.remove_control_panel_pill(ControlPanelPillId::ScaleWifi);
+        }
     }
 
     fn ui_scale_source(source: ScaleSource) -> crate::app::SpoolScaleSource {
@@ -3930,6 +3959,11 @@ impl FrameworkObserver for ViewModel {
     }
 
     fn on_wifi_signal_changed(&mut self, signal: WifiSignalState) {
+        if let WifiSignalState::Connected(strength) = signal
+            && strength.bars <= 1
+        {
+            framework::warn!("Console WiFi signal low: {}/4 ({} dBm)", strength.bars, strength.rssi_dbm);
+        }
         self.update_wifi_signal_pill(signal);
     }
 
@@ -4128,6 +4162,19 @@ impl SpoolScaleObserver for ViewModel {
 
     fn on_scale_source_status(&mut self, source: ScaleSource, status: ScaleStatus) {
         self.update_calibration_status_if_selected(source, status);
+        if source == ScaleSource::Remote {
+            match status {
+                ScaleStatus::Connected => self.update_scale_wifi_signal_pill(WifiSignal::ConnectedNoSignal),
+                ScaleStatus::Disconnected | ScaleStatus::NotAvailable => self.remove_control_panel_pill(ControlPanelPillId::ScaleWifi),
+                _ => (),
+            }
+        }
+    }
+
+    fn on_scale_wifi_signal(&mut self, source: ScaleSource, signal: WifiSignal) {
+        if source == ScaleSource::Remote {
+            self.update_scale_wifi_signal_pill(signal);
+        }
     }
 
     fn on_remote_scale_connected(&mut self) {

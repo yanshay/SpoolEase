@@ -28,6 +28,7 @@ use hashbrown::HashSet;
 use serde::{Deserialize, Serialize};
 use shared::load_cell::{LoadCell as LoadCellCore, LoadCellState, MIN_LOADED_WEIGHT};
 use shared::scale::{ConsoleToScale, OtaProgressUpdate, ScaleToConsole};
+use shared::types::WifiSignal;
 // Legacy scale-side G-code analysis path is obsolete in this console version.
 // Reference only; the shared protocol remains for older consoles and scale firmware.
 // use shared::gcode_analysis_task::{FilamentUsage, GcodeAnalysisNotification, GcodeAnalysisRequest};
@@ -158,6 +159,7 @@ pub trait SpoolScaleObserver {
     fn on_scale_unknown(&mut self, source: ScaleSource);
     fn on_scale_not_available(&mut self);
     fn on_scale_source_status(&mut self, source: ScaleSource, status: ScaleStatus);
+    fn on_scale_wifi_signal(&mut self, source: ScaleSource, signal: WifiSignal);
     fn on_remote_scale_connected(&mut self);
     fn on_term_text(&mut self, text: &str);
     fn on_tag_status(&mut self, status: &shared::spool_tag::Status);
@@ -532,6 +534,9 @@ impl SpoolScale {
                 ScaleToConsole::PN532Status(status) => {
                     self.notify_pn532_status(status);
                 }
+                ScaleToConsole::WifiSignal(signal) => {
+                    self.notify_scale_wifi_signal(ScaleSource::Remote, signal);
+                }
                 ScaleToConsole::ButtonPressed => {
                     self.notify_button_pressed();
                 }
@@ -646,6 +651,12 @@ impl SpoolScale {
         for weak_observer in self.observers.iter() {
             let observer = weak_observer.upgrade().unwrap();
             observer.borrow_mut().on_scale_source_status(source, status);
+        }
+    }
+    pub fn notify_scale_wifi_signal(&self, source: ScaleSource, signal: WifiSignal) {
+        for weak_observer in self.observers.iter() {
+            let observer = weak_observer.upgrade().unwrap();
+            observer.borrow_mut().on_scale_wifi_signal(source, signal);
         }
     }
     pub fn notify_remote_scale_connected(&self) {

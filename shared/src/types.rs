@@ -7,3 +7,11 @@ pub enum AppOtaTrain {
     Unstable,
     Debug,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Eq, PartialEq)]
+pub enum WifiSignal {
+    Unknown,
+    Disconnected,
+    ConnectedNoSignal,
+    Connected { rssi_dbm: i32, bars: u8 },
+}

@@ -3,6 +3,7 @@ use alloc::{string::String, vec::Vec};
 use serde::{Deserialize, Serialize};
 
 use crate::gcode_analysis_task::{GcodeAnalysisNotification, GcodeAnalysisRequest};
+use crate::types::WifiSignal;
 
 type Weight = i32;
 
@@ -33,6 +34,7 @@ pub enum ScaleToConsole {
     ButtonPressed,
     TagStatus(crate::spool_tag::Status),
     PN532Status(bool),
+    WifiSignal(WifiSignal),
     GcodeAnalysis {
         job_number: i32,
         printer_index: usize,
