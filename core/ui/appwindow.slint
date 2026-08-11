@@ -51,6 +51,13 @@ export component AppWindow inherits Window {
     height: FrameworkState.display-height;
     default-font-family: "Arial";
 
+    // Keep this hidden Text reachable so Slint embeds an 18px bitmap font for control-panel pills.
+    Text {
+        visible: false;
+        font-size: 18px;
+        text: "";
+    }
+
     function full-screen-dialog-open() -> bool {
       return AppState.control-state == ControlState.NewTagScan || AppState.control-state == ControlState.StagingSelected || AppState.control-state == ControlState.TraySelected;
     }

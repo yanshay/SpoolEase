@@ -132,15 +132,8 @@ export component ControlPanelBase inherits HorizontalLayout {
                 }
 
                 ScrollingPills {
-                    pills: [
-                        // { text: "PLA+Something", background: #2f80ed, foreground: #ffffff },
-                        // { text: "Printing", background: #27ae60, foreground: #ffffff },
-                        // { text: "Warning", background: #f2994a, foreground: #000000 },
-                        // { text: AppState.spool-staging-state == SpoolStagingState.Scanned ? "Staging Loaded" : "", background: #eb5757, foreground: #ffffff },
-                        // { text: "0.4mm", background: #f2c94c, foreground: #000000 },
-                        // { text: "Dry Box", background: #56ccf2, foreground: #000000 },
-                        // { text: "Ready", background: #9b51e0, foreground: #ffffff },
-                    ];
+                    pill-font-size: 18px;
+                    pills: AppState.control-panel-pills;
                 }
             }
         }

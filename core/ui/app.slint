@@ -116,6 +116,12 @@ export struct Location {
   container: int,
   }
 
+export struct ScrollPill {
+    text: string,
+    background: color,
+    foreground: color,
+}
+
 // Consts
 
 export global AppConsts {
@@ -313,6 +319,7 @@ export global AppState {
 
     in-out property <bool> select-printer: false;
     in-out property <ControlState> control-state: ControlState.Booting;
+    in-out property <[ScrollPill]> control-panel-pills: [];
     changed control-state => {
         self.stop-highlight-trays();
     }

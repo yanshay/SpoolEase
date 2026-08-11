@@ -1,12 +1,6 @@
-import { AppConsts, AppBackend, AppState, SpoolScaleState, SpoolStagingState  } from "app.slint";
+import { AppConsts, AppBackend, AppState, ScrollPill, SpoolScaleState, SpoolStagingState  } from "app.slint";
 import { Utils } from "utils.slint";
 import { MyText, MyButton } from "framework/widgets.slint";
-
-export struct ScrollPill {
-    text: string,
-    background: color,
-    foreground: color,
-}
 
 component Pill inherits Rectangle {
     in property <ScrollPill> pill;
@@ -84,7 +78,7 @@ export component ScrollingPills inherits Rectangle {
     in property <length> pill-height: 22px;
     in property <length> pill-padding-x: 9px;
     in property <length> pill-spacing: 6px;
-    in property <length> pill-font-size: 15px;
+    in property <length> pill-font-size: 18px;
     in property <length> repeat-gap: 24px;
     in property <length> scroll-step: 2px;
     in property <duration> scroll-interval: 40ms;

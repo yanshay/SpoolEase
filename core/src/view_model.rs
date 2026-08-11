@@ -30,7 +30,7 @@ use slint::{ComponentHandle, Model, SharedString, ToSharedString};
 
 use framework::prelude::*;
 use framework::{
-    framework::{FrameworkObserver, WebConfigMode},
+    framework::{FrameworkObserver, WebConfigMode, WifiSignalState},
     terminal::{self, TerminalObserver, term_mut},
 };
 
@@ -77,6 +77,13 @@ const AMS_COLOR_CHECKER_CELL_W: u32 = 6;
 const AMS_COLOR_CHECKER_CELL_H: u32 = 6;
 const TITLE_CHECKER_LIGHT: (u8, u8, u8, u8) = (255, 255, 255, 255);
 const TITLE_CHECKER_DARK: (u8, u8, u8, u8) = (204, 204, 204, 255);
+
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+enum ControlPanelPillId {
+    Wifi,
+}
+
+const CONTROL_PANEL_PILL_ORDER: [ControlPanelPillId; 1] = [ControlPanelPillId::Wifi];
 
 #[allow(unused_macros)]
 macro_rules! debugex {
@@ -182,6 +189,7 @@ pub struct ViewModel {
     runtime_persistence_request_channel: Rc<PrinterRuntimePersistenceRequestChannel>,
     pub app_ota_request_channel: Rc<AppOtaRequestChannel>,
     pub scale_version: Option<String>,
+    control_panel_pills: RefCell<HashMap<ControlPanelPillId, crate::app::ScrollPill>>,
 }
 
 pub trait StoreBackupPlaintextSink {
@@ -518,6 +526,7 @@ impl ViewModel {
             runtime_persistence_request_channel: Rc::new(PrinterRuntimePersistenceRequestChannel::new()),
             app_ota_request_channel: Rc::new(AppOtaRequestChannel::new()),
             scale_version: None,
+            control_panel_pills: RefCell::new(HashMap::new()),
         };
         let view_model_rc = Rc::new(RefCell::new(view_model));
 
@@ -532,6 +541,61 @@ impl ViewModel {
 
         // Done
         view_model_rc
+    }
+
+    fn pill_color(rgb: u32) -> slint::Color {
+        slint::Color::from_argb_encoded(0xFF000000 | rgb)
+    }
+
+    fn refresh_control_panel_pills(&self) {
+        let pill_map = self.control_panel_pills.borrow();
+        let pills: Vec<crate::app::ScrollPill> = CONTROL_PANEL_PILL_ORDER.iter().filter_map(|id| pill_map.get(id).cloned()).collect();
+
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::AppState>()
+            .set_control_panel_pills(slint::ModelRc::from(Rc::new(slint::VecModel::from(pills))));
+    }
+
+    fn set_control_panel_pill(&self, id: ControlPanelPillId, pill: crate::app::ScrollPill) {
+        self.control_panel_pills.borrow_mut().insert(id, pill);
+        self.refresh_control_panel_pills();
+    }
+
+    #[allow(dead_code)]
+    fn remove_control_panel_pill(&self, id: ControlPanelPillId) {
+        self.control_panel_pills.borrow_mut().remove(&id);
+        self.refresh_control_panel_pills();
+    }
+
+    fn wifi_signal_pill(signal: WifiSignalState) -> crate::app::ScrollPill {
+        let white = Self::pill_color(0xFFFFFF);
+        let black = Self::pill_color(0x000000);
+        let (text, background, foreground) = match signal {
+            WifiSignalState::Connected(strength) => {
+                let bars = strength.bars.min(4);
+                let (background, foreground) = match bars {
+                    4 | 3 => (Self::pill_color(0x27AE60), white),
+                    2 => (Self::pill_color(0xF2C94C), black),
+                    1 => (Self::pill_color(0xF2994A), black),
+                    _ => (Self::pill_color(0xEB5757), white),
+                };
+                (format!("WiFi: {bars}/4"), background, foreground)
+            }
+            WifiSignalState::ConnectedNoSignal => ("WiFi: -/4".to_string(), Self::pill_color(0x607D8B), white),
+            WifiSignalState::Disconnected => ("WiFi: Off".to_string(), Self::pill_color(0xD32F2F), white),
+            WifiSignalState::Unknown => ("WiFi: ?".to_string(), Self::pill_color(0x828282), white),
+        };
+
+        crate::app::ScrollPill {
+            text: SharedString::from(text.as_str()),
+            background,
+            foreground,
+        }
+    }
+
+    fn update_wifi_signal_pill(&self, signal: WifiSignalState) {
+        self.set_control_panel_pill(ControlPanelPillId::Wifi, Self::wifi_signal_pill(signal));
     }
 
     fn ui_scale_source(source: ScaleSource) -> crate::app::SpoolScaleSource {
@@ -888,6 +952,9 @@ impl ViewModel {
             name: env!("CARGO_PKG_NAME").into(),
             version: env!("CARGO_PKG_VERSION").into(),
         });
+
+        let wifi_signal = self.framework.borrow().wifi_signal();
+        self.update_wifi_signal_pill(wifi_signal);
 
         // Register to UI (Slint) framework events (UI FrameworkBackend API's)
         let ui_framework_backend = ui.global::<crate::app::FrameworkBackend>();
@@ -3860,6 +3927,10 @@ impl FrameworkObserver for ViewModel {
 
     fn on_wifi_sta_disconnected(&self) {
         info!("WiFi disconnected");
+    }
+
+    fn on_wifi_signal_changed(&mut self, signal: WifiSignalState) {
+        self.update_wifi_signal_pill(signal);
     }
 
     fn on_ota_start(&mut self) {
