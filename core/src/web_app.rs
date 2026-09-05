@@ -36,9 +36,9 @@ use serde::{Deserialize, Serialize};
 use shared::gcode_analysis_task::Fetch3mf;
 
 use crate::app_config::{
-    AiProviderAvailability, AiProviderId, ApiTokenMetadata, AppConfig, BackupConfig, BackupStatus, BambuPrinterConfig, DefaultPrinterConfig,
-    DeviceCertificateGenerationRequest, DeviceCertificateLeafRequest, DeviceCertificateStatus, FILAMENT_BRAND_NAMES, FakePrinterConfig,
-    PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, ScaleSourceConfig, UseAmsScan,
+    AiProviderAvailability, AiProviderId, ApiTokenMetadata, AppConfig, BAMBU_COLOR_NAMES, BackupConfig, BackupStatus, BambuPrinterConfig,
+    DefaultPrinterConfig, DeviceCertificateGenerationRequest, DeviceCertificateLeafRequest, DeviceCertificateStatus, FILAMENT_BRAND_NAMES,
+    FakePrinterConfig, PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, ScaleSourceConfig, UseAmsScan,
 };
 use crate::bambu::bambu_api::PrintCommand;
 use crate::bambu::calibration::KInfo;
@@ -183,6 +183,13 @@ impl NestedAppWithWebAppState<ConsoleAppState> for ConsoleWebService {
             }),
             (ApiMethod::Get, "/filament-brands") => box_route_future!({
                 picoserve::response::File::with_content_type("text/plain; charset=utf-8", FILAMENT_BRAND_NAMES.as_bytes())
+                    .call_request_handler_service(state, (), request, response_writer)
+                    .await
+            }),
+            // Same catalog `BambuLabTag::to_spool_rec` names colors from, so the web app can resolve a
+            // scanned manufacturer tag to the identical "Name (code)" the console would have written.
+            (ApiMethod::Get, "/bambu-color-names") => box_route_future!({
+                picoserve::response::File::with_content_type("text/plain; charset=utf-8", BAMBU_COLOR_NAMES.as_bytes())
                     .call_request_handler_service(state, (), request, response_writer)
                     .await
             }),
@@ -911,14 +918,27 @@ async fn handle_spools_add_edit(key: &'static RefCell<Vec<u8>>, state: ConsoleAp
         .map(|c| c.to_string())
         .collect::<Vec<_>>();
 
+    // Tag ids arrive `;`-separated, same as the CSV store encodes them, so the web client can
+    // manage secondary tags without a physical scan. Stored ids are upper-case hex (see
+    // `hex::encode_upper` in the scan path), so normalize before comparing against the index.
+    let mut tag_id: Vec<String> = Vec::new();
+    for tag in add_spool.tag_id.split(';').map(str::trim).filter(|tag| !tag.is_empty()) {
+        let tag = tag.to_uppercase();
+        if tag_id.contains(&tag) {
+            continue;
+        }
+        if let Some(other_spool_id) = store.get_spool_id_by_tag_id(&tag)
+            && other_spool_id != add_spool.id
+        {
+            return format!("Tag {tag} is already linked to spool {other_spool_id}");
+        }
+        tag_id.push(tag);
+    }
+
     let add_spool_operation = add_spool.id.is_empty();
     let new_spool = SpoolRecord {
         id: add_spool.id,
-        tag_id: if add_spool.tag_id.is_empty() {
-            Vec::new()
-        } else {
-            vec![add_spool.tag_id]
-        },
+        tag_id,
         material_type: add_spool.material,
         material_subtype: add_spool.subtype,
         color_name: add_spool.color_name,
