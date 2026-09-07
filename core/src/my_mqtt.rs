@@ -18,7 +18,6 @@ use embassy_time::Duration;
 use embassy_time::Timer;
 use embassy_time::with_timeout;
 use embedded_io_async::Write;
-use esp_mbedtls::sys::MbedtlsError;
 use esp_mbedtls::{AuthMode, Certificate, ClientSessionConfig, SessionConfig, SessionError, X509};
 use mqttrust::encoding::v4::decode_slice;
 use mqttrust::{
@@ -29,7 +28,6 @@ use mqttrust::{
 use framework::prelude::*;
 
 use crate::bambu::BambuPrinter;
-use crate::bambu::PrinterModel;
 use crate::settings::{
     MQTT_INITIAL_OUT_BUFFER_BYTES, MQTT_INITIAL_PACKET_BUFFER_BYTES, MQTT_MAX_PACKET_BUFFER_BYTES, MQTT_PACKET_BUFFER_GROW_STEP_BYTES,
 };
@@ -379,21 +377,17 @@ pub async fn generic_mqtt_task<
     let socket_rx_buffer = socket_rx_buffer.as_mut_slice();
     let socket_tx_buffer = socket_tx_buffer.as_mut_slice();
 
-    let bambu_certs = [
-        concat!(include_str!("./certs/bambulab.pem"), "\0").as_bytes(),
-        concat!(include_str!("./certs/bambulab_p2s.pem"), "\0").as_bytes(),
-        concat!(include_str!("./certs/bambulab_h2c.pem"), "\0").as_bytes(),
-        concat!(include_str!("./certs/bambulab_x2d.pem"), "\0").as_bytes(),
-    ];
-    let mut bambu_cert_index = 0;
-
-    if printer_model == PrinterModel::P2S {
-        bambu_cert_index = 1;
-    }
-
-    if printer_model == PrinterModel::H2C {
-        bambu_cert_index = 2;
-    }
+    let bambu_ca_chain = concat!(
+        include_str!("./certs/bambulab.pem"),
+        "\n",
+        include_str!("./certs/bambulab_p2s.pem"),
+        "\n",
+        include_str!("./certs/bambulab_h2c.pem"),
+        "\n",
+        include_str!("./certs/bambulab_x2d.pem"),
+        "\0"
+    )
+    .as_bytes();
 
     let mut socket_error_count = 0;
 
@@ -497,7 +491,7 @@ pub async fn generic_mqtt_task<
             }
         } else {
             ClientSessionConfig {
-                ca_chain: Some(Certificate::new(X509::PEM(core::ffi::CStr::from_bytes_with_nul(bambu_certs[bambu_cert_index]).unwrap())).unwrap()),
+                ca_chain: Some(Certificate::new(X509::PEM(core::ffi::CStr::from_bytes_with_nul(bambu_ca_chain).unwrap())).unwrap()),
                 server_name: Some(servername.as_c_str()),
                 ..ClientSessionConfig::new()
             }
@@ -514,22 +508,13 @@ pub async fn generic_mqtt_task<
 
         info!("[{printer_log_id}] Printer model is {printer_model:?}");
         term_info!(
-            "[{}] Establishing TLS connection with Printer {:?} using {}",
+            "[{}] Establishing TLS connection with Printer {:?} using combined Bambu CA chain",
             printer_log_id,
-            servername,
-            bambu_cert_index
+            servername
         );
 
         if let Err(e) = session.connect().await {
-            match e {
-                SessionError::MbedTls(err) if err == MbedtlsError::new(-9984) => {
-                    term_error!("[{}] Certificate {} rejected {:?}", printer_log_id, bambu_cert_index, err);
-                    bambu_cert_index = (bambu_cert_index + 1) % bambu_certs.len();
-                }
-                other => {
-                    term_error!("[{}] Unexpected error during tls handshake {:?}", printer_log_id, other);
-                }
-            }
+            term_error!("[{}] Unexpected error during tls handshake {:?}", printer_log_id, e);
             Timer::after(Duration::from_millis(500)).await;
             continue;
         }
