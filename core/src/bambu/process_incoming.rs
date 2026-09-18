@@ -19,7 +19,7 @@ use crate::{
         driver_specific::BambuAmsType,
         fetch_initial_info,
         protocol::clean_message_bytes_to_log,
-        tray::{Tray, TrayBits, TrayMetaInfo, TrayState, canonical_tray_id, canonical_tray_id_from_ams_slot},
+        tray::{Tray, TrayBits, TrayMetaInfo, TrayState, ams_info_index_from_id, canonical_tray_id, canonical_tray_id_from_ams_slot},
     },
     printer::PrinterRuntimePersistenceRequestKind,
     settings::MAX_NUM_PRINTERS,
@@ -110,13 +110,15 @@ impl BambuPrinter {
     /// Converts AMS existence bits to the tray-bit mask covered by those AMS units.
     fn tray_mask_for_ams_exist_bits(ams_bits: u32) -> u32 {
         let mut tray_mask = 0u32;
-        for ams_index in 0..=11 {
+        for ams_index in 0..=12 {
             if ((ams_bits >> ams_index) & 0x01) == 0 {
                 continue;
             }
 
             if ams_index <= 3 {
                 tray_mask |= 0x0f << (ams_index * 4);
+            } else if ams_index == 12 {
+                tray_mask |= 0x0f << 24;
             } else {
                 tray_mask |= 1 << (16 + (ams_index - 4));
             }
@@ -565,15 +567,10 @@ impl BambuPrinter {
         if let Some(ams_units) = &ams.ams {
             for ams in ams_units {
                 let ams_id = ams.id;
-                let ams_index = match ams_id {
-                    0..=3 => ams_id,
-                    128..=135 => ams_id - 128 + 4,
-                    254 | 255 => ams_id - 254 + 12,
-                    _ => {
-                        error!("[{}] Bad ams_id encountered: {ams_id}", self.printer_number);
-                        continue;
-                    }
-                } as usize;
+                let Some(ams_index) = ams_info_index_from_id(ams_id) else {
+                    error!("[{}] Bad ams_id encountered: {ams_id}", self.printer_number);
+                    continue;
+                };
                 if let Some(humidity) = ams.humidity {
                     let mut new_info = self.ams_info[ams_index].clone();
                     new_info.humidity = Some(-humidity);
@@ -611,7 +608,7 @@ impl BambuPrinter {
                 }
             }
             // The two external trays are fixed by Bambu extruder side, not by FTS inlet.
-            for (index, extruder_id) in [(12, 1), (13, 0)] {
+            for (index, extruder_id) in [(13, 1), (14, 0)] {
                 let new_info = crate::bambu::AmsInfo::external(extruder_id);
                 if self.ams_info[index] != new_info {
                     self.ams_info[index] = new_info;
@@ -633,11 +630,12 @@ impl BambuPrinter {
             let source_tray = if let Some(amss) = &ams.ams {
                 let ams = amss.iter().find(|v| v.id == ams_id as u32);
                 if let Some(ams_data) = ams {
-                    let ams_bit_index = match ams_id {
-                        0..=3 => ams_id,
-                        128..=135 => ams_id - 128 + 4,
-                        _ => continue,
+                    let Some(ams_bit_index) = ams_info_index_from_id(ams_id as u32) else {
+                        continue;
                     };
+                    if ams_bit_index >= 13 {
+                        continue;
+                    }
                     _derived_ams_exist_bits |= 1u32 << ams_bit_index;
                     ams_data.tray.iter().find(|v| v.id == Some(ams_tray_id as u32))
                 } else {

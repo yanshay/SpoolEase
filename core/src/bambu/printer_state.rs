@@ -42,7 +42,7 @@ pub struct PrinterPersistentState<'a> {
 #[derive(Clone, Copy, Debug)]
 pub struct BambuPersistentDirtyState {
     virt_trays_dirty: bool,
-    ams_trays_dirty: [bool; 24],
+    ams_trays_dirty: [bool; 28],
     extruders_dirty: bool,
     ams_exist_bits_dirty: bool,
     tray_exist_bits_dirty: bool,
@@ -407,7 +407,7 @@ impl BambuPrinter {
 
     pub fn init_printer_persistent_state(&mut self, mut state: PrinterPersistentState, _store: &Rc<Store>) {
         self.inner_ams_trays = core::mem::take(state.ams_trays.to_mut());
-        self.inner_ams_trays.resize(24, Tray::default());
+        self.inner_ams_trays.resize(28, Tray::default());
         if let Some(mut virt_trays) = state.virt_trays {
             self.inner_virt_trays = core::mem::take(virt_trays.to_mut());
         } else if let Some(mut virt_tray) = state.virt_tray {

@@ -281,6 +281,8 @@ impl BambuPrinterDriver {
                 let mut slots = Vec::new();
                 let (slots_offset, num_slots) = if ams_index <= 3 {
                     (ams_index as usize * 4, 4)
+                } else if ams_index == 12 {
+                    (24, 4)
                 } else {
                     (16 + (ams_index - 4) as usize, 1)
                 };
@@ -473,6 +475,7 @@ impl BambuPrinterDriver {
                 format!("{ams_letter}{}", tray_id % 4 + 1)
             }
             16..=23 => format!("HT-{}", tray_id - 15),
+            24..=27 => format!("Lite-{}", tray_id - 23),
             _ => tray_id.to_string(),
         }
     }
@@ -522,7 +525,7 @@ impl BambuPrinterDriver {
 
     fn ams_list(mut ams_exist_bits: u32) -> Vec<i32> {
         let mut ams_ids = Vec::new();
-        for ams_id in 0..=11 {
+        for ams_id in 0..=12 {
             if ams_exist_bits & 1 != 0 {
                 ams_ids.push(ams_id);
             }
@@ -534,6 +537,8 @@ impl BambuPrinterDriver {
     fn slot_group_native_id_from_ams_index(ams_index: i32) -> String {
         if ams_index <= 3 {
             ams_index.to_string()
+        } else if ams_index == 12 {
+            "16".to_string()
         } else {
             (128 + (ams_index - 4)).to_string()
         }
@@ -543,6 +548,7 @@ impl BambuPrinterDriver {
         match tray_id {
             0..=15 => (tray_id % 4).to_string(),
             16..=23 | 254 | 255 => "0".to_string(),
+            24..=27 => (tray_id - 24).to_string(),
             _ => tray_id.to_string(),
         }
     }
@@ -557,7 +563,7 @@ impl BambuPrinterDriver {
             .parse::<i32>()
             .map_err(|_| PrinterError::InvalidCommand(format!("Invalid Bambu slot id: {}", slot_id.as_str())))?;
 
-        if (0..=23).contains(&tray_id) || tray_id == 254 || tray_id == 255 {
+        if (0..=27).contains(&tray_id) || tray_id == 254 || tray_id == 255 {
             Ok(tray_id)
         } else {
             Err(PrinterError::SlotNotFound(slot_id.clone()))
@@ -661,6 +667,7 @@ impl BambuPrinterEventBridge {
                 crate::bambu::PrinterModelSeries::X1 => 2,
                 crate::bambu::PrinterModelSeries::P1 => 1,
                 crate::bambu::PrinterModelSeries::A1 => 1,
+                crate::bambu::PrinterModelSeries::A2 => 2,
                 crate::bambu::PrinterModelSeries::H2 => 2,
                 crate::bambu::PrinterModelSeries::P2 => 2,
                 crate::bambu::PrinterModelSeries::X2 => 2,
@@ -670,7 +677,7 @@ impl BambuPrinterEventBridge {
         };
 
         let chars_to_replace_for_file = match printer.model_series() {
-            crate::bambu::PrinterModelSeries::P1 | crate::bambu::PrinterModelSeries::A1 => "!@#\'@/",
+            crate::bambu::PrinterModelSeries::P1 | crate::bambu::PrinterModelSeries::A1 | crate::bambu::PrinterModelSeries::A2 => "!@#\'@/",
             crate::bambu::PrinterModelSeries::X1
             | crate::bambu::PrinterModelSeries::H2
             | crate::bambu::PrinterModelSeries::P2

@@ -13,7 +13,7 @@ use crate::{
 
 pub(crate) fn canonical_tray_id(tray_id: i32) -> Option<i32> {
     match tray_id {
-        0..=23 => Some(tray_id),
+        0..=27 => Some(tray_id),
         128..=135 => Some(tray_id - 128 + 16),
         254 | 255 => Some(tray_id),
         _ => None,
@@ -27,8 +27,19 @@ pub(crate) fn canonical_tray_id_from_ams_slot(ams_id: i32, slot_id: i32) -> Opti
 
     match (ams_id, slot_id) {
         (0..=3, 0..=3) => Some(ams_id * 4 + slot_id),
+        (16, 0..=3) => Some(24 + slot_id),
         (128..=135, 0) => Some(ams_id - 128 + 16),
         (254 | 255, 0) => Some(ams_id),
+        _ => None,
+    }
+}
+
+pub(crate) fn ams_info_index_from_id(ams_id: u32) -> Option<usize> {
+    match ams_id {
+        0..=3 => Some(ams_id as usize),
+        128..=135 => Some((ams_id - 128 + 4) as usize),
+        16 => Some(12),
+        254 | 255 => Some((ams_id - 254 + 13) as usize),
         _ => None,
     }
 }
@@ -266,7 +277,7 @@ impl BambuPrinter {
         }
     }
 
-    // returns canonical tray ids: 0..23 for AMS/AMS-HT, 254/255 for external trays
+    // returns canonical tray ids: 0..27 for AMS/AMS-HT/AMS Lite, 254/255 for external trays
     pub(crate) fn get_common_tray_active(active_extruder: usize, extruder_tray_now: i32) -> Option<i32> {
         let extruder_tray_now = if extruder_tray_now > 255 {
             Self::normalized_h2d_tray_xxx(extruder_tray_now)
@@ -282,7 +293,7 @@ impl BambuPrinter {
         }
     }
 
-    // returns canonical tray ids: 0..23 for AMS/AMS-HT, 254/255 for external trays
+    // returns canonical tray ids: 0..27 for AMS/AMS-HT/AMS Lite, 254/255 for external trays
     pub(crate) fn get_tray_active(&self) -> Option<i32> {
         let active_extruder = self.get_active_extruder()?;
         Self::get_common_tray_active(active_extruder, self.tray_now[active_extruder])
@@ -341,6 +352,9 @@ impl BambuPrinter {
             let ams_id = 128 + (tray_id - 16);
             let ams_tray_id = 0;
             (ams_id, ams_tray_id)
+        } else if tray_id < 28 {
+            // AMS Lite in A2L (or other newer firmwares)
+            (16, tray_id - 24)
         } else {
             // 254/255 tray_id option
             (tray_id, 0)
@@ -356,7 +370,7 @@ impl BambuPrinter {
         let tray_in_ams = h2d_tray_xxx & 0xFF; // maybe will need to change if ams
         match ams_id {
             0..=3 => ams_id * 4 + (tray_in_ams & 0x03), // 0x03 because no support for more than 4 slots ams
-            128..=135 => canonical_tray_id_from_ams_slot(ams_id, tray_in_ams).unwrap_or(255),
+            16 | 128..=135 => canonical_tray_id_from_ams_slot(ams_id, tray_in_ams).unwrap_or(255),
             254 | 255 => {
                 if tray_in_ams != 255 {
                     254
@@ -386,12 +400,13 @@ impl BambuPrinter {
     }
 
     pub fn get_ams_info_index_for_tray(&self, tray_id: i32) -> Result<usize, String> {
-        // tray_id: 0..15 (4xAMS), 16..23 (8 AMS-HT), 254, 255
+        // tray_id: 0..15 (4xAMS), 16..23 (8 AMS-HT), 24..27 (AMS Lite in A2L or other newer firmwares), 254, 255
         let ams_id = match tray_id {
             0..=15 => tray_id / 4,
             16..=23 => tray_id - 16 + 4,
-            254 => 12,
-            255 => 13,
+            24..=27 => 12,
+            254 => 13,
+            255 => 14,
             _ => {
                 let err_str = format!("[{}] Error mapping slot {tray_id} to ams_id to get calibrations", self.printer_number);
                 error!("{}", err_str);
@@ -416,6 +431,8 @@ impl BambuPrinter {
         let (ams_id, slot_in_ams) = Self::get_ams_and_slot_id(tray_id as usize);
         if ams_id <= 3 {
             format!("{} Slot {}", self.ams_name(ams_id), slot_in_ams + 1)
+        } else if ams_id == 16 {
+            format!("{} Slot {}", self.ams_name(ams_id), slot_in_ams + 1)
         } else {
             self.ams_name(ams_id)
         }
@@ -425,11 +442,15 @@ impl BambuPrinter {
         if (4..4 + 8).contains(&ams_id) {
             // deal with case of AMS_HT as index in ams list vs. bambu values of 128..
             ams_id = ams_id - 4 + 128;
+        } else if ams_id == 12 {
+            ams_id = 16;
         }
         if ams_id <= 3 {
             format!("AMS-{}", (b'A' + ams_id as u8) as char)
         } else if (128..128 + 8).contains(&ams_id) {
             format!("HT-{}", (b'A' + (ams_id - 128) as u8) as char)
+        } else if ams_id == 16 {
+            "AMS Lite".into()
         } else if ams_id == 255 {
             if self.num_extruders() == 1 {
                 "External Spool".into()

@@ -317,6 +317,10 @@ impl BambuPrinter {
             // AMS-HT
             slot_id = 0;
             original_tray_id = (ams_id * 4 + ams_tray_id_for_set_filament) as i32; // seems like this is what Bambustudio is placing there (so 512 for first HT, others are assumed)
+        } else if tray_id < 16 + 8 + 4 {
+            // AMS Lite
+            slot_id = ams_tray_id_for_set_filament as i32;
+            original_tray_id = tray_id;
         } else {
             // external
             ams_tray_id_for_set_filament = 254;

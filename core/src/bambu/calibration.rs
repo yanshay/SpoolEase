@@ -98,7 +98,7 @@ impl BambuPrinter {
     }
 
     pub fn get_tray_resolved_k_value(&self, tray: &Tray, tray_id: i32) -> String {
-        // tray_id: 0..15 (4xAMS), 16..23 (8 AMS-HT), 254, 255
+        // tray_id: 0..15 (4xAMS), 16..23 (8 AMS-HT), 24..27 (AMS Lite in A2L or other newer firmwares), 254, 255
         let mut k_result = "(0.020)".to_string();
         if let Some(k_from_tray) = &tray.k_from_tray {
             k_result = format!("({k_from_tray:.3})");
@@ -319,7 +319,7 @@ pub async fn fix_k_on_restart(
         bambu_printer.borrow_mut().pending_k_restore_sequence = false;
         return;
     }
-    let mut set_tray_cali_idx: [Option<i32>; 24] = [None; 24];
+    let mut set_tray_cali_idx: [Option<i32>; 28] = [None; 28];
     let mut set_virt_cali_idx: Option<i32> = None;
 
     {
