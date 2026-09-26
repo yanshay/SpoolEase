@@ -28,6 +28,7 @@ component SlotGroupTab inherits Rectangle {
     in property <UiSlotGroup> group;
     in property <int> group-index;
     in property <bool> active;
+    in property <bool> swapped-to-external;
     horizontal-stretch: Math.max(group.slots.length, 1);
 
     function slot-with-spool(slot: UiSlot) -> bool {
@@ -125,7 +126,11 @@ component SlotGroupTab inherits Rectangle {
             width: parent.width;
             height: parent.height;
             clicked => {
-                AppState.selected-primary-slot-group = group-index;
+                if swapped-to-external {
+                    AppState.show-side-slot-group(AppState.last-external-side-slot-group);
+                } else {
+                    AppState.selected-primary-slot-group = group-index;
+                }
             }
         }
     }
@@ -400,10 +405,12 @@ component SlotGroupPanel inherits VerticalLayout {
 
             if is-primary-group: HorizontalLayout {
                 for slot-group[idx] in AppState.primary-slot-groups: SlotGroupTab {
+                    property <bool> swapped: AppState.is-tab-swapped-to-external(slot-group);
                     height: parent.height;
-                    group: slot-group;
+                    group: swapped ? AppState.side-slot-groups[AppState.last-external-side-slot-group] : slot-group;
                     group-index: idx;
-                    active: AppState.current-primary-slot-group-index() == idx;
+                    swapped-to-external: swapped;
+                    active: !swapped && AppState.current-primary-slot-group-index() == idx;
                 }
             }
 
@@ -441,6 +448,15 @@ component SlotGroupPanel inherits VerticalLayout {
 export component StandardSlotGroups inherits HorizontalLayout {
     spacing: AppConsts.trays-spacing;
 
+    // Only remember an external once it has stayed in the side panel, so cycling past it doesn't claim the AMS-HT tab
+    external-settle-timer := Timer {
+        interval: 3s;
+        running: AppState.side-slot-groups.length > 0 && !AppState.side-panel-shows-changer() && AppState.current-side-slot-group-index() != AppState.last-external-side-slot-group;
+        triggered => {
+            AppState.last-external-side-slot-group = AppState.current-side-slot-group-index();
+        }
+    }
+
     if AppState.slot-groups-loading: Rectangle {
         width: FrameworkState.display-width;
         height: 50px + AppConsts.trays-spacing + (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5 + 42px;
@@ -456,16 +472,16 @@ export component StandardSlotGroups inherits HorizontalLayout {
 
     if !AppState.slot-groups-loading && AppState.primary-slot-groups.length > 0: SlotGroupPanel {
         is-primary-group: true;
-        reserve-external-area: AppState.external-slot-groups.length > 0;
+        reserve-external-area: AppState.side-slot-groups.length > 0;
         group: AppState.primary-slot-groups[AppState.current-primary-slot-group-index()];
     }
 
-    if !AppState.slot-groups-loading && AppState.external-slot-groups.length > 0: SlotGroupPanel {
+    if !AppState.slot-groups-loading && AppState.side-slot-groups.length > 0: SlotGroupPanel {
         is-primary-group: false;
-        group: AppState.external-slot-groups[AppState.current-external-slot-group-index()];
+        group: AppState.side-slot-groups[AppState.current-side-slot-group-index()];
         title-clicked => {
-            if AppState.external-slot-groups.length > 1 {
-                AppState.displayed-external-slot-group = Math.mod(AppState.displayed-external-slot-group + 1, AppState.external-slot-groups.length);
+            if AppState.side-slot-groups.length > 1 {
+                AppState.show-side-slot-group(Math.mod(AppState.current-side-slot-group-index() + 1, AppState.side-slot-groups.length));
             }
         }
     }

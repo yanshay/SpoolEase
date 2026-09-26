@@ -1418,23 +1418,32 @@ impl ViewModel {
             .filter(|group| group.kind != UiSlotGroupKind::External)
             .cloned()
             .collect::<Vec<_>>();
-        let external_groups = groups
-            .iter()
-            .filter(|group| group.kind == UiSlotGroupKind::External)
+        let external_groups = groups.iter().filter(|group| group.kind == UiSlotGroupKind::External);
+        // Single-slot changers (AMS-HT) can also be rotated into the side panel, but only alongside an external slot
+        let side_groups = if external_groups.clone().next().is_some() {
+            external_groups
+                .chain(groups.iter().filter(|group| group.kind == UiSlotGroupKind::InternalChanger && group.slots.row_count() == 1))
             .cloned()
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         let ui = self.ui_weak.unwrap();
         let ui_app_state = ui.global::<crate::app::AppState>();
-
-        ui_app_state.set_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(groups))));
         ui_app_state.set_primary_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(primary_groups))));
-        ui_app_state.set_external_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(external_groups))));
-
+        ui_app_state.set_side_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(side_groups))));
         if ui_app_state.get_selected_primary_slot_group() >= ui_app_state.get_primary_slot_groups().row_count() as i32 {
             ui_app_state.set_selected_primary_slot_group(0);
         }
-        if ui_app_state.get_displayed_external_slot_group() >= ui_app_state.get_external_slot_groups().row_count() as i32 {
-            ui_app_state.set_displayed_external_slot_group(0);
+        if ui_app_state.get_displayed_side_slot_group() >= ui_app_state.get_side_slot_groups().row_count() as i32 {
+            ui_app_state.set_displayed_side_slot_group(0);
+        }
+        let last_external_valid = ui_app_state
+            .get_side_slot_groups()
+            .row_data(ui_app_state.get_last_external_side_slot_group() as usize)
+            .is_some_and(|group| group.kind == UiSlotGroupKind::External);
+        if !last_external_valid {
+            ui_app_state.set_last_external_side_slot_group(0);
         }
     }
 

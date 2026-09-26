@@ -361,10 +361,12 @@ export global AppState {
     in-out property <[Printer]> available-printers: [];
     in-out property <[UiSlotGroup]> slot-groups: [];
     in-out property <[UiSlotGroup]> primary-slot-groups: [];
-    in-out property <[UiSlotGroup]> external-slot-groups: [];
+    // External slots followed by single-slot changers (AMS-HT); one is shown in the side panel at a time
+    in-out property <[UiSlotGroup]> side-slot-groups: [];
     in-out property <bool> slot-groups-loading: false;
     in-out property <int> selected-primary-slot-group: 0;
-    in-out property <int> displayed-external-slot-group: 0;
+    in-out property <int> displayed-side-slot-group: 0;
+    in-out property <int> last-external-side-slot-group: 0;
     in-out property <int> default-printer: -1;
     in-out property <string> pending-curr-printer-id: "";
     pure public function curr-printer-name() -> string {
@@ -446,11 +448,27 @@ export global AppState {
         return 0;
     }
 
-    pure public function current-external-slot-group-index() -> int {
-        if displayed-external-slot-group >= 0 && displayed-external-slot-group < external-slot-groups.length {
-            return displayed-external-slot-group;
+    pure public function current-side-slot-group-index() -> int {
+        if displayed-side-slot-group >= 0 && displayed-side-slot-group < side-slot-groups.length {
+            return displayed-side-slot-group;
         }
         return 0;
+    }
+
+    pure public function side-panel-shows-changer() -> bool {
+        return side-slot-groups.length > 0 && side-slot-groups[current-side-slot-group-index()].kind != UiSlotGroupKind.External;
+    }
+
+    // A changer moved into the side panel leaves its tab slot to the external it displaced
+    pure public function is-tab-swapped-to-external(group: UiSlotGroup) -> bool {
+        return side-panel-shows-changer() && group.id == side-slot-groups[current-side-slot-group-index()].id;
+    }
+
+    public function show-side-slot-group(index: int) {
+        displayed-side-slot-group = index;
+        if side-slot-groups[index].kind != UiSlotGroupKind.External && primary-slot-groups.length > 0 && primary-slot-groups[current-primary-slot-group-index()].id == side-slot-groups[index].id {
+            selected-primary-slot-group = 0;
+        }
     }
 
     changed pending-curr-printer-id => {
