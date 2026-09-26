@@ -14,89 +14,67 @@ import {
     NewTagOperation,
     SpoolScaleState,
     UiSpoolRecordDisplay,
+    UiSpoolMatch,
+    UiTagDiff,
     NewScannedTagType,
 } from "app.slint";
 import { Utils } from "utils.slint";
-import { ScaleWeightDisplay } from "app-widgets.slint";
+import { ScaleWeightDisplay, WeightDisplayContent } from "app-widgets.slint";
 import { SpoolDisplay, SpoolDisplayMode } from "spool-display.slint";
 import { UpdateWeightPage } from "common-operations.slint";
 
-enum AddSelection {
-  None,
-  Yes,
-  No
-}
+enum DefinitionTagChoice { AddNew, LinkExisting }
 
-component SpoolDefinitionTagScannedPage inherits Rectangle {
+// One question: the default is highlighted so Next alone accepts it (next-next-next through
+// the common path), and tapping either option acts immediately without a second press.
+export component DefinitionTagScannedPage inherits Rectangle {
     background: white;
-    property <AddSelection> add-selection: None;
+    property <DefinitionTagChoice> choice: DefinitionTagChoice.AddNew;
 
-    function pressed(operation: AddSelection) {
-        add-selection = (operation == AddSelection.Yes) ? AddSelection.Yes : AddSelection.No;
+    function go(picked: DefinitionTagChoice) {
+        choice = picked;
+        AppState.new-tag-scan-page = picked == DefinitionTagChoice.AddNew
+            ? NewTagScanPage.SpoolTypeSelect
+            : NewTagScanPage.SpoolPicker;
     }
 
     VerticalLayout {
         Title {
             text: "New \{AppState.new-tag-scan-definition-type} Tag Scanned";
         }
-
         VerticalLayout {
             alignment: start;
             padding: 5px;
             padding-top: 10px;
             spacing: 8px;
-
             MyText {
                 wrap: word-wrap;
-                text: "The scanned tag is \{AppState.new-tag-scan-definition-type} tag, and isn't linked to your inventory.";
+                text: "This tag isn't in your inventory.";
                 color: black;
             }
 
-            MyText {
-                text: "Import tag data to the inventory as a new spool?";
+            MyButton {
+                type: ButtonType.RadioButton;
+                pushed: choice == DefinitionTagChoice.AddNew;
+                height: 56px;
+                text: "Add as New Spool";
+                pressed => { go(DefinitionTagChoice.AddNew); }
             }
 
-            add-rec-yes := MyButton {
+            MyButton {
                 type: ButtonType.RadioButton;
-                pushed: add-selection == AddSelection.Yes;
+                pushed: choice == DefinitionTagChoice.LinkExisting;
                 height: 56px;
-                text: "Yes, Import Data as New Spool Record";
-                pressed => {
-                    pressed(AddSelection.Yes);
-                }
-            }
-
-            add-red-no := MyButton {
-                type: ButtonType.RadioButton;
-                pushed: add-selection == AddSelection.No;
-                height: 56px;
-                text: "No, Ignore the Data";
-                pressed => {
-                    pressed(AddSelection.No);
-                }
+                text: "Link Tag to Existing Spool" + (AppState.new-tag-scan-product-match-count > 0 ? " (\{AppState.new-tag-scan-product-match-count} matching)" : "");
+                pressed => { go(DefinitionTagChoice.LinkExisting); }
             }
         }
-
         WizardButtons {
-            next-enabled: add-selection != AddSelection.None;
-            next-clicked => {
-                if add-selection == AddSelection.Yes {
-                   // Switch to SpoolDisplay to show the scanned spool information
-                   if AppState.new-tag-scan-definition-type == "Bambu Lab" {
-                        AppState.new-tag-scan-page = NewTagScanPage.BambulabSpoolTypeSelection;
-                    } else {
-                        AppState.new-tag-scan-page = NewTagScanPage.SpoolDisplay;
-                    }
-                } else if add-selection == AddSelection.No {
-                    AppState.new-tag-scan-tag-type = NewScannedTagType.SimpleTag;
-                    // DON'T set the AppState.new-tag-scan-tag-definition-type, this is used for filling in the type of tag even if data in't imported
-                    AppState.new-tag-scan-page = NewTagScanPage.OperationSelect;
-                }
-            }
-
-            cancel-clicked => {
-                AppState.control-state = ControlState.Ready;
-            }
+            back-enabled: false;
+            next-enabled: true;
+            cancel-text: "⌂ Home";
+            next-clicked => { go(choice); }
+            cancel-clicked => { AppState.control-state = ControlState.Ready; }
         }
     }
 }
@@ -113,71 +91,77 @@ enum NewOrUsedSelection {
   Used,
 }
 
-component BambulabSpoolTypePage inherits Rectangle {
-    // width: 480px;
-    // height: 320px;
+export component SpoolTypePage inherits Rectangle {
     background: white;
-    property <BambulabSpoolTypeSelection> spool-selection: None;
-    property <NewOrUsedSelection> spool-new-or-used: None;
+    property <BambulabSpoolTypeSelection> spool-selection: AppBackend.default-spool-type-is-low-temp(AppState.new-tag-scan-definition-type, AppState.new-tag-scan-definition-info) ? BambulabSpoolTypeSelection.LowTemp : BambulabSpoolTypeSelection.HighTemp;
+    property <NewOrUsedSelection> spool-new-or-used: NewOrUsedSelection.New;
+    property <bool> submitting: false;
+    // Bambu asks two questions (core weight + state), so a tap on either can only answer one of
+    // them - the user must press Next to say both are answered. Elsewhere only state is asked, so
+    // a tap is the whole answer and commits. Next stays either way, accepting the highlighted
+    // defaults, so the common path is still next-next-next.
+    property <bool> two-questions: AppState.new-tag-scan-definition-type == "Bambu Lab";
 
-    function pressed(operation: BambulabSpoolTypeSelection) {
-        spool-selection = operation;
-    }
-
-    function new-or-used-pressed(operation: NewOrUsedSelection) {
-        spool-new-or-used = operation;
+    function submit() {
+        if !submitting {
+            submitting = true;
+            AppState.new-tag-scan-empty-spool-weight = two-questions
+                ? (spool-selection == BambulabSpoolTypeSelection.LowTemp ? 250 : spool-selection == BambulabSpoolTypeSelection.HighTemp ? 260 : 0)
+                : 0;
+            AppState.new-tag-scan-spool-is-full = spool-new-or-used == NewOrUsedSelection.New;
+            AppBackend.import-definition-tag-to-inventory(
+                AppState.new-tag-scan-tag-id,
+                AppState.new-tag-scan-definition-type,
+                AppState.new-tag-scan-definition-info,
+                AppState.new-tag-scan-empty-spool-weight,
+                AppState.new-tag-scan-spool-is-full
+            );
+        }
     }
 
     VerticalLayout {
         Title {
             text: "New \{AppState.new-tag-scan-definition-type} Tag Scanned";
         }
-
         VerticalLayout {
             alignment: start;
             padding: 5px;
             padding-top: 5px;
             spacing: 5px;
 
-            MyText {
-                text: "What spool type is used with this tag?";
-            }
-
-            VerticalLayout {
-                spacing: -1px;
-                lowtemp := MyButton {
-                    type: ButtonType.RadioButton;
-                    pushed: spool-selection == BambulabSpoolTypeSelection.LowTemp;
-                    height: 40px;
-                    text: "Low Temp (≤ 70°C) / Light Gray (~250g)"; // 208-212 + 38 (if change, change also below)
-                pressed => {
-                        pressed(BambulabSpoolTypeSelection.LowTemp);
-                    }
+            if two-questions: VerticalLayout {
+                spacing: 2px;
+                MyText {
+                    text: "What spool type is used with this tag?";
                 }
-
-                hightemp := MyButton {
-                    type: ButtonType.RadioButton;
-                    pushed: spool-selection == BambulabSpoolTypeSelection.HighTemp;
-                    height: 40px;
-                    text: "High Temp (≤ 90°C) / Dark Gray (~260g)"; // 223 + 38, (if change, change also below)
-                pressed => {
-                        pressed(BambulabSpoolTypeSelection.HighTemp);
+                VerticalLayout {
+                    spacing: -1px;
+                    MyButton {
+                        type: ButtonType.RadioButton;
+                        pushed: spool-selection == BambulabSpoolTypeSelection.LowTemp;
+                        height: 38px;
+                        text: "Low Temp (≤ 70°C) / Light Gray (~250g)";
+                        pressed => { spool-selection = BambulabSpoolTypeSelection.LowTemp; }
                     }
-                }
-
-                other := MyButton {
-                    type: ButtonType.RadioButton;
-                    pushed: spool-selection == BambulabSpoolTypeSelection.Other;
-                    height: 40px;
-                    text: "Other (Can be entered manually later)";
-                    pressed => {
-                        pressed(BambulabSpoolTypeSelection.Other);
+                    MyButton {
+                        type: ButtonType.RadioButton;
+                        pushed: spool-selection == BambulabSpoolTypeSelection.HighTemp;
+                        height: 38px;
+                        text: "High Temp (≤ 90°C) / Dark Gray (~260g)";
+                        pressed => { spool-selection = BambulabSpoolTypeSelection.HighTemp; }
+                    }
+                    MyButton {
+                        type: ButtonType.RadioButton;
+                        pushed: spool-selection == BambulabSpoolTypeSelection.Other;
+                        height: 38px;
+                        text: "Other (Can be entered manually later)";
+                        pressed => { spool-selection = BambulabSpoolTypeSelection.Other; }
                     }
                 }
             }
 
             MyText {
-                text: "What's the state of this spool filament?";
+                text: two-questions ? "What's the state of this spool filament?" : "What's the state of this spool filament? (tap to add it)";
             }
 
             HorizontalLayout {
@@ -186,169 +170,113 @@ component BambulabSpoolTypePage inherits Rectangle {
                     type: ButtonType.RadioButton;
                     pushed: spool-new-or-used == NewOrUsedSelection.New;
                     height: 40px;
-                    text: "Full Unused"; 
-              pressed => {
-                      new-or-used-pressed(NewOrUsedSelection.New);
-                    }
+                    text: "Full Unused";
+                    pressed => { spool-new-or-used = NewOrUsedSelection.New; if !two-questions { submit(); } }
                 }
-
                 MyButton {
                     type: ButtonType.RadioButton;
                     pushed: spool-new-or-used == NewOrUsedSelection.Used;
                     height: 40px;
                     text: "Used";
-              pressed => {
-                      new-or-used-pressed(NewOrUsedSelection.Used);
-                    }
+                    pressed => { spool-new-or-used = NewOrUsedSelection.Used; if !two-questions { submit(); } }
                 }
             }
         }
 
         WizardButtons {
-            next-enabled: spool-selection != BambulabSpoolTypeSelection.None && spool-new-or-used != NewOrUsedSelection.None;
+            back-enabled: !submitting;
+            next-enabled: !submitting && spool-selection != BambulabSpoolTypeSelection.None && spool-new-or-used != NewOrUsedSelection.None;
+            cancel-text: "⌂ Home";
             next-clicked => {
-                AppState.new-tag-scan-empty-spool-weight = spool-selection == BambulabSpoolTypeSelection.LowTemp ? 250 : spool-selection == BambulabSpoolTypeSelection.HighTemp ? 260 : 0;
-                AppState.new-tag-scan-spool-is-full = spool-new-or-used == NewOrUsedSelection.Used ? false : true;
-                AppState.new-tag-scan-page = NewTagScanPage.SpoolDisplay;
+                submit();
             }
-            back-clicked => {
-                AppState.new-tag-scan-page = NewTagScanPage.SpoolDefinitionTagScanned;
-            }
-            cancel-clicked => {
-                AppState.control-state = ControlState.Ready;
-            }
+            back-clicked => { AppState.new-tag-scan-page = NewTagScanPage.DefinitionTagScanned; }
+            cancel-clicked => { AppState.control-state = ControlState.Ready; }
         }
     }
 }
 
-component OperationSelectionStep inherits Rectangle {
-    // width: 480px;
-    // height: 320px;
+export component SpoolPickerPage inherits Rectangle {
     background: white;
-
-    pure function staged-spool-id() -> string {
-        return AppState.spool-staging-info.spool-record.id;
-    }
-
-    pure function staged-spool-tagged() -> bool {
-        let staged-id = staged-spool-id();
-        return staged-id != "" && AppBackend.spool-tag-count(staged-id) > 0;
-    }
-
-    function pressed(operation: NewTagOperation) {
-        AppState.new-tag-operation = AppState.new-tag-operation == operation ? NewTagOperation.None : operation;
-    }
 
     VerticalLayout {
         Title {
-            text: AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag ? "New Tag Scanned" : "New \{AppState.new-tag-scan-definition-type} Tag Scanned";
+            text: AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag ? "Link Tag to Existing Spool" : "Blank Tag Scanned";
         }
-
         VerticalLayout {
             alignment: start;
-            padding-top: 4px;
-            spacing: 4px;
-            if AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag: Rectangle {
-                MyText {
-                    width: parent.width;
-                    wrap: word-wrap;
-                    text: "\{AppState.new-tag-scan-definition-type} tag data imported as spool ID: \{AppState.new-tag-scan-spool-id}.";
-                    color: black;
+            // 224px content area: 8 padding + 12 spacing + 4 rows x 40 + 44 header = 224 exactly.
+            // Do not grow any of these without shrinking another (UPDATED_SCAN_PLAN.md §3).
+            padding: 4px;
+            spacing: 3px;
+            MyText {
+                height: 44px;
+                wrap: word-wrap;
+                text: AppState.new-tag-scan-tag-type != NewScannedTagType.DefinitionTag
+                    ? "No filament data was detected on this tag. If it is a Bambu Lab or OpenPrintTag tag, lift it off and scan again."
+                    : (AppState.new-tag-scan-candidates.length == 0
+                        ? "No suggestions — enter a spool ID."
+                        : (AppState.new-tag-scan-match-overflow > 0
+                            ? "Suggested spools  +\{AppState.new-tag-scan-match-overflow} more"
+                            : "Suggested spools:"));
+            }
+
+            for entry in AppState.new-tag-scan-candidates: MyButton {
+                type: ButtonType.RadioButton;
+                enabled: entry.blocked-reason == "";
+                pushed: AppState.new-tag-scan-selected-spool-id == entry.id && !AppState.new-tag-scan-select-enter-id;
+                height: 40px;
+                horizontal-alignment: left;
+                text-padding: 6px;
+                wrap: no-wrap;
+                overflow: elide;
+                text: entry.blocked-reason == "" ? "\{entry.line1} — \{entry.line2}" : "\{entry.line1} — \{entry.blocked-reason}";
+                pressed => {
+                    AppState.new-tag-scan-selected-spool-id = entry.id;
+                    AppState.new-tag-scan-select-enter-id = false;
                 }
             }
 
-            VerticalLayout {
-                spacing: 4px;
-                if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag: b1 := MyButton {
-                    type: ButtonType.RadioButton;
-                    pushed: AppState.new-tag-operation == NewTagOperation.LinkTagToSpoolId;
-                    height: 51px;
-                    text: "Link Tag to an Untagged Spool";
-                    pressed => {
-                        pressed(NewTagOperation.LinkTagToSpoolId);
-                    }
-                }
-
-                if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag: b1b := MyButton {
-                    type: ButtonType.RadioButton;
-                    pushed: AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool;
-                    height: 51px;
-                    text: "Link Another Tag to a Tagged Spool";
-                    pressed => {
-                        pressed(NewTagOperation.LinkAnotherTagToTaggedSpool);
-                    }
-                }
-
-                if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag && staged-spool-id() != "": b1c := MyButton {
-                    type: ButtonType.RadioButton;
-                    pushed: AppState.new-tag-operation == NewTagOperation.LinkTagToStagedSpool;
-                    height: 51px;
-                    text: staged-spool-tagged() ? "Link Another Tag to Staged Spool (\{staged-spool-id()})" : "Link Tag to Staged Spool (\{staged-spool-id()})";
-                    pressed => {
-                        pressed(NewTagOperation.LinkTagToStagedSpool);
-                    }
-                }
-
-                // this should be displayed both for simple tag and definition tag
-                if AppBackend.recently_added_spool_id_if_untagged() != "": MyButton {
-                    pushed: AppState.new-tag-operation == NewTagOperation.LinkTagToRecentlyAddedSpool;
-                    type: ButtonType.RadioButton;
-                    height: 51px;
-                    text: (AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag) ? "Link tag to recently added spool ID: \{AppBackend.recently_added_spool_id_if_untagged()}" : "Link tag to the imported spool ID: \{AppBackend.recently_added_spool_id_if_untagged()}";
-                    pressed => {
-                        pressed(NewTagOperation.LinkTagToRecentlyAddedSpool);
-                    }
-                }
-
-                if AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag && AppState.new-tag-scan-definition-type == "Bambu Lab": 
-                VerticalLayout {
-                    padding-top: 12px;
-                    MyText {
-                        width: parent.width;
-                        wrap: word-wrap;
-                        text: "IMPORTANT : Bambu Lab spools have a tag on each side. To link both, right after linking this tag, scan the other side and link (DON'T IMPORT, ONLY LINK) it to the newly staged spool (or later by selecting its ID).";
-                        color: black;
-                    }
+            MyButton {
+                type: ButtonType.RadioButton;
+                pushed: AppState.new-tag-scan-select-enter-id;
+                height: 40px;
+                horizontal-alignment: left;
+                text-padding: 6px;
+                text: "Enter Spool ID…";
+                pressed => {
+                    AppState.new-tag-scan-select-enter-id = true;
+                    AppState.new-tag-scan-selected-spool-id = "";
                 }
             }
         }
 
         WizardButtons {
-            next-enabled: AppState.new-tag-operation != NewTagOperation.None;
+            back-enabled: AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag; // page 1 exists only for definition tags
+            next-enabled: AppState.new-tag-scan-select-enter-id || AppState.new-tag-scan-selected-spool-id != "";
+            next-text: AppState.new-tag-scan-select-enter-id ? "Next ▶" : "✓ Link to Spool #\{AppState.new-tag-scan-selected-spool-id}";
+            cancel-text: "⌂ Home";
             next-clicked => {
-                // AppState.new-tag-operation = selected-operation;
-              if AppState.new-tag-operation == NewTagOperation.LinkTagToStagedSpool {
-                    AppState.new-tag-scan-spool-id = staged-spool-id();
-                    AppState.new-tag-scan-page = NewTagScanPage.SpoolDisplay;
-                } else if AppState.new-tag-operation == NewTagOperation.LinkTagToSpoolId || AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool {
+                if AppState.new-tag-scan-select-enter-id {
                     AppState.new-tag-scan-page = NewTagScanPage.SpoolSelect;
                 } else {
-                    AppState.new-tag-scan-spool-id = AppBackend.recently_added_spool_id_if_untagged();
-                    if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag {
-                        AppState.new-tag-scan-page = NewTagScanPage.SpoolDisplay;
-                    } else { // DefinitionTag
-                      // skip display since we saw it already
-                        AppBackend.link-tag-to-untagged-spool-id(AppState.new-tag-scan-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, !AppState.is-scale-usable-now());
-                    }
+                    AppState.request-link-tag-to-spool(AppState.new-tag-scan-selected-spool-id);
                 }
             }
-            cancel-text: (AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag) ? "× Cancel" : "Done";
-            cancel-clicked => {
-                AppState.control-state = ControlState.Ready;
-            }
+            back-clicked => { AppState.new-tag-scan-page = NewTagScanPage.DefinitionTagScanned; }
+            cancel-clicked => { AppState.control-state = ControlState.Ready; }
         }
     }
 }
 
-component SpoolSelectStep inherits Rectangle {
+export component SpoolSelectStep inherits Rectangle {
     background: white;
-    in-out property <int> spool-id: num-pad.number;
     VerticalLayout {
         Title {
-            text: AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool ? "Enter Tagged Spool Id" : "Enter Untagged Spool Id";
+            text: "Enter Spool Id";
         }
-
         Rectangle {
+            vertical-stretch: 1;
             num-pad := NumPad {
                 number: AppState.new-tag-scan-spool-id-int;
                 ok-visible: false;
@@ -356,17 +284,18 @@ component SpoolSelectStep inherits Rectangle {
             }
         }
 
-        wiz-buttons := WizardButtons {
+        WizardButtons {
             back-enabled: true;
             next-enabled: true;
+            cancel-text: "⌂ Home";
             back-clicked => {
-                AppState.new-tag-scan-page = NewTagScanPage.OperationSelect;
+                AppState.new-tag-scan-page = NewTagScanPage.SpoolPicker;
             }
             cancel-clicked => {
                 AppState.control-state = ControlState.Ready;
             }
             next-clicked => {
-                num-pad.display-error = AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool ? AppBackend.can-link-tagged-spool-to-tag(num-pad.number) : AppBackend.can-link-untagged-spool-to-tag(num-pad.number);
+                num-pad.display-error = AppBackend.can-link-spool-to-tag(num-pad.number, AppState.new-tag-scan-tag-id);
                 if num-pad.display-error == "" {
                     AppState.new-tag-scan-spool-id = num-pad.number;
                     AppState.new-tag-scan-spool-id-int = num-pad.number;
@@ -377,9 +306,45 @@ component SpoolSelectStep inherits Rectangle {
     }
 }
 
-component V1TagPromptStep inherits Rectangle {
-    // width: 480px;
-    // height: 320px;
+export component SpoolDisplayStep inherits Rectangle {
+    in-out property <string> cancel-text: "⌂ Home";
+    in-out property <string> next-text: "✓ Link Tag";
+    in property <UiSpoolRecordDisplay> spool-display;
+    // Guards against a second tap while the link is in flight. Re-armed on entry so that
+    // returning here via Back from ConfirmTagMismatch leaves live buttons (§8.3).
+    property <bool> submitting: false;
+
+    init => {
+        submitting = false;
+    }
+    VerticalLayout {
+        SpoolDisplay {
+            show-title: true;
+            spool-display: root.spool-display;
+            title: "";
+            mode: SpoolDisplayMode.Normal;
+        }
+        WizardButtons {
+            back-enabled: !submitting;
+            next-enabled: !submitting;
+            cancel-enabled: true;
+            cancel-text: root.cancel-text;
+            next-text: root.next-text;
+            back-clicked => {
+                AppState.new-tag-scan-page = NewTagScanPage.SpoolSelect;
+            }
+            next-clicked => {
+                submitting = true;
+                AppState.request-link-tag-to-spool(AppState.new-tag-scan-spool-id);
+            }
+            cancel-clicked => {
+                AppState.control-state = ControlState.Ready;
+            }
+        }
+    }
+}
+
+export component V1TagPromptStep inherits Rectangle {
     property <NewTagOperation> selected-operation: None;
     property <bool> last-step: !AppState.is-scale-usable-now();
     function pressed(operation: NewTagOperation) {
@@ -443,126 +408,220 @@ component V1TagPromptStep inherits Rectangle {
     }
 }
 
-component SpoolDisplayStep inherits Rectangle {
-    in-out property <string> cancel-text: "";
-    in-out property <string> next-text: "";
-    in property <UiSpoolRecordDisplay> spool-display;
-    property <bool> last-step: !AppState.is-scale-usable-now();
+export component WeighNewSpoolPage inherits Rectangle {
+    background: white;
+    property <bool> skip: false;
+    property <bool> low-weight-confirmed: false;
+    property <bool> submitting: false;
+    property <bool> busy: submitting || AppState.new-tag-scan-discarding;
+    property <bool> stable-weight: AppState.spool-scale-state == SpoolScaleState.Loaded && AppState.spool-scale-weight-stable;
+
     VerticalLayout {
-        SpoolDisplay {
-            show-title: true;
-            spool-display: root.spool-display;
-            title: AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag ? "Spool Tag Information" : "";
-            mode: AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag ? SpoolDisplayMode.ImportTagDefinition : SpoolDisplayMode.Normal;
+        Title {
+            text: "Spool #\{AppState.new-tag-scan-spool-id} Added";
+        }
+        VerticalLayout {
+            alignment: start;
+            padding: 5px;
+            spacing: 5px;
+
+            MyText {
+                text: AppState.new-tag-scan-last-result;
+                color: green;
+            }
+
+            MyText {
+                wrap: word-wrap;
+                text: AppState.spool-scale-state == SpoolScaleState.Uncalibrated
+                    ? "Scale is not calibrated — skip weighing, or calibrate it first."
+                    : (AppState.spool-scale-state == SpoolScaleState.Unknown
+                        ? "Waiting for the scale… place the spool on it, or skip weighing."
+                        : "Place the spool on the scale.");
+            }
+
+            Rectangle {
+                height: 60px;
+                ScaleWeightDisplay {
+                    width: 160px;
+                    weight-display-content: WeightDisplayContent.Gross;
+                }
+            }
+
+            // "Weigh Spool" is the highlighted default, so Next alone accepts it. "Skip Weighing"
+            // is the whole of its answer, so it acts on tap. Recording a weight can't act on tap -
+            // it has to wait for a stable reading - so that one stays on Next.
+            HorizontalLayout {
+                spacing: -1px;
+                MyButton {
+                    type: ButtonType.RadioButton;
+                    pushed: !skip;
+                    height: 40px;
+                    enabled: !busy;
+                    text: "Weigh Spool";
+                    pressed => {
+                        skip = false;
+                        low-weight-confirmed = false;
+                    }
+                }
+                MyButton {
+                    type: ButtonType.RadioButton;
+                    pushed: skip;
+                    height: 40px;
+                    enabled: !busy;
+                    text: "Skip Weighing";
+                    pressed => {
+                        skip = true;
+                        AppState.new-tag-scan-last-result = "Weighing skipped";
+                        AppState.new-tag-scan-page = NewTagScanPage.LinkAnotherTag;
+                    }
+                }
+            }
+
+            if !skip && stable-weight && AppState.spool-scale-weight < 100: MyText {
+                text: "Only \{AppState.spool-scale-weight}g on scale — is spool on it? Press Next again to accept.";
+                color: orange;
+                wrap: word-wrap;
+            }
+        }
+        WizardButtons {
+            // Back undoes the import that created this spool, so it is honest to offer it.
+            back-enabled: !busy;
+            next-enabled: !busy && stable-weight;
+            next-text: "✓ Record Weight ▶";
+            cancel-text: "⌂ Home";
+            back-clicked => {
+                AppState.request-discard-imported-spool();
+            }
+            next-clicked => {
+                if AppState.spool-scale-weight < 100 && !low-weight-confirmed {
+                    low-weight-confirmed = true;
+                } else {
+                    submitting = true;
+                    AppBackend.set-spool-weight(
+                        AppState.new-tag-scan-spool-id,
+                        AppState.spool-scale-weight,
+                        AppState.new-tag-scan-spool-is-full ? AppState.spool-scale-weight : -1,
+                        false
+                    );
+                }
+            }
+            cancel-clicked => { AppState.control-state = ControlState.Ready; }
+        }
+    }
+}
+
+export component LinkAnotherTagPage inherits Rectangle {
+    background: white;
+
+    VerticalLayout {
+        Title {
+            text: "Spool #\{AppState.new-tag-scan-spool-id} Ready";
+        }
+        VerticalLayout {
+            alignment: start;
+            padding: 10px;
+            spacing: 8px;
+
+            MyText {
+                text: AppState.new-tag-scan-last-result;
+                color: green;
+            }
+
+            MyText {
+                wrap: word-wrap;
+                text: AppState.new-tag-scan-extra-tag-id != ""
+                    ? "Press Done to finish. Scanning any further tag starts a new spool."
+                    : (AppState.new-tag-scan-definition-type == "Bambu Lab"
+                        ? "Bambu Lab spools carry a tag on each side. Scan the tag on the other side now to link it to this spool, or press Done."
+                        : "Scan another tag now to link it to this spool, or press Done.");
+            }
+            if AppState.new-tag-scan-extra-tag-status != "": MyText {
+                text: AppState.new-tag-scan-extra-tag-status;
+                color: AppState.new-tag-scan-extra-tag-success ? green : red;
+                wrap: word-wrap;
+            }
+
+            MyText {
+                wrap: word-wrap;
+                text: "Imported data may be incomplete — review the spool in the inventory app.";
+                color: gray;
+            }
+        }
+
+        WizardButtons {
+            // Back peels off one step at a time: the extra tag first, then the weigh step, then
+            // the import itself.
+            back-enabled: !AppState.new-tag-scan-discarding;
+            back-text: AppState.new-tag-scan-extra-tag-id != "" ? "◀ Unlink Tag" : "";
+            next-enabled: false;
+            cancel-text: "✓ Done";
+            back-clicked => {
+                if AppState.new-tag-scan-extra-tag-id != "" {
+                    AppState.request-unlink-extra-tag();
+                } else if AppState.is-scale-present() {
+                    AppState.new-tag-scan-page = NewTagScanPage.WeighNewSpool;
+                } else {
+                    AppState.request-discard-imported-spool();
+                }
+            }
+            cancel-clicked => { AppState.control-state = ControlState.Ready; }
+        }
+    }
+}
+
+export component ConfirmTagMismatchPage inherits Rectangle {
+    background: white;
+
+    VerticalLayout {
+        Title {
+            text: "Tag Doesn't Match Spool #\{AppState.new-tag-scan-pending-spool-id}";
+        }
+        VerticalLayout {
+            alignment: start;
+            padding: 5px;
+            spacing: 4px;
+
+            MyText {
+                wrap: word-wrap;
+                text: AppState.new-tag-scan-pending-extra-tag-id != ""
+                    ? "This second tag describes different filament than the spool you just added. Link it anyway?"
+                    : "The scanned tag describes different filament. Linking keeps the spool's existing details and discards the tag's.";
+            }
+
+            HorizontalLayout {
+                height: 20px;
+                MyText { width: 110px; text: "Property"; }
+                MyText { width: 170px; text: "Tag"; }
+                MyText { width: 170px; text: "Spool #\{AppState.new-tag-scan-pending-spool-id}"; }
+            }
+
+            for diff in AppState.new-tag-scan-diffs: HorizontalLayout {
+                height: 36px;
+                MyText { width: 110px; text: diff.label; color: black; }
+                MyText { width: 170px; text: diff.tag-value; color: darkblue; }
+                MyText { width: 170px; text: diff.spool-value; color: darkgreen; }
+            }
         }
 
         WizardButtons {
             back-enabled: true;
             next-enabled: true;
-            cancel-enabled: true;
-            cancel-text: root.cancel-text;
-            next-text: AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag ? "✓ Link Tag" + (root.last-step ? "" : " ▶") : "✓ Import ▶";
+            next-text: "⚠ Link Anyway";
+            cancel-text: "⌂ Home";
+            next-clicked => { AppState.commit-link-tag-to-spool(); }
             back-clicked => {
-                if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag {
-                    AppState.new-tag-scan-page = NewTagScanPage.SpoolSelect;
-                } else if AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag {
-                    if AppState.new-tag-scan-definition-type == "Bambu Lab" {
-                        AppState.new-tag-scan-page = NewTagScanPage.BambulabSpoolTypeSelection;
-                    } else {
-                        AppState.new-tag-scan-page = NewTagScanPage.SpoolDefinitionTagScanned;
-                    }
-                }
-            }
-            next-clicked => {
-                self.back-enabled = false;
-                self.next-enabled = false;
-                cancel-text = "Close";
-                // perform action
-                if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag {
-                    if AppState.new-tag-operation == NewTagOperation.LinkTagToStagedSpool {
-                        if AppBackend.spool-tag-count(AppState.new-tag-scan-spool-id) > 0 {
-                            AppBackend.link-tag-to-tagged-spool-id(
-                                AppState.new-tag-scan-tag-id,
-                                AppState.new-tag-scan-definition-type,
-                                AppState.new-tag-scan-spool-id,
-                                last-step,
-                            );
-                        } else {
-                            AppBackend.link-tag-to-untagged-spool-id(AppState.new-tag-scan-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, last-step);
-                        }
-                    } else if AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool {
-                        AppBackend.link-tag-to-tagged-spool-id(
-                            AppState.new-tag-scan-tag-id,
-                            AppState.new-tag-scan-definition-type,
-                            AppState.new-tag-scan-spool-id,
-                            last-step,
-                        );
-                    } else {
-                        AppBackend.link-tag-to-untagged-spool-id(AppState.new-tag-scan-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, last-step);
-                    }
-                } else {
-                  // TODO: Add call to AppBackend to add spool record, which will 
-                  // (1) import the tag to the inventory & set it as recently added spool
-                  // (2) once completed will trigger move here to next step
-                  AppBackend.import-definition-tag-to-inventory(AppState.new-tag-scan-definition-type, AppState.new-tag-scan-definition-info, AppState.new-tag-scan-empty-spool-weight, AppState.new-tag-scan-spool-is-full);
-                }
+                AppState.clear-pending-extra-tag();
+                AppState.new-tag-scan-page = AppState.new-tag-scan-prev-page;
             }
             cancel-clicked => {
+                AppState.clear-pending-extra-tag();
                 AppState.control-state = ControlState.Ready;
             }
         }
     }
 }
 
-component ImportDefinitionNoticePage inherits Rectangle {
-    // width: 480px;
-    // height: 320px;
-    VerticalLayout {
-
-        Title {
-            text: "\{AppState.new-tag-scan-definition-type} Tag Information Imported";
-        }
-
-        Rectangle {
-            background: white;
-
-            VerticalLayout {
-                alignment: space-around;
-                padding: 20px;
-                spacing: 5px;
-                MyText {
-                    horizontal-alignment: center;
-                    text: "Tag Information Imported to Spool \{AppState.new-tag-scan-spool-id}";
-                }
-
-                MyText {
-                    text: "Imported data may still be incomplete or inaccurate, and some features might not work as expected.";
-                    wrap: word-wrap;
-                }
-
-                MyText {
-                    text: "Please review the spool record in the inventory app and complete or correct the missing details.";
-                    wrap: word-wrap;
-                }
-            }
-        }
-
-        WizardButtons {
-            back-enabled: false;
-            next-enabled: true;
-            next-text: "Continue";
-            cancel-enabled: false;
-            next-clicked => {
-                AppState.new-tag-scan-page = NewTagScanPage.OperationSelect;
-            }
-            cancel-clicked => {
-                AppState.control-state = ControlState.Ready;
-            }
-        }
-    }
-}
-
-component StatusDisplayPage inherits Rectangle {
+export component StatusDisplayPage inherits Rectangle {
     in-out property <bool> success: AppState.new-tag-scan-status == "";
     in-out property <string> message: self.success ? "Tag Linked to Spool Successfuly" : AppState.new-tag-scan-status;
     VerticalLayout {
@@ -587,18 +646,20 @@ component StatusDisplayPage inherits Rectangle {
 }
 
 export component NewTagScan inherits Rectangle {
-    // width: 480px;
-    // height: 320px;
-    property <UiSpoolRecordDisplay> spool-display: AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag || AppState.new-tag-scan-spool-id != "" ? AppBackend.get-spool-record-display(AppState.new-tag-scan-spool-id) : AppBackend.get-spool-tag-definition-display(AppState.new-tag-scan-definition-type, AppState.new-tag-scan-definition-info, AppState.new-tag-scan-empty-spool-weight);
-
-    if AppState.new-tag-scan-page == NewTagScanPage.OperationSelect: oper-select := OperationSelectionStep { }
-
-    if AppState.new-tag-scan-page == NewTagScanPage.SpoolSelect: spool-select := SpoolSelectStep { }
-
-    if AppState.new-tag-scan-page == NewTagScanPage.SpoolDisplay: spool-display := SpoolDisplayStep {
-        spool-display: root.spool-display;
-    }
-
+    property <UiSpoolRecordDisplay> spool-display: AppState.new-tag-scan-spool-id != ""
+        ? AppBackend.get-spool-record-display(AppState.new-tag-scan-spool-id)
+        : AppBackend.get-spool-tag-definition-display(
+            AppState.new-tag-scan-definition-type,
+            AppState.new-tag-scan-definition-info,
+            AppState.new-tag-scan-empty-spool-weight);
+    if AppState.new-tag-scan-page == NewTagScanPage.DefinitionTagScanned: DefinitionTagScannedPage { }
+    if AppState.new-tag-scan-page == NewTagScanPage.SpoolTypeSelect: SpoolTypePage { }
+    if AppState.new-tag-scan-page == NewTagScanPage.SpoolPicker: SpoolPickerPage { }
+    if AppState.new-tag-scan-page == NewTagScanPage.SpoolSelect: SpoolSelectStep { }
+    if AppState.new-tag-scan-page == NewTagScanPage.SpoolDisplay: SpoolDisplayStep { spool-display: root.spool-display; }
+    if AppState.new-tag-scan-page == NewTagScanPage.ConfirmTagMismatch: ConfirmTagMismatchPage { }
+    if AppState.new-tag-scan-page == NewTagScanPage.WeighNewSpool: WeighNewSpoolPage { }
+    if AppState.new-tag-scan-page == NewTagScanPage.LinkAnotherTag: LinkAnotherTagPage { }
     if AppState.new-tag-scan-page == NewTagScanPage.UpdateWeight: update-weight-display := UpdateWeightPage {
         final-step: true;
         title: "Linking Tag Succeeded, Measure Weight";
@@ -606,21 +667,12 @@ export component NewTagScan inherits Rectangle {
         weight-current: spool-display.spool-record.weight-current;
         weight-new: spool-display.spool-record.weight-new;
         spool-id: spool-display.spool-record.id;
+        back-enabled: false;
+        cancel-text: "⌂ Home";
         cancel-clicked => {
-            AppState.control-state = ControlState.PostAction; // so will show the message that tag was scanned from previous step
-        }
-        back-clicked => {
-            AppState.staging-operation-page = AppState.prev-staging-operation-page;
+            AppState.control-state = ControlState.PostAction;
         }
     }
-
     if AppState.new-tag-scan-page == NewTagScanPage.StatusDisplay: status-display := StatusDisplayPage { }
-
     if AppState.new-tag-scan-page == NewTagScanPage.V1TagPrompt: v1-prompt := V1TagPromptStep { }
-
-    if AppState.new-tag-scan-page == NewTagScanPage.SpoolDefinitionTagScanned: spool-definition-tag-scanned := SpoolDefinitionTagScannedPage { }
-
-    if AppState.new-tag-scan-page == NewTagScanPage.BambulabSpoolTypeSelection: bambulab-spool-type-selection := BambulabSpoolTypePage { }
-
-    if AppState.new-tag-scan-page == NewTagScanPage.ImportDefinitionNotice: import-definition-notice := ImportDefinitionNoticePage { }
-}
+} 

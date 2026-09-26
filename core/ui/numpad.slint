@@ -101,7 +101,7 @@ export component NumPad inherits Rectangle {
     }
     main := VerticalLayout {
         Display {
-            height: root.height / 5;
+            vertical-stretch: 1;
             postfix: display-postfix;
             number: root.number;
             display-error: display-error;
@@ -135,6 +135,7 @@ export component NumPad inherits Rectangle {
         }
 
         HorizontalLayout {
+            vertical-stretch: 1;
             NumButton {
                 digit: 4;
                 enabled: !root.digit-disabled(self.digit);
@@ -161,6 +162,7 @@ export component NumPad inherits Rectangle {
         }
 
         HorizontalLayout {
+            vertical-stretch: 1;
             NumButton {
                 digit: 1;
                 enabled: !root.digit-disabled(self.digit);
@@ -187,6 +189,7 @@ export component NumPad inherits Rectangle {
         }
 
         HorizontalLayout {
+            vertical-stretch: 1;
             NumButton {
                 text: "Del";
                 key-pressed(digit) => {

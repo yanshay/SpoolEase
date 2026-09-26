@@ -23,6 +23,8 @@ export component UpdateWeightPage inherits Rectangle {
     in property <string> user-prompt;
     in property <bool> final-step: false;
     property <UpdateWeightSelect> update-weight-select: weight-current != 0 ? UsedKeepNew : None;
+    in property <bool> back-enabled: true;
+    in property <string> cancel-text: "";
     background: white;
     function pressed(operation: UpdateWeightSelect) {
         update-weight-select = operation;
@@ -97,9 +99,10 @@ export component UpdateWeightPage inherits Rectangle {
         }
 
         WizardButtons {
-            back-enabled: true;
+            back-enabled: root.back-enabled;
             next-enabled: scale-display.stable-weight && update-weight-select != UpdateWeightSelect.None;
             cancel-enabled: true;
+            cancel-text: root.cancel-text != "" ? root.cancel-text : "× Cancel";
             next-text: "Update Weight";
             cancel-clicked => {
                 root.cancel-clicked();

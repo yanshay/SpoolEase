@@ -179,9 +179,18 @@ pub struct ViewModel {
     ssdp_pub_sub: &'static SSDPPubSubChannel,
     app_async_tasks_channel: Rc<AppAsyncTasksChannel>,
     pub recently_added_spool_id: Option<String>,
+    /// What the last quick-weight update overwrote, so its Undo button can put it back.
+    weight_undo: Option<WeightUndo>,
     runtime_persistence_request_channel: Rc<PrinterRuntimePersistenceRequestChannel>,
     pub app_ota_request_channel: Rc<AppOtaRequestChannel>,
     pub scale_version: Option<String>,
+}
+
+#[derive(Clone)]
+struct WeightUndo {
+    spool_id: String,
+    weight_current: Option<i32>,
+    consumed_since_weight: f32,
 }
 
 pub trait StoreBackupPlaintextSink {
@@ -298,6 +307,53 @@ enum StorageRackValue {
     Shelves,
     Positions,
     Containers,
+}
+
+/// Max rows a 480x320 page can show alongside the "Enter Spool ID…" row.
+/// See UPDATED_SCAN_PLAN.md §3 - raising this overflows the picker page.
+const MAX_SPOOL_CANDIDATES: usize = 3;
+
+/// Rows for the SpoolPicker page plus the two counts the UI needs to label itself.
+struct LinkCandidates {
+    rows: slint::ModelRc<crate::app::UiSpoolMatch>,
+    /// Full product-match total, before the cap - drives the "(N matching)" label.
+    product_match_count: i32,
+    /// Product matches dropped by the cap - drives the "+N more" note.
+    match_overflow: i32,
+}
+
+/// Why a spool is being offered, in the order the picker should prefer them.
+/// Declaration order is load-bearing: the derived `Ord` is what ranks the rows,
+/// and what picks the winner when one spool qualifies under several reasons.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum CandidateReason {
+    MatchesTag,
+    LastScanned,
+    JustAdded,
+    Untagged,
+}
+
+impl CandidateReason {
+    fn label(self) -> &'static str {
+        match self {
+            Self::MatchesTag => "matches tag",
+            Self::LastScanned => "last scanned",
+            Self::JustAdded => "just added",
+            Self::Untagged => "untagged",
+        }
+    }
+
+    /// Rows the user has a reason to expect in the list: show them greyed out with the
+    /// reason, rather than dropping them and leaving the user hunting for the spool.
+    fn show_when_blocked(self) -> bool {
+        matches!(self, Self::MatchesTag | Self::LastScanned)
+    }
+
+    /// Rows that come from what the user just did rather than from the tag.
+    /// One of these is always given a slot - see `build_link_candidates`.
+    fn is_context(self) -> bool {
+        matches!(self, Self::LastScanned | Self::JustAdded)
+    }
 }
 
 impl ViewModel {
@@ -515,6 +571,7 @@ impl ViewModel {
             ssdp_pub_sub,
             app_async_tasks_channel,
             recently_added_spool_id: None,
+            weight_undo: None,
             runtime_persistence_request_channel: Rc::new(PrinterRuntimePersistenceRequestChannel::new()),
             app_ota_request_channel: Rc::new(AppOtaRequestChannel::new()),
             scale_version: None,
@@ -799,6 +856,24 @@ impl ViewModel {
         });
 
         let moved_view_model = self.view_model.clone().unwrap();
+        ui_app_backend.on_unlink_tag_from_spool(move |tag_id, spool_id| {
+            let _ = moved_view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::UnLinkSpoolTags {
+                spool_id: spool_id.into(),
+                mode: UnlinkTagMode::SpecificTag { tag_id: tag_id.into() },
+            });
+        });
+
+        let moved_view_model = self.view_model.clone().unwrap();
+        ui_app_backend.on_link_extra_tag_to_spool(move |tag_id, tag_type, spool_id| {
+            moved_view_model.borrow().link_extra_tag(tag_id.as_str(), tag_type.as_str(), spool_id.as_str());
+        });
+
+        let moved_view_model = self.view_model.clone().unwrap();
+        ui_app_backend.on_undo_spool_weight(move || {
+            let _ = moved_view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::UndoSpoolWeight);
+        });
+
+        let moved_view_model = self.view_model.clone().unwrap();
         ui_app_backend.on_set_spool_weight(move |spool_id, weight_current, weight_new, final_step| {
             let _ = moved_view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::SetSpoolWeight {
                 spool_id: spool_id.into(),
@@ -807,18 +882,6 @@ impl ViewModel {
                 final_step,
                 from_button: false,
             });
-        });
-
-        let moved_view_model = self.view_model.clone().unwrap();
-        ui_app_backend.on_recently_added_spool_id_if_untagged(move || {
-            let store = moved_view_model.borrow().store.clone();
-            if let Some(spool_id) = &moved_view_model.borrow().recently_added_spool_id
-                && let Some(spool_rec) = store.get_spool_by_id(spool_id)
-                && !spool_rec.has_valid_tag_id()
-            {
-                return spool_id.to_shared_string();
-            }
-            SharedString::new()
         });
 
         let moved_view_model = self.view_model.clone().unwrap();
@@ -1149,26 +1212,36 @@ impl ViewModel {
             .global::<crate::app::AppBackend>()
             .on_staging_scanned_tag_id(move || moved_view_model.borrow().ui_staging_scanned_tag_id());
 
-        let moved_view_model = self.view_model.as_ref().unwrap().clone();
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::AppBackend>()
-            .on_can_link_untagged_spool_to_tag(move |spool_id| moved_view_model.borrow().ui_can_link_untagged_spool_to_tag(spool_id.as_str()));
-
-        let moved_view_model = self.view_model.as_ref().unwrap().clone();
-        self.ui_weak
-            .unwrap()
-            .global::<crate::app::AppBackend>()
-            .on_can_link_tagged_spool_to_tag(move |spool_id| moved_view_model.borrow().ui_can_link_tagged_spool_to_tag(spool_id.as_str()));
+        let moved_view_model = self.view_model.clone().unwrap();
+        ui_app_backend.on_can_link_spool_to_tag(move |spool_id, tag_id| {
+            moved_view_model.borrow().ui_can_link_spool_to_tag(spool_id.as_str(), tag_id.as_str())
+        });
 
         let moved_view_model = self.view_model.clone().unwrap();
-        ui_app_backend.on_import_definition_tag_to_inventory(move |tag_definition_type, tag_definition_info, empty_spool_weight, spool_is_full| {
+        ui_app_backend.on_default_spool_type_is_low_temp(move |ty, info| {
+            moved_view_model.borrow().default_spool_type_is_low_temp(ty.as_str(), info.as_str())
+        });
+
+        let moved_view_model = self.view_model.clone().unwrap();
+        ui_app_backend.on_tag_spool_differences(move |ty, info, spool_id| {
+            moved_view_model.borrow().ui_tag_spool_differences(ty.as_str(), info.as_str(), spool_id.as_str())
+        });
+        let moved_view_model = self.view_model.clone().unwrap();
+        ui_app_backend.on_import_definition_tag_to_inventory(move |tag_id, tag_definition_type, tag_definition_info, empty_spool_weight, spool_is_full| {
             moved_view_model.borrow().ui_import_definition_tag_to_inventory(
+                tag_id.as_str(),
                 tag_definition_type.as_str(),
                 tag_definition_info.as_str(),
                 empty_spool_weight,
                 spool_is_full,
             )
+        });
+
+        let moved_view_model = self.view_model.clone().unwrap();
+        ui_app_backend.on_discard_imported_spool(move |spool_id| {
+            let _ = moved_view_model
+                .borrow()
+                .dispatch_async_task(AppAsyncTaskRequest::DiscardImportedSpool { spool_id: spool_id.into() });
         });
 
         let moved_view_model = self.view_model.as_ref().unwrap().clone();
@@ -2084,12 +2157,14 @@ impl ViewModel {
 
     fn ui_import_definition_tag_to_inventory(
         &self,
+        tag_id: &str,
         tag_definition_type: &str,
         tag_definition_info: &str,
         empty_spool_weight: i32,
         spool_is_full: bool,
     ) {
         let _ = self.dispatch_async_task(AppAsyncTaskRequest::ImportDefinitionTagToInventory {
+            tag_id: tag_id.to_string(),
             tag_definition_type: tag_definition_type.to_string(),
             tag_definition_info: tag_definition_info.to_string(),
             empty_spool_weight,
@@ -2097,37 +2172,6 @@ impl ViewModel {
         });
     }
 
-    fn ui_can_link_untagged_spool_to_tag(&self, id: &str) -> SharedString {
-        if let Some(spool_rec) = self.store.get_spool_by_id(id) {
-            if spool_rec.spools_count <= 1 {
-                if !spool_rec.has_valid_tag_id() {
-                    SharedString::new()
-                } else {
-                    SharedString::from("Spool Is Tagged")
-                }
-            } else {
-                SharedString::from("Can't link Stock")
-            }
-        } else {
-            SharedString::from("Spool Not Found")
-        }
-    }
-
-    fn ui_can_link_tagged_spool_to_tag(&self, id: &str) -> SharedString {
-        if let Some(spool_rec) = self.store.get_spool_by_id(id) {
-            if spool_rec.spools_count <= 1 {
-                if spool_rec.has_valid_tag_id() {
-                    SharedString::new()
-                } else {
-                    SharedString::from("Spool Is Not Tagged")
-                }
-            } else {
-                SharedString::from("Can't link Stock")
-            }
-        } else {
-            SharedString::from("Spool Not Found")
-        }
-    }
 
     fn ui_spool_tag_count(&self, spool_id: &str) -> i32 {
         self.store
@@ -2257,37 +2301,9 @@ impl ViewModel {
         tag_definition_info: &str,
         empty_spool_weight: i32,
     ) -> UiSpoolRecordDisplay {
-        let mut spool_rec = match tag_definition_type {
-            BAMBULAB_TAG_TYPE => {
-                if let Ok(bambu_tag) = serde_json::from_str::<BambuLabTag>(tag_definition_info) {
-                    bambu_tag.to_spool_rec()
-                } else {
-                    return UiSpoolRecordDisplay::default();
-                }
-            }
-            OPENPRINTTAG_TAG_TYPE => {
-                if let Ok(open_print_tag) = serde_json::from_str::<OpenPrintTagTag>(tag_definition_info) {
-                    match open_print_tag.to_spool_rec() {
-                        Ok(spool_rec) => spool_rec,
-                        Err(_err) => {
-                            error!("Error parsing OpenPrintTag tag");
-                            return UiSpoolRecordDisplay {
-                                spool_record: UiSpoolRecord {
-                                    note: "Error parsing OpenPrintTag tag".into(),
-                                    ..Default::default()
-                                },
-                                ..Default::default()
-                            };
-                        }
-                    }
-                } else {
-                    return UiSpoolRecordDisplay::default();
-                }
-            }
-            _ => {
-                error!("Internal Error, unexpected tag definition type");
-                return UiSpoolRecordDisplay::default();
-            }
+        let mut spool_rec = match self.candidate_from_definition(tag_definition_type, tag_definition_info) {
+            Some(rec) => rec,
+            None => return UiSpoolRecordDisplay::default(),
         };
 
         if empty_spool_weight != 0 {
@@ -2342,6 +2358,355 @@ impl ViewModel {
             colors,
             colors_has_alpha,
             ..Default::default()
+        }
+    }
+
+    fn candidate_from_definition(&self, ty: &str, info: &str) -> Option<SpoolRecord> {
+        if ty.is_empty() || info.is_empty() {
+            return None;
+        }
+        match ty {
+            BAMBULAB_TAG_TYPE => serde_json::from_str::<BambuLabTag>(info).ok().map(|t| t.to_spool_rec()),
+            OPENPRINTTAG_TAG_TYPE => serde_json::from_str::<OpenPrintTagTag>(info).ok()?.to_spool_rec().ok(),
+            _ => None,
+        }
+    }
+
+    fn parse_open_print_tag(hex_tag: &str, message: Option<&Vec<u8>>) -> Option<OpenPrintTagTag> {
+        let ndef_bytes = message?;
+        let ndef = NdefMessage::decode(ndef_bytes).ok()?;
+        for record in ndef.records() {
+            if core::str::from_utf8(record.record_type()) == Ok("application/vnd.openprinttag") {
+                return Some(OpenPrintTagTag::new(hex_tag, ndef_bytes));
+            }
+        }
+        None
+    }
+
+    /// The final page of the new-roll flow accepts **one** extra tag (a Bambu spool's second tag).
+    /// `definition` is the scanned tag's own filament data, when it carries any.
+    /// Returns false to let the scan fall through to the normal new-tag workflow.
+    fn try_handle_extra_tag_scan(&self, hex_tag: &str, definition: Option<(&str, &str)>) -> bool {
+        let ui = self.ui_weak.unwrap();
+        let ui_app_state = ui.global::<crate::app::AppState>();
+        if ui_app_state.get_control_state() != crate::app::ControlState::NewTagScan
+            || ui_app_state.get_new_tag_scan_page() != crate::app::NewTagScanPage::LinkAnotherTag
+        {
+            return false;
+        }
+        let spool_id = ui_app_state.get_new_tag_scan_spool_id().to_string();
+        if spool_id.is_empty() {
+            return false;
+        }
+        // This spool's own tags (the one that opened the flow, or the extra one already linked)
+        // sitting on the reader must not re-trigger anything.
+        let linked_to = self.store.get_spool_id_by_tag_id(hex_tag);
+        if linked_to.as_deref() == Some(spool_id.as_str()) {
+            return true;
+        }
+        // Past the first extra tag the user has moved on to the next roll: hand the scan to the
+        // normal workflow instead of quietly adding it to the spool they just finished.
+        if !ui_app_state.get_new_tag_scan_extra_tag_id().is_empty() {
+            return false;
+        }
+        if let Some(existing) = linked_to {
+            ui_app_state.set_new_tag_scan_extra_tag_status(slint::format!("Tag already linked to spool #{existing}"));
+            ui_app_state.set_new_tag_scan_extra_tag_success(false);
+            return true;
+        }
+        // A second tag that describes different filament is more likely the wrong roll than a
+        // genuine mismatch, so make the user say so.
+        if let Some((tag_type, info)) = definition {
+            let diffs = self.ui_tag_spool_differences(tag_type, info, &spool_id);
+            if diffs.row_count() > 0 {
+                ui_app_state.invoke_confirm_extra_tag_mismatch(hex_tag.into(), tag_type.into(), diffs);
+                return true;
+            }
+        }
+        let tag_type = definition.map_or_else(
+            || ui_app_state.get_new_tag_scan_definition_type().to_string(),
+            |(tag_type, _)| tag_type.to_string(),
+        );
+        self.link_extra_tag(hex_tag, &tag_type, &spool_id);
+        true
+    }
+
+    fn link_extra_tag(&self, hex_tag: &str, tag_type: &str, spool_id: &str) {
+        // The spool was auto-linked at import, but the race guard there can leave it untagged;
+        // pick the mode from the record rather than assuming.
+        let mode = match self.store.get_spool_by_id(spool_id) {
+            Some(rec) if rec.has_valid_tag_id() => LinkTagMode::ToTaggedSpool,
+            _ => LinkTagMode::ToUntaggedSpool,
+        };
+        let ui = self.ui_weak.unwrap();
+        // Claim the single extra-tag slot up front so a scan while the link is in flight cannot
+        // take it too. Cleared again by link-tag-to-spool-id-status if the link fails.
+        ui.global::<crate::app::AppState>().set_new_tag_scan_extra_tag_id(hex_tag.into());
+        let _ = self.dispatch_async_task(AppAsyncTaskRequest::LinkTagToSpool {
+            tag_id: hex_tag.to_string(),
+            tag_type: tag_type.to_string(),
+            spool_id: spool_id.to_string(),
+            mode,
+            final_step: false,
+        });
+    }
+
+    fn default_spool_type_is_low_temp(&self, ty: &str, info: &str) -> bool {
+        let m = self.candidate_from_definition(ty, info)
+            .map(|rec| rec.material_type.to_ascii_uppercase())
+            .unwrap_or_default();
+        m.starts_with("PLA") || m.starts_with("PETG")
+    }
+
+    fn ui_tag_spool_differences(&self, ty: &str, info: &str, spool_id: &str) -> slint::ModelRc<crate::app::UiTagDiff> {
+        let empty = || slint::ModelRc::new(slint::VecModel::from(Vec::new()));
+        let (Some(tag), Some(spool)) = (self.candidate_from_definition(ty, info), self.store.get_spool_by_id(spool_id))
+        else { return empty() };
+
+        let mut diffs: Vec<crate::app::UiTagDiff> = Vec::new();
+
+        if !tag.brand.is_empty() && !spool.brand.is_empty() && !tag.brand.eq_ignore_ascii_case(&spool.brand) {
+            diffs.push(crate::app::UiTagDiff {
+                label: "Brand".into(),
+                tag_value: tag.brand.as_str().into(),
+                spool_value: spool.brand.as_str().into(),
+            });
+        }
+
+        let tag_mat = if tag.material_subtype.is_empty() { tag.material_type.clone() } else { format!("{} {}", tag.material_type, tag.material_subtype) };
+        let spool_mat = if spool.material_subtype.is_empty() { spool.material_type.clone() } else { format!("{} {}", spool.material_type, spool.material_subtype) };
+        if !tag.material_type.is_empty() && !tag_mat.eq_ignore_ascii_case(&spool_mat) {
+            diffs.push(crate::app::UiTagDiff {
+                label: "Material".into(),
+                tag_value: tag_mat.into(),
+                spool_value: spool_mat.into(),
+            });
+        }
+
+        if !tag.slicer_filament.is_empty() && !spool.slicer_filament.is_empty() && !tag.slicer_filament.eq_ignore_ascii_case(&spool.slicer_filament) {
+            diffs.push(crate::app::UiTagDiff {
+                label: "Filament ID".into(),
+                tag_value: tag.slicer_filament.as_str().into(),
+                spool_value: spool.slicer_filament.as_str().into(),
+            });
+        }
+
+        let ca = Self::normalized_color_set(&tag.color_code);
+        let cb = Self::normalized_color_set(&spool.color_code);
+        if !ca.is_empty() && !cb.is_empty() {
+            if ca != cb {
+                let tag_val = match Self::usable_color_name(&tag) {
+                    Some(name) => format!("{} ({})", name, tag.color_code.join(";")),
+                    None => tag.color_code.join(";"),
+                };
+                let spool_val = match Self::usable_color_name(&spool) {
+                    Some(name) => format!("{} ({})", name, spool.color_code.join(";")),
+                    None => spool.color_code.join(";"),
+                };
+                diffs.push(crate::app::UiTagDiff {
+                    label: "Colour".into(),
+                    tag_value: tag_val.into(),
+                    spool_value: spool_val.into(),
+                });
+            }
+        } else if let (Some(an), Some(bn)) = (Self::usable_color_name(&tag), Self::usable_color_name(&spool)) {
+            if !an.eq_ignore_ascii_case(bn) {
+                diffs.push(crate::app::UiTagDiff {
+                    label: "Colour".into(),
+                    tag_value: an.into(),
+                    spool_value: bn.into(),
+                });
+            }
+        }
+
+        if let (Some(tw), Some(sw)) = (tag.weight_advertised, spool.weight_advertised) {
+            if (tw - sw).abs() > 50 {
+                diffs.push(crate::app::UiTagDiff {
+                    label: "Spool Size".into(),
+                    tag_value: format!("{}g", tw).into(),
+                    spool_value: format!("{}g", sw).into(),
+                });
+            }
+        }
+
+        const MAX_TAG_DIFFS: usize = 4;
+        diffs.truncate(MAX_TAG_DIFFS);
+        slint::ModelRc::new(slint::VecModel::from(diffs))
+    }
+
+    /// `a_colors` is `normalized_color_set(&a.color_code)`, passed in rather than recomputed:
+    /// `a` is the scanned tag, which is compared against every record in the db.
+    fn spools_are_same_product(a: &SpoolRecord, a_colors: &[String], b: &SpoolRecord) -> bool {
+        if !Self::colors_agree(a, a_colors, b) {
+            return false;
+        }
+        if !a.slicer_filament.is_empty() && !b.slicer_filament.is_empty() {
+            return a.slicer_filament.eq_ignore_ascii_case(&b.slicer_filament);
+        }
+        a.brand.eq_ignore_ascii_case(&b.brand)
+            && a.material_type.eq_ignore_ascii_case(&b.material_type)
+            && a.material_subtype.eq_ignore_ascii_case(&b.material_subtype)
+    }
+
+    fn colors_agree(a: &SpoolRecord, a_colors: &[String], b: &SpoolRecord) -> bool {
+        let cb = Self::normalized_color_set(&b.color_code);
+        if !a_colors.is_empty() && !cb.is_empty() {
+            return a_colors == cb;
+        }
+        match (Self::usable_color_name(a), Self::usable_color_name(b)) {
+            (Some(an), Some(bn)) => an.eq_ignore_ascii_case(bn),
+            _ => false,
+        }
+    }
+
+    fn normalized_color_set(codes: &[String]) -> Vec<String> {
+        let mut set: Vec<String> = codes
+            .iter()
+            .flat_map(|code| code.split(';'))
+            .map(|code| code.trim().trim_start_matches('#').to_ascii_uppercase())
+            .filter(|code| !code.is_empty())
+            .collect();
+        set.sort_unstable();
+        set.dedup();
+        set
+    }
+
+    fn usable_color_name(rec: &SpoolRecord) -> Option<&str> {
+        if rec.color_name.is_empty() || rec.color_name.starts_with("(Fill Color-Name") {
+            None
+        } else {
+            Some(&rec.color_name)
+        }
+    }
+
+    fn ui_can_link_spool_to_tag(&self, spool_id: &str, tag_id: &str) -> SharedString {
+        match self.store.get_spool_by_id(spool_id) {
+            Some(rec) => Self::can_link_spool_to_tag(&rec, tag_id),
+            None => "Spool Not Found".into(),
+        }
+    }
+
+    /// Empty when the tag can be linked to the spool, otherwise the short reason
+    /// shown on the blocked picker row.
+    fn can_link_spool_to_tag(rec: &SpoolRecord, tag_id: &str) -> SharedString {
+        if rec.spools_count > 1 {
+            return "Stock".into();
+        }
+        if rec.linked_tag_ids().any(|existing| existing == tag_id) {
+            return "Tag Already Linked".into();
+        }
+        SharedString::new()
+    }
+
+    fn build_link_candidates(&self, candidate: Option<&SpoolRecord>, tag_id: &str) -> LinkCandidates {
+        // Read the other stores first - the scan below holds the spools_db borrow throughout.
+        let staged_id = self.filament_staging.borrow().spool_rec().map(|rec| rec.id.clone());
+        // `recently_added_spool_id` is not cleared when the spool gets a tag, so it would keep
+        // offering the same spool forever. It is only worth showing while it still needs one -
+        // a spool added from the web app. Staging covers the "last scanned" case on its own.
+        let recent_id = self
+            .recently_added_spool_id
+            .clone()
+            .filter(|id| self.store.get_spool_by_id(id).is_some_and(|rec| !rec.has_valid_tag_id()));
+        // The scanned tag's own colors are identical for every comparison in the scan, so
+        // normalize them once instead of once per record.
+        let candidate_colors = candidate.map(|rec| Self::normalized_color_set(&rec.color_code));
+
+        // One pass over the db, keeping only what ranking needs. Records are cloned after the
+        // cap, not before - a SpoolRecord is a dozen heap allocations and only 3 survive.
+        let mut product_match_count = 0;
+        let mut picks: Vec<(CandidateReason, i32, String, SharedString)> = Vec::new();
+        if let Some(spools_db) = self.store.spools_db.get() {
+            for rec in spools_db.records.borrow().values().map(|rec| &rec.data) {
+                let is_match = rec.spools_count <= 1
+                    && match (candidate, &candidate_colors) {
+                        (Some(tag), Some(colors)) => Self::spools_are_same_product(tag, colors, rec),
+                        _ => false,
+                    };
+                if is_match {
+                    product_match_count += 1;
+                }
+                let reason = if is_match {
+                    CandidateReason::MatchesTag
+                } else if Some(&rec.id) == staged_id.as_ref() {
+                    CandidateReason::LastScanned
+                } else if Some(&rec.id) == recent_id.as_ref() {
+                    CandidateReason::JustAdded
+                } else if rec.spools_count <= 1 && !rec.has_valid_tag_id() {
+                    CandidateReason::Untagged
+                } else {
+                    continue;
+                };
+                let blocked = Self::can_link_spool_to_tag(rec, tag_id);
+                if !blocked.is_empty() && !reason.show_when_blocked() {
+                    continue;
+                }
+                picks.push((reason, rec.added_time.unwrap_or(i32::MIN), rec.id.clone(), blocked));
+            }
+        }
+        // Best reason first, newest first within a reason.
+        picks.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+        // A run of product matches must not hide the spool the user just put on the reader, so
+        // move the best context row into the last slot when the cap would otherwise drop it.
+        if picks.len() > MAX_SPOOL_CANDIDATES
+            && let Some(idx) = picks.iter().position(|(reason, ..)| reason.is_context())
+            && idx >= MAX_SPOOL_CANDIDATES
+        {
+            let row = picks.remove(idx);
+            picks.truncate(MAX_SPOOL_CANDIDATES - 1);
+            picks.push(row);
+        }
+        picks.truncate(MAX_SPOOL_CANDIDATES);
+
+        let shown_match_count = picks
+            .iter()
+            .filter(|(reason, ..)| *reason == CandidateReason::MatchesTag)
+            .count() as i32;
+        let out: Vec<crate::app::UiSpoolMatch> = picks
+            .into_iter()
+            .filter_map(|(reason, _, id, blocked)| {
+                let rec = self.store.get_spool_by_id(&id)?;
+                Some(self.spool_match_row(&rec, reason.label(), blocked))
+            })
+            .collect();
+        LinkCandidates {
+            rows: slint::ModelRc::new(slint::VecModel::from(out)),
+            product_match_count,
+            match_overflow: product_match_count - shown_match_count,
+        }
+    }
+
+    fn spool_match_row(&self, rec: &SpoolRecord, reason: &str, blocked: SharedString) -> crate::app::UiSpoolMatch {
+        let subtype = if rec.material_subtype.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", rec.material_subtype)
+        };
+        let colors = slint::ModelRc::from(Rc::new(slint::VecModel::from(
+            Self::ui_colors_from_color_codes(&rec.color_code),
+        )));
+        crate::app::UiSpoolMatch {
+            id: rec.id.to_shared_string(),
+            line1: slint::format!(
+                "#{} {} {}{} {}",
+                rec.id, rec.brand, rec.material_type, subtype,
+                Self::usable_color_name(rec).unwrap_or("")
+            ),
+            line2: slint::format!("{} · {}", self.format_remaining(rec), reason),
+            colors,
+            blocked_reason: blocked,
+        }
+    }
+
+    /// "62% left" | "612g left" | "weight unknown"
+    fn format_remaining(&self, rec: &SpoolRecord) -> slint::SharedString {
+        use num_traits::Float;
+        match (self.weight_left_spool(rec, None), rec.weight_advertised) {
+            (Some(left), Some(adv)) if adv > 0 => {
+                slint::format!("{}% left", ((left / adv as f32) * 100.0).round().clamp(0.0, 999.0) as i32)
+            }
+            (Some(left), _) => slint::format!("{}g left", left.round() as i32),
+            (None, _) => "weight unknown".into(),
         }
     }
 
@@ -2580,6 +2945,7 @@ impl ViewModel {
 
     async fn import_definition_tag_to_inventory_async(
         view_model: Rc<RefCell<ViewModel>>,
+        tag_id: String,
         tag_definition_type: String,
         tag_definition_info: String,
         empty_spool_weight: i32,
@@ -2613,7 +2979,12 @@ impl ViewModel {
                 (None, None)
             }
         };
+        let store = view_model.borrow().store.clone();
         if let Some(mut new_spool_rec) = spool_rec {
+            if !tag_id.is_empty() && store.get_spool_id_by_tag_id(&tag_id).is_none() {
+                new_spool_rec.tag_id = vec![tag_id.clone()];
+                new_spool_rec.tag_type = tag_definition_type.clone();
+            }
             if empty_spool_weight != 0 {
                 new_spool_rec.weight_core = Some(empty_spool_weight);
             }
@@ -2623,13 +2994,20 @@ impl ViewModel {
                 origin_data,
             };
 
-            let store = view_model.borrow().store.clone();
+
             let ui = view_model.borrow().ui_weak.unwrap();
             let ui_app_state = ui.global::<crate::app::AppState>();
             match store.add_spool(new_spool_rec, new_spool_rec_ext).await {
                 Ok(new_spool_rec_id) => {
                     info!("Added new Bambulab Spool record number {new_spool_rec_id}");
                     view_model.borrow_mut().recently_added_spool_id = Some(new_spool_rec_id.clone());
+                    if let Some(stored) = store.get_spool_by_id(&new_spool_rec_id) {
+                        let vm = view_model.borrow();
+                        vm.filament_staging.borrow_mut().set_spool_record(stored, StagingOrigin::Scanned);
+                        vm.filament_staging.borrow_mut().set_scanned_tag_id(Some(tag_id.clone()));
+                        vm.display_filament_staging(false);
+                    }
+                    Self::set_staging_rec_ext_async(view_model.clone()).await;
                     ui_app_state.invoke_import_definition_tag_to_inventory_status("".into(), new_spool_rec_id.into());
                 }
                 Err(err) => {
@@ -2646,6 +3024,34 @@ impl ViewModel {
         }
     }
 
+
+
+    /// Undo of `import_definition_tag_to_inventory_async`: Back on the pages that follow the
+    /// import must leave no trace of the record it created. `delete_spool` also drops the
+    /// tag-id index entries and the ext file, so the auto-linked tag becomes free again.
+    async fn discard_imported_spool_async(view_model: Rc<RefCell<ViewModel>>, spool_id: String) {
+        let store = view_model.borrow().store.clone();
+        let ui = view_model.borrow().ui_weak.unwrap();
+        let ui_app_state = ui.global::<crate::app::AppState>();
+        match store.delete_spool(&spool_id).await {
+            Ok(()) => {
+                info!("Discarded imported spool record {spool_id}");
+                {
+                    let mut vm = view_model.borrow_mut();
+                    if vm.recently_added_spool_id.as_deref() == Some(spool_id.as_str()) {
+                        vm.recently_added_spool_id = None;
+                    }
+                    vm.filament_staging.borrow_mut().clear();
+                }
+                ui_app_state.invoke_empty_spool_staging();
+                ui_app_state.invoke_discard_imported_spool_status(SharedString::new());
+            }
+            Err(err) => {
+                error!("Failed to discard imported spool {spool_id} : {err:?}");
+                ui_app_state.invoke_discard_imported_spool_status(slint::format!("Couldn't undo: {err}"));
+            }
+        }
+    }
     async fn link_tag_to_spool_id_async(
         view_model: Rc<RefCell<ViewModel>>,
         tag_id: String,
@@ -2735,46 +3141,46 @@ impl ViewModel {
             )
         };
         let ui_app_state = ui.global::<crate::app::AppState>();
-
+        // The new-tag-scan flow reports on its own page; the staging flow uses a message box.
+        let specific_tag = matches!(mode, UnlinkTagMode::SpecificTag { .. });
+        let report = |success: bool, message: String| {
+            if specific_tag {
+                ui_app_state.invoke_unlink_extra_tag_status(if success { SharedString::new() } else { message.to_shared_string() });
+            } else {
+                ui_app_state.invoke_unlink_spool_id_tags_status(spool_id.to_shared_string(), success, message.to_shared_string());
+            }
+        };
         if let Some(mut spool_rec) = store.get_spool_by_id(&spool_id) {
-            let unlink_message = match mode {
+            let unlink_message = match &mode {
                 UnlinkTagMode::AllTags => {
                     spool_rec.tag_id.clear();
                     spool_rec.tag_type = "".to_string();
                     spool_rec.encode_time = None;
                     format!("Spool {spool_id} Unlinked From All Tags")
                 }
-                UnlinkTagMode::ScannedTag => {
-                    let Some(scanned_tag_id) = scanned_tag_id else {
-                        ui_app_state.invoke_unlink_spool_id_tags_status(
-                            spool_id.to_shared_string(),
-                            false,
-                            "Unlink operation is no longer valid".into(),
-                        );
+                UnlinkTagMode::ScannedTag | UnlinkTagMode::SpecificTag { .. } => {
+                    let unlink_tag_id = match &mode {
+                        UnlinkTagMode::SpecificTag { tag_id } => Some(tag_id.clone()),
+                        _ => scanned_tag_id.clone(),
+                    };
+                    let Some(unlink_tag_id) = unlink_tag_id else {
+                        report(false, "Unlink operation is no longer valid".to_string());
                         return;
                     };
+                    // Removing a spool's only tag is what "Unlink All" is for.
                     if spool_rec.linked_tag_ids().count() <= 1 {
-                        ui_app_state.invoke_unlink_spool_id_tags_status(
-                            spool_id.to_shared_string(),
-                            false,
-                            "No choice available: spool has one tag".into(),
-                        );
+                        report(false, "No choice available: spool has one tag".to_string());
                         return;
                     }
                     let prev_len = spool_rec.tag_id.len();
-                    spool_rec.tag_id.retain(|tag_id| tag_id != &scanned_tag_id);
+                    spool_rec.tag_id.retain(|tag_id| tag_id != &unlink_tag_id);
                     if spool_rec.tag_id.len() == prev_len {
-                        ui_app_state.invoke_unlink_spool_id_tags_status(
-                            spool_id.to_shared_string(),
-                            false,
-                            "Scanned tag is not linked to this spool".into(),
-                        );
+                        report(false, "Tag is not linked to this spool".to_string());
                         return;
                     }
-                    format!("Spool {spool_id} Unlinked From Scanned Tag")
+                    format!("Spool {spool_id} Unlinked From Tag")
                 }
             };
-
             match store.update_spool(spool_rec.clone(), None).await {
                 Ok(_) => {
                     let filament_staging_rc = {
@@ -2782,34 +3188,37 @@ impl ViewModel {
                         view_model_borrow.filament_staging.clone()
                     };
                     let mut filament_staging = filament_staging_rc.borrow_mut();
-                    match mode {
+                    match &mode {
                         UnlinkTagMode::AllTags => {
                             filament_staging.clear();
                             drop(filament_staging);
                             ui_app_state.invoke_empty_spool_staging();
                         }
-                        UnlinkTagMode::ScannedTag => {
+                        UnlinkTagMode::ScannedTag | UnlinkTagMode::SpecificTag { .. } => {
                             filament_staging.update_spool_rec_keep_rest(spool_rec);
-                            filament_staging.set_scanned_tag_id(None);
+                            // Only the scanned tag disappearing invalidates the staged scan.
+                            let unlinked_scanned = match &mode {
+                                UnlinkTagMode::SpecificTag { tag_id } => scanned_tag_id.as_deref() == Some(tag_id.as_str()),
+                                _ => true,
+                            };
+                            if unlinked_scanned {
+                                filament_staging.set_scanned_tag_id(None);
+                            }
                             drop(filament_staging);
                             view_model.borrow().display_filament_staging(false);
                         }
                     }
 
-                    ui_app_state.invoke_unlink_spool_id_tags_status(spool_id.to_shared_string(), true, unlink_message.into());
+                    report(true, unlink_message);
                 }
                 Err(err) => {
                     error!("Failed to unlink tags for spool_id {spool_id} ({mode:?}): {err:?}");
-                    ui_app_state.invoke_unlink_spool_id_tags_status(
-                        spool_id.to_shared_string(),
-                        false,
-                        format!("Failed to unlink tags for spool {spool_id}: {err}").into(),
-                    );
+                    report(false, format!("Failed to unlink tags for spool {spool_id}: {err}"));
                 }
             }
         } else {
             error!("Failed to unlink tags for spool_id {spool_id} ({mode:?}): Spool Id not found");
-            ui_app_state.invoke_unlink_spool_id_tags_status(spool_id.to_shared_string(), false, format!("Spool Id {spool_id} Not Found").into());
+            report(false, format!("Spool Id {spool_id} Not Found"));
         }
     }
     async fn set_staging_rec_ext_async(view_model: Rc<RefCell<ViewModel>>) {
@@ -2838,6 +3247,13 @@ impl ViewModel {
     ) {
         let store = view_model.borrow().store.clone();
         if let Some(mut spool_rec) = store.get_spool_by_id(&spool_id) {
+            // Quick weight commits on a single button press, so keep what it overwrote.
+            let undo = from_button.then(|| WeightUndo {
+                spool_id: spool_id.clone(),
+                weight_current: spool_rec.weight_current,
+                consumed_since_weight: spool_rec.consumed_since_weight,
+            });
+            let prev_weight = spool_rec.weight_current.unwrap_or(-1);
             spool_rec.weight_current = Some(weight_current);
             spool_rec.consumed_since_weight = 0.0;
             if weight_new >= 0 {
@@ -2856,11 +3272,12 @@ impl ViewModel {
             } // else - don't touch weight-new
             match store.update_spool(spool_rec.clone(), None).await {
                 Ok(_) => {
+                    view_model.borrow_mut().weight_undo = undo;
                     view_model.borrow().filament_staging.borrow_mut().update_spool_rec_keep_rest(spool_rec);
                     view_model.borrow().display_filament_staging(final_step);
                     let ui = view_model.borrow().ui_weak.unwrap();
                     let ui_app_state = ui.global::<crate::app::AppState>();
-                    ui_app_state.invoke_updated_spool_weight(spool_id.into(), from_button);
+                    ui_app_state.invoke_updated_spool_weight(spool_id.into(), from_button, prev_weight, weight_current);
                 }
                 Err(err) => {
                     error!("Failed to Update Spool {spool_id} Weight");
@@ -2882,6 +3299,37 @@ impl ViewModel {
                 crate::app::StatusType::Error,
                 0,
             );
+        }
+    }
+
+    /// Puts back what the last quick-weight update overwrote. Only that path records an undo.
+    async fn undo_spool_weight_async(view_model: Rc<RefCell<ViewModel>>) {
+        let Some(undo) = view_model.borrow_mut().weight_undo.take() else {
+            return;
+        };
+        let store = view_model.borrow().store.clone();
+        let Some(mut spool_rec) = store.get_spool_by_id(&undo.spool_id) else {
+            error!("Failed to undo weight for spool {}: Spool Id not found", undo.spool_id);
+            return;
+        };
+        spool_rec.weight_current = undo.weight_current;
+        spool_rec.consumed_since_weight = undo.consumed_since_weight;
+        match store.update_spool(spool_rec.clone(), None).await {
+            Ok(_) => {
+                let view_model_borrow = view_model.borrow();
+                view_model_borrow.filament_staging.borrow_mut().update_spool_rec_keep_rest(spool_rec);
+                view_model_borrow.display_filament_staging(false);
+            }
+            Err(err) => {
+                error!("Failed to undo weight for spool {} : {err:?}", undo.spool_id);
+                view_model.borrow().message_box(
+                    "Inventory Notice",
+                    &format!("Failed to Undo Spool {} Weight", undo.spool_id),
+                    &err.to_string(),
+                    crate::app::StatusType::Error,
+                    0,
+                );
+            }
         }
     }
 
@@ -3735,6 +4183,9 @@ impl SpoolTagObserver for ViewModel {
                     // Handling of tag in store, same as below
                     debug!("Scanned Tag which is in store");
                     let hex_tag = hex::encode_upper(uid);
+                    if self.try_handle_extra_tag_scan(&hex_tag, None) {
+                        return;
+                    }
                     if let Some(spool_rec) = self.store.get_spool_by_hex_tag(&hex_tag) {
                         self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Scanned);
                         self.filament_staging.borrow_mut().set_scanned_tag_id(Some(hex_tag));
@@ -3746,6 +4197,13 @@ impl SpoolTagObserver for ViewModel {
                 }
                 spool_tag::ReadResult::NDEF { uid, message } => {
                     let hex_tag = hex::encode_upper(uid);
+                    // Parsed before the extra-tag check so a second tag can be compared with the
+                    // spool it would join.
+                    let open_print_tag = Self::parse_open_print_tag(&hex_tag, message.as_ref());
+                    let open_print_tag_str = open_print_tag.as_ref().map(|tag| serde_json::to_string(tag).unwrap());
+                    if self.try_handle_extra_tag_scan(&hex_tag, open_print_tag_str.as_deref().map(|info| (OPENPRINTTAG_TAG_TYPE, info))) {
+                        return;
+                    }
                     // Check if it is a known tag
                     if let Some(spool_rec) = self.store.get_spool_by_hex_tag(&hex_tag) {
                         debug!("Scanned Tag which is in store");
@@ -3754,50 +4212,50 @@ impl SpoolTagObserver for ViewModel {
                         self.filament_staging.borrow_mut().set_scanned_tag_id(Some(hex_tag));
                         self.display_filament_staging(true);
                         let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
+                    } else if let (Some(open_print_tag), Some(open_print_tag_str)) = (open_print_tag, open_print_tag_str) {
+                        info!("Scanned an OpenPrintTag tag");
+                        let candidate = open_print_tag.to_spool_rec().ok();
+                        let candidates = self.build_link_candidates(candidate.as_ref(), &hex_tag);
+                        let ui = self.ui_weak.clone();
+                        ui.unwrap().global::<crate::app::AppState>().invoke_new_definition_tag_scanned(
+                            OPENPRINTTAG_TAG_TYPE.to_shared_string(),
+                            hex_tag.into(),
+                            open_print_tag_str.into(),
+                            candidates.rows,
+                            candidates.product_match_count,
+                            candidates.match_overflow,
+                        );
                     } else {
-                        // Not known
-                        // Check if some special format
-                        if let Some(ndef_bytes) = message
-                            && let Ok(ndef) = NdefMessage::decode(ndef_bytes)
-                        {
-                            for record in ndef.records() {
-                                if core::str::from_utf8(record.record_type()) == Ok("application/vnd.openprinttag") {
-                                    let hex_tag = hex::encode_upper(uid);
-                                    info!("Scanned an OpenPrintTag tag");
-                                    let open_print_tag = OpenPrintTagTag::new(&hex_tag, ndef_bytes);
-                                    let open_print_tag_str = serde_json::to_string(&open_print_tag).unwrap();
-                                    let ui = self.ui_weak.clone();
-                                    ui.unwrap().global::<crate::app::AppState>().invoke_new_definition_tag_scanned(
-                                        OPENPRINTTAG_TAG_TYPE.to_shared_string(),
-                                        hex_tag.into(),
-                                        open_print_tag_str.into(),
-                                    );
-                                    return;
-                                }
-                            }
-                        }
-
                         // Unknown format, treat as an empty tag
+                        let candidates = self.build_link_candidates(None, &hex_tag);
                         let ui = self.ui_weak.unwrap();
                         let ui_app_state = ui.global::<crate::app::AppState>();
-                        ui_app_state.invoke_new_tag_scanned(hex_tag.to_shared_string());
+                        ui_app_state.invoke_new_tag_scanned(hex_tag.to_shared_string(), candidates.rows);
                     }
                 }
                 spool_tag::ReadResult::BambulabTag { uid, data } => {
                     let hex_tag = hex::encode_upper(uid);
+                    let bambu_tag = data.as_ref().map(|blocks| BambuLabTag::new(&hex_tag, blocks));
+                    let bambu_tag_str = bambu_tag.as_ref().map(|tag| serde_json::to_string(tag).unwrap());
+                    if self.try_handle_extra_tag_scan(&hex_tag, bambu_tag_str.as_deref().map(|info| (BAMBULAB_TAG_TYPE, info))) {
+                        return;
+                    }
                     if let Some(spool_rec) = self.store.get_spool_by_hex_tag(&hex_tag) {
                         self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Scanned);
                         self.filament_staging.borrow_mut().set_scanned_tag_id(Some(hex_tag));
                         self.display_filament_staging(true);
                         let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
-                    } else if let Some(blocks) = data {
-                        let bambu_tag = BambuLabTag::new(&hex_tag, blocks);
-                        let bamtu_tag_str = serde_json::to_string(&bambu_tag).unwrap();
+                    } else if let (Some(bambu_tag), Some(bambu_tag_str)) = (bambu_tag, bambu_tag_str) {
+                        let candidate = bambu_tag.to_spool_rec();
+                        let candidates = self.build_link_candidates(Some(&candidate), &hex_tag);
                         let ui = self.ui_weak.clone();
                         ui.unwrap().global::<crate::app::AppState>().invoke_new_definition_tag_scanned(
                             BAMBULAB_TAG_TYPE.to_shared_string(),
                             hex_tag.into(),
-                            bamtu_tag_str.into(),
+                            bambu_tag_str.into(),
+                            candidates.rows,
+                            candidates.product_match_count,
+                            candidates.match_overflow,
                         );
                     }
                 }
@@ -4614,10 +5072,14 @@ enum LinkTagMode {
     ToTaggedSpool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum UnlinkTagMode {
     AllTags,
     ScannedTag,
+    /// One named tag, used to take back the extra tag linked on the new-roll page.
+    SpecificTag {
+        tag_id: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -4633,6 +5095,9 @@ enum AppAsyncTaskRequest {
         spool_id: String,
         mode: UnlinkTagMode,
     },
+    DiscardImportedSpool {
+        spool_id: String,
+    },
     SetStagingRecExt {},
     SetSpoolWeight {
         spool_id: String,
@@ -4641,6 +5106,7 @@ enum AppAsyncTaskRequest {
         final_step: bool,
         from_button: bool,
     },
+    UndoSpoolWeight,
     UpdateSpoolRec {
         spool_rec: Box<SpoolRecord>,
         message_box: Option<MessageBox>,
@@ -4656,6 +5122,7 @@ enum AppAsyncTaskRequest {
         changes: Vec<MaterialSlotPresenceChange>,
     },
     ImportDefinitionTagToInventory {
+        tag_id: String,
         tag_definition_type: String,
         tag_definition_info: String,
         empty_spool_weight: i32,
@@ -4689,7 +5156,8 @@ pub async fn app_async_task(view_model: Rc<RefCell<ViewModel>>) {
                 final_step,
             } => ViewModel::link_tag_to_spool_id_async(view_model.clone(), tag_id, tag_type, spool_id, mode, final_step).await,
             AppAsyncTaskRequest::UnLinkSpoolTags { spool_id, mode } => ViewModel::unlink_spool_tags_async(view_model.clone(), spool_id, mode).await,
-            AppAsyncTaskRequest::SetStagingRecExt {} => ViewModel::set_staging_rec_ext_async(view_model.clone()).await,
+            AppAsyncTaskRequest::DiscardImportedSpool { spool_id } => ViewModel::discard_imported_spool_async(view_model.clone(), spool_id).await,
+            AppAsyncTaskRequest::SetStagingRecExt { .. } => ViewModel::set_staging_rec_ext_async(view_model.clone()).await,
             AppAsyncTaskRequest::SetSpoolWeight {
                 spool_id,
                 weight_current,
@@ -4697,6 +5165,7 @@ pub async fn app_async_task(view_model: Rc<RefCell<ViewModel>>) {
                 final_step,
                 from_button,
             } => ViewModel::set_spool_weight_async(view_model.clone(), spool_id, weight_current, weight_new, final_step, from_button).await,
+            AppAsyncTaskRequest::UndoSpoolWeight => ViewModel::undo_spool_weight_async(view_model.clone()).await,
             AppAsyncTaskRequest::UpdateSpoolRec { spool_rec, message_box } => {
                 ViewModel::update_spool_rec_async(view_model.clone(), spool_rec, message_box).await
             }
@@ -4710,6 +5179,7 @@ pub async fn app_async_task(view_model: Rc<RefCell<ViewModel>>) {
                 ViewModel::handle_material_slot_presence_changed_async(view_model.clone(), printer_id, changes).await
             }
             AppAsyncTaskRequest::ImportDefinitionTagToInventory {
+                tag_id,
                 tag_definition_type,
                 tag_definition_info,
                 empty_spool_weight,
@@ -4717,6 +5187,7 @@ pub async fn app_async_task(view_model: Rc<RefCell<ViewModel>>) {
             } => {
                 ViewModel::import_definition_tag_to_inventory_async(
                     view_model.clone(),
+                    tag_id,
                     tag_definition_type,
                     tag_definition_info,
                     empty_spool_weight,

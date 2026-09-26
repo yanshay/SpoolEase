@@ -252,6 +252,11 @@ export component AppWindow inherits Window {
         dialog-background: AppState.message-box-type == StatusType.Success ? green.brighter(1.0) : AppState.message-box-type == StatusType.Error ? red : skyblue;
         dialog-dismissible: AppState.message-box-timeout != -2;
         dialog-button-text: AppState.message-box-timeout == -2 ? "Blocked" : "Ok" + (AppState.message-box-timeout > 0 ? " (\{AppState.message-box-timeout})" : "");
+        dialog-alt-button-text: AppState.message-box-undo-text;
+        alt-clicked => {
+            AppBackend.undo-spool-weight();
+            AppState.hide-message-box();
+        }
         clicked => {
             AppState.hide-message-box();
         }

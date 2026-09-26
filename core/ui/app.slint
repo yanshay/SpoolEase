@@ -95,6 +95,20 @@ export struct UiSpoolRecordDisplay {
   weight-left: string,
 }
 
+export struct UiTagDiff {
+    label: string,
+    tag-value: string,
+    spool-value: string,
+}
+
+export struct UiSpoolMatch {
+    id: string,
+    line1: string,
+    line2: string,
+    colors: [color],
+    blocked-reason: string,
+}
+
 export struct UiSlotDisplay {
   filament-title: string,
   slicer-name: string,
@@ -185,20 +199,27 @@ export global AppBackend {
     callback calibrate-scale(source: SpoolScaleSource, weight: int);
     pure callback get-connected-scale-info() -> string;
     pure callback get-available-scales-info() -> [string];
-    callback import-definition-tag-to-inventory(tag-definition-type: string, tag-definition-info: string, empty-spool-weight: int, spool-is-full: bool);
+    callback import-definition-tag-to-inventory(tag-id: string, tag-definition-type: string, tag-definition-info: string, empty-spool-weight: int, spool-is-full: bool);
+    // Undo of the above: deletes the record it created, frees its auto-linked tag, clears staging.
+    callback discard-imported-spool(spool-id: string);
     callback link-tag-to-untagged-spool-id(tag_id: string, tag_type: string, spool-id: string, final-step: bool);
     callback link-tag-to-tagged-spool-id(tag_id: string, tag_type: string, spool-id: string, final-step: bool);
     callback unlink-spool-from-all-tags(spool-id: string);
     callback unlink-scanned-tag-from-spool(spool-id: string);
+    // New-tag-scan only: the single extra tag the user may link on the final page.
+    callback link-extra-tag-to-spool(tag-id: string, tag-type: string, spool-id: string);
+    callback unlink-tag-from-spool(tag-id: string, spool-id: string);
+    // Reverts the last quick-weight update - the Undo button on its message box.
+    callback undo-spool-weight();
     callback set-spool-weight(spool-id: string, weight_current: int, weight_new: int, final-step: bool);
-    pure callback recently_added_spool_id_if_untagged() -> string;
     pure callback get-spool-record-display(spool-id: string) -> UiSpoolRecordDisplay;
     pure callback get-spool-tag-definition-display(tag-definition-type: string, tag-definition-info: string, empty-spool-weight: int) -> UiSpoolRecordDisplay;
+    callback can-link-spool-to-tag(spool-id: string, tag-id: string) -> string;
+    pure callback default-spool-type-is-low-temp(tag-definition-type: string, tag-definition-info: string) -> bool;
+    callback tag-spool-differences(tag-definition-type: string, tag-definition-info: string, spool-id: string) -> [UiTagDiff];
     pure callback get-slot-display(slot-id: string) -> UiSlotDisplay;
     pure callback spool-tag-count(spool-id: string) -> int;
     pure callback staging-scanned-tag-id() -> string;
-    callback can-link-untagged-spool-to-tag(id: string) -> string; // empty if untagged, error text if not
-    callback can-link-tagged-spool-to-tag(id: string) -> string; // empty if tagged, error text if not
     callback add-v1-tag-to-inventory(tag_id: string, tag_descriptor: string, final-step: bool);
     callback erase-tag(tag_id: string) -> bool;
     callback erase-staging-tag() -> bool;
@@ -225,26 +246,20 @@ export enum NewScannedTagType {
 }
 
 export enum NewTagScanPage {
-    OperationSelect,
+    DefinitionTagScanned,
+    SpoolTypeSelect,
+    SpoolPicker,
     SpoolSelect,
     SpoolDisplay,
+    ConfirmTagMismatch,
+    WeighNewSpool,
+    LinkAnotherTag,
     UpdateWeight,
     StatusDisplay,
     V1TagPrompt,
-    SpoolDefinitionTagScanned, // Bambulab etc.
-    BambulabSpoolTypeSelection,
-    ImportDefinitionNotice,
 }
 
-export enum NewTagOperation {
-  None,
-  LinkTagToSpoolId,
-  LinkAnotherTagToTaggedSpool,
-  LinkTagToStagedSpool,
-  LinkTagToRecentlyAddedSpool,
-  AddV1TagToInventory, // V1
-  EraseV1Tag, // V1
-}
+export enum NewTagOperation { None, AddV1TagToInventory, EraseV1Tag }
 
 export enum StagingOperationsPage {
   SpoolDisplay,
@@ -303,6 +318,7 @@ export global AppState {
     in-out property <string> message-box-text2;
     in-out property <StatusType> message-box-type;
     in-out property <int> message-box-timeout;
+    in-out property <string> message-box-undo-text: ""; // "" = no undo button. Cleared by show-message-box, so set it after the call.
     in-out property <image> title-checkerboard-bg;
     in-out property <image> color-checkerboard-bg;
     in-out property <image> ams-color-checkerboard-bg;
@@ -318,17 +334,130 @@ export global AppState {
     }
 
     // Global state variables for New Tag Scan Control-State
-    in-out property <NewScannedTagType> new-tag-scan-tag-type; // Simple or Definition
+    in-out property <NewScannedTagType> new-tag-scan-tag-type; // Simple (no data on tag) or Definition
     in-out property <string> new-tag-scan-tag-id: "";
-    in-out property <NewTagScanPage> new-tag-scan-page: OperationSelect;
+    in-out property <NewTagScanPage> new-tag-scan-page: SpoolPicker;
     in-out property <string> new-tag-scan-status: ""; // text means error, empty mean ok
-    in-out property <NewTagOperation> new-tag-operation: None;
     in-out property <string> new-tag-scan-spool-id: "";
     in-out property <int> new-tag-scan-spool-id-int: 0; // used for when typing the id
     in-out property <string> new-tag-scan-definition-info: ""; // The actual data (as understdoon by the view_model)
     in-out property <string> new-tag-scan-definition-type: ""; // Bambu Lab, Creatlity, etc.
     in-out property <int> new-tag-scan-empty-spool-weight: 0; // 0 - not specified, value from Bambu Tag
     in-out property <bool> new-tag-scan-spool-is-full: true;
+    in-out property <[UiSpoolMatch]> new-tag-scan-candidates: [];
+    in-out property <int> new-tag-scan-product-match-count: 0; // full match total, for the "(N matching)" label
+    in-out property <int> new-tag-scan-match-overflow: 0; // matches dropped by the row cap, for the "+N more" note
+    in-out property <string> new-tag-scan-selected-spool-id: "";
+    in-out property <bool> new-tag-scan-select-enter-id: false;
+    in-out property <string> new-tag-scan-last-result: "";
+    in-out property <string> new-tag-scan-extra-tag-status: "";
+    in-out property <bool> new-tag-scan-extra-tag-success: false;
+    // Only one extra tag may be linked on the final page; a second one starts a new scan flow.
+    in-out property <string> new-tag-scan-extra-tag-id: "";
+    // Set while an extra tag whose data disagrees with the spool waits on ConfirmTagMismatch.
+    in-out property <string> new-tag-scan-pending-extra-tag-id: "";
+    in-out property <string> new-tag-scan-pending-extra-tag-type: "";
+    in-out property <[UiTagDiff]> new-tag-scan-diffs: [];
+    in-out property <string> new-tag-scan-pending-spool-id: "";
+    in-out property <NewTagScanPage> new-tag-scan-prev-page: SpoolPicker;
+    in-out property <bool> new-tag-scan-discarding: false; // an undo (record delete) is in flight
+
+    // Every entry into the new-tag-scan flow starts from a clean slate. A selection or a
+    // definition-type left over from the previous scan would otherwise arrive pre-selected
+    // and could link the new tag to the previous scan's spool.
+    function reset-new-tag-scan-state() {
+        self.new-tag-scan-tag-type = NewScannedTagType.SimpleTag;
+        self.new-tag-scan-tag-id = "";
+        self.new-tag-scan-page = NewTagScanPage.SpoolPicker;
+        self.new-tag-scan-status = "";
+        self.new-tag-scan-spool-id = "";
+        self.new-tag-scan-spool-id-int = 0;
+        self.new-tag-scan-definition-info = "";
+        self.new-tag-scan-definition-type = "";
+        self.new-tag-scan-empty-spool-weight = 0;
+        self.new-tag-scan-spool-is-full = true;
+        self.new-tag-scan-candidates = [];
+        self.new-tag-scan-product-match-count = 0;
+        self.new-tag-scan-match-overflow = 0;
+        self.new-tag-scan-selected-spool-id = "";
+        self.new-tag-scan-select-enter-id = false;
+        self.new-tag-scan-last-result = "";
+        self.new-tag-scan-extra-tag-status = "";
+        self.new-tag-scan-extra-tag-success = false;
+        self.new-tag-scan-extra-tag-id = "";
+        self.new-tag-scan-pending-extra-tag-id = "";
+        self.new-tag-scan-pending-extra-tag-type = "";
+        self.new-tag-scan-diffs = [];
+        self.new-tag-scan-pending-spool-id = "";
+        self.new-tag-scan-prev-page = NewTagScanPage.SpoolPicker;
+        self.new-tag-scan-discarding = false;
+    }
+
+    public function request-link-tag-to-spool(spool-id: string) {
+        self.new-tag-scan-pending-spool-id = spool-id;
+        self.new-tag-scan-diffs = AppBackend.tag-spool-differences(
+            self.new-tag-scan-definition-type, self.new-tag-scan-definition-info, spool-id);
+        if self.new-tag-scan-diffs.length > 0 {
+            self.new-tag-scan-prev-page = self.new-tag-scan-page;
+            self.new-tag-scan-page = NewTagScanPage.ConfirmTagMismatch;
+        } else {
+            self.commit-link-tag-to-spool();
+        }
+    }
+
+    public function commit-link-tag-to-spool() {
+        // ConfirmTagMismatch is shared with the extra-tag path, which links a different tag to the
+        // spool that is already on screen rather than the tag that opened this flow.
+        if self.new-tag-scan-pending-extra-tag-id != "" {
+            self.new-tag-scan-page = NewTagScanPage.LinkAnotherTag; // so the status lands as page text
+            AppBackend.link-extra-tag-to-spool(self.new-tag-scan-pending-extra-tag-id,
+                self.new-tag-scan-pending-extra-tag-type, self.new-tag-scan-spool-id);
+            self.clear-pending-extra-tag();
+            return;
+        }
+        self.new-tag-scan-spool-id = self.new-tag-scan-pending-spool-id;
+        if AppBackend.spool-tag-count(self.new-tag-scan-pending-spool-id) > 0 {
+            AppBackend.link-tag-to-tagged-spool-id(self.new-tag-scan-tag-id,
+                self.new-tag-scan-definition-type, self.new-tag-scan-pending-spool-id,
+                !self.is-scale-usable-now());
+        } else {
+            AppBackend.link-tag-to-untagged-spool-id(self.new-tag-scan-tag-id,
+                self.new-tag-scan-definition-type, self.new-tag-scan-pending-spool-id,
+                !self.is-scale-usable-now());
+        }
+    }
+
+    public function clear-pending-extra-tag() {
+        self.new-tag-scan-pending-extra-tag-id = "";
+        self.new-tag-scan-pending-extra-tag-type = "";
+    }
+
+    // Rust calls this when the extra tag scanned on the final page describes different filament
+    // than the spool it would join. Same confirmation page as the main link path.
+    public function confirm-extra-tag-mismatch(tag-id: string, tag-type: string, diffs: [UiTagDiff]) {
+        self.new-tag-scan-pending-extra-tag-id = tag-id;
+        self.new-tag-scan-pending-extra-tag-type = tag-type;
+        self.new-tag-scan-pending-spool-id = self.new-tag-scan-spool-id;
+        self.new-tag-scan-diffs = diffs;
+        self.new-tag-scan-prev-page = NewTagScanPage.LinkAnotherTag;
+        self.new-tag-scan-page = NewTagScanPage.ConfirmTagMismatch;
+    }
+
+    // Back on the final page undoes the extra link before it undoes anything else.
+    public function request-unlink-extra-tag() {
+        AppBackend.unlink-tag-from-spool(self.new-tag-scan-extra-tag-id, self.new-tag-scan-spool-id);
+    }
+
+    public function unlink-extra-tag-status(status: string) {
+        if status == "" {
+            self.new-tag-scan-extra-tag-id = "";
+            self.new-tag-scan-extra-tag-status = "Extra tag unlinked";
+            self.new-tag-scan-extra-tag-success = true;
+        } else {
+            self.new-tag-scan-extra-tag-status = status;
+            self.new-tag-scan-extra-tag-success = false;
+        }
+    }
 
     in-out property <StagingOperationsPage> staging-operation-page: StagingOperationsPage.OperationSelection;
     in-out property <StagingOperationsPage> prev-staging-operation-page: StagingOperationsPage.OperationSelection;
@@ -543,6 +672,7 @@ export global AppState {
         if self.message-box-timeout == -2 && timeout != -2 {
             return;
         }
+        self.message-box-undo-text = "";
         self.message-box-title = title == "" ? "Message" : title;
         self.message-box-text = text;
         self.message-box-text2 = text2;
@@ -556,6 +686,7 @@ export global AppState {
         self.message-box-text2 = "";
         self.message-box-type = StatusType.Normal;
         self.message-box-timeout = 0;
+        self.message-box-undo-text = "";
     }
 
     public function initialization_completed() {
@@ -612,9 +743,26 @@ export global AppState {
         }
     }
 
-    public function updated-spool-weight(spool-id: string, from_button: bool) {
+    public function updated-spool-weight(spool-id: string, from_button: bool, prev-weight: int, new-weight: int) {
+        // The new-roll flow reports the weight in the page text it lands on, so no box to dismiss.
+        if !from_button && self.control-state == ControlState.NewTagScan
+                        && self.new-tag-scan-page == NewTagScanPage.WeighNewSpool {
+            self.new-tag-scan-last-result = "✓ Weight recorded: \{new-weight}g";
+            self.new-tag-scan-page = NewTagScanPage.LinkAnotherTag;
+            return;
+        }
+        if from_button {
+            // Quick weight acts on one button press with no confirmation, so offer the way back.
+            self.show-message-box("Inventory Notice", prev-weight >= 0
+                ? "Updated weight from \{prev-weight}g to \{new-weight}g"
+                : "Updated weight to \{new-weight}g", "Spool #\{spool-id}", StatusType.Success, -1);
+            if self.message-box-timeout != -2 { // show-message-box refuses while a locked box is up
+                self.message-box-undo-text = "↶ Undo";
+            }
+            return;
+        }
         self.show-message-box("Inventory Notice", "Updated Spool \{spool-id} Weight", "", StatusType.Success, -1);
-        if !from_button && (self.control-state == ControlState.StagingSelected || self.control-state == ControlState.NewTagScan) {
+        if self.control-state == ControlState.StagingSelected || self.control-state == ControlState.NewTagScan {
             self.control-state = ControlState.Ready;
         }
     }
@@ -928,6 +1076,14 @@ export global AppState {
         return self.spool-scale-state == SpoolScaleState.Connected || self.spool-scale-state == SpoolScaleState.Empty || self.spool-scale-state == SpoolScaleState.Loaded || self.spool-scale-state == SpoolScaleState.Disconnected;
     }
 
+    // "Is a scale configured at all", as opposed to "is it reporting a weight right now".
+    // Unknown/Uncalibrated mean a scale exists but isn't usable this instant; only
+    // NotAvailable means there is none. Use this for one-shot routing decisions - a
+    // transient Unknown must not permanently skip a weighing step.
+    pure public function is-scale-present() -> bool {
+        return self.spool-scale-state != SpoolScaleState.NotAvailable;
+    }
+
     pure public function spool-scale-source-label() -> string {
         if !self.spool-scale-show-source {
             return "";
@@ -1028,70 +1184,51 @@ export global AppState {
     }
 
     // Rust callable functions for new-tag-scan flow
-    public function new-tag-scanned(tag-id: string) {
-        self.new-tag-scan-page = NewTagScanPage.OperationSelect;
-        self.new-tag-scan-tag-type = NewScannedTagType.SimpleTag;
-        self.new-tag-operation = NewTagOperation.None;
-        self.new-tag-scan-status = "";
-        self.new-tag-scan-spool-id = "";
-        self.new-tag-scan-spool-id-int = 0;
+    public function new-tag-scanned(tag-id: string, candidates: [UiSpoolMatch]) {
+        self.reset-new-tag-scan-state();
         self.new-tag-scan-tag-id = tag-id;
-        self.new-tag-scan-definition-info = "";
-        self.new-tag-scan-empty-spool-weight = 0;
-        self.new-tag-scan-spool-is-full = true;
+        self.new-tag-scan-tag-type = NewScannedTagType.SimpleTag;
+        self.new-tag-scan-candidates = candidates;
+        self.new-tag-scan-page = NewTagScanPage.SpoolPicker; // a blank tag can only be linked
         self.control-state = ControlState.NewTagScan;
     }
     public function new-v1-tag-scanned(tag-id: string, v1-tag: string) {
-        self.new-tag-scan-page = NewTagScanPage.V1TagPrompt;
-        self.new-tag-scan-tag-type = NewScannedTagType.SimpleTag;
-        self.new-tag-operation = NewTagOperation.None;
-        self.new-tag-scan-status = "";
-        self.new-tag-scan-spool-id = "";
-        self.new-tag-scan-spool-id-int = 0;
+        self.reset-new-tag-scan-state();
         self.new-tag-scan-tag-id = tag-id;
+        self.new-tag-scan-tag-type = NewScannedTagType.SimpleTag;
         self.new-tag-scan-definition-info = v1-tag;
-        self.new-tag-scan-empty-spool-weight = 0;
-        self.new-tag-scan-spool-is-full = true;
+        self.new-tag-scan-page = NewTagScanPage.V1TagPrompt;
         self.control-state = ControlState.NewTagScan;
     }
-    public function new-definition-tag-scanned(definition-type: string, tag-id: string, definition-info: string) {
-        self.new-tag-scan-definition-type = definition-type; // Bambu Lab, OpenPrintTag, Creality, etc. - in the future can unite with V1-Tag
-        self.new-tag-scan-tag-type = NewScannedTagType.DefinitionTag;
-        self.new-tag-scan-page = NewTagScanPage.SpoolDefinitionTagScanned;
-        self.new-tag-operation = NewTagOperation.None;
-        self.new-tag-scan-status = "";
-        self.new-tag-scan-spool-id = "";
-        self.new-tag-scan-spool-id-int = 0;
+    public function new-definition-tag-scanned(
+        definition-type: string, tag-id: string, definition-info: string,
+        candidates: [UiSpoolMatch], product-match-count: int, match-overflow: int,
+    ) {
+        self.reset-new-tag-scan-state();
         self.new-tag-scan-tag-id = tag-id;
+        self.new-tag-scan-tag-type = NewScannedTagType.DefinitionTag;
+        self.new-tag-scan-definition-type = definition-type;
         self.new-tag-scan-definition-info = definition-info;
-        self.new-tag-scan-empty-spool-weight = 0;
-        self.new-tag-scan-spool-is-full = true;
+        self.new-tag-scan-candidates = candidates;
+        self.new-tag-scan-product-match-count = product-match-count;
+        self.new-tag-scan-match-overflow = match-overflow;
+        self.new-tag-scan-page = NewTagScanPage.DefinitionTagScanned;
         self.control-state = ControlState.NewTagScan;
     }
-
     public function clear_tag_scanned() {
-        self.new-tag-scan-definition-type = ""; // Bambu Lab, OpenPrintTag, Creality, etc. - in the future can unite with V1-Tag
-        self.new-tag-scan-tag-type = NewScannedTagType.SimpleTag;
-        self.new-tag-scan-page = NewTagScanPage.OperationSelect;
-        self.new-tag-operation = NewTagOperation.None;
-        self.new-tag-scan-status = "";
-        self.new-tag-scan-spool-id = "";
-        self.new-tag-scan-spool-id-int = 0;
-        self.new-tag-scan-tag-id = "";
-        self.new-tag-scan-definition-info = "";
-        self.new-tag-scan-empty-spool-weight = 0;
-        self.new-tag-scan-spool-is-full = true;
+        self.reset-new-tag-scan-state();
     }
 
     public function import-definition-tag-to-inventory-status(status: string, spool-id: string) {
-      // This one is called both from link_tag and from v1_tag add new tag flows
-      // string empty ok, content is error message
-
-      if self.control-state == ControlState.NewTagScan {
+        if self.control-state == ControlState.NewTagScan {
             if status == "" {
-          // this will be effective only if there is a weight (this will be driven by the flow in the screen itself)
                 self.new-tag-scan-spool-id = spool-id;
-                self.new-tag-scan-page = NewTagScanPage.ImportDefinitionNotice;
+                self.new-tag-scan-last-result =
+                    "✓ Added \{self.new-tag-scan-spool-is-full ? "new" : "used"} spool #\{spool-id}"
+                    + (self.is-scale-present() ? "" : " · no scale, weighing skipped");
+                self.new-tag-scan-page = self.is-scale-present()
+                    ? NewTagScanPage.WeighNewSpool
+                    : NewTagScanPage.LinkAnotherTag;
             } else {
                 self.new-tag-scan-page = NewTagScanPage.StatusDisplay;
                 self.new-tag-scan-status = status;
@@ -1099,17 +1236,48 @@ export global AppState {
         }
     }
 
-    public function link-tag-to-spool-id-status(status: string) {
-      // string empty ok, content is error message
+    // Back out of the pages that follow the import. Called by the page; Rust answers here.
+    public function request-discard-imported-spool() {
+        self.new-tag-scan-discarding = true;
+        AppBackend.discard-imported-spool(self.new-tag-scan-spool-id);
+    }
 
-      if self.control-state == ControlState.NewTagScan {
+    public function discard-imported-spool-status(status: string) {
+        self.new-tag-scan-discarding = false;
+        if self.control-state != ControlState.NewTagScan {
+            return;
+        }
+        if status == "" {
+            self.new-tag-scan-spool-id = "";
+            self.new-tag-scan-spool-id-int = 0;
+            self.new-tag-scan-last-result = "";
+            self.new-tag-scan-extra-tag-status = "";
+            self.new-tag-scan-extra-tag-success = false;
+            self.new-tag-scan-page = NewTagScanPage.SpoolTypeSelect;
+        } else {
+            self.new-tag-scan-page = NewTagScanPage.StatusDisplay;
+            self.new-tag-scan-status = status;
+        }
+    }
+    public function link-tag-to-spool-id-status(status: string) {
+        if self.control-state != ControlState.NewTagScan { return; }
+        if self.new-tag-scan-page == NewTagScanPage.LinkAnotherTag {
             if status == "" {
-          // this will be effective only if there is a weight (this will be driven by the flow in the screen itself)
-                self.new-tag-scan-page = NewTagScanPage.UpdateWeight;
+                self.new-tag-scan-extra-tag-status = "✓ Second tag linked to spool #\{self.new-tag-scan-spool-id} · Back undoes it";
+                self.new-tag-scan-extra-tag-success = true;
             } else {
-                self.new-tag-scan-page = NewTagScanPage.StatusDisplay;
-                self.new-tag-scan-status = status;
+                // Free the slot again so the user can retry with another tag.
+                self.new-tag-scan-extra-tag-id = "";
+                self.new-tag-scan-extra-tag-status = status;
+                self.new-tag-scan-extra-tag-success = false;
             }
+            return;
+        }
+        if status == "" {
+            self.new-tag-scan-page = NewTagScanPage.UpdateWeight;
+        } else {
+            self.new-tag-scan-page = NewTagScanPage.StatusDisplay;
+            self.new-tag-scan-status = status;
         }
     }
 
