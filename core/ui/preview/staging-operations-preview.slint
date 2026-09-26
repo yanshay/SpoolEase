@@ -1,0 +1,110 @@
+// Design-time preview harness for the staging-operations flow.
+//
+// NOT part of the firmware: build.rs compiles ui/appwindow.slint only, and nothing
+// in that tree imports this file. Open it directly in the Slint previewer / VS Code
+// extension and use the tab strip to page through the StagingOperationsPages.
+//
+// The mock state below must stay in sync with what Rust actually pushes into AppState;
+// if a page looks right here but wrong on device, this file is the thing that lied.
+//
+// AppBackend callbacks have no handler in the previewer, so anything sourced from Rust
+// (stock matches, tag counts, location lookups) comes back empty. Stocks therefore only
+// shows its "no stock" state, and Place/Pick show a blank location. The manual-storage
+// pages (rack/bay/shelf/position/container/complete) are driven entirely by storage
+// lookups and render empty, so they have no tabs here.
+
+import { MyButton } from "../framework/widgets.slint";
+import { AppState, StagingOperationsPage, SpoolStagingState, SpoolScaleState, UiSpoolRecordDisplay } from "../app.slint";
+import { StagingOperations } from "../staging-operations.slint";
+
+export component StagingOperationsPreview inherits Rectangle {
+    width: 480px;
+    height: 380px; // 320px device screen + 60px tab strip
+
+    property <UiSpoolRecordDisplay> mock-spool: {
+        spool-record: {
+            id: "42",
+            material-type: "PLA",
+            material-subtype: "Basic",
+            color-name: "Jade White",
+            color-code: "FFFFFFFF",
+            note: "",
+            brand: "Bambu Lab",
+            weight-advertised: 1000,
+            weight-core: 212,
+            weight-new: 1212,
+            weight-current: 824,
+            slicer-filament: "GFA00",
+            added-full: true,
+            consumed-since-add: 176,
+            consumed-since-weight: 24,
+            ext-has-k: true,
+            assigned-location: "1/2/3/4/0",
+            actual-location: "1/2/3/4/0",
+        },
+        slicer-filament-name: "Bambu PLA Basic",
+        color: #f2f2f2,
+        colors: [#f2f2f2],
+        colors-has-alpha: false,
+        temp-min: 190,
+        temp-max: 230,
+        pa-line1: "K 0.020",
+        pa-line2: "cali #3",
+        assigned-location: "Rack A/B:2/S:3/P:4",
+        weight-left: "824 g",
+    };
+
+    init => {
+        AppState.spool-staging-info = mock-spool;
+        AppState.spool-staging-state = SpoolStagingState.Scanned;
+        AppState.spool-scale-state = SpoolScaleState.Loaded;
+        AppState.spool-scale-weight = 1036;
+        AppState.spool-scale-weight-stable = true;
+        AppState.new-tag-scan-spool-id-int = 42;
+        AppState.staging-operation-page = StagingOperationsPage.SpoolDisplay;
+    }
+
+    function show(page: StagingOperationsPage) {
+        AppState.staging-operation-page = page;
+    }
+
+    VerticalLayout {
+        Rectangle {
+            background: #f97316;
+            height: 60px;
+            VerticalLayout {
+                padding: 2px;
+                spacing: 2px;
+                HorizontalLayout {
+                    height: 26px;
+                    spacing: 2px;
+                    MyButton { text: "Spool"; pushed: AppState.staging-operation-page == StagingOperationsPage.SpoolDisplay; pressed => { show(StagingOperationsPage.SpoolDisplay); } }
+                    MyButton { text: "Ops"; pushed: AppState.staging-operation-page == StagingOperationsPage.OperationSelection; pressed => { show(StagingOperationsPage.OperationSelection); } }
+                    MyButton { text: "Tag"; pushed: AppState.staging-operation-page == StagingOperationsPage.TagOperations; pressed => { show(StagingOperationsPage.TagOperations); } }
+                    MyButton { text: "Unlink"; pushed: AppState.staging-operation-page == StagingOperationsPage.UnlinkSelection; pressed => { show(StagingOperationsPage.UnlinkSelection); } }
+                    MyButton { text: "Stocks"; pushed: AppState.staging-operation-page == StagingOperationsPage.Stocks; pressed => { show(StagingOperationsPage.Stocks); } }
+                }
+                HorizontalLayout {
+                    height: 26px;
+                    spacing: 2px;
+                    MyButton { text: "Weight"; pushed: AppState.staging-operation-page == StagingOperationsPage.UpdateWeight; pressed => { show(StagingOperationsPage.UpdateWeight); } }
+                    MyButton { text: "Empty"; pushed: AppState.staging-operation-page == StagingOperationsPage.MarkEmptyConfirm; pressed => { show(StagingOperationsPage.MarkEmptyConfirm); } }
+                    MyButton { text: "Place"; pushed: AppState.staging-operation-page == StagingOperationsPage.PlaceSpoolInAssignedLocation; pressed => { show(StagingOperationsPage.PlaceSpoolInAssignedLocation); } }
+                    MyButton { text: "Pick"; pushed: AppState.staging-operation-page == StagingOperationsPage.PickSpoolFromActualLocation; pressed => { show(StagingOperationsPage.PickSpoolFromActualLocation); } }
+                    MyButton { text: "Load"; pushed: AppState.staging-operation-page == StagingOperationsPage.SelectSpoolToLoad; pressed => { show(StagingOperationsPage.SelectSpoolToLoad); } }
+                }
+            }
+        }
+
+        Rectangle {
+            height: 320px;
+            background: white;
+            // Sized like appwindow.slint does (full device screen), not left to the tab strip's leftovers.
+            StagingOperations {
+                width: 480px;
+                height: 320px;
+                spool-display: mock-spool;
+            }
+        }
+    }
+}

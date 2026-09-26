@@ -101,7 +101,12 @@ export component NumPad inherits Rectangle {
     }
     main := VerticalLayout {
         Display {
-            height: root.height / 5;
+            // Must not be `root.height / 5`: that makes main's vertical layout info depend on
+            // NumPad's own height, which is a binding loop wherever the pad is not given an
+            // explicit height. Same 1/5 split, expressed with stretch instead.
+            vertical-stretch: 1;
+            min-height: 0px;
+            preferred-height: 1px;
             postfix: display-postfix;
             number: root.number;
             display-error: display-error;
@@ -135,6 +140,7 @@ export component NumPad inherits Rectangle {
         }
 
         HorizontalLayout {
+            vertical-stretch: 1;
             NumButton {
                 digit: 4;
                 enabled: !root.digit-disabled(self.digit);
@@ -161,6 +167,7 @@ export component NumPad inherits Rectangle {
         }
 
         HorizontalLayout {
+            vertical-stretch: 1;
             NumButton {
                 digit: 1;
                 enabled: !root.digit-disabled(self.digit);
@@ -187,6 +194,7 @@ export component NumPad inherits Rectangle {
         }
 
         HorizontalLayout {
+            vertical-stretch: 1;
             NumButton {
                 text: "Del";
                 key-pressed(digit) => {

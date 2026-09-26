@@ -1,0 +1,107 @@
+// Design-time preview harness for the tag-enrollment flow (UPDATED_SCAN_PLAN.md).
+//
+// NOT part of the firmware: build.rs compiles ui/appwindow.slint only, and nothing
+// in that tree imports this file. Open it directly in the Slint previewer / VS Code
+// extension to page through the wizard with mock data.
+//
+// The mock state below must stay in sync with what Rust actually pushes into AppState;
+// if a page looks right here but wrong on device, this file is the thing that lied.
+
+import { MyButton } from "../framework/widgets.slint";
+import { AppState, NewScannedTagType } from "../app.slint";
+import {
+    DefinitionTagScannedPage,
+    SpoolTypePage,
+    SpoolPickerPage,
+    WeighNewSpoolPage,
+    LinkAnotherTagPage,
+    ConfirmTagMismatchPage,
+} from "../new-tag-scan.slint";
+
+export component TagEnrollmentFlowPreview inherits Rectangle {
+    width: 480px;
+    height: 380px;
+    property <int> active-tab: 0;
+    property <int> simulated-mode: 0; // 0: Bambu definition tag, 1: blank tag
+
+    init => {
+        self.simulate-bambu();
+    }
+
+    function simulate-bambu() {
+        simulated-mode = 0;
+        AppState.new-tag-scan-tag-type = NewScannedTagType.DefinitionTag;
+        AppState.new-tag-scan-definition-type = "Bambu Lab";
+        AppState.new-tag-scan-definition-info = "{}";
+        AppState.new-tag-scan-tag-id = "04A1B2C3D4";
+        AppState.new-tag-scan-spool-id = "42";
+        AppState.new-tag-scan-product-match-count = 5;
+        AppState.new-tag-scan-match-overflow = 3; // 5 matched, 2 shown
+        AppState.new-tag-scan-last-result = "✓ Added new spool #42";
+        AppState.new-tag-scan-candidates = [
+            { id: "42", line1: "#42 Bambu PLA Basic Jade White", line2: "612g left · matches tag", colors: [#ffffff], blocked-reason: "" },
+            { id: "15", line1: "#15 Bambu PLA Basic Jade White", line2: "weight unknown · matches tag", colors: [#ffffff], blocked-reason: "" },
+            { id: "8", line1: "#8 Bambu PLA Basic Jade White", line2: "1000g left · matches tag", colors: [#ffffff], blocked-reason: "Stock" },
+        ];
+        AppState.new-tag-scan-pending-spool-id = "19";
+        AppState.new-tag-scan-diffs = [
+            { label: "Brand", tag-value: "Bambu Lab", spool-value: "eSUN" },
+            { label: "Material", tag-value: "PETG Basic", spool-value: "PLA Basic" },
+            { label: "Colour", tag-value: "Jade White (#FFFFFFFF)", spool-value: "Black (#000000FF)" },
+            { label: "Spool Size", tag-value: "1000g", spool-value: "250g" },
+        ];
+    }
+
+    function simulate-blank() {
+        simulated-mode = 1;
+        AppState.new-tag-scan-tag-type = NewScannedTagType.SimpleTag;
+        AppState.new-tag-scan-definition-type = "";
+        AppState.new-tag-scan-definition-info = "";
+        AppState.new-tag-scan-tag-id = "04DEADBEEF";
+        AppState.new-tag-scan-spool-id = "42";
+        AppState.new-tag-scan-product-match-count = 0;
+        AppState.new-tag-scan-match-overflow = 0;
+        AppState.new-tag-scan-last-result = "✓ Tag linked to spool #42";
+        AppState.new-tag-scan-candidates = [
+            { id: "15", line1: "#15 Bambu PLA Basic Black", line2: "612g left · in staging", colors: [#000000], blocked-reason: "" },
+            { id: "42", line1: "#42 Bambu PLA Basic Jade White", line2: "weight unknown · just added", colors: [#ffffff], blocked-reason: "" },
+            { id: "3", line1: "#3 eSUN PLA+ Red", line2: "250g left · untagged", colors: [#ff0000], blocked-reason: "" },
+        ];
+    }
+
+    VerticalLayout {
+        Rectangle {
+            background: #f97316;
+            height: 60px;
+            VerticalLayout {
+                padding: 2px;
+                spacing: 2px;
+                HorizontalLayout {
+                    height: 28px;
+                    spacing: 2px;
+                    MyButton { height: 24px; text: "1.Scanned"; pushed: active-tab == 0; pressed => { active-tab = 0; } }
+                    MyButton { height: 24px; text: "2A.Type"; pushed: active-tab == 1; pressed => { active-tab = 1; } }
+                    MyButton { height: 24px; text: "2B.Picker"; pushed: active-tab == 2; pressed => { active-tab = 2; } }
+                    MyButton { height: 24px; text: "3.Weigh"; pushed: active-tab == 3; pressed => { active-tab = 3; } }
+                    MyButton { height: 24px; text: "4.ExtraTag"; pushed: active-tab == 4; pressed => { active-tab = 4; } }
+                    MyButton { height: 24px; text: "5.Mismatch"; pushed: active-tab == 5; pressed => { active-tab = 5; } }
+                }
+                HorizontalLayout {
+                    height: 24px;
+                    spacing: 4px;
+                    MyButton { height: 22px; text: "Tag: Bambu"; pushed: simulated-mode == 0; pressed => { root.simulate-bambu(); } }
+                    MyButton { height: 22px; text: "Tag: Blank/Unknown"; pushed: simulated-mode == 1; pressed => { root.simulate-blank(); } }
+                }
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            if active-tab == 0: DefinitionTagScannedPage { }
+            if active-tab == 1: SpoolTypePage { }
+            if active-tab == 2: SpoolPickerPage { }
+            if active-tab == 3: WeighNewSpoolPage { }
+            if active-tab == 4: LinkAnotherTagPage { }
+            if active-tab == 5: ConfirmTagMismatchPage { }
+        }
+    }
+}

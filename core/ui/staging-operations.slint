@@ -1,5 +1,5 @@
 import { MyText, MyButton, ButtonType, WizardButtons, Title, Selector } from "framework/widgets.slint";
-import { AppBackend, AppState, ControlState, SpoolStagingState, SpoolScaleState, StagingOperationsPage, UiSpoolRecordDisplay } from "app.slint";
+import { AppBackend, AppState, ControlState, SpoolStagingState, SpoolScaleState, StagingOperationsPage, UiSpoolRecordDisplay, UiStockMatch } from "app.slint";
 import { SpoolDisplay } from "spool-display.slint";
 import { Utils } from "utils.slint";
 import { ScaleWeightDisplay, LabeledText } from "app-widgets.slint";
@@ -57,26 +57,8 @@ component SpoolDisplayStep inherits Rectangle {
 }
 
 component OperationSelectionStep inherits Rectangle {
-    width:480px;
-    height:320px;
     background: white;
-    pure function linked-tag-count() -> int {
-        return AppBackend.spool-tag-count(AppState.spool-staging-info.spool-record.id);
-    }
-
-    pure function unlink-button-text() -> string {
-        if linked-tag-count() <= 1 {
-            return "Unlink Tag";
-        }
-        if AppBackend.staging-scanned-tag-id() != "" {
-            return "Unlink Tag/s";
-        }
-        return "Unlink Tags";
-    }
-
-    pure function should-show-unlink-selection() -> bool {
-        return linked-tag-count() > 1 && AppBackend.staging-scanned-tag-id() != "";
-    }
+    property <int> stock-count: AppBackend.matching-stock-count(AppState.spool-staging-info.spool-record.id, AppState.stocks-revision);
 
     VerticalLayout {
         Title {
@@ -114,27 +96,16 @@ component OperationSelectionStep inherits Rectangle {
 
             Row {
                 MyButton {
-                    text: "Encode Tag";
+                    text: "Change Tag";
                     clicked => {
-                        AppState.encode-start();
+                        AppState.staging-operation-page = StagingOperationsPage.TagOperations;
                     }
                 }
 
                 MyButton {
-                    text: unlink-button-text();
+                    text: "Stocks" + (stock-count > 0 ? " (\{stock-count})" : "");
                     clicked => {
-                        if should-show-unlink-selection() {
-                            AppState.staging-operation-page = StagingOperationsPage.UnlinkSelection;
-                        } else {
-                            AppBackend.unlink-spool-from-all-tags(AppState.spool-staging-info.spool-record.id);
-                        }
-                    }
-                }
-
-                MyButton {
-                    text: "Erase Tag";
-                    clicked => {
-                        AppState.erase-staging-tag();
+                        AppState.staging-operation-page = StagingOperationsPage.Stocks;
                     }
                 }
             }
@@ -177,6 +148,216 @@ component OperationSelectionStep inherits Rectangle {
                 clicked => {
                     AppState.control-state = ControlState.Ready;
                 }
+            }
+        }
+    }
+}
+
+// Page 2 of the staging operations: everything that writes to the physical tag. Split off so the
+// main page has room for the operations that act on the inventory record instead.
+component TagOperationsStep inherits Rectangle {
+    background: white;
+    pure function linked-tag-count() -> int {
+        return AppBackend.spool-tag-count(AppState.spool-staging-info.spool-record.id);
+    }
+
+    pure function unlink-button-text() -> string {
+        if linked-tag-count() <= 1 {
+            return "Unlink Tag";
+        }
+        if AppBackend.staging-scanned-tag-id() != "" {
+            return "Unlink Tag/s";
+        }
+        return "Unlink Tags";
+    }
+
+    pure function should-show-unlink-selection() -> bool {
+        return linked-tag-count() > 1 && AppBackend.staging-scanned-tag-id() != "";
+    }
+
+    VerticalLayout {
+        Title {
+            text: "Change Tag";
+        }
+
+        GridLayout {
+            padding: 5px;
+            spacing: 5px;
+            Row {
+                MyButton {
+                    text: "Encode Tag";
+                    clicked => {
+                        AppState.encode-start();
+                    }
+                }
+
+                MyButton {
+                    text: unlink-button-text();
+                    clicked => {
+                        if should-show-unlink-selection() {
+                            AppState.staging-operation-page = StagingOperationsPage.UnlinkSelection;
+                        } else {
+                            AppBackend.unlink-spool-from-all-tags(AppState.spool-staging-info.spool-record.id);
+                        }
+                    }
+                }
+
+                MyButton {
+                    text: "Erase Tag";
+                    clicked => {
+                        AppState.erase-staging-tag();
+                    }
+                }
+            }
+        }
+
+        WizardButtons {
+            back-enabled: true;
+            next-enabled: false;
+            cancel-text: "Close";
+            back-clicked => {
+                AppState.staging-operation-page = StagingOperationsPage.OperationSelection;
+            }
+            cancel-clicked => {
+                AppState.control-state = ControlState.Ready;
+            }
+        }
+    }
+}
+
+// Stock records holding the same filament as the staged spool. A single stock goes straight to its
+// +/- controls; with several, the user picks one first. At a count of 0 the "−" becomes "DEL",
+// which asks before removing the stock record.
+component StocksStep inherits Rectangle {
+    background: white;
+    property <string> spool-id: AppState.spool-staging-info.spool-record.id;
+    property <[UiStockMatch]> stocks: AppBackend.get-matching-stocks(spool-id, AppState.stocks-revision);
+    property <int> total-count: AppBackend.matching-stock-count(spool-id, AppState.stocks-revision);
+    property <int> overflow-count: total-count - stocks.length;
+    property <int> picked-index: -1;
+    property <int> active-index: stocks.length == 1 ? 0 : picked-index;
+    property <bool> has-active: active-index >= 0 && active-index < stocks.length;
+    property <UiStockMatch> active: has-active ? stocks[active-index] : { id: "", line1: "", count: 0 };
+    property <bool> confirming-delete: false;
+
+    function reset-selection() {
+        confirming-delete = false;
+        picked-index = -1;
+    }
+
+    VerticalLayout {
+        Title {
+            text: confirming-delete ? "Delete Stock #\{active.id}?" : "Stock for Spool #\{spool-id}";
+        }
+
+        if confirming-delete: VerticalLayout {
+            alignment: center;
+            padding: 20px;
+            spacing: 12px;
+            MyText {
+                horizontal-alignment: center;
+                overflow: elide;
+                text: active.line1;
+            }
+            MyText {
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                text: "This stock is empty. Delete the stock entry?";
+            }
+        }
+
+        if !confirming-delete: VerticalLayout {
+            alignment: start;
+            padding: 5px;
+            spacing: 5px;
+            if !has-active || stocks.length == 1: MyButton {
+                height: 48px;
+                text: "Create Stock from this Spool";
+                clicked => {
+                    AppBackend.create-stock-from-spool(spool-id);
+                }
+            }
+            if total-count == 0: MyText {
+                height: 40px;
+                wrap: word-wrap;
+                text: "No stock holds this filament yet.";
+            }
+
+            if !has-active && stocks.length > 1: MyText {
+                height: 26px;
+                text: overflow-count > 0 ? "Pick a stock  (+\{overflow-count} more)" : "Pick a stock:";
+            }
+
+            if !has-active && stocks.length > 1: VerticalLayout {
+                spacing: 3px;
+                for entry[index] in stocks: MyButton {
+                    height: 40px;
+                    horizontal-alignment: left;
+                    text-padding: 6px;
+                    wrap: no-wrap;
+                    overflow: elide;
+                    text: "\{entry.line1}  (\{entry.count})";
+                    clicked => {
+                        picked-index = index;
+                    }
+                }
+            }
+
+            if has-active: MyText {
+                height: 28px;
+                overflow: elide;
+                text: active.line1;
+            }
+
+            if has-active: HorizontalLayout {
+                height: 64px;
+                spacing: 8px;
+                MyButton {
+                    width: 110px;
+                    text: active.count > 0 ? "−" : "DEL";
+                    clicked => {
+                        if active.count > 0 {
+                            AppBackend.adjust-stock-count(active.id, -1);
+                        } else {
+                            confirming-delete = true;
+                        }
+                    }
+                }
+                MyText {
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    text: "\{active.count} in stock";
+                }
+
+                MyButton {
+                    width: 110px;
+                    text: "+";
+                    clicked => {
+                        AppBackend.adjust-stock-count(active.id, 1);
+                    }
+                }
+            }
+        }
+        WizardButtons {
+            back-enabled: true;
+            next-enabled: confirming-delete;
+            next-text: "Delete";
+            cancel-text: "Close";
+            next-clicked => {
+                AppBackend.delete-stock(active.id);
+                reset-selection();
+            }
+            back-clicked => {
+                if confirming-delete {
+                    confirming-delete = false;
+                } else if picked-index >= 0 && stocks.length > 1 {
+                    picked-index = -1;
+                } else {
+                    AppState.staging-operation-page = StagingOperationsPage.OperationSelection;
+                }
+            }
+            cancel-clicked => {
+                AppState.control-state = ControlState.Ready;
             }
         }
     }
@@ -232,7 +413,7 @@ component UnlinkSelectionStep inherits Rectangle {
                 }
             }
             back-clicked => {
-                AppState.staging-operation-page = StagingOperationsPage.OperationSelection;
+                AppState.staging-operation-page = StagingOperationsPage.TagOperations;
             }
             cancel-clicked => {
                 AppState.control-state = ControlState.Ready;
@@ -604,11 +785,15 @@ component SelectSpoolToLoadStep inherits Rectangle {
 }
 
 export component StagingOperations {
-    property <UiSpoolRecordDisplay> spool-display: AppBackend.get-spool-record-display(AppState.spool-staging-info.spool-record.id);
+    // `in` so the design-time preview (ui/preview/staging-operations-preview.slint) can inject a
+    // mock spool; the firmware never sets it and keeps the AppBackend binding below.
+    in property <UiSpoolRecordDisplay> spool-display: AppBackend.get-spool-record-display(AppState.spool-staging-info.spool-record.id);
     if AppState.staging-operation-page == StagingOperationsPage.SpoolDisplay: SpoolDisplayStep {
         spool-display: spool-display;
     }
     if AppState.staging-operation-page == StagingOperationsPage.OperationSelection: OperationSelectionStep { }
+    if AppState.staging-operation-page == StagingOperationsPage.TagOperations: TagOperationsStep { }
+    if AppState.staging-operation-page == StagingOperationsPage.Stocks: StocksStep { }
     if AppState.staging-operation-page == StagingOperationsPage.UnlinkSelection: UnlinkSelectionStep { }
     if AppState.staging-operation-page == StagingOperationsPage.MarkEmptyConfirm: MarkEmptyConfirmStep { }
     if AppState.staging-operation-page == StagingOperationsPage.UpdateWeight: UpdateWeightPage {

@@ -3,8 +3,33 @@ import { MyButton, MyText } from "./framework/widgets.slint";
 import { Utils } from "utils.slint";
 import { AppState } from "app.slint";
 
+// The two nested rectangles round off MyButton's square corners against the dialog background.
+component DialogButton inherits MyButton {
+    in property <color> dialog-background: skyblue;
+    width: 120px;
+    height: 56px;
+    Rectangle {
+        width: 128px;
+        height: 64px;
+        background: #0000;
+        border-radius: 10px;
+        border-color: root.dialog-background;
+        border-width: 5px;
+    }
+
+    Rectangle {
+        width: 120px;
+        height: 56px;
+        background: #0000;
+        border-radius: 10px;
+        border-color: black;
+        border-width: 1px;
+    }
+}
+
 export component MessageBox inherits Rectangle {
     callback clicked;
+    callback alt-clicked;
     in property <color> dialog-background: skyblue;
     in property <color> dialog-title-background: beige;
     in property <length> dialog-width: 416px;
@@ -14,6 +39,7 @@ export component MessageBox inherits Rectangle {
     in property <string> dialog-text2;
     in property <string> dialog-button-text: "Ok";
     in property <bool> dialog-dismissible: true;
+    in property <string> dialog-alt-button-text: ""; // "" hides the secondary button
     back-rect := Rectangle {
         x: (root.width - root.dialog-width) / 2;
         y: (root.height - root.dialog-height) / 2;
@@ -69,31 +95,20 @@ export component MessageBox inherits Rectangle {
 
             HorizontalLayout {
                 alignment: center;
-                MyButton {
-                    width: 120px;
-                    height: 56px;
+                spacing: 10px;
+                if root.dialog-alt-button-text != "": DialogButton {
+                    dialog-background: root.dialog-background;
+                    text: root.dialog-alt-button-text;
+                    clicked => {
+                        root.alt-clicked();
+                    }
+                }
+                DialogButton {
+                    dialog-background: root.dialog-background;
                     enabled: root.dialog-dismissible;
                     text: root.dialog-button-text;
                     clicked => {
                         root.clicked();
-                    }
-                    // Next two rectangles are to get a round border on the button
-                    Rectangle {
-                        width: 128px;
-                        height: 64px;
-                        background: #0000;
-                        border-radius: 10px;
-                        border-color: back-rect.background;
-                        border-width: 5px;
-                    }
-
-                    Rectangle {
-                        width: 120px;
-                        height: 56px;
-                        background: #0000;
-                        border-radius: 10px;
-                        border-color: black;
-                        border-width: 1px;
                     }
                 }
             }
