@@ -220,6 +220,14 @@ where
                 reason: "Can't start_retrieve w/o an open control channel".to_string(),
             });
         }
+        // Without memory_save the RETR reply is only read after the data connection is up, so only one RETR can be sent
+        let paths = if memory_save || paths.len() == 1 {
+            paths
+        } else {
+            let index = self.first_existing_path_index(paths).await?;
+            &paths[index..=index]
+        };
+
         // This is a bit tricky so save memory
         // We close the control session before initiating the data session.
         // It seems printer ftp anyway close the control channel when data streaming start
@@ -232,11 +240,14 @@ where
 
         let mut pasv_result = Self::parse_pasv(&response.string)?;
 
-        if pasv_result.0.octets() == [0, 0, 0, 0] {
-            let control_endpoint: IpEndpoint = self.ftp_endpoint.clone().into();
-            if let IpAddress::Ipv4(octets) = control_endpoint.addr {
-                pasv_result.0 = octets;
-            }
+        // Ignore the PASV IP and reuse the control host (curl's --ftp-skip-pasv-ip
+        // default). Behind a proxy/NAT the PASV IP is the printer's real LAN IP,
+        // so connecting there makes the data connection come from a different
+        // source IP than the control one and vsftpd rejects it with
+        // "425 Security: Bad IP connecting".
+        let control_endpoint: IpEndpoint = self.ftp_endpoint.clone().into();
+        if let IpAddress::Ipv4(octets) = control_endpoint.addr {
+            pasv_result.0 = octets;
         }
 
         let _response = self.control_transaction("PBSZ 0\r\n").await?;
@@ -483,6 +494,19 @@ where
         self.write_control(command).await?;
         let response = self.read_decoded_control_response().await?;
         Ok(response)
+    }
+    // vsftpd SIZE replies 213 when the file exists and 550 when it doesn't
+    async fn first_existing_path_index(&mut self, paths: &[String]) -> Result<usize, Error> {
+        let mut last_response = ControlResponse::default();
+        for (index, path) in paths.iter().enumerate() {
+            last_response = self.control_transaction(&format!("SIZE {path}\r\n")).await?;
+            match last_response.code {
+                550 => continue,
+                // 213, or SIZE unsupported - let RETR decide
+                _ => return Ok(index),
+            }
+        }
+        Err(Error::Ftp { response: last_response })
     }
     async fn write_control(&mut self, command: &str) -> Result<(), Error> {
         debugex!(">>>> ---> {command}");
