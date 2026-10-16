@@ -33,9 +33,9 @@ pub const OTA_PATH: &str = CONSOLE_STABLE_OTA_PATH;
 
 pub const OTA_TOML_FILENAME: &str = "ota.toml";
 // pub const OTA_TLS_CERTIFICATE: &str = concat!(include_str!("./certs/raw.githubusercontent.com.pem"), "\0");
-pub const CONSOLE_STABLE_OTA_PATH: &str = "/bins/0.6/console/ota/";
-pub const CONSOLE_UNSTABLE_OTA_PATH: &str = "/bins/0.6/console/ota-unstable/";
-pub const CONSOLE_DEBUG_OTA_PATH: &str = "/bins/0.6/console/debug/";
+pub const CONSOLE_STABLE_OTA_PATH: &str = "/bins/dev/console/ota/";
+pub const CONSOLE_UNSTABLE_OTA_PATH: &str = "/bins/dev/console/ota-unstable/";
+pub const CONSOLE_DEBUG_OTA_PATH: &str = "/bins/dev/console/debug/";
 pub const CONSOLE_ONEOFF_OTA_PATH: &str = "/bins/0.6/console/oneoff/";
 
 #[cfg(feature = "jc8048w550c")]

@@ -71,7 +71,11 @@ use esp_hal::{
 };
 
 use framework::prelude::*;
-use framework::{RNG, framework::FrameworkSettings};
+use framework::{
+    RNG,
+    framework::FrameworkSettings,
+    ota::{APP_OTA_ACTION_INSTALL, APP_OTA_ACTION_INSTALLED, APP_OTA_ACTION_PATH, APP_OTA_METADATA_PATH, OtaMetadata},
+};
 
 #[cfg(feature = "wt32-sc01-plus")]
 use framework::wt32_sc01_plus::{WT32SC01Plus, WT32SC01PlusDisplayPeripherals, WT32SC01PlusRunner, WT32SC01PlusSDCardPeripherals};
@@ -253,6 +257,9 @@ async fn main(spawner: Spawner) {
     };
 
     let framework = Framework::new(framework_settings, flash_map.clone(), spawner, sta_stack, tls.reference(), None);
+    // Console OTA requests are routed through app_ota so runtime partition-layout policy cannot
+    // be bypassed by the framework's direct-to-inactive-partition endpoint.
+    framework.borrow_mut().set_builtin_ota_enabled(false);
 
     // == Setup Display Interface =====================================================
 
@@ -414,6 +421,45 @@ async fn main(spawner: Spawner) {
     let config_toml = {
         let mut file_store = file_store.lock().await;
         sdcard_available = file_store.card_installed;
+
+        // The updater leaves APP.ACT as INSTALL until this image has booted and marked itself
+        // valid. Keeping APP.BIN and APP.TOM allows an explicit reinstall by changing APP.ACT
+        // back to INSTALL later.
+        if sdcard_available {
+            match file_store.file_exists(APP_OTA_ACTION_PATH).await {
+                Ok(true) => match file_store.read_file_str(APP_OTA_ACTION_PATH).await {
+                    Ok(action) if action.trim() == APP_OTA_ACTION_INSTALL => {
+                        let installed_version_matches = match file_store.read_file_str(APP_OTA_METADATA_PATH).await {
+                            Ok(metadata) => OtaMetadata::parse(&metadata)
+                                .map(|metadata| metadata.version == env!("CARGO_PKG_VERSION"))
+                                .unwrap_or(false),
+                            Err(err) => {
+                                warn!("Failed reading {APP_OTA_METADATA_PATH}: {err}");
+                                false
+                            }
+                        };
+
+                        // If updater activation failed and the old image booted again, leave
+                        // INSTALL untouched so the staged image can still be retried.
+                        if installed_version_matches {
+                            if let Err(err) = file_store
+                                .create_write_file_str(APP_OTA_ACTION_PATH, &format!("{APP_OTA_ACTION_INSTALLED}\n"))
+                                .await
+                            {
+                                warn!("Failed marking staged application installed: {err}");
+                            } else {
+                                info!("Marked staged application installed in {APP_OTA_ACTION_PATH}");
+                            }
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(err) => warn!("Failed reading {APP_OTA_ACTION_PATH}: {err}"),
+                },
+                Ok(false) => {}
+                Err(err) => warn!("Failed checking {APP_OTA_ACTION_PATH}: {err}"),
+            }
+        }
+
         let config_filename = "/config/console.cfg";
         term_info!("Loading optional config file '{}' from SDCard", config_filename);
 
