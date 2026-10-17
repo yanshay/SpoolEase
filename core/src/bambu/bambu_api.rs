@@ -90,6 +90,9 @@ pub struct PrintData {
     pub subtask_name: Option<String>,
     pub ams_mapping: Option<Vec<i32>>,
     pub ams_mapping2: Option<Vec<AmsMapping2Entry>>,
+    // push_status equivalent of ams_mapping2, each entry encoded as (ams_id << 8) | slot_id, 65535 = unused
+    #[serde(default, deserialize_with = "ignore_errors")]
+    pub mapping: Option<Vec<i32>>,
     pub gcode_file: Option<String>,
     // pub stg: Option<Vec<Value>>,
     pub stg_cur: Option<i32>,

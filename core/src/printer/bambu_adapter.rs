@@ -896,7 +896,7 @@ impl PrinterDriver for BambuPrinterDriver {
         Some(Box::pin(async move {
             let printer_number = printer.borrow().printer_number;
             info!("[{printer_number}] Checking for print project resume state");
-            match BambuPrinter::load_print_project_state(&framework, &printer).await {
+            let result = match BambuPrinter::load_print_project_state(&framework, &printer).await {
                 Ok(found_print_project_state) => {
                     if !found_print_project_state {
                         info!("[{printer_number}] Print project resume state not found");
@@ -909,8 +909,14 @@ impl PrinterDriver for BambuPrinterDriver {
                     let _ = BambuPrinter::delete_print_project_state(&framework, &printer).await;
                     Err(err)
                 }
-            }
+            };
+            printer.borrow_mut().mark_runtime_state_restored();
+            result
         }))
+    }
+
+    fn skip_runtime_state_restore(&mut self) {
+        self.printer.borrow_mut().mark_runtime_state_restored();
     }
 
     // Runs async save/delete requests for Bambu print-tracking files outside the driver borrow.

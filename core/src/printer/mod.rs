@@ -464,6 +464,8 @@ pub trait PrinterDriver {
     fn restore_runtime_state(&mut self, _framework: Rc<RefCell<Framework>>) -> Option<PrinterRuntimePersistenceFuture> {
         None
     }
+    // Called instead of restore_runtime_state when there is no storage to restore from
+    fn skip_runtime_state_restore(&mut self) {}
     fn handle_runtime_persistence_request(
         &mut self,
         _framework: Rc<RefCell<Framework>>,

@@ -37,7 +37,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use bambu_print::PrintProject;
+use bambu_print::{PrintProject, RunningPrintPickup};
 use core::cell::RefCell;
 use embassy_net::Ipv4Address;
 use embassy_time::{Instant, Timer};
@@ -205,6 +205,7 @@ pub struct BambuPrinter {
     pending_k_restore_sequence: bool,
     pub curr_print_project: Option<PrintProject>,
     pub loaded_print_project: Option<PrintProject>,
+    running_print_pickup: RunningPrintPickup,
     inner_extruder_state: Option<i32>,
     relevant_extruder_state_dirty: bool,
     tray_tar: [i32; 2],
@@ -455,6 +456,7 @@ impl BambuPrinter {
             pending_k_restore_sequence: true,
             curr_print_project: None,
             loaded_print_project: None,
+            running_print_pickup: RunningPrintPickup::default(),
             inner_extruder_state: None, // h2d field for knowing which extruder is active
             tray_tar: [255, 255],       // canonical format: 0..23 (AMS/AMS-HT), 254 (external), 255 (none)
             tray_now: [255, 255],
@@ -539,6 +541,7 @@ impl BambuPrinter {
         if self.printer_connectivity_ok == Some(true) && !status {
             self.printer_was_disconnected = true;
             self.pending_k_restore_sequence = true;
+            self.running_print_pickup.on_disconnect();
         }
         self.printer_connectivity_ok = Some(status);
         self.notify_printer_connect_status(status);
