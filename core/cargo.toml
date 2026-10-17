@@ -176,6 +176,7 @@ jc8048w550c=["framework/jc8048w550c"]
 
 rgb-stats =["framework/rgb-stats"]
 metrics =["framework/metrics"]
+sd-ota-diagnostics = ["framework/sd-ota-diagnostics"]
 log_none =["framework/log_none"]
 log_info =["framework/log_info"]
 
