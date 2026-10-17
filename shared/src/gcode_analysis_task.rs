@@ -144,6 +144,9 @@ pub enum Fetch3mf {
     PrinterFtp,
 }
 
+// For prints whose 3mf url is unknown: routes the fetch to ftp, which then tries filenames derived from threemf_ftp_filename
+pub const THREEMF_URL_FROM_SUBTASK_NAME: &str = "file://subtask_name";
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum GcodeAnalysisNotification {
     Cancel { job_number: i32 },

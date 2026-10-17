@@ -364,6 +364,8 @@ impl BambuPrinter {
             self.subtask_name = print.subtask_name.clone();
         }
 
+        self.running_print_pickup.update_from(print);
+
         if print.stg_cur.is_some() {
             self.stg_cur = print.stg_cur;
         }
@@ -769,6 +771,7 @@ impl BambuPrinter {
                     self.queue_runtime_persistence_request(PrinterRuntimePersistenceRequestKind::DeletePrintProject);
                 }
             }
+            change_made |= self.try_pick_up_running_print();
         }
         (change_made, removed_tags)
     }

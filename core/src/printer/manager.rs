@@ -259,6 +259,12 @@ impl PrinterManager {
         Ok(driver.restore_runtime_state(framework))
     }
 
+    pub fn skip_runtime_state_restore_all(&mut self) {
+        for driver in self.printers.iter_mut() {
+            driver.skip_runtime_state_restore();
+        }
+    }
+
     pub fn prepare_runtime_persistence_request_by_id(
         &mut self,
         printer_id: &PrinterId,

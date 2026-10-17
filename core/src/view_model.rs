@@ -4406,6 +4406,7 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
         let file_store = file_store.lock().await;
         if !file_store.card_installed {
             term_info!("SDCard not installed, won't restore state on restart");
+            view_model.borrow().printer_manager.borrow_mut().skip_runtime_state_restore_all();
             return;
         }
     }

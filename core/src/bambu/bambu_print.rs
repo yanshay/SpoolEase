@@ -12,7 +12,7 @@ use framework::{debug, error, info, prelude::Framework, warn};
 use serde::{Deserialize, Serialize};
 use shared::{
     gcode_analysis::FilamentUsageEntry,
-    gcode_analysis_task::{Fetch3mf, FilamentUsage},
+    gcode_analysis_task::{Fetch3mf, FilamentUsage, THREEMF_URL_FROM_SUBTASK_NAME},
 };
 
 use crate::{
@@ -101,6 +101,8 @@ pub struct PrintProject {
     pub(super) need_consume: bool,
     pub(super) inner_consume_index: i32,
     pub(super) consume_store_counter: i32,
+    #[serde(default)]
+    pub(super) joined_mid_print: bool,
 }
 
 impl PrintProject {
@@ -126,6 +128,7 @@ impl PrintProject {
             gcode_filename_in_3mf: gcode_filename_in_3mf.to_string(),
             use_ams,
             consume_store_counter: 0,
+            joined_mid_print: false,
         }
     }
     pub(super) fn set_not_store_consume_index(&mut self, value: i32) {
@@ -181,6 +184,82 @@ impl PrintProject {
     }
 }
 
+// Job details collected from push_status, to start tracking a print whose project_file message was missed
+// (console booted or reconnected while the print was already running)
+pub struct RunningPrintPickup {
+    pending: bool,
+    runtime_state_restored: bool,
+    project_id: Option<String>,
+    gcode_file: Option<String>,
+    mapping: Option<Vec<i32>>,
+}
+
+impl Default for RunningPrintPickup {
+    fn default() -> Self {
+        Self {
+            pending: true,
+            runtime_state_restored: false,
+            project_id: None,
+            gcode_file: None,
+            mapping: None,
+        }
+    }
+}
+
+impl RunningPrintPickup {
+    pub(super) fn update_from(&mut self, print: &PrintData) {
+        if print.project_id.is_some() {
+            self.project_id = print.project_id.clone();
+        }
+        if print.gcode_file.is_some() {
+            self.gcode_file = print.gcode_file.clone();
+        }
+        if print.mapping.is_some() {
+            self.mapping = print.mapping.clone();
+        }
+    }
+
+    pub(super) fn on_disconnect(&mut self) {
+        self.pending = true;
+        // details received before the disconnect may belong to a different print
+        self.project_id = None;
+        self.gcode_file = None;
+        self.mapping = None;
+    }
+
+    // Ok(None) while job details haven't arrived yet
+    fn print_project(&self, subtask_name: Option<&String>) -> Result<Option<PrintProject>, String> {
+        let (Some(subtask_name), Some(gcode_file), Some(mapping)) = (subtask_name, &self.gcode_file, &self.mapping) else {
+            return Ok(None);
+        };
+        // e.g. "/data/Metadata/plate_8.gcode"
+        let gcode_filename_in_3mf = gcode_file
+            .find("Metadata/")
+            .map(|index| &gcode_file[index..])
+            .ok_or_else(|| format!("unrecognized gcode_file '{gcode_file}'"))?;
+        let ams_mapping2 = mapping
+            .iter()
+            .map(|entry| AmsMapping2Entry {
+                ams_id: entry >> 8,
+                slot_id: entry & 0xff,
+            })
+            .collect();
+        let project_id = self.project_id.as_ref().unwrap_or(subtask_name);
+        let mut print_project = PrintProject::new(
+            project_id,
+            subtask_name,
+            THREEMF_URL_FROM_SUBTASK_NAME,
+            gcode_filename_in_3mf,
+            &[],
+            Some(ams_mapping2),
+            None,
+        );
+        print_project.joined_mid_print = true;
+        print_project.need_consume = true;
+        Ok(Some(print_project))
+    }
+}
+
 impl BambuPrinter {
     #[allow(non_snake_case)]
     pub fn process_print_message__project_file(&mut self, print: &PrintData) -> bool {
@@ -210,11 +289,7 @@ impl BambuPrinter {
                 || curr_print_project.threemf_url.starts_with("file://")
                 || curr_print_project.threemf_url.starts_with("brtc://")
             {
-                let job_number = self.notify_request_gcode_analysis(&curr_print_project);
-                curr_print_project.gcode_analysis = GcodeAnalysis::Requested {
-                    at: Instant::now(),
-                    job_number,
-                };
+                self.request_gcode_analysis(&mut curr_print_project);
             }
 
             self.update_trays_from_print_job(&curr_print_project);
@@ -224,6 +299,49 @@ impl BambuPrinter {
         }
 
         changed
+    }
+
+    pub fn mark_runtime_state_restored(&mut self) {
+        self.running_print_pickup.runtime_state_restored = true;
+    }
+
+    // Waits for resume-from-storage to settle first, so a stored print project takes precedence
+    pub fn try_pick_up_running_print(&mut self) -> bool {
+        let pickup = &self.running_print_pickup;
+        if !pickup.pending || !pickup.runtime_state_restored || self.loaded_print_project.is_some() {
+            return false;
+        }
+        match self.gcode_state {
+            GcodeState::RUNNING | GcodeState::PAUSE => {}
+            GcodeState::IDLE | GcodeState::FINISH | GcodeState::FAILED => {
+                self.running_print_pickup.pending = false;
+                return false;
+            }
+            _ => return false,
+        }
+        if self.curr_print_project.is_some() || !self.track_print_consume {
+            self.running_print_pickup.pending = false;
+            return false;
+        }
+
+        let mut print_project = match self.running_print_pickup.print_project(self.subtask_name.as_ref()) {
+            Ok(Some(print_project)) => print_project,
+            Ok(None) => return false,
+            Err(err) => {
+                warn!("[{}] Can't track print that is already running: {err}", self.printer_number);
+                self.running_print_pickup.pending = false;
+                return false;
+            }
+        };
+        self.running_print_pickup.pending = false;
+        info!(
+            "[{}] Tracking print that is already running: name: '{}', at layer {:?}, using ams slots: {:?}",
+            self.printer_number, print_project.subtask_name, self.layer_num, print_project.ams_mapping2
+        );
+        self.update_trays_from_print_job(&print_project);
+        self.request_gcode_analysis(&mut print_project);
+        self.curr_print_project = Some(print_project);
+        true
     }
 
     pub fn update_trays_from_print_job(&mut self, print: &PrintProject) {
@@ -418,11 +536,7 @@ impl BambuPrinter {
                 // if not requested earlier, request scale to fetch gcode from printer and analyze it
                 // In case of ftp it will be requested here, if http already earlier when project_file arrived
                 if curr_print_project.gcode_analysis == GcodeAnalysis::WaitingForPrinter {
-                    let job_number = self.notify_request_gcode_analysis(curr_print_project);
-                    curr_print_project.gcode_analysis = GcodeAnalysis::Requested {
-                        at: Instant::now(),
-                        job_number,
-                    };
+                    self.request_gcode_analysis(curr_print_project);
                 }
                 curr_print_project.need_consume = true;
             }
@@ -577,6 +691,14 @@ impl BambuPrinter {
         job_number
     }
 
+    fn request_gcode_analysis(&mut self, print_project: &mut PrintProject) {
+        let job_number = self.notify_request_gcode_analysis(print_project);
+        print_project.gcode_analysis = GcodeAnalysis::Requested {
+            at: Instant::now(),
+            job_number,
+        };
+    }
+
     pub fn set_gcode_analysis(&mut self, job_number: i32, filament_usage: FilamentUsage) {
         let printer_log_id = self.printer_number;
         info!("[{}] Setting gcode analysis with {} entries", printer_log_id, filament_usage.data.len());
@@ -605,18 +727,38 @@ impl BambuPrinter {
                     }
                 }
             }
+            if curr_print_project.consume_index() == -1 {
+                let start_index = if curr_print_project.joined_mid_print {
+                    Self::first_usage_index_not_yet_printed(printer_log_id, &filament_usage, self.layer_num.unwrap_or(0))
+                } else {
+                    0
+                };
+                curr_print_project.set_not_store_consume_index(start_index);
+            }
             curr_print_project.gcode_analysis = GcodeAnalysis::Received {
                 at: Instant::now(),
                 job_number,
                 usage: filament_usage,
             };
-            if curr_print_project.consume_index() == -1 {
-                curr_print_project.set_not_store_consume_index(0);
-            }
             self.queue_runtime_persistence_request(PrinterRuntimePersistenceRequestKind::StorePrintProject);
         } else {
             error!("[{}] Internal Error setting gcode analysis", self.printer_number);
         }
+    }
+
+    // Layers before current_layer were printed before tracking started, so their usage can't be attributed
+    fn first_usage_index_not_yet_printed(printer_log_id: usize, filament_usage: &FilamentUsage, current_layer: i32) -> i32 {
+        let start_index = filament_usage
+            .data
+            .iter()
+            .position(|entry| entry.layer >= current_layer)
+            .unwrap_or(filament_usage.data.len());
+        let skipped_weight_g: f32 = filament_usage.data[..start_index].iter().map(|entry| entry.weight_g).sum();
+        info!(
+            "[{}] Print tracking joined at layer {}, skipping {} usage entries ({:.2}g) printed before tracking started",
+            printer_log_id, current_layer, start_index, skipped_weight_g
+        );
+        start_index as i32
     }
 
     pub async fn load_print_project_state(framework: &Rc<RefCell<Framework>>, printer: &Rc<RefCell<BambuPrinter>>) -> Result<bool, String> {
