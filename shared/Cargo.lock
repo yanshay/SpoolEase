@@ -1972,8 +1972,8 @@ dependencies = [
 
 [[package]]
 name = "esp-hal-app-framework"
-version = "0.6.9"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.6.9#9c26450b04a1b89915a05a50f3576c21ffafbaf8"
+version = "0.6.11"
+source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.6.11#16a37ab127e190fe28b8df77b15d45811ca86d85"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2050,7 +2050,7 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework-macros"
 version = "0.1.0"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.6.9#9c26450b04a1b89915a05a50f3576c21ffafbaf8"
+source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.6.11#16a37ab127e190fe28b8df77b15d45811ca86d85"
 dependencies = [
  "flate2",
  "proc-macro2",

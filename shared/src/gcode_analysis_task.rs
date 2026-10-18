@@ -189,7 +189,7 @@ enum FetchSubtaskResult {
 
 enum PrinterFtpAttemptResult {
     Failed,
-    FileNotFound,
+    FileUnavailable,
     Canceled,
     Ok,
 }
@@ -335,8 +335,8 @@ async fn wait_for_retry_or_cancel(
     }
 }
 
-fn is_ftp_file_not_found(err: &MyFtpError) -> bool {
-    matches!(err, MyFtpError::Ftp { response } if response.code == 550)
+fn is_ftp_file_unavailable(err: &MyFtpError) -> bool {
+    matches!(err, MyFtpError::Ftp { response } if matches!(response.code, 450 | 550))
 }
 
 async fn fetch_gcode_analysis_task_printer_ftp(
@@ -379,10 +379,10 @@ async fn fetch_gcode_analysis_task_printer_ftp(
             PrinterFtpAttemptResult::Ok => return FetchSubtaskResult::Ok,
             PrinterFtpAttemptResult::Canceled => return FetchSubtaskResult::Canceled,
             PrinterFtpAttemptResult::Failed => return FetchSubtaskResult::Failed,
-            PrinterFtpAttemptResult::FileNotFound => {
+            PrinterFtpAttemptResult::FileUnavailable => {
                 if retry_interval_secs == 0 {
                     error!(
-                        "[{printer_log_id}] 3mf(ftp) file not found on attempt {attempt}; retry interval is 0, there will be no more retries; failed to find the 3mf file {}",
+                        "[{printer_log_id}] 3mf(ftp) file unavailable on attempt {attempt}; retry interval is 0, there will be no more retries; failed to fetch the 3mf file {}",
                         gcode_analysis_request.threemf_url
                     );
                     return FetchSubtaskResult::Failed;
@@ -392,7 +392,7 @@ async fn fetch_gcode_analysis_task_printer_ftp(
                     && retry_started_at.elapsed() >= timeout
                 {
                     error!(
-                        "[{printer_log_id}] 3mf(ftp) retry timeout reached after {} seconds; there will be no more retries; failed to find the 3mf file {}",
+                        "[{printer_log_id}] 3mf(ftp) retry timeout reached after {} seconds; there will be no more retries; failed to fetch the 3mf file {}",
                         retry_started_at.elapsed().as_secs(),
                         gcode_analysis_request.threemf_url
                     );
@@ -404,14 +404,14 @@ async fn fetch_gcode_analysis_task_printer_ftp(
                     && retry_at > timeout_at
                 {
                     error!(
-                        "[{printer_log_id}] 3mf(ftp) file not found on attempt {attempt}; next retry would exceed the configured retry timeout of {retry_timeout_secs} seconds, there will be no more retries; failed to find the 3mf file {}",
+                        "[{printer_log_id}] 3mf(ftp) file unavailable on attempt {attempt}; next retry would exceed the configured retry timeout of {retry_timeout_secs} seconds, there will be no more retries; failed to fetch the 3mf file {}",
                         gcode_analysis_request.threemf_url
                     );
                     return FetchSubtaskResult::Failed;
                 }
 
                 info!(
-                    "[{printer_log_id}] 3mf(ftp) file not found on attempt {attempt}; will retry in {retry_interval_secs} seconds"
+                    "[{printer_log_id}] 3mf(ftp) file unavailable on attempt {attempt}; will retry in {retry_interval_secs} seconds"
                 );
                 if wait_for_retry_or_cancel(&mut notifications, job_number, retry_at).await {
                     info!(
@@ -714,13 +714,13 @@ async fn fetch_gcode_analysis_task_printer_ftp_attempt(
             }
         }
         Err(err) => {
-            if is_ftp_file_not_found(&err) {
+            if is_ftp_file_unavailable(&err) {
                 info!(
-                    "[{printer_log_id}] 3mf(ftp) retrieve attempt {attempt} did not find one of {threemf_filenames:?}: {err:?}"
+                    "[{printer_log_id}] 3mf(ftp) retrieve attempt {attempt} could not retrieve a file from {threemf_filenames:?}: {err:?}"
                 );
                 let _ = ftps.quit().await;
                 let _ = ftps.close().await;
-                return PrinterFtpAttemptResult::FileNotFound;
+                return PrinterFtpAttemptResult::FileUnavailable;
             }
             error!(
                 "[{printer_log_id}] Error initiating retrieve of 3mf file one of {threemf_filenames:?} on attempt {attempt} {err:?}"

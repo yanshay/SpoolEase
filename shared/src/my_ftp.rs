@@ -220,6 +220,28 @@ where
                 reason: "Can't start_retrieve w/o an open control channel".to_string(),
             });
         }
+
+        // Find the file before RETR: an existing RETR puts VSFTPD into transfer mode.
+        // Using SIZE first in both memory save and not to check the file existence due to vsftpd control/data sensitive timing issues
+        let mut last_size_response = ControlResponse::default();
+        let mut selected_path = None;
+        for path in paths {
+            let response = self
+                .control_transaction(&format!("SIZE {path}\r\n"))
+                .await?;
+            match response.code {
+                213 => {
+                    selected_path = Some(path);
+                    break;
+                }
+                550 => last_size_response = response,
+                _ => return Err(Error::Ftp { response }),
+            }
+        }
+        let path = selected_path.ok_or(Error::Ftp {
+            response: last_size_response,
+        })?;
+
         // This is a bit tricky so save memory
         // We close the control session before initiating the data session.
         // It seems printer ftp anyway close the control channel when data streaming start
@@ -243,32 +265,17 @@ where
 
         let _response = self.control_transaction("PROT P\r\n").await?;
 
+        debugex!(">>>> Trying to read {path}");
+        self.write_control(&format!("RETR {path}\r\n")).await?; // only send request at this time (vsftpd sequence)
+
         let mut retr_response = ControlResponse::default();
-        let mut retrieve_started = !memory_save;
-
-        for path in paths {
-            debugex!(">>>> Trying to read {path}");
-            self.write_control(&format!("RETR {path}\r\n")).await?; // only send request at this time (vsftpd sequence)
-
-            if memory_save {
-                retr_response = self.read_decoded_control_response().await?;
-                if retr_response.code == 550 {
-                    continue;
-                } else if retr_response.code != 150 {
-                    return Err(Error::Ftp {
-                        response: retr_response,
-                    });
-                } else {
-                    retrieve_started = true;
-                    break;
-                }
-            };
-        }
-
-        if !retrieve_started {
-            return Err(Error::Ftp {
-                response: retr_response,
-            });
+        if memory_save {
+            retr_response = self.read_decoded_control_response().await?;
+            if retr_response.code != 150 {
+                return Err(Error::Ftp {
+                    response: retr_response,
+                });
+            }
         }
 
         data_socket
