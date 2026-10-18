@@ -105,7 +105,7 @@ pub fn init_api_server(
 
     let config = picoserve::Config::new(picoserve::Timeouts {
         start_read_request: Duration::from_secs(3),
-        persistent_start_read_request: Duration::from_secs(3),
+        persistent_start_read_request: Duration::from_secs(1),
         read_request: Duration::from_secs(3),
         write: Duration::from_secs(3),
     })
