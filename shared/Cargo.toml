@@ -21,7 +21,7 @@ serde_with = { version = "3.16.0", default-features = false, features = ["alloc"
 
 
 # framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", default-features = false, features = ["esp32s3"] }
-framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.11", features = ["esp32s3"] }
+framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.12", features = ["esp32s3"] }
 pn532 = { git = "https://github.com/yanshay/pn532", branch ="yanshay_esp-hal-1.0.0-upgrade", default-features = false }
 # pn532 = { path = "../../../../../../OpenSourceProj/forked/pn532/", default-features = false }
 embassy-time = { version = "0.5.0", features = ["generic-queue-8"] }
@@ -39,7 +39,7 @@ getrandom = { version = "0.2.15", features = ["custom"] }
 hashbrown = { version = "0.16.1", features = ["serde"] }
 snafu = { git = "https://github.com/shepmaster/snafu", rev = "aedc9db8c04a437b4c547efd4d73e9337fa43a4a", default-features = false, features = ["rust_1_81", "alloc"]} # , "backtraces-impl-backtrace-crate"]} 
 # esp-mbedtls = { package = "mbedtls-rs", path = "../../../../../../OpenSourceProj/forked/mbedtls-rs/mbedtls-rs", features = [ "log" ] }
-esp-mbedtls = { package = "mbedtls-rs", git = "https://github.com/esp-rs/mbedtls-rs", features = [ "log" ] }
+esp-mbedtls = { package = "mbedtls-rs", git = "https://github.com/esp-rs/mbedtls-rs", rev = "177721027aae6e014e1cf922608eb9955d70d85b", features = [ "log" ] }
 esp-alloc = { version = "0.9.0" }
 miniz_oxide = { version = "0.8.9", default-features = false }
 url = {version = "2.5.4", default-features = false}
