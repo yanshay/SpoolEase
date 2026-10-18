@@ -8,6 +8,7 @@ use core::cell::RefCell;
 use core::cmp::min;
 use embassy_futures::select::Either;
 use embassy_futures::select::Either3;
+use embassy_futures::yield_now;
 use embassy_net::IpEndpoint;
 use embassy_net::tcp::State;
 use embassy_net::tcp::TcpSocket;
@@ -582,6 +583,7 @@ pub async fn generic_mqtt_task<
                         Ok(p) => {
                             // publish internally the received packet
                             publisher.publish_immediate(p);
+                            yield_now().await;
                         }
                         Err(e) => {
                             term_error!("[{}] Error converting internal packets data on read {:?}", printer_log_id, e);

@@ -6,6 +6,7 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
+use embassy_futures::yield_now;
 use embassy_time::{Duration, with_timeout};
 use framework::{debug, error, info, term_info, trace, utils::SpawnerHeapExt, warn};
 use hashbrown::HashMap;
@@ -1082,6 +1083,8 @@ pub async fn incoming_messages_task(read_packets: Rc<ReadPacketsPubSub>, bambu_p
                 } else {
                     error!("Unparsable MQTT message, this means an internal bug");
                 }
+                drop(packet);
+                yield_now().await;
             }
             Err(_) => {
                 // always TimeoutError
