@@ -652,7 +652,9 @@ impl BambuPrinter {
 
             let new_tray = self.get_updated_tray(source_tray, tray_id as i32);
             if let Some(mut new_tray) = new_tray {
-                change_made = true;
+                let current_tray = &self.ams_trays()[tray_id];
+                let tray_changed = current_tray != &new_tray || current_tray.meta_info != new_tray.meta_info;
+                change_made |= tray_changed;
                 self.swap_ams_tray(tray_id, &mut new_tray);
 
                 if spool_removed {
