@@ -1973,7 +1973,6 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework"
 version = "0.6.12"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.6.12#656f4142572f9aab50fb6e073b2ce21e48d5ed5f"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -2050,7 +2049,6 @@ dependencies = [
 [[package]]
 name = "esp-hal-app-framework-macros"
 version = "0.1.0"
-source = "git+https://github.com/yanshay/esp-hal-app/?tag=0.6.12#656f4142572f9aab50fb6e073b2ce21e48d5ed5f"
 dependencies = [
  "flate2",
  "proc-macro2",
@@ -3800,7 +3798,6 @@ dependencies = [
 [[package]]
 name = "mbedtls-rs"
 version = "0.1.0"
-source = "git+https://github.com/esp-rs/mbedtls-rs?rev=177721027aae6e014e1cf922608eb9955d70d85b#177721027aae6e014e1cf922608eb9955d70d85b"
 dependencies = [
  "critical-section",
  "edge-nal",
@@ -3815,7 +3812,6 @@ dependencies = [
 [[package]]
 name = "mbedtls-rs-sys"
 version = "0.1.0"
-source = "git+https://github.com/esp-rs/mbedtls-rs?rev=177721027aae6e014e1cf922608eb9955d70d85b#177721027aae6e014e1cf922608eb9955d70d85b"
 dependencies = [
  "anyhow",
  "bindgen 0.72.1",

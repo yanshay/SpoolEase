@@ -8,6 +8,7 @@ use embassy_net::{IpAddress, IpEndpoint, Ipv4Address, tcp::TcpSocket};
 use esp_alloc::HeapStats;
 use esp_mbedtls::{
     AuthMode, Certificate, ClientSessionConfig, Session, SessionConfig, SessionError, TlsReference,
+    TlsVersion,
 };
 use framework::{debug, info};
 use snafu::prelude::*;
@@ -127,6 +128,7 @@ where
             ca_chain: self.server_ca_chain.clone(),
             auth_mode,
             server_name: Some(self.server_name_cstr),
+            max_version: Some(TlsVersion::Tls1_2),
             ..ClientSessionConfig::new()
         };
 
@@ -322,6 +324,7 @@ where
             ca_chain: self.server_ca_chain.clone(),
             auth_mode,
             server_name: Some(self.server_name_cstr),
+            max_version: Some(TlsVersion::Tls1_2),
             ..ClientSessionConfig::new()
         };
         let mut data_session = Session::new(
