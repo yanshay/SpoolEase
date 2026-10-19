@@ -8,12 +8,14 @@ pub const WEB_SERVER_CAPTIVE: bool = true;
 pub const WEB_SERVER_NUM_LISTENERS: usize = 12; // 6 per browser simultaniously
 pub const WEB_SERVER_TLS_CERTIFICATE: &str = concat!(include_str!("./certs/web-server-certificate.pem"), "\0");
 pub const WEB_SERVER_TLS_PRIVATE_KEY: &str = concat!(include_str!("./certs/web-server-private-key.pem"), "\0");
+pub const WEB_SERVER_ACCEPT_TIMEOUT_MS: u64 = 10 * 1000; // Aborts half-open TCP handshakes stuck in accept().
 
 pub const API_SERVER_HTTPS: bool = true;
 pub const API_SERVER_PORT: u16 = 443;
 pub const API_SERVER_NUM_LISTENERS: usize = 2;
 pub const API_SERVER_TLS_CERTIFICATE: &str = WEB_SERVER_TLS_CERTIFICATE;
 pub const API_SERVER_TLS_PRIVATE_KEY: &str = WEB_SERVER_TLS_PRIVATE_KEY;
+pub const API_SERVER_ACCEPT_TIMEOUT_MS: u64 = 10 * 1000; // Aborts half-open TCP handshakes stuck in accept().
 
 pub const WEB_APP_DOMAIN: &str = "device.spoolease.io";
 pub const WEB_APP_SECURITY_KEY_LENGTH: usize = 7;
