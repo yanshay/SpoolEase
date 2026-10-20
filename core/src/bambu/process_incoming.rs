@@ -26,6 +26,16 @@ use crate::{
     settings::MAX_NUM_PRINTERS,
 };
 
+#[cfg(feature = "metrics")]
+macro_rules! with_console_metrics {
+    ($($body:tt)*) => { $($body)*; };
+}
+
+#[cfg(not(feature = "metrics"))]
+macro_rules! with_console_metrics {
+    ($($body:tt)*) => {};
+}
+
 impl BambuPrinter {
     fn parse_aux_fila_switch_installed(aux: &str) -> Option<bool> {
         u64::from_str_radix(aux, 16).ok().map(|info_bits| ((info_bits >> 29) & 1) == 1)
@@ -1005,7 +1015,10 @@ pub async fn incoming_messages_task(read_packets: Rc<ReadPacketsPubSub>, bambu_p
                             topic_name: _,
                             payload,
                         }) => {
+                            with_console_metrics!(crate::metrics::record_mqtt_payload_bytes(payload.len() as u64));
+                            with_console_metrics!(let parse_started = crate::metrics::start_measurement());
                             let parse_res = Box::new(serde_json::from_slice::<Message>(payload));
+                            with_console_metrics!(crate::metrics::record_mqtt_json_parse(parse_started));
 
                             if log_level >= log::Level::Trace {
                                 let cleaned_log = clean_message_bytes_to_log(payload);
@@ -1043,18 +1056,23 @@ pub async fn incoming_messages_task(read_packets: Rc<ReadPacketsPubSub>, bambu_p
                                                 tray_read_done_bits: *bambu_printer.borrow().tray_read_done_bits(),
                                                 tray_exist_bits: *bambu_printer.borrow().tray_exist_bits(),
                                             };
+                                            with_console_metrics!(let state_apply_started = crate::metrics::start_measurement());
                                             let (change_made, removed_tags) = (*bambu_printer.borrow_mut()).process_print_message(&print.print);
+                                            with_console_metrics!(crate::metrics::record_mqtt_state_apply(state_apply_started));
                                             let updated_tray_bits = TrayBits {
                                                 tray_reading_bits: bambu_printer.borrow().tray_reading_bits,
                                                 tray_read_done_bits: *bambu_printer.borrow().tray_read_done_bits(),
                                                 tray_exist_bits: *bambu_printer.borrow().tray_exist_bits(),
                                             };
                                             if change_made {
+                                                with_console_metrics!(crate::metrics::increment_mqtt_changed());
+                                                with_console_metrics!(let changed_notify_started = crate::metrics::start_measurement());
                                                 (*bambu_printer.borrow_mut()).update_ams_trays_done(
                                                     &previous_tray_bits,
                                                     &updated_tray_bits,
                                                     &removed_tags,
                                                 );
+                                                with_console_metrics!(crate::metrics::record_mqtt_changed_notify(changed_notify_started));
                                             }
                                         }
                                     }

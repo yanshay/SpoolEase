@@ -22,6 +22,8 @@ mod color_utils;
 mod csvdb;
 mod filament_staging;
 mod hx711_gpio;
+#[cfg(feature = "metrics")]
+mod metrics;
 mod my_mqtt;
 mod printer;
 mod settings;
@@ -142,6 +144,8 @@ async fn main(spawner: Spawner) {
     esp_alloc::heap_allocator!(size: 60 * 1024);
 
     spawner.spawn_heap(heap_stats_task()).ok();
+    #[cfg(feature = "metrics")]
+    spawner.spawn_heap(metrics::metrics_logger_task()).ok();
 
     // == Setup timers & delay ========================================================
 

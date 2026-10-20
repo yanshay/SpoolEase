@@ -17,8 +17,7 @@ use picoserve::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::api_server::ApiServerState;
-use crate::view_model::StoreBackupPlaintextSink;
+use crate::{api_server::ApiServerState, view_model::StoreBackupPlaintextSink};
 
 pub fn build_app() -> picoserve::Router<impl picoserve::routing::PathRouter<ApiServerState>, ApiServerState> {
     picoserve::Router::from_service(ApiServerWebService)
@@ -190,11 +189,37 @@ async fn handle_printer_slots_get<R: Read, W: ResponseWriter<Error = R::Error>>(
     request: Request<'_, R>,
     response_writer: W,
 ) -> Result<ResponseSent, W::Error> {
-    let response = state.view_model.borrow().get_api_printer_slots();
-    let json = serde_json::to_string(&response).unwrap_or_else(|_| r#"{"error":"serialization_failed"}"#.to_string());
-    JsonStringResponse::new(json)
-        .write_to(request.body_connection.finalize().await?, response_writer)
-        .await
+    cfg_if::cfg_if! {
+        if #[cfg(feature = "metrics")] {
+            let build_started = crate::metrics::start_measurement();
+            let response = state.view_model.borrow().get_api_printer_slots();
+            crate::metrics::record_api_slots_build(build_started);
+
+            let json_encode_started = crate::metrics::start_measurement();
+            let json = serde_json::to_string(&response).unwrap_or_else(|_| {
+                crate::metrics::increment_api_slots_error();
+                r#"{"error":"serialization_failed"}"#.to_string()
+            });
+            crate::metrics::record_api_slots_json_encode(json_encode_started);
+            crate::metrics::record_api_slots_response_bytes(json.len() as u64);
+
+            let response_write_started = crate::metrics::start_measurement();
+            let result = JsonStringResponse::new(json)
+                .write_to(request.body_connection.finalize().await?, response_writer)
+                .await;
+            crate::metrics::record_api_slots_response_write(response_write_started);
+            if result.is_err() {
+                crate::metrics::increment_api_slots_error();
+            }
+            result
+        } else {
+            let response = state.view_model.borrow().get_api_printer_slots();
+            let json = serde_json::to_string(&response).unwrap_or_else(|_| r#"{"error":"serialization_failed"}"#.to_string());
+            JsonStringResponse::new(json)
+                .write_to(request.body_connection.finalize().await?, response_writer)
+                .await
+        }
+    }
 }
 
 async fn handle_filaments_config_post<R: Read, W: ResponseWriter<Error = R::Error>>(

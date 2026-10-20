@@ -1,7 +1,7 @@
 [package]
 name = "SpoolEase"
 homepage = "SpoolEase.io"
-version = "0.7.7-b.8"
+version = "0.7.7-b.10"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.88"
@@ -38,7 +38,7 @@ walkdir = "2.5.0"
 
 [dependencies]
 #TODO: Important - lock to specific tag when released
-framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", features = ["esp32s3", "improv-jtag-serial"] }
+framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", default-features = false, features = ["esp32s3", "extern-random", "improv-jtag-serial"] }
 framework_macros = { package = "esp-hal-app-framework-macros", path = "../../../esp-hal-app/esp-hal-app-framework-macros/" }
 # framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.13", features = ["esp32s3", "improv-jtag-serial"] }
 # framework_macros = { package = "esp-hal-app-framework-macros", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.13" }
@@ -165,12 +165,13 @@ minicbor = { version = "2.1.3", default-features =false, features = ["alloc", "d
 minicbor-derive = {version = "0.18.3" }
 
 [features]
-default = ["esp32s3", "wt32-sc01-plus"]
+default = ["esp32s3", "wt32-sc01-plus", "metrics"]
 
 wt32-sc01-plus=["framework/wt32-sc01-plus"]
 jc8048w550c=["framework/jc8048w550c"]
 
 rgb-stats =["framework/rgb-stats"]
+metrics =["framework/metrics"]
 log_none =["framework/log_none"]
 log_info =["framework/log_info"]
 

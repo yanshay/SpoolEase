@@ -544,6 +544,8 @@ pub async fn generic_mqtt_task<
                 Ok(p) => {
                     // publish internally the received packet
                     publisher.publish_immediate(p);
+                    #[cfg(feature = "metrics")]
+                    crate::metrics::record_mqtt_queue_len(publisher.len() as u64);
                 }
                 Err(e) => {
                     term_error!("[{}] Error converting internal packets data on read {:?}", printer_log_id, e);
@@ -583,6 +585,8 @@ pub async fn generic_mqtt_task<
                         Ok(p) => {
                             // publish internally the received packet
                             publisher.publish_immediate(p);
+                            #[cfg(feature = "metrics")]
+                            crate::metrics::record_mqtt_queue_len(publisher.len() as u64);
                             yield_now().await;
                         }
                         Err(e) => {

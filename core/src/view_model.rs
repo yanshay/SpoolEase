@@ -615,7 +615,14 @@ impl ViewModel {
 
     fn update_wifi_signal_pill(&self, signal: WifiSignalState) {
         if let Some(pill) = Self::wifi_signal_pill("WiFi", Self::wifi_signal_from_framework(signal), true) {
-            self.set_control_panel_pill(ControlPanelPillId::Wifi, pill);
+            let unchanged = self
+                .control_panel_pills
+                .borrow()
+                .get(&ControlPanelPillId::Wifi)
+                .is_some_and(|current| current.text == pill.text);
+            if !unchanged {
+                self.set_control_panel_pill(ControlPanelPillId::Wifi, pill);
+            }
         }
     }
 
@@ -3596,6 +3603,8 @@ impl ViewModel {
         }
 
         self.update_slot_groups_from_snapshot(snapshot);
+        #[cfg(feature = "metrics")]
+        framework::metrics::mark_ui_redraw_requested();
     }
 
     fn handle_printer_connectivity_changed(&self, printer_id: &PrinterId, connected: bool) {

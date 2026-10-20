@@ -184,9 +184,10 @@ export component Ready inherits ControlPanelBase {
         property <float> h: 0;
         property <float> s: 0;
         property <float> v: 0;
-        property <color> color: #ff0;
+        property <color> color: #00f;
         interval: 0.2s;
-        running: parent.showing;
+        // running: parent.showing;
+        running: false; // Temporary: disable color animation to measure idle rendering.
         triggered() => {
             x = x + 3;
             x = x > 100 ? 27 : x;
