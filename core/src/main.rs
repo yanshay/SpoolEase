@@ -22,7 +22,6 @@ mod color_utils;
 mod csvdb;
 mod filament_staging;
 mod hx711_gpio;
-#[cfg(feature = "metrics")]
 mod metrics;
 mod my_mqtt;
 mod printer;
@@ -42,7 +41,6 @@ mod web_app;
 use alloc::{format, rc::Rc, string::ToString};
 use core::{cell::RefCell, marker::PhantomData, net::Ipv4Addr};
 use embassy_futures::yield_now;
-use esp_alloc::HeapStats;
 use esp_backtrace as _;
 use esp_hal_ota::Ota;
 use esp_mbedtls::Tls;
@@ -143,9 +141,7 @@ async fn main(spawner: Spawner) {
     #[cfg(feature = "jc8048w550c")]
     esp_alloc::heap_allocator!(size: 60 * 1024);
 
-    spawner.spawn_heap(heap_stats_task()).ok();
-    #[cfg(feature = "metrics")]
-    spawner.spawn_heap(metrics::metrics_logger_task()).ok();
+    spawner.spawn_heap(metrics::periodic_stats_task()).ok();
 
     // == Setup timers & delay ========================================================
 
@@ -672,13 +668,4 @@ pub async fn display_runner(
     >,
 ) {
     runner.run().await;
-}
-
-// #[embassy_executor::task]
-pub async fn heap_stats_task() {
-    loop {
-        let stats: HeapStats = esp_alloc::HEAP.stats();
-        debug!("{}", stats);
-        Timer::after_secs(30).await;
-    }
 }

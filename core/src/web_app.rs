@@ -211,6 +211,9 @@ impl NestedAppWithWebAppState<ConsoleAppState> for ConsoleWebService {
             (ApiMethod::Get, "/api/console-info") => {
                 box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_console_info_get).await)
             }
+            (ApiMethod::Get, "/api/debug/metrics") => {
+                box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_debug_metrics_get).await)
+            }
             (ApiMethod::Get, "/api/printers-status") => {
                 box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_printers_status_get).await)
             }
@@ -556,6 +559,13 @@ fn handle_console_info_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppStat
         backup_status: borrowed_app_config.backup_status.clone(),
         store_initialized: state.store.is_initialized(),
         console_errors: state.store.console_errors(),
+    }
+    .encrypt(&key.borrow())
+}
+
+fn handle_debug_metrics_get(key: &'static RefCell<Vec<u8>>, _state: ConsoleAppState) -> String {
+    DebugMetricsResponse {
+        snapshot: crate::metrics::latest_periodic_snapshot(),
     }
     .encrypt(&key.borrow())
 }
@@ -1836,6 +1846,11 @@ pub struct ConsoleInfoResponse {
     backup_status: BackupStatus,
     store_initialized: bool,
     console_errors: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DebugMetricsResponse {
+    snapshot: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
