@@ -130,8 +130,12 @@ component OperationSelectionStep inherits Rectangle {
                     }
                 }
                 MyButton {
-                    visible: false;
-                    text: "Unload Filament";
+                    enabled: slot.previous-spool-id != "" && slot.previous-spool-configurable && slot.previous-spool-id != slot.spool-id && AppState.curr-printer-can-configure-slot();
+                    text: slot.previous-spool-id != "" ? "Restore Spool \{slot.previous-spool-id}" : "Restore Spool N/A";
+                    clicked => {
+                        AppBackend.configure-slot-with-spool-id(slot.id, slot.previous-spool-id);
+                        AppState.control-state = ControlState.Ready;
+                    }
                 }
                 MyButton {
                     visible: false;

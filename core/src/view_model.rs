@@ -1585,6 +1585,11 @@ impl ViewModel {
                 )
             })
             .unwrap_or_default();
+        let previous_spool_configurable = slot
+            .previous_spool_id
+            .as_ref()
+            .and_then(|spool_id| self.store.get_spool_by_id(spool_id))
+            .is_some_and(|spool| self.get_filament_info(&spool.slicer_filament, Some(&spool.material_type)).is_some());
 
         UiSlot {
             id: slot.id.as_str().to_shared_string(),
@@ -1610,6 +1615,8 @@ impl ViewModel {
             weight_display: self.weight_display_snapshot(slot).to_shared_string(),
             used_in_print: slot.used_in_print,
             spool_id: slot.spool_id.as_deref().unwrap_or_default().to_shared_string(),
+            previous_spool_id: slot.previous_spool_id.as_deref().unwrap_or_default().to_shared_string(),
+            previous_spool_configurable,
         }
     }
 

@@ -54,6 +54,7 @@ impl FakePrinterRuntime {
                 state: SlotState::Empty,
                 filament: PrinterFilament::Unknown,
                 spool_id: None,
+                previous_spool_id: None,
                 consumed_since_load_g: 0.0,
                 consumed_since_load_saved_g: 0.0,
                 consumed_since_weight_g: 0.0,
@@ -181,7 +182,7 @@ impl FakePrinterRuntime {
             PrinterCommand::Refresh => Ok(Some(self.snapshot_changed(PrinterChange::All))),
             PrinterCommand::AssignMaterialToSlot { slot_id, spool, temps, mode } => {
                 self.update_slot(&slot_id, |slot| {
-                    slot.spool_id = Some(spool.spool_rec.id.clone());
+                    slot.assign_spool_id(spool.spool_rec.id.clone());
                     slot.consumed_since_load_g = 0.0;
                     slot.consumed_since_load_saved_g = 0.0;
                     slot.consumed_since_weight_g = spool.spool_rec.consumed_since_weight;
@@ -203,7 +204,7 @@ impl FakePrinterRuntime {
             PrinterCommand::ClearSlot { slot_id } => {
                 self.update_slot(&slot_id, |slot| {
                     slot.state = SlotState::Empty;
-                    slot.spool_id = None;
+                    slot.clear_spool_id();
                     slot.filament = PrinterFilament::Unknown;
                     slot.consumed_since_load_g = 0.0;
                     slot.consumed_since_load_saved_g = 0.0;
@@ -214,7 +215,7 @@ impl FakePrinterRuntime {
             }
             PrinterCommand::UnassignSpoolFromSlot { slot_id } => {
                 self.update_slot(&slot_id, |slot| {
-                    slot.spool_id = None;
+                    slot.clear_spool_id();
                 })?;
                 Ok(Some(self.snapshot_changed(PrinterChange::Slots)))
             }

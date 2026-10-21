@@ -280,7 +280,7 @@ impl PrinterManager {
                 continue;
             };
             if store.get_spool_by_id(spool_id).is_none() {
-                slot.spool_id = None;
+                slot.clear_spool_id();
                 changed = true;
             }
         }

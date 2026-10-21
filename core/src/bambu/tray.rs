@@ -138,7 +138,7 @@ impl BambuPrinter {
 
     pub fn clear_snapshot_slot_consumption(&mut self, index: usize) {
         self.update_snapshot_slot(index, |slot| {
-            slot.spool_id = None;
+            slot.clear_spool_id();
             slot.consumed_since_load_g = 0.0;
             slot.consumed_since_load_saved_g = 0.0;
             slot.consumed_since_weight_g = 0.0;
@@ -147,7 +147,7 @@ impl BambuPrinter {
 
     pub fn unassign_snapshot_slot_spool(&mut self, index: usize) {
         self.update_snapshot_slot(index, |slot| {
-            slot.spool_id = None;
+            slot.clear_spool_id();
         });
     }
 
@@ -420,7 +420,7 @@ impl BambuPrinter {
         let spool_id = spool_rec.id.clone();
         let consumed_since_weight = spool_rec.consumed_since_weight;
         self.update_snapshot_slot(tray_id, |slot| {
-            slot.spool_id = Some(spool_id.clone());
+            slot.assign_spool_id(spool_id.clone());
             slot.consumed_since_load_g = 0.0;
             slot.consumed_since_load_saved_g = 0.0;
             slot.consumed_since_weight_g = consumed_since_weight;

@@ -156,7 +156,7 @@ impl BambuPrinterDriver {
         }
     }
 
-    // Copies app-tracked fields: spool_id, consumption counters, and used_in_print.
+    // Copies app-tracked fields: spool IDs, consumption counters, and used_in_print.
     // Do not copy live Bambu data like material, connection, or print status; it may be stale.
     fn overlay_generic_fields_from_state(snapshot: &mut PrinterSnapshot, state: &PrinterSnapshot) {
         for slot in snapshot.slot_groups.iter_mut().flat_map(|group| group.slots.iter_mut()) {
@@ -169,6 +169,7 @@ impl BambuPrinterDriver {
                 continue;
             };
             slot.spool_id = state_slot.spool_id.clone();
+            slot.previous_spool_id = state_slot.previous_spool_id.clone();
             slot.consumed_since_load_g = state_slot.consumed_since_load_g;
             slot.consumed_since_load_saved_g = state_slot.consumed_since_load_saved_g;
             slot.consumed_since_weight_g = state_slot.consumed_since_weight_g;
@@ -457,6 +458,7 @@ impl BambuPrinterDriver {
             state: Self::slot_state_from_bambu(tray.state),
             filament: Self::filament_from_bambu(&tray.filament),
             spool_id: None,
+            previous_spool_id: None,
             consumed_since_load_g: 0.0,
             consumed_since_load_saved_g: 0.0,
             consumed_since_weight_g: 0.0,

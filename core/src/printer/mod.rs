@@ -144,6 +144,8 @@ pub struct MaterialSlotSnapshot {
     pub state: SlotState,
     pub filament: PrinterFilament,
     pub spool_id: Option<String>,
+    #[serde(default)]
+    pub previous_spool_id: Option<String>,
     pub consumed_since_load_g: f32,
     #[serde(default)]
     pub consumed_since_load_saved_g: f32,
@@ -151,6 +153,31 @@ pub struct MaterialSlotSnapshot {
     pub used_in_print: bool,
     pub pressure_advance_value: String,
     pub pressure_advance_meta: String,
+}
+
+impl MaterialSlotSnapshot {
+    pub fn clear_spool_id(&mut self) {
+        if let Some(spool_id) = self.spool_id.take() {
+            self.previous_spool_id = Some(spool_id);
+        }
+    }
+
+    pub fn assign_spool_id(&mut self, spool_id: String) {
+        match self.spool_id.take() {
+            Some(current_spool_id) if current_spool_id != spool_id => {
+                self.previous_spool_id = Some(current_spool_id);
+            }
+            Some(current_spool_id) => {
+                self.spool_id = Some(current_spool_id);
+                return;
+            }
+            None if self.previous_spool_id.as_deref() == Some(spool_id.as_str()) => {
+                self.previous_spool_id = None;
+            }
+            None => {}
+        }
+        self.spool_id = Some(spool_id);
+    }
 }
 
 pub type PrinterSnapshotState = Rc<PrinterSnapshotStateInner>;
