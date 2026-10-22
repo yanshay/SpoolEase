@@ -168,6 +168,7 @@ impl BambuPrinter {
         let external_tray_id = if extruder_id == 0 { 255 } else { 254 };
         let new_tray = self.get_updated_tray(Some(v_tray), external_tray_id);
         if let Some(new_tray) = new_tray {
+            let tray_changed = old_tray != new_tray || old_tray.meta_info != new_tray.meta_info;
             let removed_tag = if old_tray.state != TrayState::Empty && new_tray.state == TrayState::Empty {
                 self.snapshot_slot_spool_id(external_tray_id as usize)
             } else {
@@ -177,7 +178,7 @@ impl BambuPrinter {
             if removed_tag.is_some() {
                 self.clear_snapshot_slot_consumption(external_tray_id as usize);
             }
-            return (true, removed_tag);
+            return (tray_changed, removed_tag);
         }
         (false, None)
     }
