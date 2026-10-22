@@ -1492,27 +1492,104 @@ impl ViewModel {
         if let Some(snapshot) = &selected_snapshot {
             self.update_slot_groups_from_snapshot(snapshot);
         } else {
-            self.ui_weak.unwrap().global::<crate::app::AppState>().set_slot_groups_loading(false);
+            let ui = self.ui_weak.unwrap();
+            let ui_app_state = ui.global::<crate::app::AppState>();
+            if ui_app_state.get_slot_groups_loading() {
+                #[cfg(feature = "metrics")]
+                // Start ui_redraw_request_to_draw_us before writing Slint data (that is known to cause a redraw for sure) due to (only) an MQTT update. Otherwise the metric will be wrong.
+                framework::metrics::mark_ui_redraw_requested();
+                ui_app_state.set_slot_groups_loading(false);
+            }
             self.set_ui_slot_groups(Vec::new());
         }
     }
 
-    fn update_slot_groups_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) {
+    fn update_slot_groups_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) -> bool {
         let ui = self.ui_weak.unwrap();
         let ui_app_state = ui.global::<crate::app::AppState>();
         if !snapshot.slot_groups_known {
-            ui_app_state.set_slot_groups_loading(true);
+            if !ui_app_state.get_slot_groups_loading() {
+                #[cfg(feature = "metrics")]
+                // Start ui_redraw_request_to_draw_us before writing Slint data (that is known to cause a redraw for sure) due to (only) an MQTT update. Otherwise the metric will be wrong.
+                framework::metrics::mark_ui_redraw_requested();
+                ui_app_state.set_slot_groups_loading(true);
+            }
             self.set_ui_slot_groups(Vec::new());
-            return;
+            return false;
         }
 
-        ui_app_state.set_slot_groups_loading(false);
-        let groups = snapshot
-            .slot_groups
-            .iter()
-            .map(|group| self.ui_slot_group_from_snapshot(group))
-            .collect::<Vec<_>>();
-        self.set_ui_slot_groups(groups);
+        if ui_app_state.get_slot_groups_loading() {
+            #[cfg(feature = "metrics")]
+            // Start ui_redraw_request_to_draw_us before writing Slint data (that is known to cause a redraw for sure) due to (only) an MQTT update. Otherwise the metric will be wrong.
+            framework::metrics::mark_ui_redraw_requested();
+            ui_app_state.set_slot_groups_loading(false);
+        }
+        if !self.ui_slot_groups_match_snapshot(snapshot, &ui_app_state.get_slot_groups()) {
+            let groups = snapshot
+                .slot_groups
+                .iter()
+                .map(|group| self.ui_slot_group_from_snapshot(group))
+                .collect::<Vec<_>>();
+            self.set_ui_slot_groups(groups);
+            return true;
+        }
+
+        self.update_ui_slot_rows(snapshot, &ui_app_state.get_slot_groups())
+    }
+
+    fn ui_slot_groups_match_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot, current_groups: &slint::ModelRc<UiSlotGroup>) -> bool {
+        if current_groups.row_count() != snapshot.slot_groups.len() {
+            return false;
+        }
+
+        for (group_index, snapshot_group) in snapshot.slot_groups.iter().enumerate() {
+            let Some(current_group) = current_groups.row_data(group_index) else {
+                return false;
+            };
+            if current_group.id.as_str() != snapshot_group.id
+                || current_group.name.as_str() != snapshot_group.name
+                || current_group.short_name.as_str() != snapshot_group.short_name
+                || current_group.kind != Self::ui_slot_group_kind(snapshot_group.kind)
+                || current_group.slots.row_count() != snapshot_group.slots.len()
+            {
+                return false;
+            }
+
+            for (slot_index, snapshot_slot) in snapshot_group.slots.iter().enumerate() {
+                let Some(current_slot) = current_group.slots.row_data(slot_index) else {
+                    return false;
+                };
+                if current_slot.id.as_str() != snapshot_slot.id.as_str() {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    fn update_ui_slot_rows(&self, snapshot: &printer_domain::PrinterSnapshot, current_groups: &slint::ModelRc<UiSlotGroup>) -> bool {
+        let mut row_updated = false;
+
+        for (group_index, snapshot_group) in snapshot.slot_groups.iter().enumerate() {
+            let Some(current_group) = current_groups.row_data(group_index) else {
+                continue;
+            };
+
+            for (slot_index, snapshot_slot) in snapshot_group.slots.iter().enumerate() {
+                let current_slot = current_group.slots.row_data(slot_index);
+                let next_slot = self.ui_slot_from_snapshot(snapshot_slot, current_slot.as_ref());
+                if current_slot.as_ref() != Some(&next_slot) {
+                    #[cfg(feature = "metrics")]
+                    // Start ui_redraw_request_to_draw_us before writing Slint data (that is known to cause a redraw for sure) due to (only) an MQTT update. Otherwise the metric will be wrong.
+                    framework::metrics::mark_ui_redraw_requested();
+                    current_group.slots.set_row_data(slot_index, next_slot);
+                    row_updated = true;
+                }
+            }
+        }
+
+        row_updated
     }
 
     fn set_ui_slot_groups(&self, groups: Vec<UiSlotGroup>) {
@@ -1529,6 +1606,9 @@ impl ViewModel {
         let ui = self.ui_weak.unwrap();
         let ui_app_state = ui.global::<crate::app::AppState>();
 
+        #[cfg(feature = "metrics")]
+        // Start ui_redraw_request_to_draw_us before writing Slint data (that is known to cause a redraw for sure) due to (only) an MQTT update. Otherwise the metric will be wrong.
+        framework::metrics::mark_ui_redraw_requested();
         ui_app_state.set_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(groups))));
         ui_app_state.set_primary_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(primary_groups))));
         ui_app_state.set_external_slot_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(external_groups))));
@@ -1542,7 +1622,7 @@ impl ViewModel {
     }
 
     fn ui_slot_group_from_snapshot(&self, group: &printer_domain::SlotGroupSnapshot) -> UiSlotGroup {
-        let slots = group.slots.iter().map(|slot| self.ui_slot_from_snapshot(slot)).collect::<Vec<_>>();
+        let slots = group.slots.iter().map(|slot| self.ui_slot_from_snapshot(slot, None)).collect::<Vec<_>>();
         UiSlotGroup {
             id: group.id.to_shared_string(),
             kind: Self::ui_slot_group_kind(group.kind),
@@ -1552,7 +1632,7 @@ impl ViewModel {
         }
     }
 
-    fn ui_slot_from_snapshot(&self, slot: &printer_domain::MaterialSlotSnapshot) -> UiSlot {
+    fn ui_slot_from_snapshot(&self, slot: &printer_domain::MaterialSlotSnapshot, current: Option<&UiSlot>) -> UiSlot {
         let (filament_state, filament_colors, filament_has_alpha, material) = match &slot.filament {
             printer_domain::PrinterFilament::Known(filament) => {
                 let material = if filament.material_type.is_empty() {
@@ -1603,12 +1683,12 @@ impl ViewModel {
             state_label: Self::slot_state_label(slot.state).into(),
             filament: UiFilament {
                 state: filament_state,
-                colors: Self::ui_color_model(filament_colors),
+                colors: Self::ui_color_model_reusing_current(filament_colors, current.map(|slot| &slot.filament.colors)),
                 material,
             },
             filament_has_alpha,
             spool_has_alpha,
-            spool_colors: Self::ui_color_model(spool_colors),
+            spool_colors: Self::ui_color_model_reusing_current(spool_colors, current.map(|slot| &slot.spool_colors)),
             k: slot.pressure_advance_value.to_shared_string(),
             k_meta: slot.pressure_advance_meta.to_shared_string(),
             tagged: slot.spool_id.is_some(),
@@ -1629,6 +1709,23 @@ impl ViewModel {
 
     fn ui_color_model(colors: Vec<slint::Color>) -> slint::ModelRc<slint::Color> {
         slint::ModelRc::from(Rc::new(slint::VecModel::from(colors)))
+    }
+
+    fn ui_color_model_reusing_current(colors: Vec<slint::Color>, current: Option<&slint::ModelRc<slint::Color>>) -> slint::ModelRc<slint::Color> {
+        // Slint compares ModelRc by the list object, not its rows. Reuse a list whose colors
+        // have not changed so UiSlot == UiSlot can skip an unchanged row. Do the same for every
+        // ModelRc field added to UiSlot or other displayed data that contains a Slint list.
+        if let Some(current) = current
+            && Self::ui_colors_match_model(&colors, current)
+        {
+            return current.clone();
+        }
+
+        Self::ui_color_model(colors)
+    }
+
+    fn ui_colors_match_model(colors: &[slint::Color], current: &slint::ModelRc<slint::Color>) -> bool {
+        colors.len() == current.row_count() && colors.iter().enumerate().all(|(index, color)| current.row_data(index) == Some(*color))
     }
 
     fn ui_slot_group_kind(kind: printer_domain::SlotGroupKind) -> UiSlotGroupKind {
@@ -3610,8 +3707,6 @@ impl ViewModel {
         }
 
         self.update_slot_groups_from_snapshot(snapshot);
-        #[cfg(feature = "metrics")]
-        framework::metrics::mark_ui_redraw_requested();
     }
 
     fn handle_printer_connectivity_changed(&self, printer_id: &PrinterId, connected: bool) {
