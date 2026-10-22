@@ -65,18 +65,50 @@ impl fmt::Display for MetricStats {
 
 #[cfg(feature = "metrics")]
 #[derive(Clone, Copy, Default)]
+pub struct MetricCounter(u64);
+
+#[cfg(feature = "metrics")]
+impl MetricCounter {
+    pub const fn new() -> Self {
+        Self(0)
+    }
+
+    pub fn increment(&mut self) {
+        self.0 = self.0.saturating_add(1);
+    }
+}
+
+#[cfg(feature = "metrics")]
+impl fmt::Display for MetricCounter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[cfg(feature = "metrics")]
+#[derive(Clone, Copy, Default)]
 pub struct ConsoleMetricsSnapshot {
     pub mqtt_queue_len: MetricStats,
     pub mqtt_payload_bytes: MetricStats,
     pub mqtt_json_parse_us: MetricStats,
     pub mqtt_state_apply_us: MetricStats,
     pub mqtt_changed_notify_us: MetricStats,
-    pub mqtt_changed_count: u64,
+    pub mqtt_changed_count: MetricCounter,
+    pub mqtt_change_fila_switch: MetricCounter,
+    pub mqtt_change_command: MetricCounter,
+    pub mqtt_change_extruder: MetricCounter,
+    pub mqtt_change_tray_routing: MetricCounter,
+    pub mqtt_change_ams_topology: MetricCounter,
+    pub mqtt_change_ams_environment: MetricCounter,
+    pub mqtt_change_ams_info: MetricCounter,
+    pub mqtt_change_ams_tray: MetricCounter,
+    pub mqtt_change_external_tray: MetricCounter,
+    pub mqtt_change_print_project: MetricCounter,
     pub api_slots_build_us: MetricStats,
     pub api_slots_json_encode_us: MetricStats,
     pub api_slots_response_write_us: MetricStats,
     pub api_slots_response_bytes: MetricStats,
-    pub api_slots_error_count: u64,
+    pub api_slots_error_count: MetricCounter,
 }
 
 #[cfg(feature = "metrics")]
@@ -86,7 +118,7 @@ mod enabled {
     use critical_section::Mutex;
     use embassy_time::Instant;
 
-    use super::{ConsoleMetricsSnapshot, MetricStats};
+    use super::{ConsoleMetricsSnapshot, MetricCounter, MetricStats};
 
     #[derive(Clone, Copy)]
     pub struct MeasurementStart(Instant);
@@ -122,7 +154,17 @@ mod enabled {
             min: 0,
             max: 0,
         },
-        mqtt_changed_count: 0,
+        mqtt_changed_count: MetricCounter::new(),
+        mqtt_change_fila_switch: MetricCounter::new(),
+        mqtt_change_command: MetricCounter::new(),
+        mqtt_change_extruder: MetricCounter::new(),
+        mqtt_change_tray_routing: MetricCounter::new(),
+        mqtt_change_ams_topology: MetricCounter::new(),
+        mqtt_change_ams_environment: MetricCounter::new(),
+        mqtt_change_ams_info: MetricCounter::new(),
+        mqtt_change_ams_tray: MetricCounter::new(),
+        mqtt_change_external_tray: MetricCounter::new(),
+        mqtt_change_print_project: MetricCounter::new(),
         api_slots_build_us: MetricStats {
             count: 0,
             sum: 0,
@@ -147,7 +189,7 @@ mod enabled {
             min: 0,
             max: 0,
         },
-        api_slots_error_count: 0,
+        api_slots_error_count: MetricCounter::new(),
     }));
 
     pub fn start_measurement() -> MeasurementStart {
@@ -157,6 +199,10 @@ mod enabled {
     fn record(metric: fn(&mut ConsoleMetricsSnapshot) -> &mut MetricStats, start: MeasurementStart) {
         let elapsed_us = start.0.elapsed().as_micros();
         critical_section::with(|cs| metric(&mut METRICS.borrow_ref_mut(cs)).observe(elapsed_us));
+    }
+
+    fn increment(counter: fn(&mut ConsoleMetricsSnapshot) -> &mut MetricCounter) {
+        critical_section::with(|cs| counter(&mut METRICS.borrow_ref_mut(cs)).increment());
     }
 
     pub fn record_mqtt_payload_bytes(bytes: u64) {
@@ -180,10 +226,47 @@ mod enabled {
     }
 
     pub fn increment_mqtt_changed() {
-        critical_section::with(|cs| {
-            let mut metrics = METRICS.borrow_ref_mut(cs);
-            metrics.mqtt_changed_count = metrics.mqtt_changed_count.saturating_add(1);
-        });
+        increment(|metrics| &mut metrics.mqtt_changed_count);
+    }
+
+    pub fn increment_mqtt_change_fila_switch() {
+        increment(|metrics| &mut metrics.mqtt_change_fila_switch);
+    }
+
+    pub fn increment_mqtt_change_command() {
+        increment(|metrics| &mut metrics.mqtt_change_command);
+    }
+
+    pub fn increment_mqtt_change_extruder() {
+        increment(|metrics| &mut metrics.mqtt_change_extruder);
+    }
+
+    pub fn increment_mqtt_change_tray_routing() {
+        increment(|metrics| &mut metrics.mqtt_change_tray_routing);
+    }
+
+    pub fn increment_mqtt_change_ams_topology() {
+        increment(|metrics| &mut metrics.mqtt_change_ams_topology);
+    }
+
+    pub fn increment_mqtt_change_ams_environment() {
+        increment(|metrics| &mut metrics.mqtt_change_ams_environment);
+    }
+
+    pub fn increment_mqtt_change_ams_info() {
+        increment(|metrics| &mut metrics.mqtt_change_ams_info);
+    }
+
+    pub fn increment_mqtt_change_ams_tray() {
+        increment(|metrics| &mut metrics.mqtt_change_ams_tray);
+    }
+
+    pub fn increment_mqtt_change_external_tray() {
+        increment(|metrics| &mut metrics.mqtt_change_external_tray);
+    }
+
+    pub fn increment_mqtt_change_print_project() {
+        increment(|metrics| &mut metrics.mqtt_change_print_project);
     }
 
     pub fn record_api_slots_build(start: MeasurementStart) {
@@ -203,10 +286,7 @@ mod enabled {
     }
 
     pub fn increment_api_slots_error() {
-        critical_section::with(|cs| {
-            let mut metrics = METRICS.borrow_ref_mut(cs);
-            metrics.api_slots_error_count = metrics.api_slots_error_count.saturating_add(1);
-        });
+        increment(|metrics| &mut metrics.api_slots_error_count);
     }
 
     pub fn snapshot_and_reset() -> ConsoleMetricsSnapshot {
@@ -252,12 +332,22 @@ pub async fn periodic_stats_task() {
                 framework_metrics.tls_accept_to_first_read_us,
             );
             let console_log = format!(
-                "METRICS[{sample}] console: mqtt_queue_len=({}) mqtt_payload_bytes=({}) mqtt_json_parse_us=({}) mqtt_state_apply_us=({}) mqtt_changed_count={} mqtt_changed_notify_us=({}) api_slots_build_us=({}) api_slots_json_encode_us=({}) api_slots_response_write_us=({}) api_slots_response_bytes=({}) api_slots_error_count={}",
+                "METRICS[{sample}] console: mqtt_queue_len=({}) mqtt_payload_bytes=({}) mqtt_json_parse_us=({}) mqtt_state_apply_us=({}) mqtt_changed_count={} mqtt_change_sources=(fila_switch={} command={} extruder={} tray_routing={} ams_topology={} ams_environment={} ams_info={} ams_tray={} external_tray={} print_project={}) mqtt_changed_notify_us=({}) api_slots_build_us=({}) api_slots_json_encode_us=({}) api_slots_response_write_us=({}) api_slots_response_bytes=({}) api_slots_error_count={}",
                 console_metrics.mqtt_queue_len,
                 console_metrics.mqtt_payload_bytes,
                 console_metrics.mqtt_json_parse_us,
                 console_metrics.mqtt_state_apply_us,
                 console_metrics.mqtt_changed_count,
+                console_metrics.mqtt_change_fila_switch,
+                console_metrics.mqtt_change_command,
+                console_metrics.mqtt_change_extruder,
+                console_metrics.mqtt_change_tray_routing,
+                console_metrics.mqtt_change_ams_topology,
+                console_metrics.mqtt_change_ams_environment,
+                console_metrics.mqtt_change_ams_info,
+                console_metrics.mqtt_change_ams_tray,
+                console_metrics.mqtt_change_external_tray,
+                console_metrics.mqtt_change_print_project,
                 console_metrics.mqtt_changed_notify_us,
                 console_metrics.api_slots_build_us,
                 console_metrics.api_slots_json_encode_us,

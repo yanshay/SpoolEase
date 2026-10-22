@@ -169,6 +169,9 @@ impl BambuPrinter {
         let new_tray = self.get_updated_tray(Some(v_tray), external_tray_id);
         if let Some(new_tray) = new_tray {
             let tray_changed = old_tray != new_tray || old_tray.meta_info != new_tray.meta_info;
+            with_console_metrics!(if tray_changed {
+                crate::metrics::increment_mqtt_change_external_tray();
+            });
             let removed_tag = if old_tray.state != TrayState::Empty && new_tray.state == TrayState::Empty {
                 self.snapshot_slot_spool_id(external_tray_id as usize)
             } else {
@@ -342,6 +345,9 @@ impl BambuPrinter {
         if self.curr_print_project.is_some() {
             print_project_caused_change = self.process_print_message__print_project_logic(print);
         }
+        with_console_metrics!(if print_project_caused_change {
+            crate::metrics::increment_mqtt_change_print_project();
+        });
 
         // print related field monitored globally unrelated to print
         // should come AFTER processing of print_project_logic
@@ -399,9 +405,15 @@ impl BambuPrinter {
             self.set_nozzle_diameter(0, Some(nozzle_diameter.clone()));
             extruders_change_made = old_nozzle_diameter != *self.nozzle_diameter(0);
         }
+        with_console_metrics!(if extruders_change_made {
+            crate::metrics::increment_mqtt_change_extruder();
+        });
 
         // Deal with tray_xxx - need to do before ams because depends on both AMS and Device sections, and used at the end of ams processing
         let tray_xxx_change_made = self.process_print_message__tray_xxx(print);
+        with_console_metrics!(if tray_xxx_change_made {
+            crate::metrics::increment_mqtt_change_tray_routing();
+        });
 
         // Deal with ams changes
         let mut ams_change_made = false;
@@ -446,7 +458,6 @@ impl BambuPrinter {
                 }
             }
         }
-
         // Check if any change affects need for special restore state case
         if full_push_status && self.auto_restore_k && self.printer_was_disconnected {
             self.printer_was_disconnected = false;
@@ -535,6 +546,7 @@ impl BambuPrinter {
                 if self.ams_exist_bits().is_none() || *self.ams_exist_bits() != Some(ams_exist_bits) {
                     self.set_ams_exist_bits(Some(ams_exist_bits));
                     change_made = true;
+                    with_console_metrics!(crate::metrics::increment_mqtt_change_ams_topology());
                 }
             }
         }
@@ -553,6 +565,7 @@ impl BambuPrinter {
             if *self.tray_exist_bits() != Some(tray_exist_bits) {
                 self.set_tray_exist_bits(Some(tray_exist_bits));
                 change_made = true;
+                with_console_metrics!(crate::metrics::increment_mqtt_change_ams_topology());
             }
         }
         // tray_read_done - which trays (from those that exist) that have been "read" (meaning ready from ams perspective)
@@ -564,6 +577,7 @@ impl BambuPrinter {
             if *self.tray_read_done_bits() != Some(tray_read_done_bits) {
                 self.set_tray_read_done_bits(Some(tray_read_done_bits));
                 change_made = true;
+                with_console_metrics!(crate::metrics::increment_mqtt_change_ams_topology());
             }
         }
         // tray_reading - which trays (from those that exist) that are currently being "read" (meaning ams is rotating them to get them ready)
@@ -573,6 +587,7 @@ impl BambuPrinter {
         {
             self.tray_reading_bits = Some(tray_reading_bits);
             change_made = true;
+            with_console_metrics!(crate::metrics::increment_mqtt_change_ams_topology());
         }
 
         // IPORTANT Note: For now doesn't seem relevatnt to change_made, nor for persistent state
@@ -589,6 +604,7 @@ impl BambuPrinter {
                     if new_info != self.ams_info[ams_index] {
                         self.ams_info[ams_index] = new_info;
                         change_made = true;
+                        with_console_metrics!(crate::metrics::increment_mqtt_change_ams_environment());
                     }
                 }
                 if let Some(humidity_raw) = ams.humidity_raw {
@@ -597,6 +613,7 @@ impl BambuPrinter {
                     if new_info != self.ams_info[ams_index] {
                         self.ams_info[ams_index] = new_info;
                         change_made = true;
+                        with_console_metrics!(crate::metrics::increment_mqtt_change_ams_environment());
                     }
                 }
                 if let Some(temp) = ams.temp {
@@ -605,6 +622,7 @@ impl BambuPrinter {
                     if new_info != self.ams_info[ams_index] {
                         self.ams_info[ams_index] = new_info;
                         change_made = true;
+                        with_console_metrics!(crate::metrics::increment_mqtt_change_ams_environment());
                     }
                 }
                 if let Some(ams_info) = ams.info {
@@ -616,6 +634,7 @@ impl BambuPrinter {
                     if new_info != self.ams_info[ams_index] {
                         self.ams_info[ams_index] = new_info;
                         change_made = true;
+                        with_console_metrics!(crate::metrics::increment_mqtt_change_ams_info());
                     }
                 }
             }
@@ -625,6 +644,7 @@ impl BambuPrinter {
                 if self.ams_info[index] != new_info {
                     self.ams_info[index] = new_info;
                     change_made = true;
+                    with_console_metrics!(crate::metrics::increment_mqtt_change_ams_info());
                 }
             }
         }
@@ -666,6 +686,9 @@ impl BambuPrinter {
                 let current_tray = &self.ams_trays()[tray_id];
                 let tray_changed = current_tray != &new_tray || current_tray.meta_info != new_tray.meta_info;
                 change_made |= tray_changed;
+                with_console_metrics!(if tray_changed {
+                    crate::metrics::increment_mqtt_change_ams_tray();
+                });
                 self.swap_ams_tray(tray_id, &mut new_tray);
 
                 if spool_removed {
@@ -712,28 +735,49 @@ impl BambuPrinter {
         // Therefore, to issue an event need to call update_ams_trays_done afterwards through a non mut reference (so not borrow_mut if refcell)
         //   in order to issue the event on observers
 
-        let mut change_made = self.process_print_message__fila_switch(print);
+        let fila_switch_change_made = self.process_print_message__fila_switch(print);
+        with_console_metrics!(if fila_switch_change_made {
+            crate::metrics::increment_mqtt_change_fila_switch();
+        });
+        let mut change_made = fila_switch_change_made;
         let mut removed_tags = HashMap::new();
         let mut processed_specific_command = false;
         if let Some(command) = &print.command {
             processed_specific_command = true;
             if command == "ams_filament_setting" {
-                change_made |= self.process_print_message__ams_filament_setting(print)
+                let command_change_made = self.process_print_message__ams_filament_setting(print);
+                change_made |= command_change_made;
+                with_console_metrics!(if command_change_made {
+                    crate::metrics::increment_mqtt_change_command();
+                });
             } else if command == "extrusion_cali_set" || command == "extrusion_cali_del" {
                 // trigger request command for cali_get (request, not response)
                 if let Some(nozzle_diameter) = &print.nozzle_diameter {
                     self.fetch_filament_calibrations(nozzle_diameter);
                 }
                 change_made = true;
+                with_console_metrics!(crate::metrics::increment_mqtt_change_command());
             } else if command == "extrusion_cali_sel" {
                 // update the tray with the new k factor
-                change_made |= self.process_print_message__extrusion_cali_sel(print)
+                let command_change_made = self.process_print_message__extrusion_cali_sel(print);
+                change_made |= command_change_made;
+                with_console_metrics!(if command_change_made {
+                    crate::metrics::increment_mqtt_change_command();
+                });
             } else if command == "extrusion_cali_get" {
                 // TODO: Check: distinguish between command that was sent and the result, which are structured the same
                 // here we want to process only the results (the one that includes the list of filaments )
-                change_made |= self.process_print_message__extrusion_cali_get(print);
+                let command_change_made = self.process_print_message__extrusion_cali_get(print);
+                change_made |= command_change_made;
+                with_console_metrics!(if command_change_made {
+                    crate::metrics::increment_mqtt_change_command();
+                });
             } else if command == "project_file" {
-                change_made |= self.process_print_message__project_file(print);
+                let print_project_change_made = self.process_print_message__project_file(print);
+                change_made |= print_project_change_made;
+                with_console_metrics!(if print_project_change_made {
+                    crate::metrics::increment_mqtt_change_print_project();
+                });
             } else {
                 processed_specific_command = false;
             }
