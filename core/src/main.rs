@@ -24,6 +24,7 @@ mod filament_staging;
 mod hx711_gpio;
 mod metrics;
 mod my_mqtt;
+mod ota_migration;
 mod printer;
 mod settings;
 mod slicer_ws;
@@ -87,7 +88,7 @@ use framework::{
 };
 
 use app_config::AppConfig;
-use settings::{AP_ADDR, MAX_NUM_PRINTERS};
+use settings::{AP_ADDR, DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, MAX_NUM_PRINTERS};
 use settings::{API_SERVER_NUM_LISTENERS, WEB_SERVER_NUM_LISTENERS};
 use settings::{
     OTA_DOMAIN, OTA_PATH, OTA_TOML_FILENAME, WEB_APP_DOMAIN, WEB_APP_KEY_DERIVATION_ITERATIONS, WEB_APP_SALT, WEB_APP_SECURITY_KEY_LENGTH,
@@ -389,6 +390,9 @@ async fn main(spawner: Spawner) {
     debug!("Configuring App UI");
 
     let ui: &mut crate::app::AppWindow = mk_static!(crate::app::AppWindow, crate::app::create_slint_app());
+    let ui_framework_state = ui.global::<crate::app::FrameworkState>();
+    ui_framework_state.set_display_width(DISPLAY_WIDTH_PX as f32);
+    ui_framework_state.set_display_height(DISPLAY_HEIGHT_PX as f32);
 
     let app_config = Rc::new(RefCell::new(AppConfig::new(framework.clone())));
     let slicer_ws_proxy = slicer_ws::init_slicer_ws_proxy();
@@ -503,6 +507,8 @@ async fn main(spawner: Spawner) {
 
     spawner.spawn(framework::wifi::sta_net_task(sta_runner)).ok();
     spawner.spawn(framework::wifi::ap_net_task(ap_runner)).ok(); // TODO: Maybe move this to run only when needed (in wifi.rs)
+
+    ota_migration::run(framework.clone(), ui).await;
 
     // ===============================================================================================================================================
     // == Applicative Initialization =================================================================================================================

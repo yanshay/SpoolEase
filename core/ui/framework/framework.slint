@@ -85,6 +85,9 @@ export global FrameworkState {
 
     in-out property <OtaState> ota-state: OtaState.NotStarted;
     in-out property <bool> ota-allow-close-during-update: false;
+    in-out property <bool> migration-active: false;
+    in-out property <bool> migration-has-failed: false;
+    in-out property <string> migration-message: "";
     in-out property <ResetWifiCredentialsState> reset-wifi-credentials-state: ResetWifiCredentialsState.NotStarted;
     in-out property <ResetFixedSecurityKeyState> reset-fixed-security-key-state: ResetFixedSecurityKeyState.NotStarted;
     in-out property <RestartDeviceState> restart-device-state: RestartDeviceState.NotStarted;
@@ -126,6 +129,28 @@ export global FrameworkState {
     }
     public function ota-clear-message() {
         self.ota-message = "";
+    }
+
+    public function migration-started(text: string) {
+        self.migration-active = true;
+        self.migration-has-failed = false;
+        self.migration-message = text;
+    }
+    public function migration-status(text: string) {
+        self.migration-message = text;
+    }
+    public function migration-completed(text: string) {
+        self.migration-has-failed = false;
+        self.migration-message = text;
+    }
+    public function migration-failed(text: string) {
+        self.migration-has-failed = true;
+        self.migration-message = text;
+    }
+    public function migration-clear() {
+        self.migration-active = false;
+        self.migration-has-failed = false;
+        self.migration-message = "";
     }
 
     // Web Config

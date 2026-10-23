@@ -278,7 +278,6 @@ export component AppWindow inherits Window {
             }
         }
     }
-
     if FrameworkState.ota-state == OtaState.Started || FrameworkState.ota-state == OtaState.Completed || FrameworkState.ota-state == OtaState.Failed: Rectangle {
         width: root.width;
         height: root.height;
@@ -287,6 +286,37 @@ export component AppWindow inherits Window {
         OtaProgress {
             width: parent.width;
             height: parent.height;
+        }
+    }
+
+    if FrameworkState.migration-active: Rectangle {
+        width: root.width;
+        height: root.height;
+        background: FrameworkState.migration-has-failed ? #aa2020 : #102030;
+        VerticalLayout {
+            alignment: center;
+            padding-left: 24px;
+            padding-right: 24px;
+            spacing: 18px;
+            Text {
+                horizontal-alignment: center;
+                color: white;
+                font-size: 22px;
+                text: "One Time Flash Layout Update";
+            }
+            Text {
+                horizontal-alignment: center;
+                wrap: word-wrap;
+                color: white;
+                font-size: 18px;
+                text: FrameworkState.migration-message;
+            }
+            if FrameworkState.migration-has-failed: MyButton {
+                text: "Continue";
+                clicked => {
+                    FrameworkState.migration-clear();
+                }
+            }
         }
     }
 }
