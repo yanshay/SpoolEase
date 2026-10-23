@@ -4234,6 +4234,7 @@ dependencies = [
 [[package]]
 name = "mbedtls-rs"
 version = "0.1.0"
+source = "git+https://github.com/yanshay/esp-mbedtls?branch=yanshay_max_tls#fd17728654f098dbf783acd94fefeb5e4c225cd4"
 dependencies = [
  "critical-section",
  "edge-nal",
@@ -4248,6 +4249,7 @@ dependencies = [
 [[package]]
 name = "mbedtls-rs-sys"
 version = "0.1.0"
+source = "git+https://github.com/yanshay/esp-mbedtls?branch=yanshay_max_tls#fd17728654f098dbf783acd94fefeb5e4c225cd4"
 dependencies = [
  "anyhow",
  "bindgen 0.72.1",

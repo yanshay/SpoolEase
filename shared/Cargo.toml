@@ -38,7 +38,8 @@ embassy-executor = { version = "0.9.0", features = ["nightly"] }
 getrandom = { version = "0.2.15", features = ["custom"] }
 hashbrown = { version = "0.16.1", features = ["serde"] }
 snafu = { git = "https://github.com/shepmaster/snafu", rev = "aedc9db8c04a437b4c547efd4d73e9337fa43a4a", default-features = false, features = ["rust_1_81", "alloc"]} # , "backtraces-impl-backtrace-crate"]} 
-esp-mbedtls = { package = "mbedtls-rs", path = "../../../../../../OpenSourceProj/forked/mbedtls-rs/mbedtls-rs", features = [ "log" ] }
+#esp-mbedtls = { package = "mbedtls-rs", path = "../../../../../../OpenSourceProj/forked/mbedtls-rs/mbedtls-rs", features = [ "log" ] }
+esp-mbedtls = { package = "mbedtls-rs", git = "https://github.com/yanshay/esp-mbedtls", branch="yanshay_max_tls", features = [ "log" ] }
 # esp-mbedtls = { package = "mbedtls-rs", git = "https://github.com/esp-rs/mbedtls-rs", rev = "177721027aae6e014e1cf922608eb9955d70d85b", features = [ "log" ] }
 esp-alloc = { version = "0.9.0" }
 miniz_oxide = { version = "0.8.9", default-features = false }
