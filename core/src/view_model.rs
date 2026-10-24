@@ -988,6 +988,9 @@ impl ViewModel {
             name: env!("CARGO_PKG_NAME").into(),
             version: env!("CARGO_PKG_VERSION").into(),
         });
+        if let Some(updater_version) = crate::app_ota::installed_updater_version() {
+            ui_framework_state.set_updater_version(updater_version.into());
+        }
 
         let wifi_signal = self.framework.borrow().wifi_signal();
         self.update_wifi_signal_pill(wifi_signal);

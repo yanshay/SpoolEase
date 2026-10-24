@@ -316,7 +316,8 @@ export component Settings inherits Rectangle {
     in property <bool> framework-tab-selected;
     VerticalLayout {
         title := Title {
-            text: "  Installed firmware: \{FrameworkState.app-info.name} \{ FrameworkState.app-info.version}";
+            text: "\{FrameworkState.app-info.name} \{FrameworkState.app-info.version}" +
+                (FrameworkState.updater-version == "" ? "" : " | Updater \{FrameworkState.updater-version}");
         }
 
         tabs := LeftTab {

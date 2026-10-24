@@ -6,8 +6,8 @@ use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Timer};
 use framework::framework::FrameworkObserver;
 use framework::ota::{
-    APP_OTA_ACTION_INSTALL, APP_OTA_ACTION_PATH, APP_OTA_ACTION_STAGING, APP_OTA_BINARY_PATH, APP_OTA_METADATA_PATH, OtaObserver, OtaPartitionLayout,
-    OtaPhase, OtaRequest, activate_ota_partition, download_ota_to_sd, ota_partition_layout, run_ota,
+    DEFAULT_STAGED_OTA_PATHS, OtaObserver, OtaPartitionLayout, OtaPhase, OtaRequest, activate_ota_partition, ota_partition_layout,
+    read_app_descriptor, run_ota, stage_ota_to_sd,
 };
 use framework::{error, info};
 use shared::settings::{
@@ -34,6 +34,7 @@ enum ConsoleOtaMode {
 // explicit modes are useful for controlled development tests without introducing feature flags.
 const CONSOLE_OTA_MODE: ConsoleOtaMode = ConsoleOtaMode::Auto;
 const MIB: u32 = 1024 * 1024;
+const UPDATER_PROJECT_NAME: &str = "esp-hal-app-updater";
 
 fn resolve_console_ota_mode(layout: OtaPartitionLayout) -> Result<ConsoleOtaMode, String> {
     match CONSOLE_OTA_MODE {
@@ -61,16 +62,10 @@ fn resolve_console_ota_mode(layout: OtaPartitionLayout) -> Result<ConsoleOtaMode
     }
 }
 
-async fn write_app_action(framework: Rc<RefCell<Framework>>, action: &str) -> Result<(), String> {
-    let file_store = framework.borrow().file_store();
-    let mut file_store = file_store.lock().await;
-    if !file_store.card_installed {
-        return Err(String::from("SD card is unavailable"));
-    }
-    file_store
-        .create_write_file_str(APP_OTA_ACTION_PATH, &format!("{action}\n"))
-        .await
-        .map_err(|err| format!("Failed writing {APP_OTA_ACTION_PATH}: {err}"))
+pub fn installed_updater_version() -> Option<String> {
+    let layout = ota_partition_layout().ok()?;
+    let descriptor = read_app_descriptor(layout.ota_1).ok()?;
+    (descriptor.project_name == UPDATER_PROJECT_NAME).then_some(descriptor.version)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -92,23 +87,18 @@ async fn run_sd_staged_console_ota(
         return Err(format!("Updater partition is too small: {} bytes", layout.ota_1.size));
     }
 
-    // APP.ACT is the commit journal. STAGING is written before either payload file changes, and
-    // INSTALL is written only after APP.BIN and APP.TOM are complete and verified.
-    write_app_action(framework.clone(), APP_OTA_ACTION_STAGING).await?;
-    let metadata = download_ota_to_sd(
+    let metadata = stage_ota_to_sd(
         ota_domain,
         ota_path,
         "ota.toml",
         cur_version,
         OTA_TLS_CERTIFICATE,
-        APP_OTA_BINARY_PATH,
-        APP_OTA_METADATA_PATH,
+        DEFAULT_STAGED_OTA_PATHS,
         layout.ota_0.size,
         framework.clone(),
         observer,
     )
     .await?;
-    write_app_action(framework.clone(), APP_OTA_ACTION_INSTALL).await?;
 
     observer.on_ota_status("Activating updater");
     activate_ota_partition(1)?;
