@@ -10,7 +10,8 @@ use esp_partition_table::{PartitionBuffer, PartitionError, PartitionReaderState}
 use esp_storage::FlashStorage;
 use framework::framework::Framework;
 use framework::ota::{
-    OtaObserver, OtaPartitionLayout, OtaPhase, activate_ota_partition, download_ota_to_raw_flash, download_url_to_buffer, ota_partition_layout,
+    OtaObserver, OtaPartition, OtaPartitionLayout, OtaPhase, activate_ota_partition, download_url_to_buffer, fetch_ota_metadata,
+    ota_partition_layout, write_ota_to_raw_slot,
 };
 use framework::{error, info};
 use shared::settings::{OTA_DOMAIN_STABLE, OTA_TLS_CERTIFICATE};
@@ -23,6 +24,7 @@ const PARTITION_TABLE_OFFSET: u32 = 0x8000;
 const PARTITION_TABLE_BINARY_SIZE: usize = 0x0c00;
 const PARTITION_TABLE_SECTOR_SIZE: usize = 0x1000;
 const COPY_BUFFER_SIZE: usize = 4096;
+const UPDATER_PROJECT_NAME: &str = "esp-hal-app-updater";
 
 struct MigrationObserver<'a> {
     ui: &'a AppWindow,
@@ -179,20 +181,30 @@ async fn migrate_from_ota_0(framework: Rc<RefCell<Framework>>, ui: &AppWindow) -
         framework.clone(),
     )
     .await?;
-    let updater_offset = future_updater_offset(&table)?;
-    info!("Migration: future updater offset is 0x{updater_offset:08x}");
+    let updater_partition = future_updater_partition(&table)?;
+    info!("Migration: future updater offset is 0x{:08x}", updater_partition.offset);
 
     let mut observer = MigrationObserver {
         ui,
         progress_percent: u8::MAX,
     };
-    migration_phase_started(ui, "Downloading updater");
-    let metadata = download_ota_to_raw_flash(
+    migration_status(ui, "Fetching updater metadata");
+    let metadata = fetch_ota_metadata(
         OTA_DOMAIN_STABLE,
         UPDATER_STABLE_OTA_PATH,
         OTA_TOML_FILENAME,
         OTA_TLS_CERTIFICATE,
-        updater_offset,
+        framework.clone(),
+    )
+    .await?;
+    migration_phase_started(ui, "Downloading updater");
+    write_ota_to_raw_slot(
+        OTA_DOMAIN_STABLE,
+        UPDATER_STABLE_OTA_PATH,
+        OTA_TLS_CERTIFICATE,
+        &metadata,
+        updater_partition,
+        UPDATER_PROJECT_NAME,
         framework,
         &mut observer,
     )
@@ -210,15 +222,20 @@ async fn migrate_from_ota_0(framework: Rc<RefCell<Framework>>, ui: &AppWindow) -
     Ok(())
 }
 
-fn future_updater_offset(table: &[u8; PARTITION_TABLE_BINARY_SIZE]) -> Result<u32, alloc::string::String> {
+fn future_updater_partition(table: &[u8; PARTITION_TABLE_BINARY_SIZE]) -> Result<OtaPartition, alloc::string::String> {
     let mut reader = PartitionReaderState::new(0, table.len(), true);
-    let mut ota_1_offset = None;
+    let mut ota_1 = None;
     for bytes in table.chunks_exact(core::mem::size_of::<PartitionBuffer>()) {
         let entry_data: &PartitionBuffer = bytes
             .try_into()
             .map_err(|_| alloc::string::String::from("Invalid partition table entry size"))?;
         match reader.read(entry_data) {
-            Ok(entry) if entry.name() == "ota_1" => ota_1_offset = Some(entry.offset),
+            Ok(entry) if entry.name() == "ota_1" => {
+                ota_1 = Some(OtaPartition {
+                    offset: entry.offset,
+                    size: entry.size as u32,
+                });
+            }
             Ok(_) => {}
             Err(PartitionError::NotEnoughData) => break,
             Err(err) => return Err(format!("Invalid partition table: {err:?}")),
@@ -227,7 +244,7 @@ fn future_updater_offset(table: &[u8; PARTITION_TABLE_BINARY_SIZE]) -> Result<u3
     if reader.check_md5() != Some(true) {
         return Err("Partition table MD5 validation failed".into());
     }
-    ota_1_offset.ok_or_else(|| "Partition ota_1 is missing from the new table".into())
+    ota_1.ok_or_else(|| "Partition ota_1 is missing from the new table".into())
 }
 
 fn write_partition_table(table: &[u8; PARTITION_TABLE_BINARY_SIZE]) -> Result<(), alloc::string::String> {

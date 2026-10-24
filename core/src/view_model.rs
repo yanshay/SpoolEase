@@ -3624,7 +3624,7 @@ impl ViewModel {
             .map_err(|err| format!("{err:?}"))
     }
 
-    pub fn update_firmware_versions(&self, fw: &[crate::app_ota::FirmwareInfo]) {
+    pub fn update_firmware_versions(&self, fw: &[crate::app_ota::FirmwareInfo], updater: &crate::app_ota::UpdaterInfo) {
         let ui = self.ui_weak.unwrap();
         let ui_app_state: crate::app::AppState<'_> = ui.global::<crate::app::AppState>();
         let console_stable_info = fw
@@ -3666,6 +3666,24 @@ impl ViewModel {
             scale_unstable_newer: scale_unstable_info.newer,
             scale_debug: scale_debug_info.version.to_shared_string(),
             scale_debug_newer: scale_debug_info.newer,
+            updater_curr: if updater.managed {
+                if updater.trusted && !updater.installed.is_empty() {
+                    updater.installed.to_shared_string()
+                } else {
+                    "Untrusted".to_shared_string()
+                }
+            } else {
+                "".to_shared_string()
+            },
+            updater_stable: if updater.managed {
+                if updater.available.is_empty() {
+                    "Unavailable".to_shared_string()
+                } else {
+                    updater.available.to_shared_string()
+                }
+            } else {
+                "".to_shared_string()
+            },
         };
         ui_app_state.invoke_notify_available_firmwares(firmwares);
     }

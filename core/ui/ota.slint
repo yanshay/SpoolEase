@@ -35,6 +35,11 @@ export component OtaDisplay inherits Rectangle {
                 background: skyblue;
                 text: "Scale";
             }
+
+            RectText {
+                background: skyblue;
+                text: "Updater";
+            }
         }
 
         Row {
@@ -49,6 +54,10 @@ export component OtaDisplay inherits Rectangle {
 
             RectText {
                 text: AppState.firmwares.scale-curr;
+            }
+
+            RectText {
+                text: AppState.firmwares.updater-curr;
             }
         }
 
@@ -78,6 +87,10 @@ export component OtaDisplay inherits Rectangle {
                     FrameworkState.ota-allow-close-during-update = true;
                     AppBackend.ota_update_firmware("scale", "stable");
                 }
+            }
+
+            RectText {
+                text: AppState.firmwares.updater-stable;
             }
         }
 
@@ -120,6 +133,10 @@ export component OtaDisplay inherits Rectangle {
                     AppBackend.ota_update_firmware("scale", "unstable");
                 }
             }
+
+            if beta: RectText {
+                text: "";
+            }
 // Debug
             if debug: MyButton {
                 height: 56px;
@@ -142,12 +159,16 @@ export component OtaDisplay inherits Rectangle {
                     AppBackend.ota_update_firmware("scale", "debug");
                 }
             }
+
+            if debug: RectText {
+                text: "";
+            }
         }
 
         Row {
             Rectangle {
                 background: red;
-                colspan: 3;
+                colspan: 4;
                 vertical-stretch: 1;
                 MyText {
                     color: yellow;

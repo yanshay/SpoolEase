@@ -286,6 +286,8 @@ export struct Firmwares {
   scale-unstable-newer: bool,
   scale-debug: string,
   scale-debug-newer: bool,
+  updater-curr: string,
+  updater-stable: string,
 }
 
 export global AppState {
@@ -304,6 +306,8 @@ export global AppState {
         scale-unstable-newer: false,
         scale-debug: "scale-debug",
         scale-debug-newer: false,
+        updater-curr: "",
+        updater-stable: "",
     };
 
     in-out property <string> message-box-title;

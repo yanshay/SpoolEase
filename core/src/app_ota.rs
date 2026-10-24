@@ -6,10 +6,11 @@ use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Timer};
 use framework::framework::FrameworkObserver;
 use framework::ota::{
-    DEFAULT_STAGED_OTA_PATHS, OtaObserver, OtaPartitionLayout, OtaPhase, OtaRequest, activate_ota_partition, ota_partition_layout,
-    read_app_descriptor, run_ota, stage_ota_to_sd,
+    DEFAULT_STAGED_OTA_PATHS, OtaObserver, OtaPartitionLayout, OtaPhase, OtaRequest, activate_ota_partition, fetch_ota_metadata,
+    ota_partition_layout, raw_ota_slot_trusted, read_app_descriptor, run_ota, stage_ota_to_sd, write_ota_to_raw_slot,
 };
 use framework::{error, info};
+use semver::Version;
 use shared::settings::{
     OTA_DOMAIN_DEBUG, OTA_DOMAIN_STABLE, OTA_DOMAIN_UNSTABLE, OTA_TLS_CERTIFICATE, SCALE_DEBUG_OTA_PATH, SCALE_STABLE_OTA_PATH,
     SCALE_UNSTABLE_OTA_PATH,
@@ -19,7 +20,7 @@ use shared::types::AppOtaTrain;
 use alloc::rc::Rc;
 use framework::prelude::Framework;
 
-use crate::settings::{CONSOLE_DEBUG_OTA_PATH, CONSOLE_STABLE_OTA_PATH, CONSOLE_UNSTABLE_OTA_PATH};
+use crate::settings::{CONSOLE_DEBUG_OTA_PATH, CONSOLE_STABLE_OTA_PATH, CONSOLE_UNSTABLE_OTA_PATH, OTA_TOML_FILENAME, UPDATER_STABLE_OTA_PATH};
 use crate::view_model::ViewModel;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,8 +65,105 @@ fn resolve_console_ota_mode(layout: OtaPartitionLayout) -> Result<ConsoleOtaMode
 
 pub fn installed_updater_version() -> Option<String> {
     let layout = ota_partition_layout().ok()?;
+    if resolve_console_ota_mode(layout).ok()? != ConsoleOtaMode::SdStaged {
+        return None;
+    }
+    if !raw_ota_slot_trusted(layout.ota_1, UPDATER_PROJECT_NAME).ok()? {
+        return None;
+    }
     let descriptor = read_app_descriptor(layout.ota_1).ok()?;
     (descriptor.project_name == UPDATER_PROJECT_NAME).then_some(descriptor.version)
+}
+
+#[derive(Debug, Default)]
+pub struct UpdaterInfo {
+    pub managed: bool,
+    pub installed: String,
+    pub available: String,
+    pub trusted: bool,
+}
+
+fn staged_updater_layout() -> Result<Option<OtaPartitionLayout>, String> {
+    let layout = ota_partition_layout()?;
+    if resolve_console_ota_mode(layout)? == ConsoleOtaMode::SdStaged && layout.running == Some(0) {
+        Ok(Some(layout))
+    } else {
+        Ok(None)
+    }
+}
+
+fn updater_needs_update(layout: OtaPartitionLayout, available_version: &str) -> Result<bool, String> {
+    let available = Version::parse(available_version).map_err(|_| format!("Available updater version {available_version} is invalid"))?;
+    if !raw_ota_slot_trusted(layout.ota_1, UPDATER_PROJECT_NAME)? {
+        return Ok(true);
+    }
+
+    let descriptor = read_app_descriptor(layout.ota_1)?;
+    let installed = Version::parse(&descriptor.version).map_err(|_| format!("Installed updater version {} is invalid", descriptor.version))?;
+    Ok(available > installed)
+}
+
+async fn check_updater(framework: Rc<RefCell<Framework>>) -> UpdaterInfo {
+    let Some(layout) = staged_updater_layout().ok().flatten() else {
+        return UpdaterInfo::default();
+    };
+
+    let mut updater = UpdaterInfo {
+        managed: true,
+        ..Default::default()
+    };
+    if let Ok(descriptor) = read_app_descriptor(layout.ota_1) {
+        if descriptor.project_name == UPDATER_PROJECT_NAME {
+            updater.installed = descriptor.version;
+        }
+    }
+    updater.trusted = raw_ota_slot_trusted(layout.ota_1, UPDATER_PROJECT_NAME).unwrap_or(false);
+
+    match fetch_ota_metadata(
+        OTA_DOMAIN_STABLE,
+        UPDATER_STABLE_OTA_PATH,
+        OTA_TOML_FILENAME,
+        OTA_TLS_CERTIFICATE,
+        framework,
+    )
+    .await
+    {
+        Ok(metadata) => updater.available = metadata.version,
+        Err(err) => error!("Updater version check failed: {err}"),
+    }
+    updater
+}
+
+async fn update_updater_if_needed(
+    layout: OtaPartitionLayout,
+    framework: Rc<RefCell<Framework>>,
+    observer: &mut dyn OtaObserver,
+) -> Result<(), String> {
+    observer.on_ota_status("Checking updater");
+    let metadata = fetch_ota_metadata(
+        OTA_DOMAIN_STABLE,
+        UPDATER_STABLE_OTA_PATH,
+        OTA_TOML_FILENAME,
+        OTA_TLS_CERTIFICATE,
+        framework.clone(),
+    )
+    .await?;
+    if !updater_needs_update(layout, &metadata.version)? {
+        return Ok(());
+    }
+
+    observer.on_ota_status("Updating updater");
+    write_ota_to_raw_slot(
+        OTA_DOMAIN_STABLE,
+        UPDATER_STABLE_OTA_PATH,
+        OTA_TLS_CERTIFICATE,
+        &metadata,
+        layout.ota_1,
+        UPDATER_PROJECT_NAME,
+        framework,
+        observer,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -190,9 +288,9 @@ impl OtaObserver for AppOtaObserver {
         self.progress_percent = percent;
         let phase = match phase {
             OtaPhase::Downloading if self.ota_mode == Some(ConsoleOtaMode::SdStaged) => {
-                format!("Downloading {filename} to SD card")
+                format!("Downloading\n{filename} to SD card")
             }
-            OtaPhase::Downloading => format!("Downloading/flashing {filename}"),
+            OtaPhase::Downloading => format!("Downloading/Flashing\n{filename}"),
             OtaPhase::Flashing => format!("Flashing {filename}"),
             OtaPhase::Completing => format!("Finalizing {filename}"),
         };
@@ -296,7 +394,8 @@ pub async fn app_ota_task(framework: Rc<RefCell<Framework>>, view_model: Rc<RefC
                     core::mem::swap(&mut app_ota_observer.version, &mut ota_item.version);
                     core::mem::swap(&mut app_ota_observer.newer, &mut ota_item.newer);
                 }
-                view_model.borrow().update_firmware_versions(&ota_info);
+                let updater_info = check_updater(framework.clone()).await;
+                view_model.borrow().update_firmware_versions(&ota_info, &updater_info);
             }
             AppOtaRequest::Update { product, train } => {
                 let mut app_ota_observer = AppOtaObserver {
@@ -341,6 +440,10 @@ pub async fn app_ota_task(framework: Rc<RefCell<Framework>>, view_model: Rc<RefC
                         }
                         Ok(ConsoleOtaMode::SdStaged) => {
                             app_ota_observer.ota_mode = Some(ConsoleOtaMode::SdStaged);
+                            if let Err(message) = update_updater_if_needed(layout, framework.clone(), &mut app_ota_observer).await {
+                                app_ota_observer.on_ota_failed(&message);
+                                continue;
+                            }
                             if let Err(message) = run_sd_staged_console_ota(
                                 ota_item.domain,
                                 ota_item.path,
