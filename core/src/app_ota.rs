@@ -188,7 +188,7 @@ impl OtaObserver for AppOtaObserver {
         }
     }
 
-    fn on_ota_progress(&mut self, phase: OtaPhase, completed: u32, total: u32) {
+    fn on_ota_progress(&mut self, phase: OtaPhase, filename: &str, completed: u32, total: u32) {
         let percent = if total == 0 {
             0
         } else {
@@ -199,10 +199,12 @@ impl OtaObserver for AppOtaObserver {
         }
         self.progress_percent = percent;
         let phase = match phase {
-            OtaPhase::Downloading if self.ota_mode == Some(ConsoleOtaMode::SdStaged) => "Downloading to SD card",
-            OtaPhase::Downloading => "Downloading/flashing firmware",
-            OtaPhase::Flashing => "Flashing firmware",
-            OtaPhase::Completing => "Finalizing firmware",
+            OtaPhase::Downloading if self.ota_mode == Some(ConsoleOtaMode::SdStaged) => {
+                format!("Downloading {filename} to SD card")
+            }
+            OtaPhase::Downloading => format!("Downloading/flashing {filename}"),
+            OtaPhase::Flashing => format!("Flashing {filename}"),
+            OtaPhase::Completing => format!("Finalizing {filename}"),
         };
         self.view_model.borrow_mut().on_ota_status(&format!("{phase}: {percent}%"));
     }

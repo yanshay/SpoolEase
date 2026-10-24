@@ -311,12 +311,34 @@ export component AppWindow inherits Window {
                 font-size: 18px;
                 text: FrameworkState.migration-message;
             }
+            if FrameworkState.migration-timing-active: Text {
+                horizontal-alignment: center;
+                color: #aebbc8;
+                font-size: 16px;
+                text: "Elapsed: \{FrameworkState.migration-elapsed-seconds} seconds";
+            }
             if FrameworkState.migration-has-failed: MyButton {
                 text: "Continue";
                 clicked => {
                     FrameworkState.migration-clear();
                 }
             }
+        }
+    }
+
+    Timer {
+        interval: 1s;
+        running: FrameworkState.migration-timing-active;
+        triggered => {
+            FrameworkState.migration-elapsed-seconds += 1;
+        }
+    }
+
+    Timer {
+        interval: 1s;
+        running: FrameworkState.ota-state == OtaState.Started;
+        triggered => {
+            FrameworkState.ota-elapsed-seconds += 1;
         }
     }
 }

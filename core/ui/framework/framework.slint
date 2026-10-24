@@ -84,9 +84,12 @@ export global FrameworkState {
     in-out property <string> web-config-key: "";
 
     in-out property <OtaState> ota-state: OtaState.NotStarted;
+    in-out property <int> ota-elapsed-seconds: 0;
     in-out property <bool> ota-allow-close-during-update: false;
     in-out property <bool> migration-active: false;
     in-out property <bool> migration-has-failed: false;
+    in-out property <bool> migration-timing-active: false;
+    in-out property <int> migration-elapsed-seconds: 0;
     in-out property <string> migration-message: "";
     in-out property <ResetWifiCredentialsState> reset-wifi-credentials-state: ResetWifiCredentialsState.NotStarted;
     in-out property <ResetFixedSecurityKeyState> reset-fixed-security-key-state: ResetFixedSecurityKeyState.NotStarted;
@@ -110,6 +113,7 @@ export global FrameworkState {
     }
     public function ota-started() {
         self.ota-state = OtaState.Started;
+        self.ota-elapsed-seconds = 0;
         self.ota-message = "Started Firmware Update";
     }
     public function ota-status(text: string) {
@@ -128,12 +132,15 @@ export global FrameworkState {
         self.ota-message = text;
     }
     public function ota-clear-message() {
+        self.ota-elapsed-seconds = 0;
         self.ota-message = "";
     }
 
     public function migration-started(text: string) {
         self.migration-active = true;
         self.migration-has-failed = false;
+        self.migration-timing-active = false;
+        self.migration-elapsed-seconds = 0;
         self.migration-message = text;
     }
     public function migration-status(text: string) {
@@ -141,15 +148,27 @@ export global FrameworkState {
     }
     public function migration-completed(text: string) {
         self.migration-has-failed = false;
+        self.migration-timing-active = false;
         self.migration-message = text;
     }
     public function migration-failed(text: string) {
         self.migration-has-failed = true;
+        self.migration-timing-active = false;
         self.migration-message = text;
+    }
+    public function migration-phase-started(text: string) {
+        self.migration-timing-active = true;
+        self.migration-elapsed-seconds = 0;
+        self.migration-message = text;
+    }
+    public function migration-phase-finished() {
+        self.migration-timing-active = false;
     }
     public function migration-clear() {
         self.migration-active = false;
         self.migration-has-failed = false;
+        self.migration-timing-active = false;
+        self.migration-elapsed-seconds = 0;
         self.migration-message = "";
     }
 

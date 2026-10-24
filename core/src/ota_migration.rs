@@ -44,7 +44,7 @@ impl OtaObserver for MigrationObserver<'_> {
 
     fn on_ota_version_available(&mut self, _version: &str, _newer: bool) {}
 
-    fn on_ota_progress(&mut self, phase: OtaPhase, completed: u32, total: u32) {
+    fn on_ota_progress(&mut self, phase: OtaPhase, _filename: &str, completed: u32, total: u32) {
         let percent = if total == 0 {
             0
         } else {
@@ -77,7 +77,7 @@ pub async fn run(framework: Rc<RefCell<Framework>>, ui: &AppWindow) {
         return;
     }
 
-    migration_started(ui, "Preparing storage layout update");
+    migration_started(ui, "Preparing flash layout update");
     info!(
         "Migration: legacy OTA layout detected; ota_0={} bytes ota_1={} bytes running={:?}",
         layout.ota_0.size, layout.ota_1.size, layout.running
@@ -95,13 +95,13 @@ pub async fn run(framework: Rc<RefCell<Framework>>, ui: &AppWindow) {
 
     match result {
         Ok(()) => {
-            migration_completed(ui, "Storage layout update complete");
+            migration_completed(ui, "Flash layout update complete");
             Timer::after_secs(2).await;
             migration_clear(ui);
         }
         Err(err) => {
             error!("Migration: failed: {err}");
-            migration_failed(ui, &format!("Storage layout update failed: {err}"));
+            migration_failed(ui, &format!("Flash layout update failed: {err}"));
         }
     }
 }
@@ -114,7 +114,7 @@ fn is_legacy_layout(layout: OtaPartitionLayout) -> bool {
 
 async fn migrate_from_ota_1(layout: OtaPartitionLayout, framework: Rc<RefCell<Framework>>, ui: &AppWindow) -> Result<(), alloc::string::String> {
     let length = layout.ota_0.size.min(layout.ota_1.size);
-    migration_status(ui, "Migrating firmware to main slot");
+    migration_phase_started(ui, "Migrating firmware to main slot");
     info!(
         "Migration: copying {} bytes from ota_1 at 0x{:08x} to ota_0 at 0x{:08x}",
         length, layout.ota_1.offset, layout.ota_0.offset
@@ -159,6 +159,7 @@ async fn migrate_from_ota_1(layout: OtaPartitionLayout, framework: Rc<RefCell<Fr
         ));
     }
 
+    migration_phase_finished(ui);
     info!("Migration: bridge copy verified; selecting ota_0");
     activate_ota_partition(0)?;
     migration_status(ui, "Restarting from main slot");
@@ -185,6 +186,7 @@ async fn migrate_from_ota_0(framework: Rc<RefCell<Framework>>, ui: &AppWindow) -
         ui,
         progress_percent: u8::MAX,
     };
+    migration_phase_started(ui, "Downloading updater");
     let metadata = download_ota_to_raw_flash(
         OTA_DOMAIN_STABLE,
         UPDATER_STABLE_OTA_PATH,
@@ -200,7 +202,8 @@ async fn migrate_from_ota_0(framework: Rc<RefCell<Framework>>, ui: &AppWindow) -
         metadata.filename, metadata.version
     );
 
-    migration_status(ui, "Applying storage layout. Keep power connected");
+    migration_phase_finished(ui);
+    migration_status(ui, "Applying flash layout. Keep power connected");
     info!("Migration: writing partition table");
     write_partition_table(&table)?;
     info!("Migration: partition table written and verified");
@@ -258,6 +261,14 @@ fn migration_completed(ui: &AppWindow, text: &str) {
 
 fn migration_failed(ui: &AppWindow, text: &str) {
     ui.global::<FrameworkState>().invoke_migration_failed(text.into());
+}
+
+fn migration_phase_started(ui: &AppWindow, text: &str) {
+    ui.global::<FrameworkState>().invoke_migration_phase_started(text.into());
+}
+
+fn migration_phase_finished(ui: &AppWindow) {
+    ui.global::<FrameworkState>().invoke_migration_phase_finished();
 }
 
 fn migration_clear(ui: &AppWindow) {

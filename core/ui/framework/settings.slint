@@ -157,11 +157,20 @@ export component OtaProgress inherits Rectangle {
             background: FrameworkState.ota-state == OtaState.Failed ? red : FrameworkState.ota-state == OtaState.Completed ? lightgreen : white;
             border-color: black;
             border-width: 1px;
-            Text {
-                horizontal-alignment: center;
-                color: black;
-                text: FrameworkState.ota-message;
-                font-size: 20px;
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    horizontal-alignment: center;
+                    color: black;
+                    text: FrameworkState.ota-message;
+                    font-size: 20px;
+                }
+                if FrameworkState.ota-state == OtaState.Started: Text {
+                    horizontal-alignment: center;
+                    color: black;
+                    text: "Elapsed: \{FrameworkState.ota-elapsed-seconds} seconds";
+                    font-size: 16px;
+                }
             }
         }
 
