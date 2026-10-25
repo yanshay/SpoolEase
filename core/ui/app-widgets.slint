@@ -80,8 +80,8 @@ export component ScrollingPills inherits Rectangle {
     in property <length> pill-spacing: 6px;
     in property <length> pill-font-size: 18px;
     in property <length> repeat-gap: 24px;
-    in property <length> scroll-step: 2px;
-    in property <duration> scroll-interval: 40ms;
+    in property <length> scroll-step: 3px;
+    in property <duration> scroll-interval: 200ms;
 
     height: content-width > 0px ? pill-height + 4px : 0px;
     clip: true;
@@ -98,16 +98,17 @@ export component ScrollingPills inherits Rectangle {
 
     property <length> content-width: measurer.preferred-width;
     property <length> travel-width: content-width + repeat-gap;
-    property <bool> scroll-started: false;
+    property <int> scroll-pill-count: -1;
     property <length> scroll-offset: 0px;
 
     scroll-timer := Timer {
         interval: root.scroll-interval;
-        running: root.content-width > 0px;
+        // Do not bind Timer.running to root.width: it re-enters parent layout in Slint 1.15.
+        running: root.content-width > 360px;
         triggered() => {
             if root.content-width > root.width {
-                if !root.scroll-started {
-                    root.scroll-started = true;
+                if root.scroll-pill-count != root.pills.length {
+                    root.scroll-pill-count = root.pills.length;
                     root.scroll-offset = -root.width;
                 }
 
@@ -115,15 +116,12 @@ export component ScrollingPills inherits Rectangle {
                 if root.scroll-offset >= root.travel-width {
                     root.scroll-offset -= root.travel-width;
                 }
-            } else {
-                root.scroll-started = false;
-                root.scroll-offset = 0px;
             }
         }
     }
 
     first-row := PillRow {
-        x: root.content-width > root.width ? (root.scroll-started ? -root.scroll-offset : root.width) : (root.width - root.content-width) / 2;
+        x: root.content-width > root.width ? (root.scroll-pill-count == root.pills.length ? -root.scroll-offset : root.width) : (root.width - root.content-width) / 2;
         y: (root.height - root.pill-height) / 2;
         width: root.content-width;
         pills: root.pills;

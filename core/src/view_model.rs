@@ -563,10 +563,10 @@ impl ViewModel {
         self.refresh_control_panel_pills();
     }
 
-    #[allow(dead_code)]
     fn remove_control_panel_pill(&self, id: ControlPanelPillId) {
-        self.control_panel_pills.borrow_mut().remove(&id);
-        self.refresh_control_panel_pills();
+        if self.control_panel_pills.borrow_mut().remove(&id).is_some() {
+            self.refresh_control_panel_pills();
+        }
     }
 
     fn wifi_signal_from_framework(signal: WifiSignalState) -> WifiSignal {
@@ -628,7 +628,14 @@ impl ViewModel {
 
     fn update_scale_wifi_signal_pill(&self, signal: WifiSignal) {
         if let Some(pill) = Self::wifi_signal_pill("Scale", signal, false) {
-            self.set_control_panel_pill(ControlPanelPillId::ScaleWifi, pill);
+            let unchanged = self
+                .control_panel_pills
+                .borrow()
+                .get(&ControlPanelPillId::ScaleWifi)
+                .is_some_and(|current| current.text == pill.text);
+            if !unchanged {
+                self.set_control_panel_pill(ControlPanelPillId::ScaleWifi, pill);
+            }
         } else {
             self.remove_control_panel_pill(ControlPanelPillId::ScaleWifi);
         }
