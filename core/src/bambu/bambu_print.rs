@@ -389,7 +389,9 @@ impl BambuPrinter {
                         shared::last_print_topic_info!("[{printer_log_id}] All consumption entries used as expected");
                     }
                 } else {
-                    shared::last_print_topic_error!("[{printer_log_id}] Something is wrong tracking print project, at FINISH no gcode_analysis data available");
+                    shared::last_print_topic_error!(
+                        "[{printer_log_id}] Something is wrong tracking print project, at FINISH no gcode_analysis data available"
+                    );
                 }
             }
 

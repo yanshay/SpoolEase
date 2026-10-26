@@ -494,7 +494,9 @@ impl BambuPrinter {
 
         if let Some(extruder) = print.device.as_ref().and_then(|d| d.extruder.as_ref()) {
             if let Some(state) = &extruder.state {
-                self.set_extruder_state(*state);
+                if self.set_extruder_state(*state) {
+                    tray_xxx_change_made = true;
+                }
             }
             for extruder_info in &extruder.info {
                 if extruder_info.id > 1 {
