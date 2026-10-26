@@ -541,6 +541,14 @@ impl BambuPrinter {
     }
 
     pub fn report_printer_connectivity(&mut self, status: bool) {
+        #[cfg(feature = "metrics")]
+        match (self.printer_connectivity_ok, status) {
+            (Some(true), false) => crate::metrics::increment_printer_disconnect(),
+            (Some(true), true) | (Some(false), false) => (),
+            (_, true) => crate::metrics::increment_printer_connect(),
+            (None, false) => (),
+        }
+
         if self.printer_connectivity_ok == Some(true) && !status {
             self.printer_was_disconnected = true;
             self.pending_k_restore_sequence = true;

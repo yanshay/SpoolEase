@@ -115,6 +115,16 @@ Time spent notifying Bambu observers after a changed MQTT message.
 
 It includes synchronous generic printer snapshot work and observer callbacks, including any synchronous ViewModel work. It excludes JSON parsing, state application, and actual display rendering.
 
+## Connectivity Counters
+
+### `printer_connect_count` and `printer_disconnect_count`
+
+Number of Bambu MQTT connectivity transitions. The initial successful MQTT connection and each reconnection count as connects. A disconnect counts only after a connected printer becomes disconnected; repeated same-status notifications do not increase either counter.
+
+### `scale_connect_count` and `scale_disconnect_count`
+
+Number of remote SpoolScale WebSocket connections established and ended. These metrics exclude the locally wired HX711 scale because it has no network connection lifecycle.
+
 ## HTTPS Slots API Metrics
 
 These metrics cover `GET /api/internal/printers/slots` on the separate bearer-token HTTPS API server.

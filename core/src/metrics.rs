@@ -163,6 +163,10 @@ pub struct ConsoleMetricsSnapshot {
     pub mqtt_change_ams_tray: MetricCounter,
     pub mqtt_change_external_tray: MetricCounter,
     pub mqtt_change_print_project: MetricCounter,
+    pub printer_connect_count: MetricCounter,
+    pub printer_disconnect_count: MetricCounter,
+    pub scale_connect_count: MetricCounter,
+    pub scale_disconnect_count: MetricCounter,
     pub api_slots_build_us: MetricStats,
     pub api_slots_json_encode_us: MetricStats,
     pub api_slots_response_write_us: MetricStats,
@@ -175,7 +179,7 @@ impl fmt::Display for ConsoleMetricsSnapshot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "mqtt_queue_len=({}) mqtt_payload_bytes=({}) mqtt_json_parse_us=({}) mqtt_state_apply_us=({}) mqtt_changed_count={} mqtt_change_sources=(fila_switch={} command={} extruder={} tray_routing={} ams_topology={} ams_environment={} ams_info={} ams_tray={} external_tray={} print_project={}) mqtt_changed_notify_us=({}) api_slots_build_us=({}) api_slots_json_encode_us=({}) api_slots_response_write_us=({}) api_slots_response_bytes=({}) api_slots_error_count={}",
+            "mqtt_queue_len=({}) mqtt_payload_bytes=({}) mqtt_json_parse_us=({}) mqtt_state_apply_us=({}) mqtt_changed_count={} mqtt_change_sources=(fila_switch={} command={} extruder={} tray_routing={} ams_topology={} ams_environment={} ams_info={} ams_tray={} external_tray={} print_project={}) mqtt_changed_notify_us=({}) printer_connect_count={} printer_disconnect_count={} scale_connect_count={} scale_disconnect_count={} api_slots_build_us=({}) api_slots_json_encode_us=({}) api_slots_response_write_us=({}) api_slots_response_bytes=({}) api_slots_error_count={}",
             self.mqtt_queue_len,
             self.mqtt_payload_bytes,
             self.mqtt_json_parse_us,
@@ -192,6 +196,10 @@ impl fmt::Display for ConsoleMetricsSnapshot {
             self.mqtt_change_external_tray,
             self.mqtt_change_print_project,
             self.mqtt_changed_notify_us,
+            self.printer_connect_count,
+            self.printer_disconnect_count,
+            self.scale_connect_count,
+            self.scale_disconnect_count,
             self.api_slots_build_us,
             self.api_slots_json_encode_us,
             self.api_slots_response_write_us,
@@ -302,6 +310,22 @@ mod enabled {
 
     pub fn increment_mqtt_change_print_project() {
         increment(|metrics| &mut metrics.mqtt_change_print_project);
+    }
+
+    pub fn increment_printer_connect() {
+        increment(|metrics| &mut metrics.printer_connect_count);
+    }
+
+    pub fn increment_printer_disconnect() {
+        increment(|metrics| &mut metrics.printer_disconnect_count);
+    }
+
+    pub fn increment_scale_connect() {
+        increment(|metrics| &mut metrics.scale_connect_count);
+    }
+
+    pub fn increment_scale_disconnect() {
+        increment(|metrics| &mut metrics.scale_disconnect_count);
     }
 
     pub fn record_api_slots_build(start: MeasurementStart) {

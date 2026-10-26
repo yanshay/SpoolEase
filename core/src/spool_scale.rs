@@ -571,6 +571,9 @@ impl SpoolScale {
         }
     }
     pub fn remote_connected(&mut self) {
+        #[cfg(feature = "metrics")]
+        crate::metrics::increment_scale_connect();
+
         self.set_source_connected(ScaleSource::Remote);
     }
 
@@ -578,6 +581,9 @@ impl SpoolScale {
         self.notify_remote_scale_connected();
     }
     pub fn disconnected(&mut self) {
+        #[cfg(feature = "metrics")]
+        crate::metrics::increment_scale_disconnect();
+
         self.set_source_disconnected(ScaleSource::Remote);
     }
 
