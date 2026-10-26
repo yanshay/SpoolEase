@@ -1,4 +1,4 @@
-import { FrameworkState, OtaState, Log } from "framework/framework.slint";
+import { FrameworkState, OtaState } from "framework/framework.slint";
 import { SelectorOption } from "framework/widgets.slint";
 import { SelectorOptionsList } from "framework/widgets.slint";
 // Types
@@ -520,6 +520,7 @@ export global AppState {
     }
 
     public function start-highlight-slot(slot-id: string) {
+        self.highlight-tray = -1;
         self.highlight-slot-id = slot-id;
         self.highlight-tray-counter = highlight-tray-counter-length;
     }

@@ -1920,7 +1920,13 @@ impl ViewModel {
                 self.filament_staging.borrow_mut().clear();
                 ui.invoke_empty_spool_staging();
                 self.update_slot_groups_from_selected_printer();
-                ui.invoke_slot_operation_succeeded("Configure".into(), full_slot_description.to_shared_string());
+                let target_printer_id = self.printer_id_for_manager_index(manager_index).unwrap_or_default();
+                ui.invoke_slot_update_succeeded(
+                    "Configure".into(),
+                    full_slot_description.to_shared_string(),
+                    slot_id.into(),
+                    target_printer_id.into(),
+                );
             }
             Err(err) => {
                 ui.invoke_slot_operation_failed("Configure".into(), full_slot_description.to_shared_string(), slint::format!("{err:?}"));

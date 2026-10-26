@@ -5,6 +5,7 @@ import { FrameworkState } from "framework/framework.slint";
 
 export component SpoolStaging inherits Rectangle {
     callback clicked-ota;
+    property <bool> highlight-active: (AppState.highlight-tray == 999 && AppState.highlight-tray-flash) || AppState.highlight-staging;
 
     main := VerticalLayout {
         spacing: AppConsts.trays-spacing;
@@ -174,7 +175,7 @@ export component SpoolStaging inherits Rectangle {
         }
     }
 
-    if (AppState.highlight-tray == 999 && AppState.highlight-tray-flash) || (AppState.highlight-staging): highlight-border := Rectangle {
+    if root.highlight-active: highlight-border := Rectangle {
         width: parent.width;
         height: parent.height;
         border-width: 4px;

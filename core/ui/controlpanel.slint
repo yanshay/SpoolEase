@@ -371,7 +371,7 @@ export component ControlPanel inherits HorizontalLayout {
 
     single-tray-timer := Timer {
         interval: 0.3s;
-        running: AppState.highlight-tray != -1;
+        running: AppState.highlight-slot-id != "";
         triggered() => {
             AppState.highlight-tray-counter = AppState.highlight-tray-counter - 1;
             AppState.highlight-tray-flash = Math.mod(AppState.highlight-tray-counter, 2) == 1;

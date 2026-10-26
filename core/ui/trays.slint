@@ -232,6 +232,7 @@ component Spool inherits Rectangle {
     property <bool> inner-color-has-alpha: use-spool-colors ? slot.spool-has-alpha : slot.filament-has-alpha;
     property <[color]> outer-display-color: slot.filament.colors;
     property <string> circle-default-big-text: slot.state == UiSlotState.Unknown ? "?" : slot.state == UiSlotState.Empty ? "−" : slot.state == UiSlotState.Occupied ? "↺" : slot.state == UiSlotState.Reading ? "↻" : "✓";
+    property <bool> highlight-active: AppState.highlight-slot-id == slot.id && AppState.highlight-tray-flash;
     property <bool> circle-display-weight: circle-default-big-text == "✓" && slot.weight-display != "";
     property <color> circle-border-color: Utils.contrasting_color(outer-display-color[Helper.representative-color-index(outer-display-color.length)]);
     property <string> circle-weight-display: slot.weight-display;
@@ -315,7 +316,7 @@ component Spool inherits Rectangle {
     }
 
     tray-border := Rectangle {
-        border-width: area.pressed || AppState.control-state == ControlState.TraySelect || (AppState.highlight-slot-id == slot.id && AppState.highlight-tray-flash) ? 4px : 1px;
+        border-width: area.pressed || AppState.control-state == ControlState.TraySelect || root.highlight-active ? 4px : 1px;
         border-color: AppState.control-state == ControlState.TraySelect ? (AppState.highlight-trays ? black : white) : self.border-width == 1px ? black : Utils.contrasting_color(has-known-color ? root.outer-display-color[0] : root.background);
     }
 
