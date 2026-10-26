@@ -565,7 +565,7 @@ fn handle_console_info_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppStat
 
 fn handle_debug_metrics_get(key: &'static RefCell<Vec<u8>>, _state: ConsoleAppState) -> String {
     DebugMetricsResponse {
-        snapshot: crate::metrics::latest_periodic_snapshot(),
+        snapshot: crate::metrics::collect_debug_snapshot(),
     }
     .encrypt(&key.borrow())
 }

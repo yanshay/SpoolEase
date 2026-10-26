@@ -13,6 +13,15 @@ use framework::info;
 
 static LAST_PERIODIC_SNAPSHOT: Mutex<RefCell<Option<String>>> = Mutex::new(RefCell::new(None));
 
+#[cfg(feature = "metrics")]
+static API_COLLECTION_PERIOD: Mutex<RefCell<Option<ApiCollectionPeriod>>> = Mutex::new(RefCell::new(None));
+
+#[cfg(feature = "metrics")]
+struct ApiCollectionPeriod {
+    started_at: Instant,
+    started_at_text: String,
+}
+
 fn capture_time() -> String {
     Instant::now()
         .to_date_time()
@@ -26,6 +35,56 @@ fn store_periodic_snapshot(snapshot: String) {
 
 pub fn latest_periodic_snapshot() -> Option<String> {
     critical_section::with(|cs| LAST_PERIODIC_SNAPSHOT.borrow_ref(cs).clone())
+}
+
+#[cfg(feature = "metrics")]
+fn initialize_api_collection_period() {
+    let started_at = Instant::now();
+    let started_at_text = capture_time();
+    critical_section::with(|cs| {
+        let mut period = API_COLLECTION_PERIOD.borrow_ref_mut(cs);
+        if period.is_none() {
+            *period = Some(ApiCollectionPeriod {
+                started_at,
+                started_at_text,
+            });
+        }
+    });
+}
+
+#[cfg(feature = "metrics")]
+fn take_api_collection_period() -> ApiCollectionPeriod {
+    let started_at = Instant::now();
+    let started_at_text = capture_time();
+    critical_section::with(|cs| {
+        let mut period = API_COLLECTION_PERIOD.borrow_ref_mut(cs);
+        let previous_period = period.replace(ApiCollectionPeriod {
+            started_at,
+            started_at_text: started_at_text.clone(),
+        });
+        previous_period.unwrap_or(ApiCollectionPeriod {
+            started_at,
+            started_at_text,
+        })
+    })
+}
+
+#[cfg(feature = "metrics")]
+fn format_elapsed(seconds: u64) -> String {
+    let days = seconds / 86_400;
+    let hours = (seconds % 86_400) / 3_600;
+    let minutes = (seconds % 3_600) / 60;
+    let seconds = seconds % 60;
+
+    if days != 0 {
+        format!("{days}d {hours}h {minutes}m {seconds}s")
+    } else if hours != 0 {
+        format!("{hours}h {minutes}m {seconds}s")
+    } else if minutes != 0 {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
+    }
 }
 
 #[cfg(feature = "metrics")]
@@ -112,105 +171,81 @@ pub struct ConsoleMetricsSnapshot {
 }
 
 #[cfg(feature = "metrics")]
+impl fmt::Display for ConsoleMetricsSnapshot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "mqtt_queue_len=({}) mqtt_payload_bytes=({}) mqtt_json_parse_us=({}) mqtt_state_apply_us=({}) mqtt_changed_count={} mqtt_change_sources=(fila_switch={} command={} extruder={} tray_routing={} ams_topology={} ams_environment={} ams_info={} ams_tray={} external_tray={} print_project={}) mqtt_changed_notify_us=({}) api_slots_build_us=({}) api_slots_json_encode_us=({}) api_slots_response_write_us=({}) api_slots_response_bytes=({}) api_slots_error_count={}",
+            self.mqtt_queue_len,
+            self.mqtt_payload_bytes,
+            self.mqtt_json_parse_us,
+            self.mqtt_state_apply_us,
+            self.mqtt_changed_count,
+            self.mqtt_change_fila_switch,
+            self.mqtt_change_command,
+            self.mqtt_change_extruder,
+            self.mqtt_change_tray_routing,
+            self.mqtt_change_ams_topology,
+            self.mqtt_change_ams_environment,
+            self.mqtt_change_ams_info,
+            self.mqtt_change_ams_tray,
+            self.mqtt_change_external_tray,
+            self.mqtt_change_print_project,
+            self.mqtt_changed_notify_us,
+            self.api_slots_build_us,
+            self.api_slots_json_encode_us,
+            self.api_slots_response_write_us,
+            self.api_slots_response_bytes,
+            self.api_slots_error_count,
+        )
+    }
+}
+
+#[cfg(feature = "metrics")]
 mod enabled {
     use core::cell::RefCell;
 
     use critical_section::Mutex;
     use embassy_time::Instant;
+    use framework::metrics::MetricWindows;
 
     use super::{ConsoleMetricsSnapshot, MetricCounter, MetricStats};
 
     #[derive(Clone, Copy)]
     pub struct MeasurementStart(Instant);
 
-    static METRICS: Mutex<RefCell<ConsoleMetricsSnapshot>> = Mutex::new(RefCell::new(ConsoleMetricsSnapshot {
-        mqtt_queue_len: MetricStats {
-            count: 0,
-            sum: 0,
-            min: 0,
-            max: 0,
-        },
-        mqtt_payload_bytes: MetricStats {
-            count: 0,
-            sum: 0,
-            min: 0,
-            max: 0,
-        },
-        mqtt_json_parse_us: MetricStats {
-            count: 0,
-            sum: 0,
-            min: 0,
-            max: 0,
-        },
-        mqtt_state_apply_us: MetricStats {
-            count: 0,
-            sum: 0,
-            min: 0,
-            max: 0,
-        },
-        mqtt_changed_notify_us: MetricStats {
-            count: 0,
-            sum: 0,
-            min: 0,
-            max: 0,
-        },
-        mqtt_changed_count: MetricCounter::new(),
-        mqtt_change_fila_switch: MetricCounter::new(),
-        mqtt_change_command: MetricCounter::new(),
-        mqtt_change_extruder: MetricCounter::new(),
-        mqtt_change_tray_routing: MetricCounter::new(),
-        mqtt_change_ams_topology: MetricCounter::new(),
-        mqtt_change_ams_environment: MetricCounter::new(),
-        mqtt_change_ams_info: MetricCounter::new(),
-        mqtt_change_ams_tray: MetricCounter::new(),
-        mqtt_change_external_tray: MetricCounter::new(),
-        mqtt_change_print_project: MetricCounter::new(),
-        api_slots_build_us: MetricStats {
-            count: 0,
-            sum: 0,
-            min: 0,
-            max: 0,
-        },
-        api_slots_json_encode_us: MetricStats {
-            count: 0,
-            sum: 0,
-            min: 0,
-            max: 0,
-        },
-        api_slots_response_write_us: MetricStats {
-            count: 0,
-            sum: 0,
-            min: 0,
-            max: 0,
-        },
-        api_slots_response_bytes: MetricStats {
-            count: 0,
-            sum: 0,
-            min: 0,
-            max: 0,
-        },
-        api_slots_error_count: MetricCounter::new(),
-    }));
+    static METRICS: Mutex<RefCell<Option<MetricWindows<ConsoleMetricsSnapshot>>>> = Mutex::new(RefCell::new(None));
+
+    fn with_metrics<R>(operation: impl FnOnce(&mut MetricWindows<ConsoleMetricsSnapshot>) -> R) -> R {
+        critical_section::with(|cs| {
+            let mut metrics = METRICS.borrow_ref_mut(cs);
+            operation(metrics.get_or_insert_with(MetricWindows::default))
+        })
+    }
 
     pub fn start_measurement() -> MeasurementStart {
         MeasurementStart(Instant::now())
     }
 
+    fn observe(metric: fn(&mut ConsoleMetricsSnapshot) -> &mut MetricStats, value: u64) {
+        with_metrics(|metrics| metrics.record(|snapshot| metric(snapshot).observe(value)));
+    }
+
     fn record(metric: fn(&mut ConsoleMetricsSnapshot) -> &mut MetricStats, start: MeasurementStart) {
         let elapsed_us = start.0.elapsed().as_micros();
-        critical_section::with(|cs| metric(&mut METRICS.borrow_ref_mut(cs)).observe(elapsed_us));
+        observe(metric, elapsed_us);
     }
 
     fn increment(counter: fn(&mut ConsoleMetricsSnapshot) -> &mut MetricCounter) {
-        critical_section::with(|cs| counter(&mut METRICS.borrow_ref_mut(cs)).increment());
+        with_metrics(|metrics| metrics.record(|snapshot| counter(snapshot).increment()));
     }
 
     pub fn record_mqtt_payload_bytes(bytes: u64) {
-        critical_section::with(|cs| METRICS.borrow_ref_mut(cs).mqtt_payload_bytes.observe(bytes));
+        observe(|metrics| &mut metrics.mqtt_payload_bytes, bytes);
     }
 
     pub fn record_mqtt_queue_len(len: u64) {
-        critical_section::with(|cs| METRICS.borrow_ref_mut(cs).mqtt_queue_len.observe(len));
+        observe(|metrics| &mut metrics.mqtt_queue_len, len);
     }
 
     pub fn record_mqtt_json_parse(start: MeasurementStart) {
@@ -282,30 +317,52 @@ mod enabled {
     }
 
     pub fn record_api_slots_response_bytes(bytes: u64) {
-        critical_section::with(|cs| METRICS.borrow_ref_mut(cs).api_slots_response_bytes.observe(bytes));
+        observe(|metrics| &mut metrics.api_slots_response_bytes, bytes);
     }
 
     pub fn increment_api_slots_error() {
         increment(|metrics| &mut metrics.api_slots_error_count);
     }
 
-    pub fn snapshot_and_reset() -> ConsoleMetricsSnapshot {
-        critical_section::with(|cs| {
-            let mut metrics = METRICS.borrow_ref_mut(cs);
-            let snapshot = *metrics;
-            *metrics = ConsoleMetricsSnapshot::default();
-            snapshot
-        })
+    pub fn snapshot_period_and_reset() -> ConsoleMetricsSnapshot {
+        with_metrics(|metrics| metrics.take_period())
+    }
+
+    pub fn snapshot_since_api_collection_and_reset() -> ConsoleMetricsSnapshot {
+        with_metrics(|metrics| metrics.take_since_api_collection())
     }
 }
 
 #[cfg(feature = "metrics")]
 pub use enabled::*;
 
+pub fn collect_debug_snapshot() -> Option<String> {
+    let last_period_snapshot = latest_periodic_snapshot().unwrap_or_else(|| "No periodic snapshot available yet.".to_string());
+
+    #[cfg(feature = "metrics")]
+    {
+        let api_collection_period = take_api_collection_period();
+        let framework_metrics = framework::metrics::snapshot_since_api_collection_and_reset();
+        let console_metrics = snapshot_since_api_collection_and_reset();
+        let collected_over = format_elapsed(api_collection_period.started_at.elapsed().as_secs());
+
+        return Some(format!(
+            "Last period\n{last_period_snapshot}\n\n----------------------------------------\n\nMetrics since {} collected over {collected_over}\nframework: {framework_metrics}\nconsole: {console_metrics}",
+            api_collection_period.started_at_text,
+        ));
+    }
+
+    #[cfg(not(feature = "metrics"))]
+    Some(last_period_snapshot)
+}
+
 pub async fn periodic_stats_task() {
     #[cfg(feature = "metrics")]
     let mut sample = 0u64;
     let mut collect_metrics = false;
+
+    #[cfg(feature = "metrics")]
+    initialize_api_collection_period();
 
     loop {
         if collect_metrics {
@@ -319,42 +376,11 @@ pub async fn periodic_stats_task() {
         #[cfg(feature = "metrics")]
         if collect_metrics {
             sample = sample.saturating_add(1);
-            let framework_metrics = framework::metrics::snapshot_and_reset();
-            let console_metrics = snapshot_and_reset();
+            let framework_metrics = framework::metrics::snapshot_period_and_reset();
+            let console_metrics = snapshot_period_and_reset();
 
-            let framework_log = format!(
-                "METRICS[{sample}] framework: ui_draw_us=({}) ui_redraw_request_to_draw_us=({}) sd_write_us=({}) sd_write_bytes=({}) http_web_request_us=({}) tls_accept_to_first_read_us=({})",
-                framework_metrics.ui_draw_us,
-                framework_metrics.ui_redraw_request_to_draw_us,
-                framework_metrics.sd_write_us,
-                framework_metrics.sd_write_bytes,
-                framework_metrics.http_web_request_us,
-                framework_metrics.tls_accept_to_first_read_us,
-            );
-            let console_log = format!(
-                "METRICS[{sample}] console: mqtt_queue_len=({}) mqtt_payload_bytes=({}) mqtt_json_parse_us=({}) mqtt_state_apply_us=({}) mqtt_changed_count={} mqtt_change_sources=(fila_switch={} command={} extruder={} tray_routing={} ams_topology={} ams_environment={} ams_info={} ams_tray={} external_tray={} print_project={}) mqtt_changed_notify_us=({}) api_slots_build_us=({}) api_slots_json_encode_us=({}) api_slots_response_write_us=({}) api_slots_response_bytes=({}) api_slots_error_count={}",
-                console_metrics.mqtt_queue_len,
-                console_metrics.mqtt_payload_bytes,
-                console_metrics.mqtt_json_parse_us,
-                console_metrics.mqtt_state_apply_us,
-                console_metrics.mqtt_changed_count,
-                console_metrics.mqtt_change_fila_switch,
-                console_metrics.mqtt_change_command,
-                console_metrics.mqtt_change_extruder,
-                console_metrics.mqtt_change_tray_routing,
-                console_metrics.mqtt_change_ams_topology,
-                console_metrics.mqtt_change_ams_environment,
-                console_metrics.mqtt_change_ams_info,
-                console_metrics.mqtt_change_ams_tray,
-                console_metrics.mqtt_change_external_tray,
-                console_metrics.mqtt_change_print_project,
-                console_metrics.mqtt_changed_notify_us,
-                console_metrics.api_slots_build_us,
-                console_metrics.api_slots_json_encode_us,
-                console_metrics.api_slots_response_write_us,
-                console_metrics.api_slots_response_bytes,
-                console_metrics.api_slots_error_count,
-            );
+            let framework_log = format!("METRICS[{sample}] framework: {framework_metrics}");
+            let console_log = format!("METRICS[{sample}] console: {console_metrics}");
 
             store_periodic_snapshot(format!("{captured_at}\n\n{framework_log}\n{console_log}\n{heap_log}"));
             info!("{framework_log}");

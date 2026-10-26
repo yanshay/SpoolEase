@@ -2,7 +2,11 @@
 
 When the `metrics` feature is enabled, the console writes a pair of `METRICS[n]` lines at each periodic snapshot. The framework line covers shared framework work. The console line covers printer MQTT processing and the HTTPS slots API.
 
-The snapshot resets the collected metric values after reporting them. `n` is the snapshot sequence number since boot.
+The periodic snapshot resets only its own 30-second metric window. The same observations also accumulate in a second window until `GET /api/debug/metrics` is fetched. That endpoint returns the last periodic snapshot followed by the accumulated metrics, then begins a new accumulated window.
+
+The Debug panel prepends its browser clock to the returned text. The console reports the accumulated window's best available start time and its monotonic elapsed duration. Heap information belongs only to the periodic snapshot and is not accumulated.
+
+`n` is the periodic snapshot sequence number since boot.
 
 ## Statistic Format
 
