@@ -233,6 +233,12 @@ where
                 .await?;
             match response.code {
                 213 => {
+                    let size = response
+                        .string
+                        .split_whitespace()
+                        .nth(1)
+                        .unwrap_or("unknown");
+                    info!("FTP: selected 3mf file {path} ({size} bytes)");
                     selected_path = Some(path);
                     break;
                 }

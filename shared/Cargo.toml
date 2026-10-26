@@ -42,7 +42,7 @@ snafu = { git = "https://github.com/shepmaster/snafu", rev = "aedc9db8c04a437b4c
 esp-mbedtls = { package = "mbedtls-rs", git = "https://github.com/yanshay/esp-mbedtls", branch="yanshay_max_tls", features = [ "log" ] }
 # esp-mbedtls = { package = "mbedtls-rs", git = "https://github.com/esp-rs/mbedtls-rs", rev = "177721027aae6e014e1cf922608eb9955d70d85b", features = [ "log" ] }
 esp-alloc = { version = "0.9.0" }
-miniz_oxide = { version = "0.8.9", default-features = false }
+miniz_oxide = { version = "0.8.9", default-features = false, features = ["with-alloc"] }
 url = {version = "2.5.4", default-features = false}
 edge-nal-embassy = "0.8.1"
 edge-nal = { version = "0.6.0" }

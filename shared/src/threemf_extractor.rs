@@ -8,7 +8,7 @@ use alloc::{
     vec::Vec,
 };
 use miniz_oxide::{
-    MZFlush, MZStatus, StreamResult,
+    DataFormat, MZFlush, MZStatus, StreamResult,
     inflate::{self, stream::InflateState},
 };
 
@@ -22,14 +22,13 @@ enum State {
     Done,
 }
 
-#[derive(Default)]
 pub struct ThreemfExtractor {
     buffer: Vec<u8>,
     out_buffer: Vec<u8>,
     extract_filename: String,
     state: State,
     extra_field_length: usize,
-    inflate_state: InflateState,
+    inflate_state: Box<InflateState>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -42,9 +41,13 @@ pub enum FeedStatus {
 impl ThreemfExtractor {
     pub fn new(extract_filename: &str, out_buffer_size: usize) -> Self {
         Self {
+            buffer: Vec::new(),
             extract_filename: extract_filename.to_string(),
             out_buffer: alloc::vec![0u8; out_buffer_size],
-            ..Default::default()
+            state: State::Signature,
+            extra_field_length: 0,
+            // InflateState includes a 32 KiB dictionary, so construct it directly on the heap.
+            inflate_state: InflateState::new_boxed(DataFormat::Raw),
         }
     }
     pub fn feed_data<F: FnMut(&[u8]) -> Result<bool, Box<dyn Error>>>(
@@ -124,7 +127,7 @@ impl ThreemfExtractor {
                     loop {
                         // let mut output = [0u8; 10];
                         let stream_res = inflate::stream::inflate(
-                            &mut self.inflate_state,
+                            self.inflate_state.as_mut(),
                             &self.buffer[total_consumed..],
                             &mut self.out_buffer,
                             MZFlush::None,
