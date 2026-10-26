@@ -262,6 +262,22 @@ impl GcodeFilamentCalc {
         // );
     }
 
+    pub fn processed_line_count(&self) -> usize {
+        self.curr_gcode_line
+    }
+
+    pub fn completed_layer_count(&self) -> i32 {
+        self.curr_layer
+    }
+
+    pub fn declared_filament_count(&self) -> usize {
+        self.gcode_filament_id_to_slicer_filament_index.len()
+    }
+
+    pub fn filament_selection_count(&self) -> i32 {
+        self.filament_swaps
+    }
+
     fn extrude_gram(&mut self, extrude_len: f32, filament_id: i32) -> f32 {
         let diameter = self.filament_diameter[(filament_id) as usize];
         let density = self.filament_density[(filament_id) as usize];

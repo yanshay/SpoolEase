@@ -8,6 +8,17 @@ The Debug panel prepends its browser clock to the returned text. The console rep
 
 `n` is the periodic snapshot sequence number since boot.
 
+## Topic Logs
+
+`GET /api/debug/topic-logs` returns selected diagnostic topic logs. Unlike metrics, reading this endpoint never resets or clears a topic log. The Inventory Debug panel appends these logs after the metrics text.
+
+The shared `TopicLog` infrastructure configures a maximum size, optional initial capacity reservation, and what happens when full:
+
+- `StopAppending` preserves the earliest lines and marks later lines as omitted.
+- `DropOldestLines` removes complete oldest lines to retain newer entries.
+
+`LAST_PRINT_TOPIC_LOGS` is the current collector for print-project and G-code analysis diagnostics. It reserves 8 KiB when initialized, starts again when a new print project is identified, prefixes entries with elapsed time since that start, and uses `StopAppending` so the initial diagnosis remains available.
+
 ## Statistic Format
 
 Duration and byte metrics use this format:

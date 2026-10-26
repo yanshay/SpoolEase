@@ -28,6 +28,7 @@ embassy-time = { version = "0.5.0", features = ["generic-queue-8"] }
 embassy-net = { version = "0.8.0", features = [ "raw", "tcp", "udp", "dhcpv4", "dns", "medium-ethernet", "multicast" ] }
 esp-hal = { version = "=1.0.0", features = ["unstable"] }
 embassy-sync = { version = "0.7.2" }
+critical-section = "1.2.0"
 no_std_io = { version = "0.6.0", default-features = false, features = [ "alloc" ] }
 log = { version = "0.4.22", features = ["serde"] }
 static_cell = { version = "2.1", features = ["nightly"] }

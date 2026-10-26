@@ -766,7 +766,7 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
         self.next_gcode_job_number += 1;
         let job_number = self.next_gcode_job_number;
         let request = self.build_gcode_analysis_request(bambu_printer, print_project, job_number);
-        info!(
+        shared::last_print_topic_info!(
             "[{}] Launching gcode analysis job {} for {} {}",
             bambu_printer.printer_number, job_number, print_project.subtask_name, print_project.gcode_filename_in_3mf
         );
@@ -779,7 +779,7 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
         )) {
             Ok(()) => job_number,
             Err(err) => {
-                error!("[{}] Failed to launch gcode analysis task: {err:?}", bambu_printer.printer_number);
+                shared::last_print_topic_error!("[{}] Failed to launch gcode analysis task: {err:?}", bambu_printer.printer_number);
                 0
             }
         }
@@ -837,17 +837,17 @@ impl GcodeAnalyzerObserver for BambuPrinterEventBridge {
 
     fn on_canceled(&mut self, job_number: i32, _printer_index: usize) {
         let printer_log_id = self.printer.borrow().printer_number;
-        info!("[{printer_log_id}] Gcode analysis job {job_number} canceled before completion (print canceled?)");
+        shared::last_print_topic_info!("[{printer_log_id}] Gcode analysis job {job_number} canceled before completion (print canceled?)");
     }
 
     fn on_failed(&mut self, job_number: i32, _printer_index: usize) {
         let printer_log_id = self.printer.borrow().printer_number;
-        error!("[{printer_log_id}] Gcode analysis job {job_number} failed (exact error above?)");
+        shared::last_print_topic_error!("[{printer_log_id}] Gcode analysis job {job_number} failed (exact error above?)");
     }
 
     fn on_completed(&mut self, job_number: i32, _printer_index: usize) {
         let printer_log_id = self.printer.borrow().printer_number;
-        info!("[{printer_log_id}] Gcode analysis job {job_number} completed successfuly");
+        shared::last_print_topic_info!("[{printer_log_id}] Gcode analysis job {job_number} completed successfuly");
     }
 }
 
@@ -957,6 +957,8 @@ impl PrinterDriver for BambuPrinterDriver {
         if self.bridge_observer.is_some() {
             return;
         }
+
+        shared::topic_logs::LAST_PRINT_TOPIC_LOGS.initialize();
 
         let bridge_observer = Rc::new(RefCell::new(BambuPrinterEventBridge {
             printer_id: self.id.clone(),

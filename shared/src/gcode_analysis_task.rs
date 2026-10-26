@@ -220,7 +220,7 @@ async fn run_gcode_analysis_request(
     let printer_index = gcode_analysis_request.printer_index;
     let printer_log_id = gcode_analysis_request.printer_number;
 
-    info!("[{printer_log_id}] Received gcode analysis request");
+    crate::last_print_topic_info!("[{printer_log_id}] Received gcode analysis request");
     let fetch_res = match gcode_analysis_request.fetch_3mf {
         Fetch3mf::CloudHttp
             if !(gcode_analysis_request.threemf_url.starts_with("file://")
@@ -237,7 +237,7 @@ async fn run_gcode_analysis_request(
         }
         _ => {
             if gcode_analysis_request.fetch_3mf == Fetch3mf::CloudHttp {
-                info!(
+                crate::last_print_topic_info!(
                     "[{printer_log_id}] Configuration is to fetch 3mf file over HTTP, but file is from sdcard, so using to ftp"
                 );
             }
@@ -381,7 +381,7 @@ async fn fetch_gcode_analysis_task_printer_ftp(
             PrinterFtpAttemptResult::Failed => return FetchSubtaskResult::Failed,
             PrinterFtpAttemptResult::FileUnavailable => {
                 if retry_interval_secs == 0 {
-                    error!(
+                    crate::last_print_topic_error!(
                         "[{printer_log_id}] 3mf(ftp) file unavailable on attempt {attempt}; retry interval is 0, there will be no more retries; failed to fetch the 3mf file {}",
                         gcode_analysis_request.threemf_url
                     );
@@ -391,7 +391,7 @@ async fn fetch_gcode_analysis_task_printer_ftp(
                 if let Some(timeout) = retry_timeout
                     && retry_started_at.elapsed() >= timeout
                 {
-                    error!(
+                    crate::last_print_topic_error!(
                         "[{printer_log_id}] 3mf(ftp) retry timeout reached after {} seconds; there will be no more retries; failed to fetch the 3mf file {}",
                         retry_started_at.elapsed().as_secs(),
                         gcode_analysis_request.threemf_url
@@ -403,18 +403,18 @@ async fn fetch_gcode_analysis_task_printer_ftp(
                 if let Some(timeout_at) = retry_timeout_at
                     && retry_at > timeout_at
                 {
-                    error!(
+                    crate::last_print_topic_error!(
                         "[{printer_log_id}] 3mf(ftp) file unavailable on attempt {attempt}; next retry would exceed the configured retry timeout of {retry_timeout_secs} seconds, there will be no more retries; failed to fetch the 3mf file {}",
                         gcode_analysis_request.threemf_url
                     );
                     return FetchSubtaskResult::Failed;
                 }
 
-                info!(
+                crate::last_print_topic_info!(
                     "[{printer_log_id}] 3mf(ftp) file unavailable on attempt {attempt}; will retry in {retry_interval_secs} seconds"
                 );
                 if wait_for_retry_or_cancel(&mut notifications, job_number, retry_at).await {
-                    info!(
+                    crate::last_print_topic_info!(
                         "[{printer_log_id}] Gcode analysis job {job_number} canceled while waiting to retry 3mf(ftp) fetch"
                     );
                     return FetchSubtaskResult::Canceled;
@@ -510,13 +510,13 @@ async fn fetch_gcode_analysis_task_printer_ftp_attempt(
         return PrinterFtpAttemptResult::Canceled;
     }
 
-    info!("[{printer_log_id}] Connecting to printer ftp for 3mf fetch attempt {attempt}");
+    crate::last_print_topic_info!("[{printer_log_id}] Connecting to printer ftp for 3mf fetch attempt {attempt}");
     match ftps.connect().await {
         Ok(_) => {
-            info!("[{printer_log_id}] Connected to printer ftp for 3mf fetch attempt {attempt}");
+            crate::last_print_topic_info!("[{printer_log_id}] Connected to printer ftp for 3mf fetch attempt {attempt}");
         }
         Err(err) => {
-            error!(
+            crate::last_print_topic_error!(
                 "[{printer_log_id}] Error connecting to printer ftp on 3mf fetch attempt {attempt} : {err:?}"
             );
             return PrinterFtpAttemptResult::Failed;
@@ -537,18 +537,18 @@ async fn fetch_gcode_analysis_task_printer_ftp_attempt(
     match ftps.login(username, password).await {
         Ok(success) => {
             if success {
-                info!(
+                crate::last_print_topic_info!(
                     "[{printer_log_id}] Login to printer ftp succeeded for 3mf fetch attempt {attempt}"
                 );
             } else {
-                error!(
+                crate::last_print_topic_error!(
                     "[{printer_log_id}] Login to printer ftp failed on 3mf fetch attempt {attempt}"
                 );
                 return PrinterFtpAttemptResult::Failed;
             }
         }
         Err(err) => {
-            error!(
+            crate::last_print_topic_error!(
                 "[{printer_log_id}] Error in login to printer ftp on 3mf fetch attempt {attempt}: {err:?}"
             );
             return PrinterFtpAttemptResult::Failed;
@@ -610,7 +610,7 @@ async fn fetch_gcode_analysis_task_printer_ftp_attempt(
     let mut gcode_calc = GcodeFilamentCalc::new();
     let mut total_read = 0;
     let mut threemf_extractor = Box::new(ThreemfExtractor::new(gcode_filename_in_3mf, 16384));
-    info!(
+    crate::last_print_topic_info!(
         "[{printer_log_id}] Fetching 3mf(ftp) attempt {attempt} - first of: {threemf_filenames:?} and extracting {gcode_filename_in_3mf}"
     );
     match ftps
@@ -626,9 +626,9 @@ async fn fetch_gcode_analysis_task_printer_ftp_attempt(
         .await
     {
         Ok(file_length) => {
-            info!("[{printer_log_id}] 3mf(ftp) retrieve started on attempt {attempt}");
+            crate::last_print_topic_info!("[{printer_log_id}] 3mf(ftp) retrieve started on attempt {attempt}");
             if let Some(file_length) = file_length {
-                info!("[{printer_log_id}] 3mf(ftp) file size is {file_length} bytes");
+                crate::last_print_topic_info!("[{printer_log_id}] 3mf(ftp) file size is {file_length} bytes");
             }
             let mut last_report = Instant::now();
             let report_intervals = Duration::from_secs(30);
@@ -679,7 +679,7 @@ async fn fetch_gcode_analysis_task_printer_ftp_attempt(
                         }
                     }
                     Err(err) => {
-                        error!(
+                        crate::last_print_topic_error!(
                             "[{printer_log_id}] Error while reading gcode file {gcode_filename_in_3mf} on 3mf fetch attempt {attempt} {err:?}"
                         );
                         return PrinterFtpAttemptResult::Failed;
@@ -688,8 +688,16 @@ async fn fetch_gcode_analysis_task_printer_ftp_attempt(
             };
             // first thing, let's send final data available (ftp could still fail, and even partial data is better than nothing)
             gcode_calc.done();
-            info!(
+            crate::last_print_topic_info!(
                 "[{printer_log_id}] Completed reading and processing gcode file '{gcode_filename_in_3mf}' in one of '{threemf_filenames:?}' on 3mf fetch attempt {attempt}"
+            );
+            crate::last_print_topic_info!(
+                "[{printer_log_id}] Gcode analysis summary: {} gcode lines, {} completed layers, {} declared filaments, {} filament selections, {} usage entries, {total_read} bytes processed",
+                gcode_calc.processed_line_count(),
+                gcode_calc.completed_layer_count(),
+                gcode_calc.declared_filament_count(),
+                gcode_calc.filament_selection_count(),
+                gcode_calc.layers_extruded.len(),
             );
             observer.upgrade().unwrap().borrow_mut().on_gcode_analysis(
                 job_number,
@@ -715,14 +723,14 @@ async fn fetch_gcode_analysis_task_printer_ftp_attempt(
         }
         Err(err) => {
             if is_ftp_file_unavailable(&err) {
-                info!(
+                crate::last_print_topic_info!(
                     "[{printer_log_id}] 3mf(ftp) retrieve attempt {attempt} could not retrieve a file from {threemf_filenames:?}: {err:?}"
                 );
                 let _ = ftps.quit().await;
                 let _ = ftps.close().await;
                 return PrinterFtpAttemptResult::FileUnavailable;
             }
-            error!(
+            crate::last_print_topic_error!(
                 "[{printer_log_id}] Error initiating retrieve of 3mf file one of {threemf_filenames:?} on attempt {attempt} {err:?}"
             );
             let _ = ftps.quit().await;
@@ -791,7 +799,7 @@ async fn fetch_gcode_analysis_task_cloud_http(
     }
 
     if host_name.is_empty() {
-        error!("Can't resolve host from URL {threemf_url}");
+        crate::last_print_topic_error!("Can't resolve host from URL {threemf_url}");
         return FetchSubtaskResult::Failed;
     }
 
@@ -799,7 +807,7 @@ async fn fetch_gcode_analysis_task_cloud_http(
         .dns_query(host_name, embassy_net::dns::DnsQueryType::A)
         .await
     else {
-        error!("Failed to resolve Dns for {host_name}, Internet accessible?",);
+        crate::last_print_topic_error!("Failed to resolve Dns for {host_name}, Internet accessible?",);
         return FetchSubtaskResult::Failed;
     };
 
@@ -812,11 +820,11 @@ async fn fetch_gcode_analysis_task_cloud_http(
     }
 
     if ips.is_empty() {
-        error!("Failed to resolve Dns for {host_name}, Internet accessible?",);
+        crate::last_print_topic_error!("Failed to resolve Dns for {host_name}, Internet accessible?",);
         return FetchSubtaskResult::Failed;
     }
 
-    info!("[{printer_log_id}] Resolved DNS for {host_name} {:?}", ips);
+    crate::last_print_topic_info!("[{printer_log_id}] Resolved DNS for {host_name} {:?}", ips);
 
     let s3_cert = CString::new(include_str!("./certs/s3.amazonaws.com.pem")).unwrap();
     let servername = CString::new(host_name).unwrap();
@@ -853,6 +861,10 @@ async fn fetch_gcode_analysis_task_cloud_http(
         "[{printer_log_id}]   Path: {}",
         &url[Position::BeforePath..]
     );
+    crate::last_print_topic_append!(
+        "[{printer_log_id}] Initiating HTTP 3mf fetch: url={threemf_url} host={host_name} path={}",
+        &url[Position::BeforePath..]
+    );
     if let Err(err) = conn
         .initiate_request(
             true,
@@ -862,7 +874,7 @@ async fn fetch_gcode_analysis_task_cloud_http(
         )
         .await
     {
-        error!("[{printer_log_id}] Failed to initiate request for 3mf file : {err:?}");
+        crate::last_print_topic_error!("[{printer_log_id}] Failed to initiate request for 3mf file : {err:?}");
         return FetchSubtaskResult::Failed;
     }
 
@@ -875,7 +887,7 @@ async fn fetch_gcode_analysis_task_cloud_http(
     }
 
     if let Err(err) = conn.initiate_response().await {
-        error!("Failed to initiate fetch response for metadata : {err:?}");
+        crate::last_print_topic_error!("Failed to initiate fetch response for metadata : {err:?}");
         return FetchSubtaskResult::Failed;
     };
 
@@ -890,14 +902,14 @@ async fn fetch_gcode_analysis_task_cloud_http(
     let headers = match conn.headers() {
         Ok(headers) => headers,
         Err(err) => {
-            error!("Failed to read response headers : {err:?}");
+            crate::last_print_topic_error!("Failed to read response headers : {err:?}");
             return FetchSubtaskResult::Failed;
         }
     };
 
     let status_code = headers.code;
     if status_code != 200 {
-        error!("Failed to fetch 3mf file : Http error code {status_code}");
+        crate::last_print_topic_error!("Failed to fetch 3mf file : Http error code {status_code}");
         return FetchSubtaskResult::Failed;
     }
 
@@ -908,7 +920,7 @@ async fn fetch_gcode_analysis_task_cloud_http(
     let mut gcode_calc = GcodeFilamentCalc::new();
     let mut total_read = 0;
     let mut threemf_extractor = Box::new(ThreemfExtractor::new(&gcode_filename_in_3mf, 16384));
-    info!(
+    crate::last_print_topic_info!(
         "[{printer_log_id}] Fetching 3mf(http): {threemf_filename} and extracing {gcode_filename_in_3mf}"
     );
     let mut last_report = Instant::now();
@@ -952,7 +964,7 @@ async fn fetch_gcode_analysis_task_cloud_http(
                 }
             }
             Err(err) => {
-                error!(
+                crate::last_print_topic_error!(
                     "[{printer_log_id}] Error while reading gcode file {gcode_filename_in_3mf} {err:?}"
                 );
                 return FetchSubtaskResult::Failed;
@@ -961,8 +973,16 @@ async fn fetch_gcode_analysis_task_cloud_http(
     }
     gcode_calc.done();
 
-    info!(
+    crate::last_print_topic_info!(
         "[{printer_log_id}] Completed reading and processing gcode file {gcode_filename_in_3mf} in {threemf_filename}"
+    );
+    crate::last_print_topic_info!(
+        "[{printer_log_id}] Gcode analysis summary: {} gcode lines, {} completed layers, {} declared filaments, {} filament selections, {} usage entries, {total_read} bytes processed",
+        gcode_calc.processed_line_count(),
+        gcode_calc.completed_layer_count(),
+        gcode_calc.declared_filament_count(),
+        gcode_calc.filament_selection_count(),
+        gcode_calc.layers_extruded.len(),
     );
 
     observer.upgrade().unwrap().borrow_mut().on_gcode_analysis(
@@ -1010,14 +1030,14 @@ fn process_incoming_data(
             FeedStatus::OutputProcessorEnded => return ProcessResponse::Break,
         },
         Err(err) => {
-            error!(
+            crate::last_print_topic_error!(
                 "[{printer_log_id}] Error while processing gcode data in file {gcode_file_name_in_3mf} {err:?}"
             );
             return ProcessResponse::Return;
         }
     }
     if last_report.elapsed() > *report_intervals {
-        info!(
+        crate::last_print_topic_info!(
             "[{printer_log_id}] 3MF Download ({fetch_3mf_str}): {total_read} bytes processed, {} consumtion entries generted",
             gcode_calc.layers_extruded.len()
         );
@@ -1026,7 +1046,7 @@ fn process_incoming_data(
     if *total_on_last_send < 1024 * 1024 && time_on_last_send.elapsed() > Duration::from_secs(60) {
         *time_on_last_send = Instant::now();
         *total_on_last_send = *total_read;
-        info!(
+        crate::last_print_topic_info!(
             "[{printer_log_id}] Sending partial consumption information after {total_read} bytes downloaded"
         );
         return ProcessResponse::SendAndContinue;

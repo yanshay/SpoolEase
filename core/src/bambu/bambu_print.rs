@@ -8,7 +8,7 @@ use alloc::{
     vec::Vec,
 };
 use embassy_time::Instant;
-use framework::{debug, error, info, prelude::Framework, warn};
+use framework::{debug, error, info, ntp::InstantExt, prelude::Framework, warn};
 use serde::{Deserialize, Serialize};
 use shared::{
     gcode_analysis::FilamentUsageEntry,
@@ -25,6 +25,14 @@ use crate::{
 };
 
 const EXTRA_DEBUG: bool = false;
+
+fn begin_last_print_topic_log() {
+    let topic_log_started_at = Instant::now()
+        .to_date_time()
+        .map(|date_time| format!("{date_time}"))
+        .unwrap_or_else(|| "Time unavailable".to_string());
+    shared::topic_logs::LAST_PRINT_TOPIC_LOGS.begin(Some(topic_log_started_at));
+}
 
 macro_rules! debugex {
     ($($t:tt)*) => {
@@ -189,7 +197,8 @@ impl BambuPrinter {
         let mut changed = false;
         let printer_log_id = self.printer_number;
         if !self.track_print_consume {
-            info!("[{printer_log_id}] Print project started but configured not to track print filament usage");
+            begin_last_print_topic_log();
+            shared::last_print_topic_info!("[{printer_log_id}] Print project started but configured not to track print filament usage");
             return false;
         }
         // TODO: theoretically all are options so could 'take' instead of clone
@@ -201,7 +210,10 @@ impl BambuPrinter {
             } else {
                 format!("display_print_{:?}", print.sequence_id)
             };
-            info!("[{printer_log_id}] Print project started: name: '{subtask_name}', using ams slots: {ams_mapping:?}, {ams_mapping2:?}");
+            begin_last_print_topic_log();
+            shared::last_print_topic_info!(
+                "[{printer_log_id}] Print project started: name: '{subtask_name}', using ams slots: {ams_mapping:?}, {ams_mapping2:?}"
+            );
             let mut curr_print_project = PrintProject::new(&project_id, subtask_name, url, param, ams_mapping, ams_mapping2, use_ams);
 
             // in case of http can already fetch now and not wait for printer to download first
@@ -364,25 +376,25 @@ impl BambuPrinter {
                 // if there is one to consume consume it.
                 // !!! verify it is the last one
                 self.try_consume(curr_print_project, ConsumeType::Finish);
-                info!("[{printer_log_id}] Print project finished successfuly");
+                shared::last_print_topic_info!("[{printer_log_id}] Print project finished successfuly");
                 if let GcodeAnalysis::Received { at: _, job_number: _, usage } = &curr_print_project.gcode_analysis {
                     if curr_print_project.consume_index() != usage.data.len() as i32 {
-                        error!(
+                        shared::last_print_topic_error!(
                             "[{}] Print project filament consumption tracking didn't finish well, reached index {} (0 based), while usage data contain {} records",
                             printer_log_id,
                             curr_print_project.consume_index(),
                             usage.data.iter().len()
                         );
                     } else {
-                        info!("[{printer_log_id}] All consumption entries used as expected");
+                        shared::last_print_topic_info!("[{printer_log_id}] All consumption entries used as expected");
                     }
                 } else {
-                    error!("[{printer_log_id}] Something is wrong tracking print project, at FINISH no gcode_analysis data available");
+                    shared::last_print_topic_error!("[{printer_log_id}] Something is wrong tracking print project, at FINISH no gcode_analysis data available");
                 }
             }
 
             if gcode_state_change && new_gcode_state == GcodeState::FAILED {
-                info!("[{printer_log_id}] Print project failed");
+                shared::last_print_topic_info!("[{printer_log_id}] Print project failed");
             }
 
             // Modifying state actions

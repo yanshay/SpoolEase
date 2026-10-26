@@ -15,5 +15,6 @@ pub mod pn532_ext;
 pub mod settings;
 pub mod spool_tag;
 pub mod threemf_extractor;
+pub mod topic_logs;
 pub mod types;
 pub mod utils;

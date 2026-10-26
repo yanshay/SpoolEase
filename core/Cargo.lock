@@ -6083,6 +6083,7 @@ name = "shared"
 version = "0.5.5"
 dependencies = [
  "base64 0.22.1",
+ "critical-section",
  "edge-http",
  "edge-nal",
  "edge-nal-embassy",
