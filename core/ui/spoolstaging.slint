@@ -5,7 +5,7 @@ import { FrameworkState } from "framework/framework.slint";
 
 export component SpoolStaging inherits Rectangle {
     callback clicked-ota;
-    property <bool> highlight-active: (AppState.highlight-tray == 999 && AppState.highlight-tray-flash) || AppState.highlight-staging;
+    property <bool> highlight-active: AppState.highlight-staging && AppState.highlight-flash;
 
     main := VerticalLayout {
         spacing: AppConsts.trays-spacing;

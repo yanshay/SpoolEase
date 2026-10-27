@@ -305,7 +305,7 @@ export component PostAction inherits ControlPanelBase {
     button1-timeout: 10;
     clicked1 => {
         AppState.control-state = ControlState.Ready;
-        AppState.stop-highlight-tray();
+        AppState.stop-highlight();
     }
 }
 
@@ -355,28 +355,27 @@ export component ControlPanel inherits HorizontalLayout {
         button-width: button-width;
     }
 
-    trays-timer := Timer {
+    all-slots-highlight-timer := Timer {
         interval: 0.3s;
         running: AppState.control-state == ControlState.TraySelect;
         changed running => {
-            AppState.highlight-trays = false;
-            AppState.highlight-staging = false;
+            AppState.highlight-all-slots = false;
         }
         triggered() => {
             if AppState.control-state == ControlState.TraySelect {
-                AppState.highlight-trays = !AppState.highlight-trays;
+                AppState.highlight-all-slots = !AppState.highlight-all-slots;
             }
         }
     }
 
-    single-tray-timer := Timer {
+    highlight-timer := Timer {
         interval: 0.3s;
-        running: AppState.highlight-slot-id != "";
+        running: AppState.highlight-staging || AppState.highlight-slot-id != "";
         triggered() => {
-            AppState.highlight-tray-counter = AppState.highlight-tray-counter - 1;
-            AppState.highlight-tray-flash = Math.mod(AppState.highlight-tray-counter, 2) == 1;
-            if AppState.highlight-tray-counter == 0 {
-                AppState.stop-highlight-tray();
+            AppState.highlight-counter = AppState.highlight-counter - 1;
+            AppState.highlight-flash = Math.mod(AppState.highlight-counter, 2) == 1;
+            if AppState.highlight-counter == 0 {
+                AppState.stop-highlight();
             }
         }
     }
