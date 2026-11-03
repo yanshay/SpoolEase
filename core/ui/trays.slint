@@ -34,8 +34,8 @@ component SlotGroupTab inherits Rectangle {
         return slot.state == UiSlotState.Ready || slot.state == UiSlotState.Loading || slot.state == UiSlotState.Loaded || slot.state == UiSlotState.Unloading;
     }
 
-    function slot-with-known-color(slot: UiSlot) -> bool {
-        return slot.filament.state != UiFilamentState.Unknown;
+    function should-show-slot-color(slot: UiSlot) -> bool {
+        return slot.state != UiSlotState.Empty && slot.filament.state != UiFilamentState.Unknown;
     }
 
     ams-selector := Rectangle {
@@ -55,18 +55,18 @@ component SlotGroupTab inherits Rectangle {
             for slot in group.slots: block := Rectangle {
                 horizontal-stretch: 0;
                 property <bool> slot-is-with-spool: slot-with-spool(slot);
-                property <bool> slot-is-with-known-color: slot-with-known-color(slot);
+                property <bool> show-slot-color: should-show-slot-color(slot);
                 property <bool> slot-is-loaded: slot.state == UiSlotState.Loaded;
                 property <bool> has-spool-id: slot.spool-id != "";
                 property <int> spool-color-count: slot.spool-colors.length;
                 property <int> slot-color-count: slot.filament.colors.length;
-                property <bool> use-spool-colors: slot-is-with-known-color && has-spool-id && spool-color-count > 0;
+                property <bool> use-spool-colors: show-slot-color && has-spool-id && spool-color-count > 0;
                 property <bool> shown-color-has-alpha: use-spool-colors ? slot.spool-has-alpha : slot.filament-has-alpha;
                 property <color> representative-color: use-spool-colors ? slot.spool-colors[Helper.representative-color-index(spool-color-count)] : slot.filament.colors[Helper.representative-color-index(slot-color-count)];
                 height: parent.height - parent.padding-top - parent.padding-bottom - 3px * 2;
-                background: slot-is-with-known-color ? #00000000 : AppConsts.no-color;
+                background: show-slot-color ? #00000000 : AppConsts.no-color;
 
-                if slot-is-with-known-color && shown-color-has-alpha: Image {
+                if show-slot-color && shown-color-has-alpha: Image {
                     image-fit: preserve;
                     horizontal-alignment: left;
                     vertical-alignment: top;
@@ -75,7 +75,7 @@ component SlotGroupTab inherits Rectangle {
                     source: AppState.ams-color-checkerboard-bg;
                 }
 
-                if slot-is-with-known-color: HorizontalLayout {
+                if show-slot-color: HorizontalLayout {
                     width: parent.width;
                     height: parent.height;
                     spacing: 0px;
@@ -100,8 +100,8 @@ component SlotGroupTab inherits Rectangle {
                     border-color: black;
                     border-width: 1px;
                     MyText {
-                        text: !slot-is-with-spool ? "−" : !slot-is-with-known-color ? "?" : "✓";
-                        color: self.text == "✓" ? #00000000 : !slot-is-with-spool ? black : slot-is-with-known-color ? Utils.contrasting_color(representative-color) : white;
+                        text: !slot-is-with-spool ? "−" : !show-slot-color ? "?" : "✓";
+                        color: self.text == "✓" ? #00000000 : !slot-is-with-spool ? black : show-slot-color ? Utils.contrasting_color(representative-color) : white;
                     }
                 }
 
