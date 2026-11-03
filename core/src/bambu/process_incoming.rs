@@ -410,7 +410,14 @@ impl BambuPrinter {
         });
 
         // Deal with tray_xxx - need to do before ams because depends on both AMS and Device sections, and used at the end of ams processing
+        let previous_active_tray = self.get_tray_active();
         let tray_xxx_change_made = self.process_print_message__tray_xxx(print);
+        if tray_xxx_change_made {
+            let active_tray = self.get_tray_active();
+            if active_tray != previous_active_tray {
+                info!("[{}] Active filament slot changed from {:?} to {:?}", self.printer_number, previous_active_tray, active_tray);
+            }
+        }
         with_console_metrics!(if tray_xxx_change_made {
             crate::metrics::increment_mqtt_change_tray_routing();
         });
@@ -419,6 +426,19 @@ impl BambuPrinter {
         let mut ams_change_made = false;
         if let Some(ams) = &print.ams {
             (ams_change_made, removed_tags) = self.process_print_message__ams(ams);
+        } else if tray_xxx_change_made {
+            // Extruder-only updates can change which ready AMS tray is loaded.
+            for tray_id in 0..self.ams_trays().len() {
+                let mut tray = self.ams_trays()[tray_id].clone();
+                if matches!(tray.state, TrayState::Ready | TrayState::Loaded) {
+                    let state = self.get_tray_detailed_ready_state(tray_id as i32);
+                    if tray.state != state {
+                        tray.state = state;
+                        self.swap_ams_tray(tray_id, &mut tray);
+                        ams_change_made = true;
+                    }
+                }
+            }
         }
 
         // Deal with external tray changes
@@ -788,6 +808,33 @@ impl BambuPrinter {
             }
         }
         if !processed_specific_command {
+            let previous_gcode_state = self.gcode_state;
+            let startup_print_slots = if !self.print_status_reconciled
+                && print.gcode_state.is_some_and(|state| {
+                    matches!(state, GcodeState::IDLE | GcodeState::FINISH | GcodeState::FAILED | GcodeState::RUNNING | GcodeState::PREPARE | GcodeState::PAUSE)
+                })
+            {
+                self.snapshot_state().map(|state| {
+                    state.with_snapshot(|snapshot| {
+                        snapshot
+                            .slot_groups
+                            .iter()
+                            .flat_map(|group| group.slots.iter())
+                            .filter(|slot| slot.used_in_print)
+                            .map(|slot| slot.display_name.clone())
+                            .collect::<Vec<_>>()
+                    })
+                })
+            } else {
+                None
+            };
+            let saved_project_match = match (&self.loaded_print_project, print.gcode_state, &print.project_id) {
+                (None, _, _) => "no saved project loaded",
+                (Some(_), Some(GcodeState::IDLE | GcodeState::FINISH | GcodeState::FAILED), _) => "printer not running a print",
+                (Some(project), _, Some(project_id)) if project.project_id == *project_id => "matching saved project",
+                (Some(_), _, Some(_)) => "different project",
+                (Some(_), _, None) => "project ID not reported",
+            };
             let (common_change_made, common_removed_tags) = self.process_print_message__common(print);
             removed_tags = common_removed_tags;
             change_made |= common_change_made;
@@ -800,7 +847,7 @@ impl BambuPrinter {
                         if loaded_project_id == project_id {
                             let print_project = self.loaded_print_project.take();
                             if let Some(print) = &print_project {
-                                self.update_trays_from_print_job(print);
+                                change_made |= self.update_trays_from_print_job(print);
                             }
                             self.curr_print_project = print_project;
                             info!("[{}] Resume tracking print project id {}", self.printer_number, loaded_project_id);
@@ -825,6 +872,28 @@ impl BambuPrinter {
                     );
                     self.loaded_print_project = None;
                     self.queue_runtime_persistence_request(PrinterRuntimePersistenceRequestKind::DeletePrintProject);
+                }
+            }
+            if let Some(gcode_state) = print.gcode_state
+                && matches!(gcode_state, GcodeState::IDLE | GcodeState::FINISH | GcodeState::FAILED | GcodeState::RUNNING | GcodeState::PREPARE | GcodeState::PAUSE)
+            {
+                // Reconcile persisted slot highlights once against a live print status.
+                if !self.print_status_reconciled {
+                    self.print_status_reconciled = true;
+                    info!("[{}] Initial printer print status: {:?}", self.printer_number, gcode_state);
+                    if let Some(slots) = &startup_print_slots
+                        && !slots.is_empty()
+                    {
+                        info!(
+                            "[{}] Print-use slots before first printer status: {:?}; printer status: {:?}; {}",
+                            self.printer_number, slots, gcode_state, saved_project_match
+                        );
+                    }
+                    if !matches!(gcode_state, GcodeState::RUNNING | GcodeState::PREPARE | GcodeState::PAUSE) || self.curr_print_project.is_none() {
+                        change_made |= self.clear_snapshot_slots_used_in_print();
+                    }
+                } else if gcode_state != previous_gcode_state && matches!(gcode_state, GcodeState::IDLE | GcodeState::FINISH | GcodeState::FAILED) {
+                    change_made |= self.clear_snapshot_slots_used_in_print();
                 }
             }
         }

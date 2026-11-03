@@ -207,6 +207,7 @@ pub struct BambuPrinter {
     pending_k_restore_sequence: bool,
     pub curr_print_project: Option<PrintProject>,
     pub loaded_print_project: Option<PrintProject>,
+    print_status_reconciled: bool,
     inner_extruder_state: Option<i32>,
     relevant_extruder_state_dirty: bool,
     tray_tar: [i32; 2],
@@ -458,6 +459,7 @@ impl BambuPrinter {
             pending_k_restore_sequence: true,
             curr_print_project: None,
             loaded_print_project: None,
+            print_status_reconciled: false,
             inner_extruder_state: None, // h2d field for knowing which extruder is active
             tray_tar: [255, 255],       // canonical format: 0..27 (AMS/AMS-HT/A2L (or other newere firmwares) AMS Lite), 254 (external), 255 (none)
             tray_now: [255, 255],

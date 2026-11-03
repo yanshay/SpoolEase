@@ -157,15 +157,19 @@ impl BambuPrinter {
         });
     }
 
-    pub fn clear_snapshot_slots_used_in_print(&mut self) {
+    pub fn clear_snapshot_slots_used_in_print(&mut self) -> bool {
         let Some(snapshot_state) = self.snapshot_state() else {
-            return;
+            return false;
         };
+        if !snapshot_state.with_snapshot(|snapshot| snapshot.slot_groups.iter().flat_map(|group| group.slots.iter()).any(|slot| slot.used_in_print)) {
+            return false;
+        }
         snapshot_state.update(true, |snapshot| {
             for slot in snapshot.slot_groups.iter_mut().flat_map(|group| group.slots.iter_mut()) {
                 slot.used_in_print = false;
             }
         });
+        true
     }
 
     pub fn set_snapshot_slot_used_in_print(&mut self, index: usize, used_in_print: bool) {

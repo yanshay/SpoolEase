@@ -238,7 +238,16 @@ impl BambuPrinter {
         changed
     }
 
-    pub fn update_trays_from_print_job(&mut self, print: &PrintProject) {
+    pub fn update_trays_from_print_job(&mut self, print: &PrintProject) -> bool {
+        info!(
+            "[{}] Print project {} slot mapping: {:?}, {:?}, use_ams={:?}",
+            self.printer_number, print.project_id, print.ams_mapping, print.ams_mapping2, print.use_ams
+        );
+        let previous = self.snapshot_state().map(|state| {
+            state.with_snapshot(|snapshot| {
+                snapshot.slot_groups.iter().flat_map(|group| group.slots.iter()).map(|slot| slot.used_in_print).collect::<Vec<_>>()
+            })
+        });
         // set trays used in print, but first clear all
         self.clear_snapshot_slots_used_in_print();
 
@@ -256,6 +265,13 @@ impl BambuPrinter {
         } else if print.use_ams == Some(false) {
             self.set_snapshot_slot_used_in_print(255, true);
         }
+        self.snapshot_state().is_some_and(|state| {
+            state.with_snapshot(|snapshot| {
+                previous.as_ref().is_some_and(|previous| {
+                    !snapshot.slot_groups.iter().flat_map(|group| group.slots.iter()).map(|slot| slot.used_in_print).eq(previous.iter().copied())
+                })
+            })
+        })
     }
 
     #[allow(non_snake_case)]
@@ -463,7 +479,7 @@ impl BambuPrinter {
             self.curr_print_project = None;
             self.queue_runtime_persistence_request(PrinterRuntimePersistenceRequestKind::DeletePrintProject);
 
-            self.clear_snapshot_slots_used_in_print();
+            changed |= self.clear_snapshot_slots_used_in_print();
         }
 
         changed
