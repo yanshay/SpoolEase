@@ -63,19 +63,23 @@ export component AppWindow inherits Window {
     }
 
     property <int> current-page: (FrameworkState.web-config-state == WebConfigState.Started-AP || FrameworkState.web-config-state == WebConfigState.Started-STA-Displayed) ? 2 : (AppState.control-state == ControlState.Booting || /*AppState.control-state == ControlState.ConnectingToPrinter ||*/ AppState.control-state == ControlState.BootFailed) ? 0 : 1;
+    property <bool> web-config-instructions-visible: current-page == 2 &&
+        (FrameworkState.web-config-state == WebConfigState.Started-STA-Displayed || FrameworkState.web-config-state == WebConfigState.Started-AP);
+
+    changed web-config-instructions-visible => {
+        if web-config-instructions-visible {
+            AppBackend.web-config-web-app();
+        } else {
+            AppBackend.read-tag-mode();
+        }
+    }
+
     changed current-page => {
         if current-page != 0 && terminal.is-scrolled() { // if maybe moved away from terminal 
           reset-terminal-scroll.running = true;
         }
         if current-page == 0 {
             reset-terminal-scroll.running = false;
-        }
-        if FrameworkState.web-config-state == WebConfigState.Starting || FrameworkState.web-config-state == WebConfigState.Started-STA || FrameworkState.web-config-state == WebConfigState.Started-AP {
-            if current-page != 2 {
-                AppBackend.read-tag-mode();
-            } else {
-                AppBackend.web-config-web-app();
-            }
         }
     }
     property <int> current-page-x: 0;
