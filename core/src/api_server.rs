@@ -18,7 +18,7 @@ use crate::{
     app_config::AppConfig,
     settings::{
         API_REQUEST_BODY_MAX_BYTES, API_SERVER_ACCEPT_TIMEOUT_MS, API_SERVER_HTTP_BUFFER_BYTES, API_SERVER_HTTP_RETAINED_BUFFERS, API_SERVER_HTTPS,
-        API_SERVER_NUM_LISTENERS, API_SERVER_PORT, API_SERVER_TCP_RX_BUFFER_BYTES, API_SERVER_TCP_TX_BUFFER_BYTES,
+        API_SERVER_KEEP_ALIVE_TIMEOUT_SECS, API_SERVER_NUM_LISTENERS, API_SERVER_PORT, API_SERVER_TCP_RX_BUFFER_BYTES, API_SERVER_TCP_TX_BUFFER_BYTES,
     },
     slicer_ws::SlicerWsProxy,
     view_model::ViewModel,
@@ -106,7 +106,7 @@ pub fn init_api_server(
 
     let config = picoserve::Config::new(picoserve::Timeouts {
         start_read_request: Duration::from_secs(3),
-        persistent_start_read_request: Duration::from_secs(1),
+        persistent_start_read_request: Duration::from_secs(API_SERVER_KEEP_ALIVE_TIMEOUT_SECS),
         read_request: Duration::from_secs(3),
         write: Duration::from_secs(3),
     })
