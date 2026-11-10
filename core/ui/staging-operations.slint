@@ -1,3 +1,7 @@
+// Slint 1.18.1 can generate large stack frames when initializing conditional
+// components. Extending this screen may cause a stack-overflow panic; if it
+// does, inspect the generated ensure_instantiated code and stack usage.
+// See https://github.com/slint-ui/slint/issues/14817
 import { MyText, MyButton, ButtonType, WizardButtons, Title, Selector } from "framework/widgets.slint";
 import { AppBackend, AppState, ControlState, SpoolStagingState, SpoolScaleState, StagingOperationsPage, UiSpoolRecordDisplay } from "app.slint";
 import { SpoolDisplay } from "spool-display.slint";
@@ -464,11 +468,18 @@ component ManualStorageSummary inherits Rectangle {
 
 component ManualStorageNumberStep inherits Rectangle {
     background: white;
+    in property <StagingOperationsPage> step;
     in property <string> title;
     in property <int> max-value;
     in property <int> number;
     callback value-changed(value: int, done: bool);
     callback back-clicked;
+
+    changed step => {
+        // The same number pad is used for each step, so load that step's value.
+        num-pad.number = root.number;
+        num-pad.display-error = "";
+    }
 
     VerticalLayout {
         alignment: space-between;
@@ -485,7 +496,7 @@ component ManualStorageNumberStep inherits Rectangle {
                 summary-width: root.width - 298px;
             }
 
-            NumPad {
+            num-pad := NumPad {
                 width: 288px;
                 height: parent.height;
                 number: root.number;
@@ -628,60 +639,48 @@ export component StagingOperations {
         spool-display: spool-display;
     }
     if AppState.staging-operation-page == StagingOperationsPage.ManualStorageRack: ManualStorageRackStep { }
-    if AppState.staging-operation-page == StagingOperationsPage.ManualStorageBay: ManualStorageNumberStep {
-        title: "Select Bay (1-\{AppBackend.storage-available-bays(AppState.manual-storage-rack-id)})";
-        max-value: AppBackend.storage-available-bays(AppState.manual-storage-rack-id);
-        number: AppState.manual-storage-bay;
+    if AppState.staging-operation-page == StagingOperationsPage.ManualStorageBay
+        || AppState.staging-operation-page == StagingOperationsPage.ManualStorageShelf
+        || AppState.staging-operation-page == StagingOperationsPage.ManualStoragePosition
+        || AppState.staging-operation-page == StagingOperationsPage.ManualStorageContainer: number-step := ManualStorageNumberStep {
+        step: AppState.staging-operation-page;
+        title: self.step == StagingOperationsPage.ManualStorageBay ? "Select Bay (1-\{self.max-value})"
+            : self.step == StagingOperationsPage.ManualStorageShelf ? "Select Shelf (1-\{self.max-value})"
+            : self.step == StagingOperationsPage.ManualStoragePosition ? "Select Position (1-\{self.max-value})"
+            : "Select Container (1-\{self.max-value})";
+        max-value: self.step == StagingOperationsPage.ManualStorageBay ? AppBackend.storage-available-bays(AppState.manual-storage-rack-id)
+            : self.step == StagingOperationsPage.ManualStorageShelf ? AppBackend.storage-available-shelves(AppState.manual-storage-rack-id, AppState.manual-storage-bay)
+            : self.step == StagingOperationsPage.ManualStoragePosition ? AppBackend.storage-available-positions(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf)
+            : AppBackend.storage-available-containers(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf, AppState.manual-storage-position);
+        number: self.step == StagingOperationsPage.ManualStorageBay ? AppState.manual-storage-bay
+            : self.step == StagingOperationsPage.ManualStorageShelf ? AppState.manual-storage-shelf
+            : self.step == StagingOperationsPage.ManualStoragePosition ? AppState.manual-storage-position
+            : AppState.manual-storage-container;
         value-changed(value, done) => {
-            AppState.manual-storage-bay = value;
-            if done {
-                AppState.manual-storage-after-bay();
+            if self.step == StagingOperationsPage.ManualStorageBay {
+                AppState.manual-storage-bay = value;
+                if done { AppState.manual-storage-after-bay(); }
+            } else if self.step == StagingOperationsPage.ManualStorageShelf {
+                AppState.manual-storage-shelf = value;
+                if done { AppState.manual-storage-after-shelf(); }
+            } else if self.step == StagingOperationsPage.ManualStoragePosition {
+                AppState.manual-storage-position = value;
+                if done { AppState.manual-storage-after-position(); }
+            } else if self.step == StagingOperationsPage.ManualStorageContainer {
+                AppState.manual-storage-container = value;
+                if done { AppState.manual-storage-after-container(); }
             }
         }
         back-clicked => {
-            AppState.manual-storage-back-to-rack();
-        }
-    }
-    if AppState.staging-operation-page == StagingOperationsPage.ManualStorageShelf: ManualStorageNumberStep {
-        title: "Select Shelf (1-\{AppBackend.storage-available-shelves(AppState.manual-storage-rack-id, AppState.manual-storage-bay)})";
-        max-value: AppBackend.storage-available-shelves(AppState.manual-storage-rack-id, AppState.manual-storage-bay);
-        number: AppState.manual-storage-shelf;
-        value-changed(value, done) => {
-            AppState.manual-storage-shelf = value;
-            if done {
-                AppState.manual-storage-after-shelf();
+            if self.step == StagingOperationsPage.ManualStorageBay {
+                AppState.manual-storage-back-to-rack();
+            } else if self.step == StagingOperationsPage.ManualStorageShelf {
+                AppState.manual-storage-back-to-bay();
+            } else if self.step == StagingOperationsPage.ManualStoragePosition {
+                AppState.manual-storage-back-to-shelf();
+            } else if self.step == StagingOperationsPage.ManualStorageContainer {
+                AppState.manual-storage-back-to-position();
             }
-        }
-        back-clicked => {
-            AppState.manual-storage-back-to-bay();
-        }
-    }
-    if AppState.staging-operation-page == StagingOperationsPage.ManualStoragePosition: ManualStorageNumberStep {
-        title: "Select Position (1-\{AppBackend.storage-available-positions(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf)})";
-        max-value: AppBackend.storage-available-positions(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf);
-        number: AppState.manual-storage-position;
-        value-changed(value, done) => {
-            AppState.manual-storage-position = value;
-            if done {
-                AppState.manual-storage-after-position();
-            }
-        }
-        back-clicked => {
-            AppState.manual-storage-back-to-shelf();
-        }
-    }
-    if AppState.staging-operation-page == StagingOperationsPage.ManualStorageContainer: ManualStorageNumberStep {
-        title: "Select Container (1-\{AppBackend.storage-available-containers(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf, AppState.manual-storage-position)})";
-        max-value: AppBackend.storage-available-containers(AppState.manual-storage-rack-id, AppState.manual-storage-bay, AppState.manual-storage-shelf, AppState.manual-storage-position);
-        number: AppState.manual-storage-container;
-        value-changed(value, done) => {
-            AppState.manual-storage-container = value;
-            if done {
-                AppState.manual-storage-after-container();
-            }
-        }
-        back-clicked => {
-            AppState.manual-storage-back-to-position();
         }
     }
     if AppState.staging-operation-page == StagingOperationsPage.ManualStorageComplete: ManualStorageCompleteStep {

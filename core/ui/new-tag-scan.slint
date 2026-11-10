@@ -1,3 +1,7 @@
+// Slint 1.18.1 can generate large stack frames when initializing conditional
+// components. Extending this screen may cause a stack-overflow panic; if it
+// does, inspect the generated ensure_instantiated code and stack usage.
+// See https://github.com/slint-ui/slint/issues/14817
 import {
     MyText,
     MyButton,
