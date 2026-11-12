@@ -48,7 +48,7 @@ use crate::printer::{
     MaterialSlotPresenceChangeKind, PrintControlCommand, PrinterChange, PrinterCommand, PrinterEvent, PrinterEventKind, PrinterId,
     PrinterRuntimePersistenceRequestChannel, PrinterRuntimePersistenceRequestKind, SlotAssignMode, SlotId, manager::PrinterManager,
 };
-use crate::settings::{CONSOLE_ONEOFF_OTA_PATH, DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
+use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleSource, ScaleStatus, ScaleWeight, SpoolScaleObserver};
 use crate::ssdp::{SSDPPubSubChannel, ssdp_task};
@@ -2184,32 +2184,23 @@ impl ViewModel {
         spool_tag_borrow.write_tag(&descriptor, None, encode_cookie_str);
     }
 
+    pub fn prepare_oneoff_console_ota(&self) {
+        self.ui_weak
+            .unwrap()
+            .global::<crate::app::FrameworkState>()
+            .set_ota_allow_close_during_update(false);
+    }
+
     pub fn request_oneoff_update(&self, product: &str, name: &str) -> Result<(), String> {
         if name.is_empty() || name.len() > 64 || !name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_' || c == b'.') {
             return Err("Update name must contain 1–64 letters, numbers, periods, hyphens or underscores".to_string());
         }
         let filename = format!("{name}.toml");
         match product {
-            "console" => {
-                use framework::framework::OtaState;
-                use framework::ota::{OtaRequest, ota_task};
-
-                let framework = self.framework.borrow();
-                if matches!(framework.ota_state, Some(OtaState::Started | OtaState::InProgress(_))) {
-                    return Err("A console update is already in progress".to_string());
-                }
-                framework
-                    .spawner
-                    .spawn(ota_task(
-                        OTA_DOMAIN_STABLE.to_string(),
-                        CONSOLE_ONEOFF_OTA_PATH.to_string(),
-                        filename,
-                        OTA_TLS_CERTIFICATE.to_string(),
-                        OtaRequest::Update,
-                        self.framework.clone(),
-                    ))
-                    .map_err(|_| "Could not start console update".to_string())
-            }
+            "console" => self
+                .app_ota_request_channel
+                .try_send(AppOtaRequest::OneoffUpdate { filename })
+                .map_err(|_| "Could not queue console update".to_string()),
             "scale" => {
                 let scale = self.spool_scale_model.borrow();
                 let status = scale.source_state(spool_scale::ScaleSource::Remote).state;

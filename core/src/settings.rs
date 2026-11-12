@@ -36,7 +36,7 @@ pub const OTA_TOML_FILENAME: &str = "ota.toml";
 pub const CONSOLE_STABLE_OTA_PATH: &str = "/bins/0.8/console/ota/";
 pub const CONSOLE_UNSTABLE_OTA_PATH: &str = "/bins/0.8/console/ota-unstable/";
 pub const CONSOLE_DEBUG_OTA_PATH: &str = "/bins/0.8/console/debug/";
-pub const CONSOLE_ONEOFF_OTA_PATH: &str = "/bins/0.6/console/oneoff/";
+pub const CONSOLE_ONEOFF_OTA_PATH: &str = "/bins/0.8/console/oneoff/";
 pub const UPDATER_STABLE_OTA_PATH: &str = "/bins/0.8/updater/ota/";
 pub const CONSOLE_PARTITION_TABLE_PATH: &str = "/bins/0.8/console/web-install/partition-table.bin";
 

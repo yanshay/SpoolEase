@@ -20,7 +20,10 @@ use shared::types::AppOtaTrain;
 use alloc::rc::Rc;
 use framework::prelude::Framework;
 
-use crate::settings::{CONSOLE_DEBUG_OTA_PATH, CONSOLE_STABLE_OTA_PATH, CONSOLE_UNSTABLE_OTA_PATH, OTA_TOML_FILENAME, UPDATER_STABLE_OTA_PATH};
+use crate::settings::{
+    CONSOLE_DEBUG_OTA_PATH, CONSOLE_ONEOFF_OTA_PATH, CONSOLE_STABLE_OTA_PATH, CONSOLE_UNSTABLE_OTA_PATH, OTA_TOML_FILENAME,
+    UPDATER_STABLE_OTA_PATH,
+};
 use crate::view_model::ViewModel;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -170,6 +173,7 @@ async fn update_updater_if_needed(
 async fn run_sd_staged_console_ota(
     ota_domain: &str,
     ota_path: &str,
+    ota_toml_filename: &str,
     cur_version: &str,
     framework: Rc<RefCell<Framework>>,
     observer: &mut dyn OtaObserver,
@@ -188,7 +192,7 @@ async fn run_sd_staged_console_ota(
     let metadata = stage_ota_to_sd(
         ota_domain,
         ota_path,
-        "ota.toml",
+        ota_toml_filename,
         cur_version,
         OTA_TLS_CERTIFICATE,
         DEFAULT_STAGED_OTA_PATHS,
@@ -217,6 +221,7 @@ pub enum AppOtaProduct {
 pub enum AppOtaRequest {
     CheckOta,
     Update { product: AppOtaProduct, train: AppOtaTrain },
+    OneoffUpdate { filename: String },
 }
 
 struct AppOtaObserver {
@@ -397,7 +402,23 @@ pub async fn app_ota_task(framework: Rc<RefCell<Framework>>, view_model: Rc<RefC
                 let updater_info = check_updater(framework.clone()).await;
                 view_model.borrow().update_firmware_versions(&ota_info, &updater_info);
             }
-            AppOtaRequest::Update { product, train } => {
+            request @ (AppOtaRequest::Update { .. } | AppOtaRequest::OneoffUpdate { .. }) => {
+                let (domain, path, filename, oneoff) = match request {
+                    AppOtaRequest::Update { product: AppOtaProduct::Console, train } => {
+                        let index = match train {
+                            AppOtaTrain::Stable => 0,
+                            AppOtaTrain::Unstable => 1,
+                            AppOtaTrain::Debug => 2,
+                        };
+                        (ota_info[index].domain, ota_info[index].path, OTA_TOML_FILENAME.to_string(), false)
+                    }
+                    AppOtaRequest::OneoffUpdate { filename } => (OTA_DOMAIN_STABLE, CONSOLE_ONEOFF_OTA_PATH, filename, true),
+                    AppOtaRequest::Update { .. } => {
+                        error!("Internal Error: Scale firmware update should run on scale");
+                        continue;
+                    }
+                    AppOtaRequest::CheckOta => unreachable!(),
+                };
                 let mut app_ota_observer = AppOtaObserver {
                     update: true,
                     view_model: view_model.clone(),
@@ -408,60 +429,55 @@ pub async fn app_ota_task(framework: Rc<RefCell<Framework>>, view_model: Rc<RefC
                     progress_percent: 0,
                     ota_mode: None,
                 };
-                if product == AppOtaProduct::Console {
-                    let curr_ver = framework.borrow().settings.app_cargo_pkg_version.to_string();
-                    let index = match train {
-                        AppOtaTrain::Stable => 0,
-                        AppOtaTrain::Unstable => 1,
-                        AppOtaTrain::Debug => 2,
-                    };
-                    let ota_item = &mut ota_info[index];
-                    let layout = match ota_partition_layout() {
-                        Ok(layout) => layout,
-                        Err(message) => {
+                if oneoff {
+                    view_model.borrow().prepare_oneoff_console_ota();
+                    app_ota_observer.on_ota_start();
+                }
+                let curr_ver = framework.borrow().settings.app_cargo_pkg_version.to_string();
+                let layout = match ota_partition_layout() {
+                    Ok(layout) => layout,
+                    Err(message) => {
+                        app_ota_observer.on_ota_failed(&message);
+                        continue;
+                    }
+                };
+                match resolve_console_ota_mode(layout) {
+                    Ok(ConsoleOtaMode::Direct) => {
+                        app_ota_observer.ota_mode = Some(ConsoleOtaMode::Direct);
+                        run_ota(
+                            domain,
+                            path,
+                            &filename,
+                            &curr_ver,
+                            OTA_TLS_CERTIFICATE,
+                            OtaRequest::Update,
+                            framework.clone(),
+                            &mut app_ota_observer,
+                        )
+                        .await;
+                    }
+                    Ok(ConsoleOtaMode::SdStaged) => {
+                        app_ota_observer.ota_mode = Some(ConsoleOtaMode::SdStaged);
+                        if let Err(message) = update_updater_if_needed(layout, framework.clone(), &mut app_ota_observer).await {
                             app_ota_observer.on_ota_failed(&message);
                             continue;
                         }
-                    };
-                    match resolve_console_ota_mode(layout) {
-                        Ok(ConsoleOtaMode::Direct) => {
-                            app_ota_observer.ota_mode = Some(ConsoleOtaMode::Direct);
-                            run_ota(
-                                ota_item.domain,
-                                ota_item.path,
-                                "ota.toml",
-                                &curr_ver,
-                                OTA_TLS_CERTIFICATE,
-                                OtaRequest::Update,
-                                framework.clone(),
-                                &mut app_ota_observer,
-                            )
-                            .await;
+                        if let Err(message) = run_sd_staged_console_ota(
+                            domain,
+                            path,
+                            &filename,
+                            &curr_ver,
+                            framework.clone(),
+                            &mut app_ota_observer,
+                            layout,
+                        )
+                        .await
+                        {
+                            app_ota_observer.on_ota_failed(&message);
                         }
-                        Ok(ConsoleOtaMode::SdStaged) => {
-                            app_ota_observer.ota_mode = Some(ConsoleOtaMode::SdStaged);
-                            if let Err(message) = update_updater_if_needed(layout, framework.clone(), &mut app_ota_observer).await {
-                                app_ota_observer.on_ota_failed(&message);
-                                continue;
-                            }
-                            if let Err(message) = run_sd_staged_console_ota(
-                                ota_item.domain,
-                                ota_item.path,
-                                &curr_ver,
-                                framework.clone(),
-                                &mut app_ota_observer,
-                                layout,
-                            )
-                            .await
-                            {
-                                app_ota_observer.on_ota_failed(&message);
-                            }
-                        }
-                        Ok(ConsoleOtaMode::Auto) => unreachable!(),
-                        Err(message) => app_ota_observer.on_ota_failed(&message),
                     }
-                } else {
-                    error!("Internal Error: Scale firmware update should run on scale");
+                    Ok(ConsoleOtaMode::Auto) => unreachable!(),
+                    Err(message) => app_ota_observer.on_ota_failed(&message),
                 }
             }
         }
