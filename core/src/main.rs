@@ -298,9 +298,12 @@ async fn main(spawner: Spawner) {
             DMA_CHx: peripherals.DMA_CH2,
         };
 
-        let display_orientation = mipidsi::options::Orientation::new()
+        let mut display_orientation = mipidsi::options::Orientation::new()
             .rotate(mipidsi::options::Rotation::Deg270)
             .flip_horizontal();
+        if framework.borrow().display_orientation_from_flash() == framework::framework::DisplayOrientation::Rotate180 {
+            display_orientation = display_orientation.rotate(mipidsi::options::Rotation::Deg180);
+        }
 
         WT32SC01Plus::new(display_peripherals, sdcard_peripherals, display_orientation, framework.clone())
     };
