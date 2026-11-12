@@ -1,5 +1,6 @@
 base_target="spoolease-bin"
-path_in_base_target="/bins/0.6"
+VERSION="${1:-0.8}"
+path_in_base_target="/bins/${VERSION}"
 rel_train="oneoff"
 product="console"
 
