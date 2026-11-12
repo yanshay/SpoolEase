@@ -16,8 +16,8 @@ if [ -z "$debug_dir" ]; then
 fi
 
 pushd ../../../esp-hal-app
-cargo xtask ota build --input "$proj_dir" --output "$debug_dir/0.6/console"
-cargo xtask web-install build --input "$proj_dir" --output "$debug_dir/0.6/console"
+cargo xtask ota build --input "$proj_dir" --output "$debug_dir/0.8/console"
+cargo xtask web-install build --input "$proj_dir" --output "$debug_dir/0.8/console"
 popd
 
 replace=$(grep '^version' Cargo.toml | sed -E 's/version *= *"[^"]*-([^"]+)".*/\1/')
