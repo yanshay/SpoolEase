@@ -147,6 +147,34 @@ export component FrameworkSettingsButtons inherits VerticalLayout {
     }
 }
 
+export component OtaProgress inherits Rectangle {
+    background: white;
+    VerticalLayout {
+        alignment: stretch;
+        Rectangle {
+            vertical-stretch: 1;
+            width: parent.width;
+            background: FrameworkState.ota-state == OtaState.Failed ? red : FrameworkState.ota-state == OtaState.Completed ? lightgreen : white;
+            border-color: black;
+            border-width: 1px;
+            Text {
+                horizontal-alignment: center;
+                color: black;
+                text: FrameworkState.ota-message;
+                font-size: 20px;
+            }
+        }
+
+        SettingsButton {
+            enabled: FrameworkState.ota-state == OtaState.Failed || FrameworkState.ota-state == OtaState.Completed || FrameworkState.ota-allow-close-during-update;
+            text: "Ok" + (FrameworkState.ota-allow-close-during-update ? " (Update Will Continue)" : "");
+            clicked => {
+                FrameworkState.ota-state = OtaState.NotStarted;
+            }
+        }
+    }
+}
+
 
 // Reset Wifi Credentials
 export component FrameworkSettingsDetails inherits Rectangle {
@@ -202,29 +230,9 @@ export component FrameworkSettingsDetails inherits Rectangle {
     //     }
     // }
 
-    if FrameworkState.ota-state != OtaState.NotStarted && FrameworkState.ota-state != OtaState.UserInput: ota-run := VerticalLayout {
-        alignment: stretch;
-        Rectangle {
-            vertical-stretch: 1;
-            width: parent.width;
-            background: FrameworkState.ota-state == OtaState.Failed ? red : FrameworkState.ota-state == OtaState.Completed ? lightgreen : white;
-            border-color: black;
-            border-width: 1px;
-            Text {
-                horizontal-alignment: center;
-                color: black;
-                text: FrameworkState.ota-message;
-                font-size: 20px;
-            }
-        }
-
-        SettingsButton {
-            enabled: FrameworkState.ota-state == OtaState.Failed || FrameworkState.ota-state == OtaState.Completed || FrameworkState.ota-allow-close-during-update;
-            text: "Ok" + (FrameworkState.ota-allow-close-during-update ? " (Update Will Continue)" : "");
-            clicked => {
-                FrameworkState.ota-state = OtaState.NotStarted;
-            }
-        }
+    if FrameworkState.ota-state == OtaState.Checking: OtaProgress {
+        width: parent.width;
+        height: parent.height;
     }
 
     // Web Config

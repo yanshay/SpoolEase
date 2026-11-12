@@ -21,8 +21,8 @@ use hashbrown::HashMap;
 use ndef_rs::NdefMessage;
 use serde::{Deserialize, Serialize};
 use shared::settings::{
-    OTA_DOMAIN_DEBUG, OTA_DOMAIN_STABLE, OTA_DOMAIN_UNSTABLE, OTA_TLS_CERTIFICATE, SCALE_DEBUG_OTA_PATH, SCALE_STABLE_OTA_PATH,
-    SCALE_UNSTABLE_OTA_PATH,
+    OTA_DOMAIN_DEBUG, OTA_DOMAIN_STABLE, OTA_DOMAIN_UNSTABLE, OTA_TLS_CERTIFICATE, SCALE_DEBUG_OTA_PATH, SCALE_ONEOFF_OTA_PATH,
+    SCALE_STABLE_OTA_PATH, SCALE_UNSTABLE_OTA_PATH,
 };
 use shared::types::{AppOtaTrain, WifiSignal};
 use shared::utils::channel_send;
@@ -48,7 +48,7 @@ use crate::printer::{
     MaterialSlotPresenceChangeKind, PrintControlCommand, PrinterChange, PrinterCommand, PrinterEvent, PrinterEventKind, PrinterId,
     PrinterRuntimePersistenceRequestChannel, PrinterRuntimePersistenceRequestKind, SlotAssignMode, SlotId, manager::PrinterManager,
 };
-use crate::settings::{DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
+use crate::settings::{CONSOLE_ONEOFF_OTA_PATH, DISPLAY_HEIGHT_PX, DISPLAY_WIDTH_PX, OTA_TOML_FILENAME};
 use crate::spool_record::{FullSpoolRecord, OriginData, SpoolRecord, SpoolRecordExt};
 use crate::spool_scale::{self, ScaleSource, ScaleStatus, ScaleWeight, SpoolScaleObserver};
 use crate::ssdp::{SSDPPubSubChannel, ssdp_task};
@@ -2172,6 +2172,50 @@ impl ViewModel {
         let encode_cookie = LocationEncodeCookie { location: String::new() };
         let encode_cookie_str = serde_json::to_string(&encode_cookie).unwrap();
         spool_tag_borrow.write_tag(&descriptor, None, encode_cookie_str);
+    }
+
+    pub fn request_oneoff_update(&self, product: &str, name: &str) -> Result<(), String> {
+        if name.is_empty() || name.len() > 64 || !name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_' || c == b'.') {
+            return Err("Update name must contain 1–64 letters, numbers, periods, hyphens or underscores".to_string());
+        }
+        let filename = format!("{name}.toml");
+        match product {
+            "console" => {
+                use framework::framework::OtaState;
+                use framework::ota::{OtaRequest, ota_task};
+
+                let framework = self.framework.borrow();
+                if matches!(framework.ota_state, Some(OtaState::Started | OtaState::InProgress(_))) {
+                    return Err("A console update is already in progress".to_string());
+                }
+                framework
+                    .spawner
+                    .spawn(ota_task(
+                        OTA_DOMAIN_STABLE.to_string(),
+                        CONSOLE_ONEOFF_OTA_PATH.to_string(),
+                        filename,
+                        OTA_TLS_CERTIFICATE.to_string(),
+                        OtaRequest::Update,
+                        self.framework.clone(),
+                    ))
+                    .map_err(|_| "Could not start console update".to_string())
+            }
+            "scale" => {
+                let scale = self.spool_scale_model.borrow();
+                let status = scale.source_state(spool_scale::ScaleSource::Remote).state;
+                if matches!(
+                    status,
+                    spool_scale::ScaleStatus::NotAvailable | spool_scale::ScaleStatus::Unknown | spool_scale::ScaleStatus::Disconnected
+                ) {
+                    return Err("Remote scale is not connected".to_string());
+                }
+                if self.app_config.borrow().scale_encryption_key.borrow().is_empty() {
+                    return Err("Scale security key is not configured".to_string());
+                }
+                scale.update_firmware(OTA_DOMAIN_STABLE, SCALE_ONEOFF_OTA_PATH, &filename, OTA_TLS_CERTIFICATE)
+            }
+            _ => Err("Unknown update device".to_string()),
+        }
     }
 
     fn ui_ota_update_firmware(&self, product: &str, train: &str) {

@@ -217,6 +217,9 @@ impl NestedAppWithWebAppState<ConsoleAppState> for ConsoleWebService {
             (ApiMethod::Get, "/api/debug/topic-logs") => {
                 box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_debug_topic_logs_get).await)
             }
+            (ApiMethod::Post, "/api/debug/oneoff-update") => {
+                box_route_future!(handle_web_app_post_sync(state, request, response_writer, key, app_state, handle_oneoff_update_post).await)
+            }
             (ApiMethod::Get, "/api/printers-status") => {
                 box_route_future!(handle_web_app_get_sync(request, response_writer, key, app_state, handle_printers_status_get).await)
             }
@@ -572,6 +575,18 @@ fn handle_debug_metrics_get(key: &'static RefCell<Vec<u8>>, _state: ConsoleAppSt
     }
     .encrypt(&key.borrow())
 }
+
+fn handle_oneoff_update_post(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, request: OneoffUpdateDTO) -> String {
+    let error_text = state.view_model.borrow().request_oneoff_update(&request.device, &request.name).err();
+    SetConfigResponseDTO { error_text }.encrypt(&key.borrow())
+}
+
+#[derive(Deserialize)]
+struct OneoffUpdateDTO {
+    device: String,
+    name: String,
+}
+encrypted_input!(OneoffUpdateDTO);
 
 fn handle_debug_topic_logs_get(key: &'static RefCell<Vec<u8>>, _state: ConsoleAppState) -> String {
     TopicLogsResponse {

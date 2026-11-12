@@ -16,7 +16,7 @@ import {
     WebConfigState,
 } from "framework/framework.slint";
 import { Terminal } from "framework/terminal.slint";
-import { Settings } from "framework/settings.slint";
+import { OtaProgress, Settings } from "framework/settings.slint";
 import { Title, MyText, MyButton } from "framework/widgets.slint";
 
 import { Utils } from "utils.slint";
@@ -276,6 +276,17 @@ export component AppWindow inherits Window {
                     AppState.hide-message-box();
                 }
             }
+        }
+    }
+
+    if FrameworkState.ota-state == OtaState.Started || FrameworkState.ota-state == OtaState.Completed || FrameworkState.ota-state == OtaState.Failed: Rectangle {
+        width: root.width;
+        height: root.height;
+        background: white;
+        TouchArea { }
+        OtaProgress {
+            width: parent.width;
+            height: parent.height;
         }
     }
 }
