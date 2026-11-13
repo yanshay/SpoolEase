@@ -1,4 +1,5 @@
 proj_dir=$(pwd)
+source ../../deploy-config.sh || { return 1 2>/dev/null || exit 1; }
 
 path=$(pwd)
 debug_dir=""
@@ -15,9 +16,9 @@ if [ -z "$debug_dir" ]; then
     exit 1
 fi
 
-pushd ../../../esp-hal-app
-cargo xtask ota build --input "$proj_dir" --output "$debug_dir/0.8/console"
-cargo xtask web-install build --input "$proj_dir" --output "$debug_dir/0.8/console"
+pushd "$xtask_dir" || { return 1 2>/dev/null || exit 1; }
+cargo xtask ota build --input "$proj_dir" --output "$debug_dir/0.8/console" || { popd; return 1 2>/dev/null || exit 1; }
+cargo xtask web-install build --layout dual-ota --input "$proj_dir" --output "$debug_dir/0.8/console" || { popd; return 1 2>/dev/null || exit 1; }
 popd
 
 replace=$(grep '^version' Cargo.toml | sed -E 's/version *= *"[^"]*-([^"]+)".*/\1/')
