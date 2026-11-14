@@ -19,6 +19,7 @@ import {
     SpoolScaleState,
     UiSpoolRecordDisplay,
     NewScannedTagType,
+    StatusType,
 } from "app.slint";
 import { Utils } from "utils.slint";
 import { ScaleWeightDisplay } from "app-widgets.slint";
@@ -294,31 +295,22 @@ component OperationSelectionStep inherits Rectangle {
                 }
 
                 // this should be displayed both for simple tag and definition tag
-                if AppBackend.recently_added_spool_id_if_untagged() != "": MyButton {
+                if (AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag && AppState.new-tag-scan-definition-type == "Bambu Lab" && AppState.new-tag-scan-spool-id != "") || AppBackend.recently_added_spool_id_if_untagged() != "": MyButton {
                     pushed: AppState.new-tag-operation == NewTagOperation.LinkTagToRecentlyAddedSpool;
                     type: ButtonType.RadioButton;
                     height: 51px;
-                    text: (AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag) ? "Link tag to recently added spool ID: \{AppBackend.recently_added_spool_id_if_untagged()}" : "Link tag to the imported spool ID: \{AppBackend.recently_added_spool_id_if_untagged()}";
+                    text: (AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag) ? "Link tag to recently added spool ID: \{AppBackend.recently_added_spool_id_if_untagged()}" : (AppState.new-tag-scan-definition-type == "Bambu Lab" ? "Link tag to the imported spool ID: \{AppState.new-tag-scan-spool-id}" : "Link tag to the imported spool ID: \{AppBackend.recently_added_spool_id_if_untagged()}");
                     pressed => {
                         pressed(NewTagOperation.LinkTagToRecentlyAddedSpool);
                     }
                 }
 
-                if AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag && AppState.new-tag-scan-definition-type == "Bambu Lab": 
-                VerticalLayout {
-                    padding-top: 12px;
-                    MyText {
-                        width: parent.width;
-                        wrap: word-wrap;
-                        text: "IMPORTANT : Bambu Lab spools have a tag on each side. To link both, right after linking this tag, scan the other side and link (DON'T IMPORT, ONLY LINK) it to the newly staged spool (or later by selecting its ID).";
-                        color: black;
-                    }
-                }
             }
         }
 
         WizardButtons {
-            next-enabled: AppState.new-tag-operation != NewTagOperation.None;
+            next-enabled: AppState.new-tag-operation != NewTagOperation.None && !AppState.new-tag-link-in-progress;
+            cancel-enabled: !AppState.new-tag-link-in-progress;
             next-clicked => {
                 // AppState.new-tag-operation = selected-operation;
               if AppState.new-tag-operation == NewTagOperation.LinkTagToStagedSpool {
@@ -327,12 +319,17 @@ component OperationSelectionStep inherits Rectangle {
                 } else if AppState.new-tag-operation == NewTagOperation.LinkTagToSpoolId || AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool {
                     AppState.new-tag-scan-page = NewTagScanPage.SpoolSelect;
                 } else {
-                    AppState.new-tag-scan-spool-id = AppBackend.recently_added_spool_id_if_untagged();
+                    if AppState.new-tag-scan-tag-type != NewScannedTagType.DefinitionTag || AppState.new-tag-scan-definition-type != "Bambu Lab" {
+                        AppState.new-tag-scan-spool-id = AppBackend.recently_added_spool_id_if_untagged();
+                    }
                     if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag {
                         AppState.new-tag-scan-page = NewTagScanPage.SpoolDisplay;
                     } else { // DefinitionTag
                       // skip display since we saw it already
-                        AppBackend.link-tag-to-untagged-spool-id(AppState.new-tag-scan-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, !AppState.is-scale-usable-now());
+                        if AppState.new-tag-scan-definition-type == "Bambu Lab" {
+                            AppState.new-tag-link-in-progress = true;
+                        }
+                        AppBackend.link-tag-to-untagged-spool-id(AppState.new-tag-scan-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, AppState.new-tag-scan-definition-type != "Bambu Lab" && !AppState.is-scale-usable-now());
                     }
                 }
             }
@@ -340,6 +337,80 @@ component OperationSelectionStep inherits Rectangle {
             cancel-clicked => {
                 AppState.control-state = ControlState.Ready;
             }
+        }
+    }
+}
+
+component BambulabSecondTagPage inherits Rectangle {
+    background: white;
+    property <int> scan-count: AppState.second-tag-scan-count;
+    property <bool> highlighted: false;
+
+    changed scan-count => {
+        highlighted = true;
+        highlight-timer.start();
+        highlight-timer.restart();
+    }
+
+    highlight-timer := Timer {
+        interval: 700ms;
+        running: false;
+        triggered => {
+            highlighted = false;
+            self.stop();
+        }
+    }
+
+    Timer {
+        interval: 10s;
+        running: AppState.second-tag-reading;
+        triggered => {
+            AppState.second-tag-scan-result("", "Scan timed out. Try again.");
+        }
+    }
+
+    VerticalLayout {
+        Title { text: "Link Second Bambu Lab Tag"; }
+        VerticalLayout {
+            alignment: start;
+            padding: 10px;
+            spacing: 10px;
+            MyText {
+                width: parent.width;
+                wrap: word-wrap;
+                text: "Bambu Lab spools have a tag on each side. To link the other tag, place it near the NFC scanner.";
+            }
+            MyText {
+                width: parent.width;
+                wrap: word-wrap;
+                text: "To scan again, move the tag away and present it again.";
+            }
+            Rectangle {
+                height: 80px;
+                background: AppState.second-tag-message-type == StatusType.Success ? green.brighter(1.0) : (AppState.second-tag-message-type == StatusType.Error ? red : white);
+                border-color: black;
+                border-width: root.highlighted ? 4px : 1px;
+                MyText {
+                    width: parent.width;
+                    height: parent.height;
+                    wrap: word-wrap;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    color: Utils.contrasting_color(parent.background);
+                    text: AppState.second-tag-message;
+                }
+            }
+        }
+        WizardButtons {
+            next-text: "✓ Link";
+            next-enabled: AppState.second-tag-id != "" && !AppState.second-tag-reading && !AppState.new-tag-link-in-progress;
+            cancel-text: "Skip";
+            cancel-enabled: !AppState.new-tag-link-in-progress && !AppState.second-tag-reading;
+            next-clicked => {
+                AppState.new-tag-link-in-progress = true;
+                AppBackend.link-tag-to-tagged-spool-id(AppState.second-tag-id, "Bambu Lab", AppState.new-tag-scan-spool-id, false);
+            }
+            cancel-clicked => { AppState.finish-second-tag-step(); }
         }
     }
 }
@@ -627,4 +698,6 @@ export component NewTagScan inherits Rectangle {
     if AppState.new-tag-scan-page == NewTagScanPage.BambulabSpoolTypeSelection: bambulab-spool-type-selection := BambulabSpoolTypePage { }
 
     if AppState.new-tag-scan-page == NewTagScanPage.ImportDefinitionNotice: import-definition-notice := ImportDefinitionNoticePage { }
+
+    if AppState.new-tag-scan-page == NewTagScanPage.BambulabSecondTag: second-tag := BambulabSecondTagPage { }
 }

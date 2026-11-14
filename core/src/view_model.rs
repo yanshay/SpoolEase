@@ -869,24 +869,38 @@ impl ViewModel {
 
         let moved_view_model = self.view_model.clone().unwrap();
         ui_app_backend.on_link_tag_to_untagged_spool_id(move |tag_id, tag_type, spool_id, final_step| {
-            let _ = moved_view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::LinkTagToSpool {
+            let result = moved_view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::LinkTagToSpool {
                 tag_id: tag_id.into(),
                 tag_type: tag_type.into(),
                 spool_id: spool_id.into(),
                 mode: LinkTagMode::ToUntaggedSpool,
                 final_step,
             });
+            if let Err(err) = result {
+                let ui = moved_view_model.borrow().ui_weak.unwrap();
+                let state = ui.global::<crate::app::AppState>();
+                if state.get_new_tag_link_in_progress() {
+                    state.invoke_link_tag_to_spool_id_status(format!("Unable to start linking: {err}").into());
+                }
+            }
         });
 
         let moved_view_model = self.view_model.clone().unwrap();
         ui_app_backend.on_link_tag_to_tagged_spool_id(move |tag_id, tag_type, spool_id, final_step| {
-            let _ = moved_view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::LinkTagToSpool {
+            let result = moved_view_model.borrow().dispatch_async_task(AppAsyncTaskRequest::LinkTagToSpool {
                 tag_id: tag_id.into(),
                 tag_type: tag_type.into(),
                 spool_id: spool_id.into(),
                 mode: LinkTagMode::ToTaggedSpool,
                 final_step,
             });
+            if let Err(err) = result {
+                let ui = moved_view_model.borrow().ui_weak.unwrap();
+                let state = ui.global::<crate::app::AppState>();
+                if state.get_new_tag_link_in_progress() {
+                    state.invoke_link_tag_to_spool_id_status(format!("Unable to start linking: {err}").into());
+                }
+            }
         });
 
         let moved_view_model = self.view_model.clone().unwrap();
@@ -3963,6 +3977,67 @@ impl SpoolTagObserver for ViewModel {
             self.framework.borrow().undim_display();
         }
         let ui = self.ui_weak.clone();
+        let ui_handle = ui.unwrap();
+        let ui_app_state = ui_handle.global::<crate::app::AppState>();
+        if ui_app_state.get_control_state() == crate::app::ControlState::NewTagScan {
+            let page = ui_app_state.get_new_tag_scan_page();
+            if page == crate::app::NewTagScanPage::BambulabSecondTag {
+                if ui_app_state.get_new_tag_link_in_progress() {
+                    if matches!(status, Status::FoundTagNowReading | Status::ReadSuccess(_) | Status::Failure(spool_tag::Failure::TagReadFailure)) {
+                        return;
+                    }
+                } else {
+                    match status {
+                        Status::FoundTagNowReading => {
+                            ui_app_state.set_second_tag_reading(true);
+                            ui_app_state.set_second_tag_id(SharedString::new());
+                            ui_app_state.set_second_tag_message("Reading tag...".into());
+                            ui_app_state.set_second_tag_message_type(crate::app::StatusType::Normal);
+                            return;
+                        }
+                        Status::ReadSuccess(result) => {
+                            let uid = match result {
+                                spool_tag::ReadResult::TagInStore { uid }
+                                | spool_tag::ReadResult::NDEF { uid, .. }
+                                | spool_tag::ReadResult::BambulabTag { uid, .. } => uid,
+                            };
+                            let tag_id = hex::encode_upper(uid);
+                            let (candidate, message) = if tag_id == ui_app_state.get_new_tag_scan_tag_id().as_str() {
+                                (
+                                    String::new(),
+                                    format!("First tag rescanned. Already linked to spool ({})", ui_app_state.get_new_tag_scan_spool_id()),
+                                )
+                            } else if let Some(spool) = self.store.get_spool_by_hex_tag(&tag_id) {
+                                let message = if spool.id == ui_app_state.get_new_tag_scan_spool_id().as_str() {
+                                    format!("Tag already linked to this spool ({})", spool.id)
+                                } else {
+                                    format!("Tag linked to spool {}. Unlink it first.", spool.id)
+                                };
+                                (String::new(), message)
+                            } else if matches!(result, spool_tag::ReadResult::BambulabTag { data: Some(_), .. }) {
+                                (tag_id, "Tag scanned".to_string())
+                            } else {
+                                (String::new(), "Not a Bambu Lab tag".to_string())
+                            };
+                            ui_app_state.invoke_second_tag_scan_result(candidate.into(), message.into());
+                            return;
+                        }
+                        Status::Failure(spool_tag::Failure::TagReadFailure) => {
+                            if ui_app_state.get_second_tag_reading() {
+                                ui_app_state.invoke_second_tag_scan_result("".into(), "Failed to scan tag".into());
+                            }
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+            } else if matches!(status, Status::FoundTagNowReading | Status::ReadSuccess(_) | Status::Failure(spool_tag::Failure::TagReadFailure))
+            {
+                // The wizard owns the current scan until it exits; only its
+                // second-tag page should react to additional reads.
+                return;
+            }
+        }
         // let tag_timeout = self.app_config.borrow().tag_scan_timeout;
         match status {
             Status::FoundTagNowReading => {

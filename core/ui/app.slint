@@ -242,6 +242,7 @@ export enum NewTagScanPage {
     SpoolDefinitionTagScanned, // Bambulab etc.
     BambulabSpoolTypeSelection,
     ImportDefinitionNotice,
+    BambulabSecondTag,
 }
 
 export enum NewTagOperation {
@@ -342,6 +343,12 @@ export global AppState {
     in-out property <string> new-tag-scan-definition-type: ""; // Bambu Lab, Creatlity, etc.
     in-out property <int> new-tag-scan-empty-spool-weight: 0; // 0 - not specified, value from Bambu Tag
     in-out property <bool> new-tag-scan-spool-is-full: true;
+    in-out property <string> second-tag-id: "";
+    in-out property <string> second-tag-message: "Scanning for Tag";
+    in-out property <StatusType> second-tag-message-type: StatusType.Normal;
+    in-out property <int> second-tag-scan-count: 0;
+    in-out property <bool> second-tag-reading: false;
+    in-out property <bool> new-tag-link-in-progress: false;
 
     in-out property <StagingOperationsPage> staging-operation-page: StagingOperationsPage.OperationSelection;
     in-out property <StagingOperationsPage> prev-staging-operation-page: StagingOperationsPage.OperationSelection;
@@ -1035,6 +1042,9 @@ export global AppState {
 
     // Rust callable functions for new-tag-scan flow
     public function new-tag-scanned(tag-id: string) {
+        self.new-tag-link-in-progress = false;
+        self.second-tag-id = "";
+        self.second-tag-reading = false;
         self.new-tag-scan-page = NewTagScanPage.OperationSelect;
         self.new-tag-scan-tag-type = NewScannedTagType.SimpleTag;
         self.new-tag-operation = NewTagOperation.None;
@@ -1048,6 +1058,9 @@ export global AppState {
         self.control-state = ControlState.NewTagScan;
     }
     public function new-v1-tag-scanned(tag-id: string, v1-tag: string) {
+        self.new-tag-link-in-progress = false;
+        self.second-tag-id = "";
+        self.second-tag-reading = false;
         self.new-tag-scan-page = NewTagScanPage.V1TagPrompt;
         self.new-tag-scan-tag-type = NewScannedTagType.SimpleTag;
         self.new-tag-operation = NewTagOperation.None;
@@ -1072,6 +1085,8 @@ export global AppState {
         self.new-tag-scan-definition-info = definition-info;
         self.new-tag-scan-empty-spool-weight = 0;
         self.new-tag-scan-spool-is-full = true;
+        self.second-tag-id = "";
+        self.new-tag-link-in-progress = false;
         self.control-state = ControlState.NewTagScan;
     }
 
@@ -1087,6 +1102,29 @@ export global AppState {
         self.new-tag-scan-definition-info = "";
         self.new-tag-scan-empty-spool-weight = 0;
         self.new-tag-scan-spool-is-full = true;
+        self.second-tag-id = "";
+        self.second-tag-message = "Scanning for Tag";
+        self.second-tag-message-type = StatusType.Normal;
+        self.second-tag-reading = false;
+        self.new-tag-link-in-progress = false;
+    }
+
+    public function second-tag-scan-result(tag-id: string, message: string) {
+        self.second-tag-reading = false;
+        self.second-tag-id = tag-id;
+        self.second-tag-message = message;
+        self.second-tag-message-type = tag-id == "" ? StatusType.Error : StatusType.Success;
+        self.second-tag-scan-count += 1;
+    }
+
+    public function finish-second-tag-step() {
+        self.second-tag-id = "";
+        self.second-tag-reading = false;
+        if self.is-scale-usable-now() {
+            self.new-tag-scan-page = NewTagScanPage.UpdateWeight;
+        } else {
+            self.control-state = ControlState.PostAction;
+        }
     }
 
     public function import-definition-tag-to-inventory-status(status: string, spool-id: string) {
@@ -1109,6 +1147,29 @@ export global AppState {
       // string empty ok, content is error message
 
       if self.control-state == ControlState.NewTagScan {
+            if self.new-tag-scan-page == NewTagScanPage.BambulabSecondTag {
+                self.new-tag-link-in-progress = false;
+                if status == "" {
+                    self.finish-second-tag-step();
+                } else {
+                    self.second-tag-scan-result("", "Internal error: " + status);
+                }
+                return;
+            }
+            if self.new-tag-link-in-progress && self.new-tag-scan-page == NewTagScanPage.OperationSelect && self.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag && self.new-tag-scan-definition-type == "Bambu Lab" {
+                self.new-tag-link-in-progress = false;
+                if status == "" {
+                    self.second-tag-id = "";
+                    self.second-tag-message = "Scanning for Tag";
+                    self.second-tag-message-type = StatusType.Normal;
+                    self.second-tag-reading = false;
+                    self.new-tag-scan-page = NewTagScanPage.BambulabSecondTag;
+                } else {
+                    self.new-tag-scan-page = NewTagScanPage.StatusDisplay;
+                    self.new-tag-scan-status = status;
+                }
+                return;
+            }
             if status == "" {
           // this will be effective only if there is a weight (this will be driven by the flow in the screen itself)
                 self.new-tag-scan-page = NewTagScanPage.UpdateWeight;
