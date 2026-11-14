@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use embassy_time::{Duration, Instant};
 use hashbrown::HashMap;
+use hmac::Mac;
 use ndef_rs::{
     NdefMessage, NdefRecord, TNF,
     error::NdefError,
@@ -19,7 +20,47 @@ pub enum Error<E: core::fmt::Debug> {
     NdefError(NdefError),
     NdefBuildError,
     NotBambulabTag,
+    NotSnapmakerTag,
     MifareIncompleteBlock(u8),
+    MifarePayloadFailure(crate::pn532_ext::Error<E>),
+    MifareTagChangedOrUnavailable,
+}
+
+pub async fn read_snapmaker_payload<I>(
+    pn532: &mut pn532::Pn532<I, Esp32TimerAsync>,
+    timeout: Duration,
+    uid: &[u8],
+) -> Result<HashMap<i32, Vec<u8>>, Error<I::Error>>
+where
+    I: pn532::Interface,
+{
+    if uid.len() != 4 {
+        return Err(Error::NotSnapmakerTag);
+    }
+    let end_time = Instant::now() + timeout;
+    let mut extract = hmac::Hmac::<sha2::Sha256>::new_from_slice(b"Snapmaker_qwertyuiop[,.;]").unwrap();
+    extract.update(uid);
+    let prk = extract.finalize().into_bytes();
+    let mut authenticated_sector = None;
+    let mut blocks = HashMap::new();
+    for block in [1u8, 2, 4, 5, 6, 8, 9, 10] {
+        let mut expand = hmac::Hmac::<sha2::Sha256>::new_from_slice(&prk).unwrap();
+        expand.update(b"key_a_");
+        expand.update(&[b'0' + block / 4, 1]);
+        let digest = expand.finalize().into_bytes();
+        let mut key = [0u8; 6];
+        key.copy_from_slice(&digest[..6]);
+        let mut data = alloc::vec![0u8; 16];
+        match pn532_ext::mifare_read_with_retries(pn532, uid, block, &mut authenticated_sector, &key, &mut data, end_time, &[]).await {
+            Ok(16) => { blocks.insert(block as i32, data); }
+            Ok(_) => return Err(Error::MifareIncompleteBlock(block)),
+            Err(pn532_ext::MifareReadError::Authentication(pn532_ext::Error::AuthenticationError)) if block == 1 => return Err(Error::NotSnapmakerTag),
+            Err(pn532_ext::MifareReadError::Authentication(err)) if block == 1 => return Err(err.into()),
+            Err(pn532_ext::MifareReadError::Authentication(err) | pn532_ext::MifareReadError::Data(err) | pn532_ext::MifareReadError::Recovery(err)) => return Err(Error::MifarePayloadFailure(err)),
+            Err(pn532_ext::MifareReadError::TagChangedOrUnavailable) => return Err(Error::MifareTagChangedOrUnavailable),
+        }
+    }
+    Ok(blocks)
 }
 
 impl<E: core::fmt::Debug> From<crate::pn532_ext::Error<E>> for Error<E> {
@@ -105,10 +146,12 @@ where
                 }
                 res_map.insert(block_number as i32, res_vec);
             }
-            Err(pn532_ext::Error::AuthenticationError) => {
+            Err(pn532_ext::MifareReadError::Authentication(pn532_ext::Error::AuthenticationError)) if block_number == 1 => {
                 return Err(Error::NotBambulabTag);
             }
-            Err(err) => return Err(err.into()),
+            Err(pn532_ext::MifareReadError::Authentication(err)) if block_number == 1 => return Err(err.into()),
+            Err(pn532_ext::MifareReadError::Authentication(err) | pn532_ext::MifareReadError::Data(err) | pn532_ext::MifareReadError::Recovery(err)) => return Err(Error::MifarePayloadFailure(err)),
+            Err(pn532_ext::MifareReadError::TagChangedOrUnavailable) => return Err(Error::MifareTagChangedOrUnavailable),
         }
     }
     Ok(res_map)

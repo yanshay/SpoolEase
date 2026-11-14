@@ -240,9 +240,9 @@ export enum NewTagScanPage {
     StatusDisplay,
     V1TagPrompt,
     SpoolDefinitionTagScanned, // Bambulab etc.
-    BambulabSpoolTypeSelection,
+    DefinitionSpoolTypeSelection,
     ImportDefinitionNotice,
-    BambulabSecondTag,
+    DefinitionSecondTag,
 }
 
 export enum NewTagOperation {
@@ -1117,6 +1117,10 @@ export global AppState {
         self.second-tag-scan-count += 1;
     }
 
+    public pure function is-two-sided-definition() -> bool {
+        return self.new-tag-scan-definition-type == "Bambu Lab" || self.new-tag-scan-definition-type == "Snapmaker";
+    }
+
     public function finish-second-tag-step() {
         self.second-tag-id = "";
         self.second-tag-reading = false;
@@ -1147,7 +1151,7 @@ export global AppState {
       // string empty ok, content is error message
 
       if self.control-state == ControlState.NewTagScan {
-            if self.new-tag-scan-page == NewTagScanPage.BambulabSecondTag {
+            if self.new-tag-scan-page == NewTagScanPage.DefinitionSecondTag {
                 self.new-tag-link-in-progress = false;
                 if status == "" {
                     self.finish-second-tag-step();
@@ -1156,14 +1160,14 @@ export global AppState {
                 }
                 return;
             }
-            if self.new-tag-link-in-progress && self.new-tag-scan-page == NewTagScanPage.OperationSelect && self.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag && self.new-tag-scan-definition-type == "Bambu Lab" {
+            if self.new-tag-link-in-progress && self.new-tag-scan-page == NewTagScanPage.OperationSelect && self.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag && self.is-two-sided-definition() {
                 self.new-tag-link-in-progress = false;
                 if status == "" {
                     self.second-tag-id = "";
                     self.second-tag-message = "Scanning for Tag";
                     self.second-tag-message-type = StatusType.Normal;
                     self.second-tag-reading = false;
-                    self.new-tag-scan-page = NewTagScanPage.BambulabSecondTag;
+                    self.new-tag-scan-page = NewTagScanPage.DefinitionSecondTag;
                 } else {
                     self.new-tag-scan-page = NewTagScanPage.StatusDisplay;
                     self.new-tag-scan-status = status;

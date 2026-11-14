@@ -12,7 +12,7 @@ use ndef_rs::NdefMessage;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, MATERIALS},
+    app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, MATERIALS, SNAPMAKER_COLOR_NAMES},
     spool_record::SpoolRecord,
 };
 
@@ -20,6 +20,7 @@ use serde_with::hex::Hex;
 use serde_with::serde_as;
 
 pub const BAMBULAB_TAG_TYPE: &str = "Bambu Lab";
+pub const SNAPMAKER_TAG_TYPE: &str = "Snapmaker";
 pub const OPENPRINTTAG_TAG_TYPE: &str = "OpenPrintTag";
 
 // -----------------------------------------------------------------------------------------------------------
@@ -172,6 +173,113 @@ impl BambuLabTag {
             ..Default::default()
         }
     }
+}
+
+#[serde_as]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SnapmakerTag {
+    tag_id: String,
+    #[serde_as(as = "HashMap<_, Hex>")]
+    blocks: HashMap<i32, Vec<u8>>,
+}
+
+impl SnapmakerTag {
+    pub fn new(tag_id: &str, blocks: &HashMap<i32, Vec<u8>>) -> Self {
+        Self { tag_id: tag_id.to_string(), blocks: blocks.clone() }
+    }
+
+    fn block(&self, number: i32) -> Option<&[u8]> {
+        self.blocks.get(&number).filter(|block| block.len() == 16).map(Vec::as_slice)
+    }
+
+    pub fn to_spool_rec(&self) -> Result<SpoolRecord, String> {
+        let manufacturer = self.block(2).ok_or("Missing Snapmaker manufacturer")?;
+        let details = self.block(4).ok_or("Missing Snapmaker details")?;
+        let color_block = self.block(5).ok_or("Missing Snapmaker colors")?;
+        let sku_block = self.block(6).ok_or("Missing Snapmaker SKU")?;
+        let physical = self.block(8).ok_or("Missing Snapmaker physical data")?;
+        let le16 = |data: &[u8], pos: usize| u16::from_le_bytes([data[pos], data[pos + 1]]);
+        let material = match le16(details, 2) {
+            1 => "PLA", 2 => "PETG", 3 => "ABS", 4 => "TPU", 5 => "PVA", 6 => "ASA",
+            9 => "PA", 10 => "PA-CF", 11 => "PA-GF", 12 => "PC", 17 => "PETG-CF",
+            20 => "PLA-CF", 22 => "PEBA", 23 => "TPE", _ => "",
+        };
+        let subtype = match le16(details, 4) {
+            1 => "Basic", 2 => "Matte", 3 => "SnapSpeed", 4 => "Silk", 5 => "Support",
+            6 => "HF", 7 => "95A", 8 => "95A HF", 9 => "90A", 10 => "85A", 11 => "Wood",
+            12 => "Translucent", 13 => "Full Spectrum", 14 => "Glow", _ => "",
+        };
+        let sku = u32::from_le_bytes([sku_block[0], sku_block[1], sku_block[2], sku_block[3]]);
+        let count = usize::from(details[8]).min(5);
+        let alpha = 255u8 - details[9];
+        let mut colors = Vec::with_capacity(count);
+        for rgb in color_block[..count * 3].chunks_exact(3) {
+            colors.push(format!("{:02X}{:02X}{:02X}{alpha:02X}", rgb[0], rgb[1], rgb[2]));
+        }
+        let name = snapmaker_color_name(&colors, material, subtype, sku);
+        let manufacturer = String::from_utf8_lossy(manufacturer).trim_end_matches('\0').to_string();
+        let weight = le16(physical, 2);
+        Ok(SpoolRecord {
+            material_type: material.to_string(),
+            material_subtype: subtype.to_string(),
+            color_name: name,
+            color_code: colors,
+            note: format!("Manufacturer: {manufacturer}, SKU: {sku}"),
+            brand: "Snapmaker".to_string(),
+            weight_advertised: (weight != 0).then_some(weight as i32),
+            data_origin: SNAPMAKER_TAG_TYPE.to_string(),
+            ..Default::default()
+        })
+    }
+}
+
+// Read one CSV record into fixed buffers; never allocate a table of color entries.
+fn snapmaker_color_name(colors: &[String], material: &str, subtype: &str, sku: u32) -> String {
+    if colors.is_empty() { return "(Fill Color-Name Manually)".to_string(); }
+    let mut reader = serde_csv_core::csv_core::Reader::new();
+    let mut buffer = [0u8; 512];
+    let mut ends = [0usize; 4];
+    let mut input = SNAPMAKER_COLOR_NAMES.as_bytes();
+    let mut best = [0u8; 256];
+    let mut best_len = 0;
+    let mut best_score = -1i32;
+    let mut ordered_name = [0u8; 256];
+    let mut ordered_len = 0;
+    let mut ordered_count = 0;
+    while !input.is_empty() {
+        let (result, nread, nwritten, nfields) = reader.read_record(input, &mut buffer, &mut ends);
+        if nread == 0 { break; }
+        input = &input[nread..];
+        // Do not continue with partial record state after a buffer overflow.
+        if result != serde_csv_core::csv_core::ReadRecordResult::Record { break; }
+        if nfields != 4 || ends[2] > nwritten { continue; }
+        let Ok(key) = core::str::from_utf8(&buffer[..ends[0]]) else { continue; };
+        let Ok(rgb) = core::str::from_utf8(&buffer[ends[0]..ends[1]]) else { continue; };
+        let name = &buffer[ends[1]..ends[2]];
+        if name.len() > best.len() || rgb.split('/').count() != colors.len() { continue; }
+        let same = rgb.split('/').all(|value| {
+            rgb.split('/').filter(|v| *v == value).count()
+                == colors.iter().filter(|c| c.get(..6) == Some(value)).count()
+        });
+        if !same { continue; }
+        let ordered = rgb.split('/').zip(colors.iter()).all(|(a, b)| b.get(..6) == Some(a));
+        if ordered {
+            ordered_count += 1;
+            if ordered_count == 1 { ordered_len = name.len(); ordered_name[..ordered_len].copy_from_slice(name); }
+        }
+        let (catalog_sku, kind) = key.split_once('/').unwrap_or(("", key));
+        let (kind_material, kind_subtype) = kind.split_once(' ').unwrap_or((kind, ""));
+        let score = i32::from(catalog_sku.parse::<u32>().ok() == Some(sku) && sku != 0) * 4
+            + i32::from(!material.is_empty() && kind_material.eq_ignore_ascii_case(material)) * 2
+            + i32::from(!subtype.is_empty() && kind_subtype.eq_ignore_ascii_case(subtype));
+        if score > best_score {
+            best_score = score;
+            best_len = name.len();
+            best[..best_len].copy_from_slice(name);
+        }
+    }
+    let result = if ordered_count == 1 { &ordered_name[..ordered_len] } else { &best[..best_len] };
+    if result.is_empty() { "(Fill Color-Name Manually)".to_string() } else { String::from_utf8_lossy(result).to_string() }
 }
 
 // --------------------------------------------------------------------------------------------------------------

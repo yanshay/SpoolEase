@@ -54,7 +54,7 @@ use crate::spool_scale::{self, ScaleSource, ScaleStatus, ScaleWeight, SpoolScale
 use crate::ssdp::{SSDPPubSubChannel, ssdp_task};
 use crate::store::{BackupMeta, FileMeta, Store, StoreObserver, store_safe_time_now};
 
-use crate::tag_standards::{BAMBULAB_TAG_TYPE, BambuLabTag, OPENPRINTTAG_TAG_TYPE, OpenPrintTagTag};
+use crate::tag_standards::{BAMBULAB_TAG_TYPE, BambuLabTag, OPENPRINTTAG_TAG_TYPE, OpenPrintTagTag, SNAPMAKER_TAG_TYPE, SnapmakerTag};
 use crate::types::FilamentSupInfo;
 use crate::{app_config::AppConfig, bambu, filament_staging::FilamentStaging};
 use shared::spool_tag::{self, SpoolTagObserver, Status, TAG_PLACEHOLDER};
@@ -1788,6 +1788,50 @@ impl ViewModel {
         }
     }
 
+    fn snapmaker_spool_record(&self, tag: &SnapmakerTag) -> Result<SpoolRecord, String> {
+        let mut spool = tag.to_spool_rec()?;
+        if !spool.material_type.is_empty() {
+            let custom_match = {
+                let config = self.app_config.borrow();
+                config.custom_filaments.as_ref().and_then(|filaments| {
+                    let mut reader = serde_csv_core::Reader::<512>::new();
+                    filaments.lines().find_map(|line| {
+                        let (row, _) = reader.deserialize::<(String, String, String, String, String)>(line.as_bytes()).ok()?;
+                        let (id, name, _, _, material) = row;
+                        let mut words = name.split_whitespace();
+                        if !words.next().is_some_and(|word| word.eq_ignore_ascii_case("Snapmaker"))
+                            || !words.next().is_some_and(|word| word.eq_ignore_ascii_case(&spool.material_type))
+                            || (!material.is_empty() && !material.eq_ignore_ascii_case(&spool.material_type))
+                        { return None; }
+                        let remaining = words.collect::<Vec<_>>().join(" ");
+                        let profile_subtype = remaining.split('@').next().unwrap_or("").trim();
+                        if !profile_subtype.eq_ignore_ascii_case(&spool.material_subtype) { return None; }
+                        Some(id)
+                    })
+                })
+            };
+            spool.slicer_filament = custom_match.or_else(|| {
+                self.get_filament_info("", Some(&spool.material_type))
+                    .filter(|info| info.slicer_name.starts_with("Generic "))
+                    .map(|info| info.slicer_code)
+                    .or_else(|| {
+                        let generic_name = format!("Generic {}", spool.material_type);
+                        BASE_FILAMENTS.lines().find_map(|line| {
+                            let mut fields = line.split(',');
+                            let id = fields.next()?;
+                            let name = fields.next()?;
+                            fields.next()?;
+                            fields.next()?;
+                            let material = fields.next()?;
+                            (name.eq_ignore_ascii_case(&generic_name) && material.eq_ignore_ascii_case(&spool.material_type))
+                                .then(|| id.to_string())
+                        })
+                    })
+            }).unwrap_or_default();
+        }
+        Ok(spool)
+    }
+
     fn get_filament_info(&self, search_code: &str, material: Option<&str>) -> Option<FilamentSupInfo> {
         let app_config_borrow = self.app_config.borrow();
         let empty_list = String::new();
@@ -2530,6 +2574,12 @@ impl ViewModel {
         empty_spool_weight: i32,
     ) -> UiSpoolRecordDisplay {
         let mut spool_rec = match tag_definition_type {
+            SNAPMAKER_TAG_TYPE => {
+                match serde_json::from_str::<SnapmakerTag>(tag_definition_info).ok().and_then(|tag| self.snapmaker_spool_record(&tag).ok()) {
+                    Some(spool) => spool,
+                    None => return UiSpoolRecordDisplay::default(),
+                }
+            }
             BAMBULAB_TAG_TYPE => {
                 if let Ok(bambu_tag) = serde_json::from_str::<BambuLabTag>(tag_definition_info) {
                     bambu_tag.to_spool_rec()
@@ -2858,6 +2908,14 @@ impl ViewModel {
         spool_is_full: bool,
     ) {
         let (spool_rec, origin_data) = match tag_definition_type.as_str() {
+            SNAPMAKER_TAG_TYPE => {
+                if let Ok(tag) = serde_json::from_str::<SnapmakerTag>(&tag_definition_info) {
+                    if let Ok(mut spool) = view_model.borrow().snapmaker_spool_record(&tag) {
+                        spool.added_full = Some(spool_is_full);
+                        (Some(spool), Some(OriginData::SnapmakerTag { snapmaker_tag: tag }))
+                    } else { (None, None) }
+                } else { (None, None) }
+            }
             BAMBULAB_TAG_TYPE => {
                 if let Ok(bambulab_tag) = serde_json::from_str::<BambuLabTag>(&tag_definition_info) {
                     let mut spool_rec = bambulab_tag.to_spool_rec();
@@ -3981,7 +4039,7 @@ impl SpoolTagObserver for ViewModel {
         let ui_app_state = ui_handle.global::<crate::app::AppState>();
         if ui_app_state.get_control_state() == crate::app::ControlState::NewTagScan {
             let page = ui_app_state.get_new_tag_scan_page();
-            if page == crate::app::NewTagScanPage::BambulabSecondTag {
+            if page == crate::app::NewTagScanPage::DefinitionSecondTag {
                 if ui_app_state.get_new_tag_link_in_progress() {
                     if matches!(status, Status::FoundTagNowReading | Status::ReadSuccess(_) | Status::Failure(spool_tag::Failure::TagReadFailure)) {
                         return;
@@ -3999,7 +4057,8 @@ impl SpoolTagObserver for ViewModel {
                             let uid = match result {
                                 spool_tag::ReadResult::TagInStore { uid }
                                 | spool_tag::ReadResult::NDEF { uid, .. }
-                                | spool_tag::ReadResult::BambulabTag { uid, .. } => uid,
+                                | spool_tag::ReadResult::BambulabTag { uid, .. }
+                                | spool_tag::ReadResult::SnapmakerTag { uid, .. } => uid,
                             };
                             let tag_id = hex::encode_upper(uid);
                             let (candidate, message) = if tag_id == ui_app_state.get_new_tag_scan_tag_id().as_str() {
@@ -4014,10 +4073,11 @@ impl SpoolTagObserver for ViewModel {
                                     format!("Tag linked to spool {}. Unlink it first.", spool.id)
                                 };
                                 (String::new(), message)
-                            } else if matches!(result, spool_tag::ReadResult::BambulabTag { data: Some(_), .. }) {
+                            } else if (ui_app_state.get_new_tag_scan_definition_type().as_str() == BAMBULAB_TAG_TYPE && matches!(result, spool_tag::ReadResult::BambulabTag { data: Some(_), .. }))
+                                || (ui_app_state.get_new_tag_scan_definition_type().as_str() == SNAPMAKER_TAG_TYPE && matches!(result, spool_tag::ReadResult::SnapmakerTag { .. })) {
                                 (tag_id, "Tag scanned".to_string())
                             } else {
-                                (String::new(), "Not a Bambu Lab tag".to_string())
+                                (String::new(), format!("Not a {} tag", ui_app_state.get_new_tag_scan_definition_type()))
                             };
                             ui_app_state.invoke_second_tag_scan_result(candidate.into(), message.into());
                             return;
@@ -4150,6 +4210,22 @@ impl SpoolTagObserver for ViewModel {
                             hex_tag.into(),
                             bamtu_tag_str.into(),
                         );
+                    }
+                }
+                spool_tag::ReadResult::SnapmakerTag { uid, data } => {
+                    let hex_tag = hex::encode_upper(uid);
+                    if let Some(spool_rec) = self.store.get_spool_by_hex_tag(&hex_tag) {
+                        self.filament_staging.borrow_mut().set_spool_record(spool_rec, StagingOrigin::Scanned);
+                        self.filament_staging.borrow_mut().set_scanned_tag_id(Some(hex_tag));
+                        self.display_filament_staging(true);
+                        let _ = self.dispatch_async_task(AppAsyncTaskRequest::SetStagingRecExt {});
+                    } else {
+                        let tag = SnapmakerTag::new(&hex_tag, data);
+                        if let Ok(tag_json) = serde_json::to_string(&tag) {
+                            ui.unwrap().global::<crate::app::AppState>().invoke_new_definition_tag_scanned(
+                                SNAPMAKER_TAG_TYPE.into(), hex_tag.into(), tag_json.into(),
+                            );
+                        }
                     }
                 }
             },

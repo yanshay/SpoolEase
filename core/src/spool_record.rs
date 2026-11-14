@@ -5,7 +5,7 @@ use crate::{
         calibration::{KInfo, KNozzleId},
     },
     csvdb::CsvDbId,
-    tag_standards::{BambuLabTag, OpenPrintTagTag},
+    tag_standards::{BambuLabTag, OpenPrintTagTag, SnapmakerTag},
     types::FilamentSupInfo,
 };
 use alloc::{
@@ -121,6 +121,7 @@ where
 pub enum OriginData {
     SpoolEaseV1 { uid: String, url: String },
     BambuLabTag { bambulab_tag: BambuLabTag },
+    SnapmakerTag { snapmaker_tag: SnapmakerTag },
     OpenPrintTagTag { openprinttag_tag: OpenPrintTagTag },
 }
 

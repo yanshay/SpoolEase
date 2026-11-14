@@ -24,6 +24,7 @@ use crate::utils::sha256_hex;
 pub const SPOOLS_CATALOG: &str = include_str!("../data/Spool-Core-Weights.csv");
 pub const BASE_FILAMENTS: &str = include_str!("../data/base-filaments-index.csv");
 pub const BAMBU_COLOR_NAMES: &str = include_str!("../data/bambu-color-names.csv");
+pub const SNAPMAKER_COLOR_NAMES: &str = include_str!("../data/snapmaker-color-names.csv");
 pub const FILAMENT_BRAND_NAMES: &str = include_str!("../data/filament-brands.csv");
 pub const MATERIALS: &str = include_str!("../data/materials.csv");
 const PRINTER_CONFIG_KEY: &str = "_printer_"; // for backwards compatibility

@@ -22,7 +22,9 @@ export component UpdateWeightPage inherits Rectangle {
     in property <string> title;
     in property <string> user-prompt;
     in property <bool> final-step: false;
-    property <UpdateWeightSelect> update-weight-select: weight-current != 0 ? UsedKeepNew : None;
+    in property <bool> use-import-selection: false;
+    in property <bool> import-spool-is-full: false;
+    property <UpdateWeightSelect> update-weight-select: use-import-selection ? (import-spool-is-full ? Unused : UsedKeepNew) : (weight-current != 0 ? UsedKeepNew : None);
     background: white;
     function pressed(operation: UpdateWeightSelect) {
         update-weight-select = operation;

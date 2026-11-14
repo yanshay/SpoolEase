@@ -157,6 +157,12 @@ pub enum ReadResult {
         #[serde_as(as = "Option<hashbrown::HashMap<_, Hex>>")]
         data: Option<HashMap<i32, Vec<u8>>>,
     },
+    SnapmakerTag {
+        #[serde_as(as = "Hex")]
+        uid: Vec<u8>,
+        #[serde_as(as = "HashMap<_, Hex>")]
+        data: HashMap<i32, Vec<u8>>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -190,6 +196,71 @@ impl Uid {
     pub fn uid(&self) -> &[u8] {
         &self.data[..self.len]
     }
+}
+
+async fn refind_same_tag<I>(
+    pn532: &mut pn532::Pn532<I, pn532_ext::Esp32TimerAsync>,
+    expected_uid: &[u8],
+) -> bool
+where
+    I: pn532::Interface,
+{
+    pn532_ext::refind_same_tag(
+        pn532,
+        expected_uid,
+        Duration::from_millis(crate::settings::NFC_MIFARE_REFIND_TIMEOUT_MS),
+    ).await
+}
+
+const MIFARE_IDENTIFICATION_ROUNDS: u8 = 3;
+const MIFARE_PAYLOAD_ATTEMPTS: u8 = 3;
+
+#[derive(Clone, Copy, Debug)]
+enum FilamentTagManufacturer {
+    BambuLab,
+    Snapmaker,
+}
+
+// Once a format has authenticated and started reading data, do not fall back
+// to another format or UID-only handling if its remaining payload fails.
+async fn retry_filament_payload<I>(
+    pn532: &mut pn532::Pn532<I, pn532_ext::Esp32TimerAsync>,
+    uid: &[u8],
+    manufacturer: FilamentTagManufacturer,
+) -> Option<ReadResult>
+where
+    I: pn532::Interface,
+{
+    for attempt in 2..=MIFARE_PAYLOAD_ATTEMPTS {
+        if !refind_same_tag(pn532, uid).await {
+            return None;
+        }
+        debug!("Retrying {manufacturer:?} payload (attempt {attempt}/{MIFARE_PAYLOAD_ATTEMPTS})");
+        let timeout = Duration::from_millis(crate::settings::NFC_MIFARE_PAYLOAD_TIMEOUT_MS);
+        let result = match manufacturer {
+            FilamentTagManufacturer::BambuLab => crate::nfc::read_bambulab_payload(pn532, timeout, uid)
+                .await
+                .map(|data| ReadResult::BambulabTag { uid: uid.to_vec(), data: Some(data) }),
+            FilamentTagManufacturer::Snapmaker => crate::nfc::read_snapmaker_payload(pn532, timeout, uid)
+                .await
+                .map(|data| ReadResult::SnapmakerTag { uid: uid.to_vec(), data }),
+        };
+        match result {
+            Ok(result) => {
+                info!("Scanned {manufacturer:?} tag {:X?} (payload attempt {attempt})", uid);
+                return Some(result);
+            }
+            Err(err @ (nfc::Error::NotBambulabTag | nfc::Error::NotSnapmakerTag | nfc::Error::MifareIncompleteBlock(_) | nfc::Error::MifarePayloadFailure(_))) => {
+                debug!("{manufacturer:?} payload attempt {attempt} failed: {:?}", err);
+            }
+            Err(err) => {
+                error!("Error retrying {manufacturer:?} payload: {:?}", err);
+                return None;
+            }
+        }
+    }
+    warn!("{manufacturer:?} payload read failed after {MIFARE_PAYLOAD_ATTEMPTS} attempts");
+    None
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -622,56 +693,76 @@ async fn nfc_task(
                                     }
                                 }
                             } else if nfc_tag_type == NfcTagType::MifareClassic1K {
-                                // try as Bambulab
-                                match crate::nfc::read_bambulab_payload(
-                                    &mut pn532,
-                                    Duration::from_millis(2000),
-                                    uid.uid(),
-                                )
-                                .await
-                                {
-                                    Ok(bambulab_payload) => {
-                                        info!(
-                                            "Scanned and read a Bambu Lab Spool Tag with UID {:X?}",
-                                            uid.uid()
-                                        );
-                                        fn display_hex_ascii(data: &HashMap<i32, Vec<u8>>) {
-                                            for (block_num, chunk) in data.iter() {
-                                                let mut line = alloc::format!("[{block_num:2}]");
-                                                for &b in chunk {
-                                                    let item = // if b.is_ascii_graphic() || b == b' '
-                                                    // {
-                                                    //     &alloc::format!(" {} ", b as char)
-                                                    // } else {
-                                                        &alloc::format!("{b:02X} ");
-                                                    // };
-                                                    line.push_str(item);
-                                                }
-                                                debug!("{}", line);
+                                for round in 1..=MIFARE_IDENTIFICATION_ROUNDS {
+                                    debug!("MIFARE round {round}/{MIFARE_IDENTIFICATION_ROUNDS}: trying Bambu Lab");
+                                    let bambu = crate::nfc::read_bambulab_payload(
+                                        &mut pn532, Duration::from_millis(crate::settings::NFC_MIFARE_PAYLOAD_TIMEOUT_MS), uid.uid(),
+                                    ).await;
+                                    match bambu {
+                                        Ok(data) => {
+                                            info!("Scanned Bambu Lab tag {:X?} (round {round})", uid.uid());
+                                            if round > 1 {
+                                                debug!("MIFARE identification succeeded in round {round}/{MIFARE_IDENTIFICATION_ROUNDS}");
                                             }
+                                            final_read_result = Some(ReadResult::BambulabTag { uid: uid.uid().to_vec(), data: Some(data) });
+                                            break;
                                         }
-                                        display_hex_ascii(&bambulab_payload);
-                                        final_read_result = Some(ReadResult::BambulabTag {
-                                            uid: uid.uid().to_vec(),
-                                            data: Some(bambulab_payload), // could be None if no NDEF found
-                                        });
+                                        Err(nfc::Error::NotBambulabTag) => {}
+                                        Err(err @ (nfc::Error::MifarePayloadFailure(_) | nfc::Error::MifareIncompleteBlock(_))) => {
+                                            debug!("Bambu Lab payload read failed; retrying: {:?}", err);
+                                            final_read_result = retry_filament_payload(&mut pn532, uid.uid(), FilamentTagManufacturer::BambuLab).await;
+                                            if final_read_result.is_none() {
+                                                spool_tag_rc.borrow().notify_tag_status(Status::Failure(Failure::TagReadFailure));
+                                            }
+                                            break;
+                                        }
+                                        Err(err) => {
+                                            error!("Error reading Bambu Lab tag: {:?}", err);
+                                            spool_tag_rc.borrow().notify_tag_status(Status::Failure(Failure::TagReadFailure));
+                                            break;
+                                        }
                                     }
-                                    Err(err) => match err {
-                                        nfc::Error::NotBambulabTag => {
-                                            // not Bambulab use for now only UID
-                                            // TODO: In the future, handle NDEF on Mifare
-                                            final_read_result = Some(ReadResult::NDEF {
-                                                uid: uid.uid().to_vec(),
-                                                message: None,
-                                            })
+
+                                    if !refind_same_tag(&mut pn532, uid.uid()).await {
+                                        spool_tag_rc.borrow().notify_tag_status(Status::Failure(Failure::TagReadFailure));
+                                        break;
+                                    }
+                                    debug!("MIFARE round {round}/{MIFARE_IDENTIFICATION_ROUNDS}: trying Snapmaker");
+                                    let snapmaker = crate::nfc::read_snapmaker_payload(
+                                        &mut pn532, Duration::from_millis(crate::settings::NFC_MIFARE_PAYLOAD_TIMEOUT_MS), uid.uid(),
+                                    ).await;
+                                    match snapmaker {
+                                        Ok(data) => {
+                                            info!("Scanned Snapmaker tag {:X?} (round {round})", uid.uid());
+                                            if round > 1 {
+                                                debug!("MIFARE identification succeeded in round {round}/{MIFARE_IDENTIFICATION_ROUNDS}");
+                                            }
+                                            final_read_result = Some(ReadResult::SnapmakerTag { uid: uid.uid().to_vec(), data });
+                                            break;
                                         }
-                                        _ => {
-                                            error!("Error reading tag {:?}", err);
-                                            spool_tag_rc.borrow().notify_tag_status(
-                                                Status::Failure(Failure::TagReadFailure),
-                                            );
+                                        Err(nfc::Error::NotSnapmakerTag) => {}
+                                        Err(err @ (nfc::Error::MifarePayloadFailure(_) | nfc::Error::MifareIncompleteBlock(_))) => {
+                                            debug!("Snapmaker payload read failed; retrying: {:?}", err);
+                                            final_read_result = retry_filament_payload(&mut pn532, uid.uid(), FilamentTagManufacturer::Snapmaker).await;
+                                            if final_read_result.is_none() {
+                                                spool_tag_rc.borrow().notify_tag_status(Status::Failure(Failure::TagReadFailure));
+                                            }
+                                            break;
                                         }
-                                    },
+                                        Err(err) => {
+                                            error!("Error reading Snapmaker tag: {:?}", err);
+                                            spool_tag_rc.borrow().notify_tag_status(Status::Failure(Failure::TagReadFailure));
+                                            break;
+                                        }
+                                    }
+
+                                    if round == MIFARE_IDENTIFICATION_ROUNDS {
+                                        debug!("MIFARE identification exhausted after {MIFARE_IDENTIFICATION_ROUNDS} rounds; using tag UID");
+                                        final_read_result = Some(ReadResult::NDEF { uid: uid.uid().to_vec(), message: None });
+                                    } else if !refind_same_tag(&mut pn532, uid.uid()).await {
+                                        spool_tag_rc.borrow().notify_tag_status(Status::Failure(Failure::TagReadFailure));
+                                        break;
+                                    }
                                 }
                             } else if nfc_tag_type == NfcTagType::MifareClassic4K {
                                 // not Bambulab use for now only UID

@@ -87,8 +87,8 @@ component SpoolDefinitionTagScannedPage inherits Rectangle {
             next-clicked => {
                 if add-selection == AddSelection.Yes {
                    // Switch to SpoolDisplay to show the scanned spool information
-                   if AppState.new-tag-scan-definition-type == "Bambu Lab" {
-                        AppState.new-tag-scan-page = NewTagScanPage.BambulabSpoolTypeSelection;
+                   if AppState.is-two-sided-definition() {
+                        AppState.new-tag-scan-page = NewTagScanPage.DefinitionSpoolTypeSelection;
                     } else {
                         AppState.new-tag-scan-page = NewTagScanPage.SpoolDisplay;
                     }
@@ -106,7 +106,7 @@ component SpoolDefinitionTagScannedPage inherits Rectangle {
     }
 }
 
-enum BambulabSpoolTypeSelection {
+enum DefinitionSpoolTypeSelection {
   None,
   LowTemp,
   HighTemp,
@@ -118,14 +118,14 @@ enum NewOrUsedSelection {
   Used,
 }
 
-component BambulabSpoolTypePage inherits Rectangle {
+component DefinitionSpoolTypePage inherits Rectangle {
     // width: 480px;
     // height: 320px;
     background: white;
-    property <BambulabSpoolTypeSelection> spool-selection: None;
+    property <DefinitionSpoolTypeSelection> spool-selection: None;
     property <NewOrUsedSelection> spool-new-or-used: None;
 
-    function pressed(operation: BambulabSpoolTypeSelection) {
+    function pressed(operation: DefinitionSpoolTypeSelection) {
         spool-selection = operation;
     }
 
@@ -152,31 +152,31 @@ component BambulabSpoolTypePage inherits Rectangle {
                 spacing: -1px;
                 lowtemp := MyButton {
                     type: ButtonType.RadioButton;
-                    pushed: spool-selection == BambulabSpoolTypeSelection.LowTemp;
+                    pushed: spool-selection == DefinitionSpoolTypeSelection.LowTemp;
                     height: 40px;
-                    text: "Low Temp (≤ 70°C) / Light Gray (~250g)"; // 208-212 + 38 (if change, change also below)
+                    text: AppState.new-tag-scan-definition-type == "Snapmaker" ? "500g Cardboard Spool (~131g)" : "Low Temp (≤ 70°C) / Light Gray (~250g)";
                 pressed => {
-                        pressed(BambulabSpoolTypeSelection.LowTemp);
+                        pressed(DefinitionSpoolTypeSelection.LowTemp);
                     }
                 }
 
                 hightemp := MyButton {
                     type: ButtonType.RadioButton;
-                    pushed: spool-selection == BambulabSpoolTypeSelection.HighTemp;
+                    pushed: spool-selection == DefinitionSpoolTypeSelection.HighTemp;
                     height: 40px;
-                    text: "High Temp (≤ 90°C) / Dark Gray (~260g)"; // 223 + 38, (if change, change also below)
+                    text: AppState.new-tag-scan-definition-type == "Snapmaker" ? "1kg Cardboard Spool (~148g)" : "High Temp (≤ 90°C) / Dark Gray (~260g)";
                 pressed => {
-                        pressed(BambulabSpoolTypeSelection.HighTemp);
+                        pressed(DefinitionSpoolTypeSelection.HighTemp);
                     }
                 }
 
                 other := MyButton {
                     type: ButtonType.RadioButton;
-                    pushed: spool-selection == BambulabSpoolTypeSelection.Other;
+                    pushed: spool-selection == DefinitionSpoolTypeSelection.Other;
                     height: 40px;
                     text: "Other (Can be entered manually later)";
                     pressed => {
-                        pressed(BambulabSpoolTypeSelection.Other);
+                        pressed(DefinitionSpoolTypeSelection.Other);
                     }
                 }
             }
@@ -210,9 +210,9 @@ component BambulabSpoolTypePage inherits Rectangle {
         }
 
         WizardButtons {
-            next-enabled: spool-selection != BambulabSpoolTypeSelection.None && spool-new-or-used != NewOrUsedSelection.None;
+            next-enabled: spool-selection != DefinitionSpoolTypeSelection.None && spool-new-or-used != NewOrUsedSelection.None;
             next-clicked => {
-                AppState.new-tag-scan-empty-spool-weight = spool-selection == BambulabSpoolTypeSelection.LowTemp ? 250 : spool-selection == BambulabSpoolTypeSelection.HighTemp ? 260 : 0;
+                AppState.new-tag-scan-empty-spool-weight = spool-selection == DefinitionSpoolTypeSelection.LowTemp ? (AppState.new-tag-scan-definition-type == "Snapmaker" ? 131 : 250) : spool-selection == DefinitionSpoolTypeSelection.HighTemp ? (AppState.new-tag-scan-definition-type == "Snapmaker" ? 148 : 260) : 0;
                 AppState.new-tag-scan-spool-is-full = spool-new-or-used == NewOrUsedSelection.Used ? false : true;
                 AppState.new-tag-scan-page = NewTagScanPage.SpoolDisplay;
             }
@@ -295,11 +295,11 @@ component OperationSelectionStep inherits Rectangle {
                 }
 
                 // this should be displayed both for simple tag and definition tag
-                if (AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag && AppState.new-tag-scan-definition-type == "Bambu Lab" && AppState.new-tag-scan-spool-id != "") || AppBackend.recently_added_spool_id_if_untagged() != "": MyButton {
+                if (AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag && AppState.is-two-sided-definition() && AppState.new-tag-scan-spool-id != "") || AppBackend.recently_added_spool_id_if_untagged() != "": MyButton {
                     pushed: AppState.new-tag-operation == NewTagOperation.LinkTagToRecentlyAddedSpool;
                     type: ButtonType.RadioButton;
                     height: 51px;
-                    text: (AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag) ? "Link tag to recently added spool ID: \{AppBackend.recently_added_spool_id_if_untagged()}" : (AppState.new-tag-scan-definition-type == "Bambu Lab" ? "Link tag to the imported spool ID: \{AppState.new-tag-scan-spool-id}" : "Link tag to the imported spool ID: \{AppBackend.recently_added_spool_id_if_untagged()}");
+                    text: (AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag) ? "Link tag to recently added spool ID: \{AppBackend.recently_added_spool_id_if_untagged()}" : (AppState.is-two-sided-definition() ? "Link tag to the imported spool ID: \{AppState.new-tag-scan-spool-id}" : "Link tag to the imported spool ID: \{AppBackend.recently_added_spool_id_if_untagged()}");
                     pressed => {
                         pressed(NewTagOperation.LinkTagToRecentlyAddedSpool);
                     }
@@ -319,17 +319,17 @@ component OperationSelectionStep inherits Rectangle {
                 } else if AppState.new-tag-operation == NewTagOperation.LinkTagToSpoolId || AppState.new-tag-operation == NewTagOperation.LinkAnotherTagToTaggedSpool {
                     AppState.new-tag-scan-page = NewTagScanPage.SpoolSelect;
                 } else {
-                    if AppState.new-tag-scan-tag-type != NewScannedTagType.DefinitionTag || AppState.new-tag-scan-definition-type != "Bambu Lab" {
+                    if AppState.new-tag-scan-tag-type != NewScannedTagType.DefinitionTag || !AppState.is-two-sided-definition() {
                         AppState.new-tag-scan-spool-id = AppBackend.recently_added_spool_id_if_untagged();
                     }
                     if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag {
                         AppState.new-tag-scan-page = NewTagScanPage.SpoolDisplay;
                     } else { // DefinitionTag
                       // skip display since we saw it already
-                        if AppState.new-tag-scan-definition-type == "Bambu Lab" {
+                        if AppState.is-two-sided-definition() {
                             AppState.new-tag-link-in-progress = true;
                         }
-                        AppBackend.link-tag-to-untagged-spool-id(AppState.new-tag-scan-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, AppState.new-tag-scan-definition-type != "Bambu Lab" && !AppState.is-scale-usable-now());
+                        AppBackend.link-tag-to-untagged-spool-id(AppState.new-tag-scan-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, !AppState.is-two-sided-definition() && !AppState.is-scale-usable-now());
                     }
                 }
             }
@@ -341,7 +341,7 @@ component OperationSelectionStep inherits Rectangle {
     }
 }
 
-component BambulabSecondTagPage inherits Rectangle {
+component DefinitionSecondTagPage inherits Rectangle {
     background: white;
     property <int> scan-count: AppState.second-tag-scan-count;
     property <bool> highlighted: false;
@@ -370,7 +370,7 @@ component BambulabSecondTagPage inherits Rectangle {
     }
 
     VerticalLayout {
-        Title { text: "Link Second Bambu Lab Tag"; }
+        Title { text: "Link Second \{AppState.new-tag-scan-definition-type} Tag"; }
         VerticalLayout {
             alignment: start;
             padding: 10px;
@@ -378,7 +378,7 @@ component BambulabSecondTagPage inherits Rectangle {
             MyText {
                 width: parent.width;
                 wrap: word-wrap;
-                text: "Bambu Lab spools have a tag on each side. To link the other tag, place it near the NFC scanner.";
+                text: "\{AppState.new-tag-scan-definition-type} spools have a tag on each side. To link the other tag, place it near the NFC scanner.";
             }
             MyText {
                 width: parent.width;
@@ -408,7 +408,7 @@ component BambulabSecondTagPage inherits Rectangle {
             cancel-enabled: !AppState.new-tag-link-in-progress && !AppState.second-tag-reading;
             next-clicked => {
                 AppState.new-tag-link-in-progress = true;
-                AppBackend.link-tag-to-tagged-spool-id(AppState.second-tag-id, "Bambu Lab", AppState.new-tag-scan-spool-id, false);
+                AppBackend.link-tag-to-tagged-spool-id(AppState.second-tag-id, AppState.new-tag-scan-definition-type, AppState.new-tag-scan-spool-id, false);
             }
             cancel-clicked => { AppState.finish-second-tag-step(); }
         }
@@ -541,8 +541,8 @@ component SpoolDisplayStep inherits Rectangle {
                 if AppState.new-tag-scan-tag-type == NewScannedTagType.SimpleTag {
                     AppState.new-tag-scan-page = NewTagScanPage.SpoolSelect;
                 } else if AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag {
-                    if AppState.new-tag-scan-definition-type == "Bambu Lab" {
-                        AppState.new-tag-scan-page = NewTagScanPage.BambulabSpoolTypeSelection;
+                    if AppState.is-two-sided-definition() {
+                        AppState.new-tag-scan-page = NewTagScanPage.DefinitionSpoolTypeSelection;
                     } else {
                         AppState.new-tag-scan-page = NewTagScanPage.SpoolDefinitionTagScanned;
                     }
@@ -676,6 +676,8 @@ export component NewTagScan inherits Rectangle {
 
     if AppState.new-tag-scan-page == NewTagScanPage.UpdateWeight: update-weight-display := UpdateWeightPage {
         final-step: true;
+        use-import-selection: AppState.new-tag-scan-tag-type == NewScannedTagType.DefinitionTag && AppState.is-two-sided-definition();
+        import-spool-is-full: AppState.new-tag-scan-spool-is-full;
         title: "Linking Tag Succeeded, Measure Weight";
         user-prompt: "Now is a good time to measure spool weight,\nPlease place it on the scale.";
         weight-current: spool-display.spool-record.weight-current;
@@ -695,9 +697,9 @@ export component NewTagScan inherits Rectangle {
 
     if AppState.new-tag-scan-page == NewTagScanPage.SpoolDefinitionTagScanned: spool-definition-tag-scanned := SpoolDefinitionTagScannedPage { }
 
-    if AppState.new-tag-scan-page == NewTagScanPage.BambulabSpoolTypeSelection: bambulab-spool-type-selection := BambulabSpoolTypePage { }
+    if AppState.new-tag-scan-page == NewTagScanPage.DefinitionSpoolTypeSelection: definition-spool-type-selection := DefinitionSpoolTypePage { }
 
     if AppState.new-tag-scan-page == NewTagScanPage.ImportDefinitionNotice: import-definition-notice := ImportDefinitionNoticePage { }
 
-    if AppState.new-tag-scan-page == NewTagScanPage.BambulabSecondTag: second-tag := BambulabSecondTagPage { }
+    if AppState.new-tag-scan-page == NewTagScanPage.DefinitionSecondTag: second-tag := DefinitionSecondTagPage { }
 }

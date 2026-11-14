@@ -574,6 +574,186 @@ fn get_data_to_set<'a>(
     &send_buf[..payload.len() + command.len()]
 }
 
+// Reactivate the tag after an exchange failure without continuing on a
+// different tag. The caller bounds the timeout by its own overall deadline.
+pub async fn refind_same_tag<I>(
+    pn532: &mut pn532::Pn532<I, Esp32TimerAsync>,
+    expected_uid: &[u8],
+    timeout: Duration,
+) -> bool
+where
+    I: pn532::Interface,
+{
+    let mut timed_out = false;
+    let started = Instant::now();
+    let same_tag = match pn532.process(&pn532::Request::INLIST_ONE_ISO_A_TARGET, 17, timeout).await {
+        Ok(response) => {
+            let uid = response.get(5).and_then(|length| response.get(6..6 + usize::from(*length)));
+            if response.first() != Some(&1) || uid != Some(expected_uid) {
+                debug!("MIFARE re-find: changed or missing tag after {} ms", started.elapsed().as_millis());
+                warn!("Tag changed or disappeared while reselecting");
+                false
+            } else {
+                debug!("MIFARE re-find: same tag after {} ms", started.elapsed().as_millis());
+                true
+            }
+        }
+        Err(err) => {
+            debug!("MIFARE re-find: {:?} after {} ms", err, started.elapsed().as_millis());
+            timed_out = matches!(err, pn532::Error::TimeoutAck | pn532::Error::TimeoutResponse);
+            warn!("Failed to reselect tag: {:?}", err);
+            false
+        }
+    };
+    if timed_out {
+        if let Err(err) = pn532.abort().await {
+            warn!("Failed to abort timed-out tag reselection: {:?}", err);
+        }
+    }
+    same_tag
+}
+
+// Copy the small response before handling a timeout, so the reader can be
+// aborted without holding a borrow of its response buffer.
+async fn process_mifare_timed<I, const N: usize>(
+    pn532: &mut pn532::Pn532<I, Esp32TimerAsync>,
+    request: &pn532::Request<N>,
+    response: &mut [u8],
+    timeout: Duration,
+    operation: &str,
+    block: u8,
+) -> Result<usize, Error<I::Error>>
+where
+    I: pn532::Interface,
+{
+    let started = Instant::now();
+    let result = pn532.process(request, response.len(), timeout).await.map(|data| {
+        let len = min(data.len(), response.len());
+        response[..len].copy_from_slice(&data[..len]);
+        len
+    });
+    match result {
+        Ok(0) => {
+            debug!("MIFARE {operation} block {block}: empty response after {} ms", started.elapsed().as_millis());
+            Err(Error::Pn532Error(pn532::Error::BadResponseFrame))
+        }
+        Ok(len) => {
+            debug!("MIFARE {operation} block {block}: status 0x{:02X} after {} ms", response[0], started.elapsed().as_millis());
+            Ok(len)
+        }
+        Err(err) => {
+            debug!("MIFARE {operation} block {block}: {:?} after {} ms", err, started.elapsed().as_millis());
+            if matches!(err, pn532::Error::TimeoutAck | pn532::Error::TimeoutResponse) {
+                if let Err(abort_err) = pn532.abort().await {
+                    warn!("Failed to abort timed-out MIFARE {operation}: {:?}", abort_err);
+                }
+            }
+            Err(err.into())
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum MifareReadError<E: core::fmt::Debug> {
+    Authentication(Error<E>),
+    Data(Error<E>),
+    // Authentication failed after the tag was reselected for a block retry.
+    Recovery(Error<E>),
+    TagChangedOrUnavailable,
+}
+
+// Perform one authenticated block read. A failed exchange is returned to the
+// caller rather than retrying in a potentially invalid card session.
+#[allow(clippy::too_many_arguments)]
+async fn mifare_read_once<I>(
+    pn532: &mut pn532::Pn532<I, Esp32TimerAsync>,
+    uid: &[u8],
+    block_number: u8,
+    currently_authenticated_sector: &mut Option<u8>,
+    key: &[u8; 6],
+    buf: &mut [u8],
+    end_time: Instant,
+    error_on_errnums: &[u8],
+) -> Result<usize, MifareReadError<I::Error>>
+where
+    I: pn532::Interface,
+{
+    let sector = block_number / 4;
+    let need_authenticate = Some(sector) != *currently_authenticated_sector;
+
+    if need_authenticate {
+        let auth_started = Instant::now();
+        let auth_end = min(end_time, auth_started + Duration::from_millis(crate::settings::NFC_MIFARE_AUTH_TIMEOUT_MS));
+        let now = Instant::now();
+        if now >= auth_end {
+            debug!("MIFARE authentication block {block_number}: deadline reached after {} ms", auth_started.elapsed().as_millis());
+            return Err(MifareReadError::Authentication(Error::Pn532Error(pn532::Error::TimeoutResponse)));
+        }
+
+        let mut read_data = [0u8; 7];
+        process_mifare_timed(
+                pn532,
+                &pn532::Request::mifare_classic_authenticate_block(uid, block_number, pn532::requests::MifareAuthKey::A(key)),
+                &mut read_data,
+                auth_end - now,
+                "authentication",
+                block_number,
+        ).await.map_err(MifareReadError::Authentication)?;
+
+        if error_on_errnums.contains(&read_data[0]) {
+            return Err(MifareReadError::Authentication(Error::Pn532ExtError(read_data[0])));
+        }
+
+        match read_data[0] {
+            0 => {
+                debug!("MIFARE authentication block {block_number}: completed in {} ms", auth_started.elapsed().as_millis());
+                *currently_authenticated_sector = Some(sector);
+            }
+            0x14 => {
+                // Expected when probing a MIFARE tag with another manufacturer's key.
+                debug!("Authentication of block {block_number} (relevant sector) rejected after {} ms", auth_started.elapsed().as_millis());
+                return Err(MifareReadError::Authentication(Error::AuthenticationError));
+            }
+            status => {
+                warn!("Error {status} during authentication of block {block_number}");
+                return Err(MifareReadError::Authentication(Error::Pn532ExtError(status)));
+            }
+        }
+    }
+
+    let read_started = Instant::now();
+    let read_end = min(end_time, read_started + Duration::from_millis(crate::settings::NFC_MIFARE_BLOCK_READ_TIMEOUT_MS));
+    let now = Instant::now();
+    if now >= read_end {
+        debug!("MIFARE read block {block_number}: deadline reached after {} ms", read_started.elapsed().as_millis());
+        return Err(MifareReadError::Data(Error::Pn532Error(pn532::Error::TimeoutResponse)));
+    }
+
+    let mut read_data = [0u8; 17];
+    let response_len = process_mifare_timed(
+        pn532,
+        &pn532::Request::mifare_classic_read_data_block(block_number),
+        &mut read_data,
+        read_end - now,
+        "read",
+        block_number,
+    ).await.map_err(MifareReadError::Data)?;
+
+    if read_data[0] != 0x00 {
+        warn!("Error {} during NFC read of block {block_number}", read_data[0]);
+        return Err(MifareReadError::Data(Error::Pn532ExtError(read_data[0])));
+    }
+
+    let n = min(response_len - 1, buf.len());
+    if n != buf.len() {
+        warn!("Incomplete NFC read of block {block_number}: {n} bytes");
+        return Err(MifareReadError::Data(Error::Pn532Error(pn532::Error::BadResponseFrame)));
+    }
+    buf[..n].copy_from_slice(&read_data[1..n + 1]); // skip the status byte
+    debug!("MIFARE read block {block_number}: completed in {} ms", read_started.elapsed().as_millis());
+    Ok(n)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn mifare_read_with_retries<I>(
     pn532: &mut pn532::Pn532<I, Esp32TimerAsync>,
@@ -584,97 +764,63 @@ pub async fn mifare_read_with_retries<I>(
     buf: &mut [u8],
     end_time: Instant,
     error_on_errnums: &[u8],
-) -> Result<usize, Error<I::Error>>
+) -> Result<usize, MifareReadError<I::Error>>
 where
     I: pn532::Interface,
 {
-    let mut last_err;
-
-    let sector = block_number / 4;
-    let need_authenticate = Some(sector) != *currently_authenticated_sector;
-
-    if need_authenticate {
-        loop {
-            if Instant::now() > end_time {
-                error!("Tag read timeout error");
-                return Err(Error::Pn532Error(pn532::Error::TimeoutResponse)); // using the Pn532Error, not sure if good practice
-            }
-
-            let read_data = pn532
-                .process(
-                    &pn532::Request::mifare_classic_authenticate_block(
-                        uid,
-                        block_number,
-                        pn532::requests::MifareAuthKey::A(key),
-                    ),
-                    7,
-                    end_time - Instant::now(),
-                )
-                .await?;
-
-            if error_on_errnums.contains(&read_data[0]) {
-                // not retrying on these errors
-                return Err(Error::Pn532ExtError(read_data[0]));
-            }
-
-            match read_data[0] {
-                0 => {
-                    *currently_authenticated_sector = Some(block_number / 4);
-                    break;
-                }
-                0x14 => {
-                    // not logging since it happens on every non bambu Mifare tag
-                    error!("Authentication of block {block_number} (relevant sector) rejected");
-                    return Err(Error::AuthenticationError);
-                }
-                _ => {
-                    last_err = read_data[0];
-                    warn!(
-                        "Error {} during authentication of block {block_number}, retrying",
-                        last_err
-                    );
-                    continue;
-                }
-            }
-        }
+    // An initial authentication rejection is how the caller identifies a
+    // different manufacturer's tag. Communication errors can still be
+    // recovered by reselecting, even before the first sector authenticates.
+    let previously_authenticated = currently_authenticated_sector.is_some();
+    let first = mifare_read_once(
+        pn532, uid, block_number, currently_authenticated_sector, key, buf, end_time, error_on_errnums,
+    ).await;
+    let err = match first {
+        Ok(bytes) => return Ok(bytes),
+        Err(err) => err,
+    };
+    let recoverable = match &err {
+        MifareReadError::Authentication(Error::Pn532ExtError(code)) if error_on_errnums.contains(code) => false,
+        MifareReadError::Authentication(Error::AuthenticationError) => previously_authenticated,
+        MifareReadError::Authentication(_) => true,
+        MifareReadError::Data(Error::Pn532ExtError(code)) if error_on_errnums.contains(code) => false,
+        MifareReadError::Data(_) => true,
+        _ => false,
+    };
+    let identified_before_retry = previously_authenticated || matches!(&err, MifareReadError::Data(_));
+    *currently_authenticated_sector = None;
+    if !recoverable {
+        return Err(err);
     }
 
-    loop {
-        if Instant::now() > end_time {
-            error!("Tag read timeout error");
-            return Err(Error::Pn532Error(pn532::Error::TimeoutResponse)); // using the Pn532Error, not sure if good practice
+    let now = Instant::now();
+    if now >= end_time {
+        return Err(err);
+    }
+    let timeout = min(end_time - now, Duration::from_millis(crate::settings::NFC_MIFARE_REFIND_TIMEOUT_MS));
+    debug!("MIFARE block {block_number}: reselecting tag for one block-level retry");
+    if !refind_same_tag(pn532, uid, timeout).await {
+        return Err(MifareReadError::TagChangedOrUnavailable);
+    }
+    match mifare_read_once(
+        pn532, uid, block_number, currently_authenticated_sector, key, buf, end_time, error_on_errnums,
+    ).await {
+        Ok(bytes) => {
+            debug!("MIFARE block {block_number}: block-level retry succeeded");
+            Ok(bytes)
         }
-
-        let read_data = pn532
-            .process(
-                &pn532::Request::mifare_classic_read_data_block(block_number),
-                17,
-                end_time - Instant::now(),
-            )
-            .await?;
-
-        if error_on_errnums.contains(&read_data[0]) {
-            // not retrying on these errors
-            return Err(Error::Pn532ExtError(read_data[0]));
+        Err(MifareReadError::Authentication(err)) => {
+            *currently_authenticated_sector = None;
+            if identified_before_retry {
+                Err(MifareReadError::Recovery(err))
+            } else {
+                Err(MifareReadError::Authentication(err))
+            }
         }
-
-        if read_data[0] != 0x00 {
-            // first byte signals if read was ok
-            last_err = read_data[0];
-            warn!(
-                "Error {} during NFC read of block {block_number}, retrying",
-                last_err
-            );
-            continue;
+        Err(err) => {
+            *currently_authenticated_sector = None;
+            Err(err)
         }
-
-        let n = min(read_data.len() - 1, buf.len());
-        buf[..n].copy_from_slice(&read_data[1..n + 1]); // skip the 0 (that represents error or ok) at the beginning
-        if n < buf.len() {
-            buf[n..].fill(0);
-        }
-        // debug!(">>>> [{block_number:2}] read read_data: {buf:X?}");
-        return Ok(n);
     }
 }
 
