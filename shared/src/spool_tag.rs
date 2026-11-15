@@ -213,17 +213,51 @@ pub fn init(
         observers: Vec::new(),
     }));
 
+    // To switch from using IRQ to not using IRQ:
+    //   1. use None::<pn532::spi::NoIRQ> instead of Some(irq)
+    //   2. in sam_configuration set use_irq_pin to false (maybe not required)
+    let interface = pn532::spi::SPIInterface {
+        spi: spi_device,
+        irq: Some(irq), // : None::<Input<'_>>
+                        // irq: None::<pn532::spi::NoIRQ>,
+    };
+
     spawner
         .spawn_heap(nfc_task(
             spool_tag_rc.clone(),
-            spi_device,
-            irq,
+            interface,
             tag_operation,
             freq_after_init,
         ))
         .ok();
 
     spool_tag_rc
+}
+
+// Board specific steps around PN532 init
+#[allow(async_fn_in_trait)]
+pub trait NfcInterface: pn532::Interface {
+    fn set_frequency(&mut self, _khz: u32) {}
+}
+
+impl NfcInterface
+    for pn532::spi::SPIInterface<
+        ExclusiveDevice<
+            esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>,
+            esp_hal::gpio::Output<'static>,
+            embassy_time::Delay,
+        >,
+        esp_hal::gpio::Input<'static>,
+    >
+{
+    fn set_frequency(&mut self, khz: u32) {
+        let config = esp_hal::spi::master::Config::default()
+            .with_frequency(esp_hal::time::Rate::from_khz(khz))
+            .with_mode(esp_hal::spi::Mode::_0)
+            .with_read_bit_order(esp_hal::spi::BitOrder::LsbFirst)
+            .with_write_bit_order(esp_hal::spi::BitOrder::LsbFirst);
+        self.spi.bus_mut().apply_config(&config).unwrap();
+    }
 }
 
 pub fn init_disabled() -> Rc<RefCell<SpoolTag>> {
@@ -241,14 +275,9 @@ pub fn init_disabled() -> Rc<RefCell<SpoolTag>> {
 // Had to specify the I2C1 because can't have generic tasks in embassy, maybe there's some workaround in the following link
 //https://github.com/embassy-rs/embassy/issues/1837
 // #[embassy_executor::task]
-async fn nfc_task(
+async fn nfc_task<I: NfcInterface>(
     spool_tag_rc: Rc<RefCell<SpoolTag>>,
-    spi_device: ExclusiveDevice<
-        esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>,
-        esp_hal::gpio::Output<'static>,
-        embassy_time::Delay,
-    >,
-    irq: esp_hal::gpio::Input<'static>,
+    interface: I,
     tag_operation: &'static embassy_sync::signal::Signal<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         TagOperation,
@@ -256,15 +285,6 @@ async fn nfc_task(
     freq_after_init: u32,
 ) {
     Timer::after_millis(1000).await;
-
-    // To switch from using IRQ to not using IRQ:
-    //   1. use None::<pn532::spi::NoIRQ> instead of Some(irq)
-    //   2. in sam_configuration set use_irq_pin to false (maybe not required)
-    let interface = pn532::spi::SPIInterface {
-        spi: spi_device,
-        irq: Some(irq), // : None::<Input<'_>>
-                        // irq: None::<pn532::spi::NoIRQ>,
-    };
 
     let timer = crate::pn532_ext::Esp32TimerAsync::new();
 
@@ -312,17 +332,7 @@ async fn nfc_task(
     }
 
     // Change frequency to after init frequency
-    let post_init_config = esp_hal::spi::master::Config::default()
-        .with_frequency(esp_hal::time::Rate::from_khz(freq_after_init))
-        .with_mode(esp_hal::spi::Mode::_0)
-        .with_read_bit_order(esp_hal::spi::BitOrder::LsbFirst)
-        .with_write_bit_order(esp_hal::spi::BitOrder::LsbFirst);
-    pn532
-        .interface
-        .spi
-        .bus_mut()
-        .apply_config(&post_init_config)
-        .unwrap();
+    pn532.interface.set_frequency(freq_after_init);
     Timer::after_millis(500).await;
 
     if !initialization_succeeded {
