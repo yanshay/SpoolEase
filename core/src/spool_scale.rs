@@ -21,6 +21,7 @@ use embassy_futures::select::select3;
 use embassy_net::Stack;
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, channel::Channel};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
+use embedded_hal_async::i2c::I2c;
 use embedded_io_async::Write;
 use esp_hal::gpio::AnyPin;
 use framework::{debug, error, framework_web_app::encrypt, info, mk_static, prelude::*, term_error, term_info, utils::random_u32, warn};
@@ -33,8 +34,10 @@ use shared::scale::{ConsoleToScale, OtaProgressUpdate, ScaleToConsole};
 // use shared::gcode_analysis_task::{FilamentUsage, GcodeAnalysisNotification, GcodeAnalysisRequest};
 
 use crate::{
+    app::LocalScaleHardware,
     app_config::{AppConfig, ScaleSourceConfig},
     hx711_gpio::Hx711Gpio,
+    nau7802::Nau7802,
     settings::SPOOL_SCALE_WS_CLIENT_BUFFER_BYTES,
     ssdp::SSDPPubSubChannel,
 };
@@ -758,8 +761,7 @@ pub fn init(
     stack: Stack<'static>,
     spawner: Spawner,
     ssdp_pub_sub: &'static SSDPPubSubChannel,
-    local_hx711_sck: Option<AnyPin<'static>>,
-    local_hx711_dt: Option<AnyPin<'static>>,
+    local_scale_hw: Option<LocalScaleHardware>,
 ) -> Rc<RefCell<SpoolScale>> {
     let console_to_scale = mk_static!(ConsoleToScaleChannel, ConsoleToScaleChannel::new());
     let remote_available = app_config.borrow().remote_scale_available();
@@ -783,7 +785,7 @@ pub fn init(
     if local_available && local_calibration.is_none() {
         local.state = ScaleUiState::Uncalibrated;
     }
-    if local_available && (local_hx711_sck.is_none() || local_hx711_dt.is_none()) {
+    if local_available && local_scale_hw.is_none() {
         local.state = ScaleUiState::Disconnected;
     }
 
@@ -813,10 +815,15 @@ pub fn init(
             .ok();
     }
 
-    if let (Some(load_cell), Some(sck), Some(dt)) = (local_load_cell, local_hx711_sck, local_hx711_dt) {
-        spawner
-            .spawn_heap(local_hx711_sample_task(spool_scale_rc.clone(), load_cell.clone(), sck, dt))
-            .ok();
+    if let (Some(load_cell), Some(local_scale_hw)) = (local_load_cell, local_scale_hw) {
+        match local_scale_hw {
+            LocalScaleHardware::Hx711 { sck, dt } => spawner
+                .spawn_heap(local_hx711_sample_task(spool_scale_rc.clone(), load_cell.clone(), sck, dt))
+                .ok(),
+            LocalScaleHardware::Nau7802(i2c) => spawner
+                .spawn_heap(local_nau7802_sample_task(spool_scale_rc.clone(), load_cell.clone(), i2c))
+                .ok(),
+        };
         spawner.spawn_heap(local_scale_monitor_task(spool_scale_rc.clone(), load_cell)).ok();
     }
 
@@ -868,6 +875,52 @@ pub async fn local_hx711_sample_task(
             Timer::after(duration_between_samples).await;
         } else {
             Timer::after_millis(5).await;
+        }
+    }
+}
+
+pub async fn local_nau7802_sample_task<I: I2c>(spool_scale_rc: Rc<RefCell<SpoolScale>>, load_cell: Rc<RefCell<LoadCellCore>>, i2c: I) {
+    info!("Task local_nau7802_sample_task started");
+    let mut nau7802 = Nau7802::new(i2c);
+    loop {
+        match nau7802.init().await {
+            Ok(revision) => {
+                info!("NAU7802 initialized, revision {revision}");
+                break;
+            }
+            Err(e) => {
+                term_error!("Failed to initialize load cell ADC (NAU7802): {:?}", e);
+                Timer::after_secs(5).await;
+            }
+        }
+    }
+
+    if spool_scale_rc.borrow().local.state == ScaleUiState::Uncalibrated {
+        spool_scale_rc.borrow_mut().set_source_uncalibrated(ScaleSource::Local);
+    } else {
+        spool_scale_rc.borrow_mut().set_source_connected(ScaleSource::Local);
+    }
+
+    let duration_between_samples = Duration::from_millis(100);
+    let mut last_sample = Instant::now();
+    loop {
+        match nau7802.read_if_ready().await {
+            Ok(Some(v)) => {
+                last_sample = Instant::now();
+                load_cell.borrow_mut().add_sample(v);
+                Timer::after(duration_between_samples).await;
+            }
+            Ok(None) => Timer::after_millis(10).await,
+            Err(_) => Timer::after(duration_between_samples).await,
+        }
+        // Lost samples (e.g. chip brown out), re-init
+        if last_sample.elapsed() > Duration::from_secs(3) {
+            error!("NAU7802 stopped sampling, re-initializing");
+            if let Err(e) = nau7802.init().await {
+                error!("NAU7802 re-init failed: {e:?}");
+                Timer::after_secs(5).await;
+            }
+            last_sample = Instant::now();
         }
     }
 }

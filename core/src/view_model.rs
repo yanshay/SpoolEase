@@ -14,9 +14,7 @@ use embassy_net::Stack;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Timer, with_timeout};
-use embedded_hal_bus::spi::ExclusiveDevice;
 use embedded_sdmmc::asynchronous::LfnBuffer;
-use esp_hal::gpio::AnyPin;
 use hashbrown::HashMap;
 use ndef_rs::NdefMessage;
 use serde::{Deserialize, Serialize};
@@ -450,12 +448,8 @@ impl ViewModel {
         framework: Rc<RefCell<Framework>>,
         // Application
         app_config: Rc<RefCell<AppConfig>>,
-        spi_device: Option<
-            ExclusiveDevice<esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>, esp_hal::gpio::Output<'static>, embassy_time::Delay>,
-        >,
-        irq: Option<esp_hal::gpio::Input<'static>>,
-        local_hx711_sck: Option<AnyPin<'static>>,
-        local_hx711_dt: Option<AnyPin<'static>>,
+        nfc_hw: Option<crate::app::NfcHardware>,
+        local_scale_hw: Option<crate::app::LocalScaleHardware>,
     ) -> Rc<RefCell<ViewModel>> {
         let spawner = framework.borrow().spawner;
         // Setup Terminal
@@ -470,10 +464,10 @@ impl ViewModel {
         let printer_manager = RefCell::new(PrinterManager::new());
 
         // Initialize SpoolTag
-        let spool_tag_model = if let (Some(spi_device), Some(irq)) = (spi_device, irq) {
-            spool_tag::init(spi_device, irq, 1000, spawner)
-        } else {
-            spool_tag::init_disabled()
+        let spool_tag_model = match nfc_hw {
+            Some(crate::app::NfcHardware::Spi { device, irq }) => spool_tag::init(device, irq, 1000, spawner),
+            Some(crate::app::NfcHardware::I2c { device, reset }) => spool_tag::init_i2c(device, reset, spawner),
+            None => spool_tag::init_disabled(),
         };
 
         // Initialize ssdp
@@ -484,15 +478,7 @@ impl ViewModel {
         let store = Store::new(framework.clone());
 
         // Initialize spool_scale_model
-        let spool_scale_model = crate::spool_scale::init(
-            framework.clone(),
-            app_config.clone(),
-            stack,
-            spawner,
-            ssdp_pub_sub,
-            local_hx711_sck,
-            local_hx711_dt,
-        );
+        let spool_scale_model = crate::spool_scale::init(framework.clone(), app_config.clone(), stack, spawner, ssdp_pub_sub, local_scale_hw);
 
         let app_async_tasks_channel = Rc::new(AppAsyncTasksChannel::new());
 

@@ -12,6 +12,7 @@ pub mod load_cell;
 pub mod my_ftp;
 pub mod nfc;
 pub mod pn532_ext;
+pub mod pn532_i2c;
 pub mod settings;
 pub mod spool_tag;
 pub mod threemf_extractor;

@@ -23,6 +23,7 @@ mod csvdb;
 mod filament_staging;
 mod hx711_gpio;
 mod my_mqtt;
+mod nau7802;
 mod printer;
 mod settings;
 mod slicer_ws;
@@ -115,7 +116,8 @@ async fn main(spawner: Spawner) {
         ..Default::default()
     };
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max()).with_psram(psram_config);
-    let peripherals = esp_hal::init(config);
+    #[allow(unused_mut)]
+    let mut peripherals = esp_hal::init(config);
 
     #[allow(static_mut_refs)]
     unsafe {
@@ -464,8 +466,68 @@ async fn main(spawner: Spawner) {
 
     // PN532
 
+    // Detect all-in-one wiring (PN532 in I2C mode + NAU7802 sharing I2C on SDA=GPIO10 SCL=GPIO11, PN532 reset=GPIO14)
     #[cfg(feature = "wt32-sc01-plus")]
-    let (pn532_spi_device, pn532_irq) = {
+    let (i2c_wiring, nau7802_found) = {
+        // A device locked up across a reset holds the bus low, on SPI wiring these pins are PN532 inputs and stay high
+        let bus_held = {
+            let sda = Input::new(peripherals.GPIO10.reborrow(), InputConfig::default().with_pull(Pull::Up));
+            let scl = Input::new(peripherals.GPIO11.reborrow(), InputConfig::default().with_pull(Pull::Up));
+            esp_hal::delay::Delay::new().delay_micros(20);
+            sda.is_low() || scl.is_low()
+        };
+        let mut probe = esp_hal::i2c::master::I2c::new(peripherals.I2C1.reborrow(), i2c_config())
+            .unwrap()
+            .with_sda(peripherals.GPIO10.reborrow())
+            .with_scl(peripherals.GPIO11.reborrow());
+        let mut found = bus_held;
+        let mut nau7802_found = false;
+        for _ in 0..10 {
+            // PN532 may still be booting or hold the bus
+            nau7802_found = probe.read(nau7802::NAU7802_I2C_ADDRESS, &mut [0]).is_ok();
+            found = found || nau7802_found || probe.read(shared::pn532_i2c::PN532_I2C_ADDRESS, &mut [0]).is_ok();
+            if nau7802_found {
+                break;
+            }
+            Timer::after_millis(30).await;
+        }
+        (found, nau7802_found)
+    };
+
+    #[cfg(feature = "wt32-sc01-plus")]
+    let (nfc_hw, local_scale_hw) = if i2c_wiring {
+        use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
+        use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex};
+
+        term_info!("Detected all-in-one (I2C) Tag Reader wiring");
+        if nau7802_found {
+            term_info!("Detected load cell ADC (NAU7802)");
+            app_config.borrow_mut().local_scale_detected = true;
+        }
+
+        let i2c = esp_hal::i2c::master::I2c::new(peripherals.I2C1, i2c_config())
+            .unwrap()
+            .with_sda(peripherals.GPIO10)
+            .with_scl(peripherals.GPIO11)
+            .into_async();
+        let i2c_bus = mk_static!(Mutex<NoopRawMutex, esp_hal::i2c::master::I2c<'static, esp_hal::Async>>, Mutex::new(i2c));
+        let pn532_reset = Output::new(
+            peripherals.GPIO14,
+            Level::High,
+            OutputConfig::default().with_drive_mode(esp_hal::gpio::DriveMode::OpenDrain),
+        );
+
+        let nfc_hw = crate::app::NfcHardware::I2c {
+            device: I2cDevice::new(i2c_bus),
+            reset: pn532_reset,
+        };
+        let local_scale_hw = if app_config.borrow().local_scale_available() {
+            Some(crate::app::LocalScaleHardware::Nau7802(I2cDevice::new(i2c_bus)))
+        } else {
+            None
+        };
+        (Some(nfc_hw), local_scale_hw)
+    } else {
         let (rx_buffer, rx_descriptors, tx_buffer, tx_descriptors) = dma_buffers!(64);
         let spi_dma_rx_buf = esp_hal::dma::DmaRxBuf::new(rx_descriptors, rx_buffer).unwrap();
         let spi_dma_tx_buf = DmaTxBuf::new(tx_descriptors, tx_buffer).unwrap();
@@ -495,32 +557,38 @@ async fn main(spawner: Spawner) {
         .into_async();
 
         let pn532_spi_device = embedded_hal_bus::spi::ExclusiveDevice::new(spi, cs, embassy_time::Delay).unwrap();
-        (Some(pn532_spi_device), Some(pn532_irq))
+        let nfc_hw = crate::app::NfcHardware::Spi {
+            device: pn532_spi_device,
+            irq: pn532_irq,
+        };
+        let local_scale_hw = if app_config.borrow().local_scale_available() {
+            Some(crate::app::LocalScaleHardware::Hx711 {
+                sck: peripherals.GPIO43.into(),
+                dt: peripherals.GPIO44.into(),
+            })
+        } else {
+            None
+        };
+        (Some(nfc_hw), local_scale_hw)
     };
 
     #[cfg(feature = "jc8048w550c")]
-    let (pn532_spi_device, pn532_irq) = (None, None);
-
-    let (local_hx711_sck, local_hx711_dt): (Option<esp_hal::gpio::AnyPin<'static>>, Option<esp_hal::gpio::AnyPin<'static>>) =
-        if app_config.borrow().local_scale_available() {
-            (Some(peripherals.GPIO43.into()), Some(peripherals.GPIO44.into()))
-        } else {
-            (None, None)
-        };
+    let (nfc_hw, local_scale_hw) = if app_config.borrow().local_scale_available() {
+        (
+            None,
+            Some(crate::app::LocalScaleHardware::Hx711 {
+                sck: peripherals.GPIO43.into(),
+                dt: peripherals.GPIO44.into(),
+            }),
+        )
+    } else {
+        (None, None)
+    };
 
     // == Configure App ===============================================================
     // This initializes all the applicative stuff, and is provided with all the required hw access
 
-    let view_model = crate::app::init_app(
-        sta_stack,
-        ui.as_weak(),
-        framework.clone(),
-        app_config.clone(),
-        pn532_spi_device,
-        pn532_irq,
-        local_hx711_sck,
-        local_hx711_dt,
-    );
+    let view_model = crate::app::init_app(sta_stack, ui.as_weak(), framework.clone(), app_config.clone(), nfc_hw, local_scale_hw);
 
     // == Setup Web Application and Run Web Server ====================================
 
@@ -675,4 +743,11 @@ pub async fn heap_stats_task() {
         debug!("{}", stats);
         Timer::after_secs(30).await;
     }
+}
+
+#[cfg(feature = "wt32-sc01-plus")]
+fn i2c_config() -> esp_hal::i2c::master::Config {
+    esp_hal::i2c::master::Config::default()
+        .with_frequency(Rate::from_khz(400))
+        .with_timeout(esp_hal::i2c::master::BusTimeout::BusCycles(4000)) // ~10 ms, PN532 stretches SCL
 }

@@ -560,6 +560,8 @@ pub struct AppConfig {
     pub configured_default_printer: DefaultPrinterConfig,
     pub configured_scale: Option<ScaleConfig>,
     pub configured_local_scale_calibration: Option<LoadCellCalibrationConfig>,
+    // NAU7802 found on the I2C bus at boot
+    pub local_scale_detected: bool,
     pub scale_encryption_key: &'static RefCell<Vec<u8>>,
 
     config_processed_ok: Option<bool>,
@@ -629,6 +631,7 @@ impl AppConfig {
             configured_default_printer: DefaultPrinterConfig { printer_id: None },
             configured_scale: None,
             configured_local_scale_calibration: None,
+            local_scale_detected: false,
             scale_encryption_key: crate::mk_static!(RefCell<Vec<u8>>, RefCell::new(alloc::vec![])),
 
             config_processed_ok: None,
@@ -864,9 +867,10 @@ impl AppConfig {
     }
 
     pub fn set_scale_config(&mut self, mut scale_config: ScaleConfig) -> Result<(), sequential_storage::Error<esp_storage::FlashStorageError>> {
-        scale_config.preferred_scale_source = if scale_config.local_scale_available && scale_config.available {
+        let local_available = scale_config.local_scale_available || self.local_scale_detected;
+        scale_config.preferred_scale_source = if local_available && scale_config.available {
             scale_config.preferred_scale_source
-        } else if scale_config.local_scale_available {
+        } else if local_available {
             ScaleSourceConfig::Local
         } else if scale_config.available {
             ScaleSourceConfig::Remote
@@ -874,7 +878,7 @@ impl AppConfig {
             ScaleSourceConfig::Local
         };
 
-        if !scale_config.local_scale_available {
+        if !local_available {
             self.clear_local_scale_calibration_config()?;
         }
 
@@ -1386,10 +1390,12 @@ impl AppConfig {
     }
 
     pub fn local_scale_available(&self) -> bool {
-        self.configured_scale
-            .as_ref()
-            .map(|scale_config| scale_config.local_scale_available)
-            .unwrap_or(false)
+        self.local_scale_detected
+            || self
+                .configured_scale
+                .as_ref()
+                .map(|scale_config| scale_config.local_scale_available)
+                .unwrap_or(false)
     }
 
     pub fn show_scale_source_selection(&self) -> bool {

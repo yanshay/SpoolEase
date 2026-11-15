@@ -234,6 +234,30 @@ pub fn init(
     spool_tag_rc
 }
 
+pub fn init_i2c<I2C: embedded_hal_async::i2c::I2c + 'static>(
+    i2c: I2C,
+    reset: esp_hal::gpio::Output<'static>,
+    spawner: Spawner,
+) -> Rc<RefCell<SpoolTag>> {
+    let tag_operation = mk_static!(
+        embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, TagOperation>,
+        embassy_sync::signal::Signal::<embassy_sync::blocking_mutex::raw::NoopRawMutex, TagOperation>::new()
+    );
+
+    let spool_tag_rc = Rc::new(RefCell::new(SpoolTag {
+        tag_operation,
+        observers: Vec::new(),
+    }));
+
+    let interface = crate::pn532_i2c::Pn532I2cInterface::new(i2c, reset);
+
+    spawner
+        .spawn_heap(nfc_task(spool_tag_rc.clone(), interface, tag_operation, 0))
+        .ok();
+
+    spool_tag_rc
+}
+
 // Board specific steps around PN532 init
 #[allow(async_fn_in_trait)]
 pub trait NfcInterface: pn532::Interface {
@@ -261,6 +285,13 @@ impl NfcInterface
             .with_read_bit_order(esp_hal::spi::BitOrder::LsbFirst)
             .with_write_bit_order(esp_hal::spi::BitOrder::LsbFirst);
         self.spi.bus_mut().apply_config(&config).unwrap();
+    }
+}
+
+impl<I2C: embedded_hal_async::i2c::I2c> NfcInterface for crate::pn532_i2c::Pn532I2cInterface<I2C> {
+    async fn hard_reset(&mut self) -> bool {
+        crate::pn532_i2c::Pn532I2cInterface::hard_reset(self).await;
+        true
     }
 }
 
@@ -491,6 +522,7 @@ async fn nfc_task<I: NfcInterface>(
                                 power_up_ok = true;
                                 break;
                             }
+                            Timer::after_millis(10).await; // I2C fails fast
                         }
                         if !power_up_ok {
                             error!("Failed to power on PN532 after emulating tag");
