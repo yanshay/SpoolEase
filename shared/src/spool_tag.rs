@@ -213,17 +213,137 @@ pub fn init(
         observers: Vec::new(),
     }));
 
+    // To switch from using IRQ to not using IRQ:
+    //   1. use None::<pn532::spi::NoIRQ> instead of Some(irq)
+    //   2. in sam_configuration set use_irq_pin to false (maybe not required)
+    let interface = pn532::spi::SPIInterface {
+        spi: spi_device,
+        irq: Some(irq), // : None::<Input<'_>>
+                        // irq: None::<pn532::spi::NoIRQ>,
+    };
+
     spawner
         .spawn_heap(nfc_task(
             spool_tag_rc.clone(),
-            spi_device,
-            irq,
+            interface,
             tag_operation,
             freq_after_init,
         ))
         .ok();
 
     spool_tag_rc
+}
+
+pub fn init_i2c<I2C: embedded_hal_async::i2c::I2c + 'static>(
+    i2c: I2C,
+    reset: esp_hal::gpio::Output<'static>,
+    spawner: Spawner,
+) -> Rc<RefCell<SpoolTag>> {
+    let tag_operation = mk_static!(
+        embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, TagOperation>,
+        embassy_sync::signal::Signal::<embassy_sync::blocking_mutex::raw::NoopRawMutex, TagOperation>::new()
+    );
+
+    let spool_tag_rc = Rc::new(RefCell::new(SpoolTag {
+        tag_operation,
+        observers: Vec::new(),
+    }));
+
+    let interface = crate::pn532_i2c::Pn532I2cInterface::new(i2c, reset);
+
+    spawner
+        .spawn_heap(nfc_task(spool_tag_rc.clone(), interface, tag_operation, 0))
+        .ok();
+
+    spool_tag_rc
+}
+
+// Board specific steps around PN532 init
+#[allow(async_fn_in_trait)]
+pub trait NfcInterface: pn532::Interface {
+    // Returns false if there's no reset line
+    async fn hard_reset(&mut self) -> bool {
+        false
+    }
+    fn set_frequency(&mut self, _khz: u32) {}
+}
+
+impl NfcInterface
+    for pn532::spi::SPIInterface<
+        ExclusiveDevice<
+            esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>,
+            esp_hal::gpio::Output<'static>,
+            embassy_time::Delay,
+        >,
+        esp_hal::gpio::Input<'static>,
+    >
+{
+    fn set_frequency(&mut self, khz: u32) {
+        let config = esp_hal::spi::master::Config::default()
+            .with_frequency(esp_hal::time::Rate::from_khz(khz))
+            .with_mode(esp_hal::spi::Mode::_0)
+            .with_read_bit_order(esp_hal::spi::BitOrder::LsbFirst)
+            .with_write_bit_order(esp_hal::spi::BitOrder::LsbFirst);
+        self.spi.bus_mut().apply_config(&config).unwrap();
+    }
+}
+
+impl<I2C: embedded_hal_async::i2c::I2c> NfcInterface for crate::pn532_i2c::Pn532I2cInterface<I2C> {
+    async fn hard_reset(&mut self) -> bool {
+        crate::pn532_i2c::Pn532I2cInterface::hard_reset(self).await;
+        true
+    }
+}
+
+// A cancelled or timed out command keeps running in the PN532 until aborted
+async fn abort_command<I: NfcInterface>(
+    pn532: &mut pn532::Pn532<I, crate::pn532_ext::Esp32TimerAsync, 64>,
+) {
+    let _ = pn532.abort().await;
+    Timer::after_millis(10).await;
+}
+
+// A reset of the ESP only can leave a response pending or a command running in the PN532
+async fn flush_reader<I: NfcInterface>(
+    pn532: &mut pn532::Pn532<I, crate::pn532_ext::Esp32TimerAsync, 64>,
+) {
+    if let Ok(Ok(())) = embassy_time::with_timeout(Duration::from_millis(20), pn532.interface.wait_ready()).await {
+        let _ = pn532.interface.read(&mut [0u8; 64]).await;
+    }
+    abort_command(pn532).await;
+}
+
+async fn configure_reader<I: NfcInterface>(
+    pn532: &mut pn532::Pn532<I, crate::pn532_ext::Esp32TimerAsync, 64>,
+) -> bool {
+    let _ = pn532.wake_up().await;
+    Timer::after_millis(50).await;
+    let sam = pn532::Request::sam_configuration(pn532::requests::SAMMode::Normal, true);
+    pn532.process(&sam, 0, Duration::from_millis(50)).await.is_ok()
+}
+
+// Recover a reader that stopped responding, hard reset only as a last resort since the reset line may not be wired
+async fn recover_reader<I: NfcInterface>(
+    pn532: &mut pn532::Pn532<I, crate::pn532_ext::Esp32TimerAsync, 64>,
+) -> bool {
+    for _ in 0..3 {
+        flush_reader(pn532).await;
+        if configure_reader(pn532).await {
+            return true;
+        }
+        Timer::after_millis(100).await;
+    }
+    for _ in 0..5 {
+        if !pn532.interface.hard_reset().await {
+            return false;
+        }
+        warn!("Tag Reader still not responding, hard resetting it");
+        Timer::after_millis(150).await;
+        if configure_reader(pn532).await {
+            return true;
+        }
+    }
+    false
 }
 
 pub fn init_disabled() -> Rc<RefCell<SpoolTag>> {
@@ -241,14 +361,9 @@ pub fn init_disabled() -> Rc<RefCell<SpoolTag>> {
 // Had to specify the I2C1 because can't have generic tasks in embassy, maybe there's some workaround in the following link
 //https://github.com/embassy-rs/embassy/issues/1837
 // #[embassy_executor::task]
-async fn nfc_task(
+async fn nfc_task<I: NfcInterface>(
     spool_tag_rc: Rc<RefCell<SpoolTag>>,
-    spi_device: ExclusiveDevice<
-        esp_hal::spi::master::SpiDmaBus<'static, esp_hal::Async>,
-        esp_hal::gpio::Output<'static>,
-        embassy_time::Delay,
-    >,
-    irq: esp_hal::gpio::Input<'static>,
+    interface: I,
     tag_operation: &'static embassy_sync::signal::Signal<
         embassy_sync::blocking_mutex::raw::NoopRawMutex,
         TagOperation,
@@ -257,21 +372,13 @@ async fn nfc_task(
 ) {
     Timer::after_millis(1000).await;
 
-    // To switch from using IRQ to not using IRQ:
-    //   1. use None::<pn532::spi::NoIRQ> instead of Some(irq)
-    //   2. in sam_configuration set use_irq_pin to false (maybe not required)
-    let interface = pn532::spi::SPIInterface {
-        spi: spi_device,
-        irq: Some(irq), // : None::<Input<'_>>
-                        // irq: None::<pn532::spi::NoIRQ>,
-    };
-
     let timer = crate::pn532_ext::Esp32TimerAsync::new();
 
     let mut pn532: pn532::Pn532<_, _, 64> = pn532::Pn532::new(interface, timer);
     // pn532.wake_up().await.unwrap();
 
     term_info!("Initializing Tag Reader");
+    flush_reader(&mut pn532).await;
 
     let mut initialization_succeeded = false;
     let mut successful_retry = 0;
@@ -279,6 +386,10 @@ async fn nfc_task(
     for retry in 0..=retries {
         if retry % 10 == 0 && retry != 0 {
             term_error!("Still Initializing PN532 ({})", retry);
+        }
+        // Reset is a last resort, the reset line may not be wired
+        if retry % 10 == 9 {
+            pn532.interface.hard_reset().await;
         }
         // if retry %2 == 0 {
         Timer::after(Duration::from_millis(50)).await;
@@ -312,17 +423,7 @@ async fn nfc_task(
     }
 
     // Change frequency to after init frequency
-    let post_init_config = esp_hal::spi::master::Config::default()
-        .with_frequency(esp_hal::time::Rate::from_khz(freq_after_init))
-        .with_mode(esp_hal::spi::Mode::_0)
-        .with_read_bit_order(esp_hal::spi::BitOrder::LsbFirst)
-        .with_write_bit_order(esp_hal::spi::BitOrder::LsbFirst);
-    pn532
-        .interface
-        .spi
-        .bus_mut()
-        .apply_config(&post_init_config)
-        .unwrap();
+    pn532.interface.set_frequency(freq_after_init);
     Timer::after_millis(500).await;
 
     if !initialization_succeeded {
@@ -333,14 +434,25 @@ async fn nfc_task(
         spool_tag_rc.borrow().notify_pn532_status(true);
     }
 
-    match pn532
+    let mut fw_res = pn532
         .process(
             &pn532::Request::GET_FIRMWARE_VERSION,
             4,
             embassy_time::Duration::from_millis(200),
         )
         .await
-    {
+        .map(|fw| fw.to_vec());
+    if fw_res.is_err() && recover_reader(&mut pn532).await {
+        fw_res = pn532
+            .process(
+                &pn532::Request::GET_FIRMWARE_VERSION,
+                4,
+                embassy_time::Duration::from_millis(200),
+            )
+            .await
+            .map(|fw| fw.to_vec());
+    }
+    match fw_res {
         Ok(fw) => {
             trace!("PN532 Firmware Version response: {:?}", fw);
             term_info!(
@@ -410,6 +522,7 @@ async fn nfc_task(
                                 power_up_ok = true;
                                 break;
                             }
+                            Timer::after_millis(10).await; // I2C fails fast
                         }
                         if !power_up_ok {
                             error!("Failed to power on PN532 after emulating tag");
@@ -451,6 +564,7 @@ async fn nfc_task(
             let tag_res = match res {
                 Either::First(new_tag_operation) => {
                     debug!("Received request for operation {new_tag_operation:?} from now on");
+                    abort_command(&mut pn532).await;
                     curr_operation_with_tag = Some(new_tag_operation.clone());
                     in_switch_operation = true;
                     // previous_operation_tag_last_seen_time = last_seen_tag_time;
@@ -570,6 +684,7 @@ async fn nfc_task(
                                 }
                                 Err(e) => {
                                     error!("Error writing to tag {:?}", e);
+                                    abort_command(&mut pn532).await;
                                     spool_tag_rc.borrow().notify_tag_status(Status::Failure(
                                         Failure::TagWriteFailure(
                                             "Error Writing to Tag\nTry Again".to_string(),
@@ -616,6 +731,7 @@ async fn nfc_task(
                                     }
                                     Err(e) => {
                                         error!("Error reading tag {:?}", e);
+                                        abort_command(&mut pn532).await;
                                         spool_tag_rc.borrow().notify_tag_status(Status::Failure(
                                             Failure::TagReadFailure,
                                         ));
@@ -667,6 +783,7 @@ async fn nfc_task(
                                         }
                                         _ => {
                                             error!("Error reading tag {:?}", err);
+                                            abort_command(&mut pn532).await;
                                             spool_tag_rc.borrow().notify_tag_status(
                                                 Status::Failure(Failure::TagReadFailure),
                                             );
@@ -730,6 +847,7 @@ async fn nfc_task(
                                 }
                                 Err(e) => {
                                     error!("Error erasing to tag {:?}", e);
+                                    abort_command(&mut pn532).await;
                                     spool_tag_rc.borrow().notify_tag_status(Status::Failure(
                                         Failure::TagEraseFailure(
                                             "Error Erasing Tag\nTry Again".to_string(),
@@ -746,6 +864,7 @@ async fn nfc_task(
                     }
                 }
                 Err(e) => {
+                    abort_command(&mut pn532).await;
                     match e {
                         pn532::Error::TimeoutResponse => {
                             // This is not really an error - every 60 seconds (which is timeout provided, will take place)
@@ -792,6 +911,14 @@ async fn nfc_task(
                                     );
                                 }
                                 None => {}
+                            }
+                            if matches!(e, pn532::Error::InterfaceError(_)) {
+                                warn!("Tag Reader not responding, recovering it");
+                                if recover_reader(&mut pn532).await {
+                                    info!("Tag Reader recovered");
+                                } else {
+                                    error!("Tag Reader recovery failed");
+                                }
                             }
                         }
                     }

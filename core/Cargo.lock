@@ -6093,6 +6093,7 @@ dependencies = [
  "embassy-net",
  "embassy-sync 0.7.2",
  "embassy-time",
+ "embedded-hal-async",
  "embedded-hal-bus",
  "embedded-io-async 0.7.0",
  "esp-alloc",
