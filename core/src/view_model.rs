@@ -86,6 +86,13 @@ enum ControlPanelPillId {
 
 const CONTROL_PANEL_PILL_ORDER: [ControlPanelPillId; 2] = [ControlPanelPillId::Wifi, ControlPanelPillId::ScaleWifi];
 
+fn scale_version_is_newer(available: &str, installed: &str) -> bool {
+    match (semver::Version::parse(available), semver::Version::parse(installed)) {
+        (Ok(available), Ok(installed)) => available > installed,
+        _ => false,
+    }
+}
+
 #[allow(unused_macros)]
 macro_rules! debugex {
     ($($t:tt)*) => {
@@ -3731,9 +3738,9 @@ impl ViewModel {
             console_debug_newer: console_debug_info.newer,
             scale_curr: self.scale_version.clone().unwrap_or_default().to_shared_string(),
             scale_stable: scale_stable_info.version.to_shared_string(),
-            scale_stable_newer: scale_stable_info.newer,
+            scale_stable_newer: scale_version_is_newer(&scale_stable_info.version, self.scale_version.as_deref().unwrap_or_default()),
             scale_unstable: scale_unstable_info.version.to_shared_string(),
-            scale_unstable_newer: scale_unstable_info.newer,
+            scale_unstable_newer: scale_version_is_newer(&scale_unstable_info.version, self.scale_version.as_deref().unwrap_or_default()),
             scale_debug: scale_debug_info.version.to_shared_string(),
             scale_debug_newer: scale_debug_info.newer,
             updater_curr: if updater.managed {
@@ -4541,6 +4548,13 @@ impl SpoolScaleObserver for ViewModel {
 
     fn on_scale_version(&mut self, scale_version: &str) {
         self.scale_version = Some(scale_version.to_string());
+        let ui = self.ui_weak.unwrap();
+        let app_state = ui.global::<crate::app::AppState>();
+        let mut firmwares = app_state.get_firmwares();
+        firmwares.scale_curr = scale_version.to_shared_string();
+        firmwares.scale_stable_newer = scale_version_is_newer(firmwares.scale_stable.as_str(), scale_version);
+        firmwares.scale_unstable_newer = scale_version_is_newer(firmwares.scale_unstable.as_str(), scale_version);
+        app_state.set_firmwares(firmwares);
     }
 
     fn on_ota_progress_update(&mut self, update: shared::scale::OtaProgressUpdate) {

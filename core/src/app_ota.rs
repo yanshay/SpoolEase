@@ -295,7 +295,7 @@ impl OtaObserver for AppOtaObserver {
             OtaPhase::Downloading if self.ota_mode == Some(ConsoleOtaMode::SdStaged) => {
                 format!("Downloading\n{filename} to SD card")
             }
-            OtaPhase::Downloading => format!("Downloading/Flashing\n{filename}"),
+            OtaPhase::Downloading => format!("Updaging to\n{filename}"),
             OtaPhase::Flashing => format!("Flashing {filename}"),
             OtaPhase::Completing => format!("Finalizing {filename}"),
         };
