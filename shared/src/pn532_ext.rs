@@ -15,6 +15,16 @@ use core::future::Future;
 
 use framework::prelude::*;
 
+const TIMING_LOGS: bool = false;
+
+macro_rules! debugtime {
+    ($($t:tt)*) => {
+        if TIMING_LOGS {
+            debug!($($t)*);
+        }
+    };
+}
+
 /*
 
 PN532 User Guide (Manual): https://www.nxp.com/docs/en/user-guide/141520.pdf
@@ -590,16 +600,16 @@ where
         Ok(response) => {
             let uid = response.get(5).and_then(|length| response.get(6..6 + usize::from(*length)));
             if response.first() != Some(&1) || uid != Some(expected_uid) {
-                debug!("MIFARE re-find: changed or missing tag after {} ms", started.elapsed().as_millis());
+                debugtime!("MIFARE re-find: changed or missing tag after {} ms", started.elapsed().as_millis());
                 warn!("Tag changed or disappeared while reselecting");
                 false
             } else {
-                debug!("MIFARE re-find: same tag after {} ms", started.elapsed().as_millis());
+                debugtime!("MIFARE re-find: same tag after {} ms", started.elapsed().as_millis());
                 true
             }
         }
         Err(err) => {
-            debug!("MIFARE re-find: {:?} after {} ms", err, started.elapsed().as_millis());
+            debugtime!("MIFARE re-find: {:?} after {} ms", err, started.elapsed().as_millis());
             timed_out = matches!(err, pn532::Error::TimeoutAck | pn532::Error::TimeoutResponse);
             warn!("Failed to reselect tag: {:?}", err);
             false
@@ -634,15 +644,15 @@ where
     });
     match result {
         Ok(0) => {
-            debug!("MIFARE {operation} block {block}: empty response after {} ms", started.elapsed().as_millis());
+            debugtime!("MIFARE {operation} block {block}: empty response after {} ms", started.elapsed().as_millis());
             Err(Error::Pn532Error(pn532::Error::BadResponseFrame))
         }
         Ok(len) => {
-            debug!("MIFARE {operation} block {block}: status 0x{:02X} after {} ms", response[0], started.elapsed().as_millis());
+            debugtime!("MIFARE {operation} block {block}: status 0x{:02X} after {} ms", response[0], started.elapsed().as_millis());
             Ok(len)
         }
         Err(err) => {
-            debug!("MIFARE {operation} block {block}: {:?} after {} ms", err, started.elapsed().as_millis());
+            debugtime!("MIFARE {operation} block {block}: {:?} after {} ms", err, started.elapsed().as_millis());
             if matches!(err, pn532::Error::TimeoutAck | pn532::Error::TimeoutResponse) {
                 if let Err(abort_err) = pn532.abort().await {
                     warn!("Failed to abort timed-out MIFARE {operation}: {:?}", abort_err);
@@ -686,7 +696,7 @@ where
         let auth_end = min(end_time, auth_started + Duration::from_millis(crate::settings::NFC_MIFARE_AUTH_TIMEOUT_MS));
         let now = Instant::now();
         if now >= auth_end {
-            debug!("MIFARE authentication block {block_number}: deadline reached after {} ms", auth_started.elapsed().as_millis());
+            debugtime!("MIFARE authentication block {block_number}: deadline reached after {} ms", auth_started.elapsed().as_millis());
             return Err(MifareReadError::Authentication(Error::Pn532Error(pn532::Error::TimeoutResponse)));
         }
 
@@ -706,12 +716,12 @@ where
 
         match read_data[0] {
             0 => {
-                debug!("MIFARE authentication block {block_number}: completed in {} ms", auth_started.elapsed().as_millis());
+                debugtime!("MIFARE authentication block {block_number}: completed in {} ms", auth_started.elapsed().as_millis());
                 *currently_authenticated_sector = Some(sector);
             }
             0x14 => {
                 // Expected when probing a MIFARE tag with another manufacturer's key.
-                debug!("Authentication of block {block_number} (relevant sector) rejected after {} ms", auth_started.elapsed().as_millis());
+                debugtime!("Authentication of block {block_number} (relevant sector) rejected after {} ms", auth_started.elapsed().as_millis());
                 return Err(MifareReadError::Authentication(Error::AuthenticationError));
             }
             status => {
@@ -725,7 +735,7 @@ where
     let read_end = min(end_time, read_started + Duration::from_millis(crate::settings::NFC_MIFARE_BLOCK_READ_TIMEOUT_MS));
     let now = Instant::now();
     if now >= read_end {
-        debug!("MIFARE read block {block_number}: deadline reached after {} ms", read_started.elapsed().as_millis());
+        debugtime!("MIFARE read block {block_number}: deadline reached after {} ms", read_started.elapsed().as_millis());
         return Err(MifareReadError::Data(Error::Pn532Error(pn532::Error::TimeoutResponse)));
     }
 
@@ -750,7 +760,7 @@ where
         return Err(MifareReadError::Data(Error::Pn532Error(pn532::Error::BadResponseFrame)));
     }
     buf[..n].copy_from_slice(&read_data[1..n + 1]); // skip the status byte
-    debug!("MIFARE read block {block_number}: completed in {} ms", read_started.elapsed().as_millis());
+    debugtime!("MIFARE read block {block_number}: completed in {} ms", read_started.elapsed().as_millis());
     Ok(n)
 }
 
