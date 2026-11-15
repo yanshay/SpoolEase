@@ -63,7 +63,7 @@ export component AppWindow inherits Window {
         if current-page == 0 {
             reset-terminal-scroll.running = false;
         }
-        if FrameworkState.web-config-state == WebConfigState.Starting || FrameworkState.web-config-state == WebConfigState.Started-STA || FrameworkState.web-config-state == WebConfigState.Started-AP {
+        if FrameworkState.web-config-state == WebConfigState.Starting || FrameworkState.web-config-state == WebConfigState.Started-STA || FrameworkState.web-config-state == WebConfigState.Started-AP || FrameworkState.web-config-state == WebConfigState.Started-STA-Displayed {
             if current-page != 2 {
                 AppBackend.read-tag-mode();
             } else {
