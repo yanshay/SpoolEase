@@ -1,5 +1,0 @@
-[     -11ms] [WARNING] An iframe which has both allow-scripts and allow-same-origin for its sandbox attribute can escape its sandboxing. @ https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/f/av0/rch/2bl8c/0x4AAAAAAADnPIDROrmt1Wwj/light/fbE/new/normal?lang=auto:0:0
-[      10ms] [ERROR] [Cloudflare Turnstile] Unhandled error: Uncaught TypeError: Cannot read properties of null (reading 'appendChild') , with debug info: spOKU7GuTdBOX4vLBJXFIO7oCi8taZpm0GxJC8Q5PnI=$2GGXrwDzFzU4eGuklAo/oA== @ https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/f/av0/rch/2bl8c/0x4AAAAAAADnPIDROrmt1Wwj/light/fbE/new/normal?lang=auto:0:0
-[      14ms] TypeError: Cannot read properties of null (reading 'appendChild')
-    at UA (https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/f/av0/rch/2bl8c/0x4AAAAAAADnPIDROrmt1Wwj/light/fbE/new/normal?lang=auto:0:1:195138)
-    at n (https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/f/av0/rch/2bl8c/0x4AAAAAAADnPIDROrmt1Wwj/light/fbE/new/normal?lang=auto:0:1:175553)
