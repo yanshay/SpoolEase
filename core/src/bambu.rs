@@ -523,6 +523,7 @@ impl BambuPrinter {
             "31B" => PrinterModel::H2C,
             "093" => PrinterModel::H2S,
             "20P" => PrinterModel::X2D,
+            "32X" => PrinterModel::H3C,
             _ => PrinterModel::Unknown,
         }
     }
@@ -544,6 +545,7 @@ impl BambuPrinter {
             PrinterModel::H2S => PrinterModelSeries::H2,
             PrinterModel::H2C => PrinterModelSeries::H2,
             PrinterModel::X2D => PrinterModelSeries::X2,
+            PrinterModel::H3C => PrinterModelSeries::H3,
         }
     }
 
@@ -833,6 +835,7 @@ pub enum PrinterModel {
     H2C,
     H2S,
     X2D,
+    H3C
 }
 
 pub enum PrinterModelSeries {
@@ -844,6 +847,7 @@ pub enum PrinterModelSeries {
     H2,
     P2,
     X2,
+    H3,
 }
 
 #[derive(Clone, Debug)]

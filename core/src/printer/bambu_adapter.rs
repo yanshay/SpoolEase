@@ -686,6 +686,7 @@ impl BambuPrinterEventBridge {
                 crate::bambu::PrinterModelSeries::H2 => 2,
                 crate::bambu::PrinterModelSeries::P2 => 2,
                 crate::bambu::PrinterModelSeries::X2 => 2,
+                crate::bambu::PrinterModelSeries::H3 => 2,
             }
         } else {
             1
@@ -697,6 +698,7 @@ impl BambuPrinterEventBridge {
             | crate::bambu::PrinterModelSeries::H2
             | crate::bambu::PrinterModelSeries::P2
             | crate::bambu::PrinterModelSeries::X2
+            | crate::bambu::PrinterModelSeries::H3
             | crate::bambu::PrinterModelSeries::Unknown => "/",
         };
 
