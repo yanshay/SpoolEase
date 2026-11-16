@@ -15,6 +15,7 @@ pub enum BambuAmsType {
     AmsLite,
     Ams2Pro,
     AmsHt,
+    Ams3h,
     Unknown(u8),
 }
 
@@ -26,6 +27,7 @@ impl BambuAmsType {
             2 => Self::AmsLite,
             3 => Self::Ams2Pro,
             4 => Self::AmsHt,
+            6 => Self::Ams3h,
             _ => Self::Unknown(value),
         }
     }

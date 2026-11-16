@@ -11,9 +11,13 @@ use crate::{
     spool_record::SpoolRecord,
 };
 
+pub(crate) const AMS_3H_TRAY_START: usize = 28;
+pub(crate) const AMS_3H_TRAY_COUNT: usize = 9;
+pub(crate) const MAX_AMS_TRAYS: usize = AMS_3H_TRAY_START + AMS_3H_TRAY_COUNT;
+
 pub(crate) fn canonical_tray_id(tray_id: i32) -> Option<i32> {
     match tray_id {
-        0..=27 => Some(tray_id),
+        0..=36 => Some(tray_id),
         128..=135 => Some(tray_id - 128 + 16),
         254 | 255 => Some(tray_id),
         _ => None,
@@ -28,6 +32,7 @@ pub(crate) fn canonical_tray_id_from_ams_slot(ams_id: i32, slot_id: i32) -> Opti
     match (ams_id, slot_id) {
         (0..=3, 0..=3) => Some(ams_id * 4 + slot_id),
         (16, 0..=3) => Some(24 + slot_id),
+        (32, 0..=8) => Some(28 + slot_id),
         (128..=135, 0) => Some(ams_id - 128 + 16),
         (254 | 255, 0) => Some(ams_id),
         _ => None,
@@ -39,7 +44,8 @@ pub(crate) fn ams_info_index_from_id(ams_id: u32) -> Option<usize> {
         0..=3 => Some(ams_id as usize),
         128..=135 => Some((ams_id - 128 + 4) as usize),
         16 => Some(12),
-        254 | 255 => Some((ams_id - 254 + 13) as usize),
+        32 => Some(13),
+        254 | 255 => Some((ams_id - 254 + 14) as usize),
         _ => None,
     }
 }
@@ -47,9 +53,9 @@ pub(crate) fn ams_info_index_from_id(ams_id: u32) -> Option<usize> {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub struct TrayBits {
-    pub tray_exist_bits: Option<u32>,
-    pub tray_read_done_bits: Option<u32>,
-    pub tray_reading_bits: Option<u32>,
+    pub tray_exist_bits: Option<u64>,
+    pub tray_read_done_bits: Option<u64>,
+    pub tray_reading_bits: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, Derivative)]
@@ -178,20 +184,20 @@ impl BambuPrinter {
         });
     }
 
-    pub fn tray_exist_bits(&self) -> &Option<u32> {
+    pub fn tray_exist_bits(&self) -> &Option<u64> {
         &self.inner_tray_exist_bits
     }
-    pub fn set_tray_exist_bits(&mut self, new_tray_exist_bits: Option<u32>) {
+    pub fn set_tray_exist_bits(&mut self, new_tray_exist_bits: Option<u64>) {
         if new_tray_exist_bits != self.inner_tray_exist_bits {
             self.inner_tray_exist_bits = new_tray_exist_bits;
             self.tray_exist_bits_dirty = true;
         }
     }
 
-    pub fn tray_read_done_bits(&self) -> &Option<u32> {
+    pub fn tray_read_done_bits(&self) -> &Option<u64> {
         &self.inner_tray_read_done_bits
     }
-    pub fn set_tray_read_done_bits(&mut self, new_tray_read_done_bits: Option<u32>) {
+    pub fn set_tray_read_done_bits(&mut self, new_tray_read_done_bits: Option<u64>) {
         if new_tray_read_done_bits != self.inner_tray_read_done_bits {
             self.inner_tray_read_done_bits = new_tray_read_done_bits;
             self.tray_read_done_bits_dirty = true;
@@ -281,7 +287,7 @@ impl BambuPrinter {
         }
     }
 
-    // returns canonical tray ids: 0..27 for AMS/AMS-HT/AMS Lite, 254/255 for external trays
+    // Returns canonical tray ids: 0..36 for AMS units, 254/255 for external trays.
     pub(crate) fn get_common_tray_active(active_extruder: usize, extruder_tray_now: i32) -> Option<i32> {
         let extruder_tray_now = if extruder_tray_now > 255 {
             Self::normalized_h2d_tray_xxx(extruder_tray_now)
@@ -297,7 +303,7 @@ impl BambuPrinter {
         }
     }
 
-    // returns canonical tray ids: 0..27 for AMS/AMS-HT/AMS Lite, 254/255 for external trays
+    // Returns canonical tray ids: 0..36 for AMS units, 254/255 for external trays.
     pub(crate) fn get_tray_active(&self) -> Option<i32> {
         let active_extruder = self.get_active_extruder()?;
         Self::get_common_tray_active(active_extruder, self.tray_now[active_extruder])
@@ -359,6 +365,8 @@ impl BambuPrinter {
         } else if tray_id < 28 {
             // AMS Lite in A2L (or other newer firmwares)
             (16, tray_id - 24)
+        } else if tray_id < MAX_AMS_TRAYS {
+            (32, tray_id - AMS_3H_TRAY_START)
         } else {
             // 254/255 tray_id option
             (tray_id, 0)
@@ -374,7 +382,7 @@ impl BambuPrinter {
         let tray_in_ams = h2d_tray_xxx & 0xFF; // maybe will need to change if ams
         match ams_id {
             0..=3 => ams_id * 4 + (tray_in_ams & 0x03), // 0x03 because no support for more than 4 slots ams
-            16 | 128..=135 => canonical_tray_id_from_ams_slot(ams_id, tray_in_ams).unwrap_or(255),
+            16 | 32 | 128..=135 => canonical_tray_id_from_ams_slot(ams_id, tray_in_ams).unwrap_or(255),
             254 | 255 => {
                 if tray_in_ams != 255 {
                     254
@@ -409,8 +417,9 @@ impl BambuPrinter {
             0..=15 => tray_id / 4,
             16..=23 => tray_id - 16 + 4,
             24..=27 => 12,
-            254 => 13,
-            255 => 14,
+            28..=36 => 13,
+            254 => 14,
+            255 => 15,
             _ => {
                 let err_str = format!("[{}] Error mapping slot {tray_id} to ams_id to get calibrations", self.printer_number);
                 error!("{}", err_str);
@@ -435,7 +444,7 @@ impl BambuPrinter {
         let (ams_id, slot_in_ams) = Self::get_ams_and_slot_id(tray_id as usize);
         if ams_id <= 3 {
             format!("{} Slot {}", self.ams_name(ams_id), slot_in_ams + 1)
-        } else if ams_id == 16 {
+        } else if ams_id == 16 || ams_id == 32 {
             format!("{} Slot {}", self.ams_name(ams_id), slot_in_ams + 1)
         } else {
             self.ams_name(ams_id)
@@ -448,6 +457,8 @@ impl BambuPrinter {
             ams_id = ams_id - 4 + 128;
         } else if ams_id == 12 {
             ams_id = 16;
+        } else if ams_id == 13 {
+            ams_id = 32;
         }
         if ams_id <= 3 {
             format!("AMS-{}", (b'A' + ams_id as u8) as char)
@@ -455,6 +466,8 @@ impl BambuPrinter {
             format!("HT-{}", (b'A' + (ams_id - 128) as u8) as char)
         } else if ams_id == 16 {
             "AMS Lite".into()
+        } else if ams_id == 32 {
+            "AMS 3H".into()
         } else if ams_id == 255 {
             if self.num_extruders() == 1 {
                 "External Spool".into()

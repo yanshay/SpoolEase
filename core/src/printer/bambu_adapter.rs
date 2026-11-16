@@ -25,9 +25,11 @@ use crate::bambu::{
     },
     filament::Filament as BambuFilament,
     printer_state::BambuPersistentDirtyState,
-    tray::{Tray, TrayBits, TrayState as BambuTrayState, canonical_tray_id},
+    tray::{AMS_3H_TRAY_COUNT, AMS_3H_TRAY_START, MAX_AMS_TRAYS, Tray, TrayBits, TrayState as BambuTrayState, canonical_tray_id},
 };
 use crate::store::Store;
+
+const AMS_ID_32_DEFAULT_TRAY_COUNT: usize = AMS_3H_TRAY_COUNT;
 
 use super::{
     DriverSpecificCommand, DriverSpecificQuery, DriverSpecificQueryResult, FilamentTemps, MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind,
@@ -284,6 +286,13 @@ impl BambuPrinterDriver {
                     (ams_index as usize * 4, 4)
                 } else if ams_index == 12 {
                     (24, 4)
+                } else if ams_index == 13 {
+                    let count = match ams_info.map(|info| &info.ams_type) {
+                        Some(BambuAmsType::Ams3h) => AMS_3H_TRAY_COUNT,
+                        // Future AMS ID 32 types may have a different number of trays.
+                        _ => AMS_ID_32_DEFAULT_TRAY_COUNT,
+                    };
+                    (AMS_3H_TRAY_START, count)
                 } else {
                     (16 + (ams_index - 4) as usize, 1)
                 };
@@ -478,6 +487,7 @@ impl BambuPrinterDriver {
             }
             16..=23 => format!("HT-{}", tray_id - 15),
             24..=27 => format!("Lite-{}", tray_id - 23),
+            28..=36 => format!("3H-{}", tray_id - 27),
             _ => tray_id.to_string(),
         }
     }
@@ -527,7 +537,7 @@ impl BambuPrinterDriver {
 
     fn ams_list(mut ams_exist_bits: u32) -> Vec<i32> {
         let mut ams_ids = Vec::new();
-        for ams_id in 0..=12 {
+        for ams_id in 0..=13 {
             if ams_exist_bits & 1 != 0 {
                 ams_ids.push(ams_id);
             }
@@ -541,6 +551,8 @@ impl BambuPrinterDriver {
             ams_index.to_string()
         } else if ams_index == 12 {
             "16".to_string()
+        } else if ams_index == 13 {
+            "32".to_string()
         } else {
             (128 + (ams_index - 4)).to_string()
         }
@@ -551,6 +563,7 @@ impl BambuPrinterDriver {
             0..=15 => (tray_id % 4).to_string(),
             16..=23 | 254 | 255 => "0".to_string(),
             24..=27 => (tray_id - 24).to_string(),
+            28..=36 => (tray_id - 28).to_string(),
             _ => tray_id.to_string(),
         }
     }
@@ -565,7 +578,7 @@ impl BambuPrinterDriver {
             .parse::<i32>()
             .map_err(|_| PrinterError::InvalidCommand(format!("Invalid Bambu slot id: {}", slot_id.as_str())))?;
 
-        if (0..=27).contains(&tray_id) || tray_id == 254 || tray_id == 255 {
+        if (0..MAX_AMS_TRAYS as i32).contains(&tray_id) || tray_id == 254 || tray_id == 255 {
             Ok(tray_id)
         } else {
             Err(PrinterError::SlotNotFound(slot_id.clone()))
@@ -728,8 +741,9 @@ impl BambuPrinterObserver for BambuPrinterEventBridge {
         if let Some(new_tray_exist_bits) = new_tray_bits.tray_exist_bits {
             let prev_tray_exist_bits = prev_tray_bits.tray_exist_bits.unwrap_or_default();
             for tray_id in 0..bambu_printer.ams_trays().len() {
-                let prev_exists = ((prev_tray_exist_bits >> tray_id) & 0x01) != 0;
-                let new_exists = ((new_tray_exist_bits >> tray_id) & 0x01) != 0;
+                let tray_bit = tray_id;
+                let prev_exists = ((prev_tray_exist_bits >> tray_bit) & 0x01) != 0;
+                let new_exists = ((new_tray_exist_bits >> tray_bit) & 0x01) != 0;
                 if !prev_exists && new_exists {
                     changes.push(MaterialSlotPresenceChange {
                         slot_id: BambuPrinterDriver::slot_id_from_tray_id(tray_id as i32),

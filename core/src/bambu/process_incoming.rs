@@ -20,7 +20,7 @@ use crate::{
         driver_specific::BambuAmsType,
         fetch_initial_info,
         protocol::clean_message_bytes_to_log,
-        tray::{Tray, TrayBits, TrayMetaInfo, TrayState, ams_info_index_from_id, canonical_tray_id, canonical_tray_id_from_ams_slot},
+        tray::{AMS_3H_TRAY_START, MAX_AMS_TRAYS, Tray, TrayBits, TrayMetaInfo, TrayState, ams_info_index_from_id, canonical_tray_id, canonical_tray_id_from_ams_slot},
     },
     printer::PrinterRuntimePersistenceRequestKind,
     settings::MAX_NUM_PRINTERS,
@@ -119,9 +119,9 @@ impl BambuPrinter {
     }
 
     /// Converts AMS existence bits to the tray-bit mask covered by those AMS units.
-    fn tray_mask_for_ams_exist_bits(ams_bits: u32) -> u32 {
-        let mut tray_mask = 0u32;
-        for ams_index in 0..=12 {
+    fn tray_mask_for_ams_exist_bits(ams_bits: u32) -> u64 {
+        let mut tray_mask = 0u64;
+        for ams_index in 0..=13 {
             if ((ams_bits >> ams_index) & 0x01) == 0 {
                 continue;
             }
@@ -130,6 +130,8 @@ impl BambuPrinter {
                 tray_mask |= 0x0f << (ams_index * 4);
             } else if ams_index == 12 {
                 tray_mask |= 0x0f << 24;
+            } else if ams_index == 13 {
+                tray_mask |= 0x1ffu64 << AMS_3H_TRAY_START;
             } else {
                 tray_mask |= 1 << (16 + (ams_index - 4));
             }
@@ -138,7 +140,7 @@ impl BambuPrinter {
     }
 
     /// During startup, keeps known AMS bits while accepting newly reported AMS bits.
-    fn effective_startup_ams_exist_bits(&self, incoming_ams_exist_bits: u32) -> (u32, u32) {
+    fn effective_startup_ams_exist_bits(&self, incoming_ams_exist_bits: u32) -> (u32, u64) {
         if !self.startup_ams_guard_active() {
             return (incoming_ams_exist_bits, 0);
         }
@@ -150,7 +152,7 @@ impl BambuPrinter {
     }
 
     /// Preserves previous tray bits for AMS slots protected by the startup guard.
-    fn protect_startup_ams_guard_tray_bits(incoming_bits: u32, previous_bits: Option<u32>, protected_tray_mask: u32) -> u32 {
+    fn protect_startup_ams_guard_tray_bits(incoming_bits: u64, previous_bits: Option<u64>, protected_tray_mask: u64) -> u64 {
         if protected_tray_mask == 0 {
             return incoming_bits;
         }
@@ -551,7 +553,7 @@ impl BambuPrinter {
     pub fn process_print_message__ams(&mut self, ams: &PrintAms) -> (bool, HashMap<usize, SpoolId>) {
         let mut change_made = false;
         let prev_tray_exist_bits = *self.tray_exist_bits();
-        let mut protected_tray_mask = 0u32;
+        let mut protected_tray_mask = 0u64;
 
         // first check which ams's exist
         if let Some(ams_exist_bits) = &ams.ams_exist_bits {
@@ -581,7 +583,7 @@ impl BambuPrinter {
 
         // tray_exist_bits - which trays contain a spool
         if let Some(tray_exist_bits) = &ams.tray_exist_bits
-            && let Ok(tray_exist_bits) = u32::from_str_radix(tray_exist_bits, 16)
+            && let Ok(tray_exist_bits) = u64::from_str_radix(tray_exist_bits, 16)
         {
             let tray_exist_bits = Self::protect_startup_ams_guard_tray_bits(tray_exist_bits, prev_tray_exist_bits, protected_tray_mask);
             if *self.tray_exist_bits() != Some(tray_exist_bits) {
@@ -592,7 +594,7 @@ impl BambuPrinter {
         }
         // tray_read_done - which trays (from those that exist) that have been "read" (meaning ready from ams perspective)
         if let Some(tray_read_done_bits) = &ams.tray_read_done_bits
-            && let Ok(tray_read_done_bits) = u32::from_str_radix(tray_read_done_bits, 16)
+            && let Ok(tray_read_done_bits) = u64::from_str_radix(tray_read_done_bits, 16)
         {
             let tray_read_done_bits =
                 Self::protect_startup_ams_guard_tray_bits(tray_read_done_bits, *self.tray_read_done_bits(), protected_tray_mask);
@@ -604,12 +606,20 @@ impl BambuPrinter {
         }
         // tray_reading - which trays (from those that exist) that are currently being "read" (meaning ams is rotating them to get them ready)
         if let Some(tray_reading_bits) = &ams.tray_reading_bits
-            && let Ok(tray_reading_bits) = u32::from_str_radix(tray_reading_bits, 16)
+            && let Ok(tray_reading_bits) = u64::from_str_radix(tray_reading_bits, 16)
             && self.tray_reading_bits != Some(tray_reading_bits)
         {
             self.tray_reading_bits = Some(tray_reading_bits);
             change_made = true;
             with_console_metrics!(crate::metrics::increment_mqtt_change_ams_topology());
+        }
+
+        if self.inner_ams_trays.len() < MAX_AMS_TRAYS
+            && (self.ams_exist_bits().is_some_and(|bits| bits & (1 << 13) != 0)
+                || ams.ams.as_ref().is_some_and(|units| units.iter().any(|unit| unit.id == 32)))
+        {
+            self.inner_ams_trays.resize(MAX_AMS_TRAYS, Tray::default());
+            change_made = true;
         }
 
         // IPORTANT Note: For now doesn't seem relevatnt to change_made, nor for persistent state
@@ -661,7 +671,7 @@ impl BambuPrinter {
                 }
             }
             // The two external trays are fixed by Bambu extruder side, not by FTS inlet.
-            for (index, extruder_id) in [(13, 1), (14, 0)] {
+            for (index, extruder_id) in [(14, 1), (15, 0)] {
                 let new_info = crate::bambu::AmsInfo::external(extruder_id);
                 if self.ams_info[index] != new_info {
                     self.ams_info[index] = new_info;
@@ -675,8 +685,9 @@ impl BambuPrinter {
 
         let mut _derived_ams_exist_bits = 0u32;
         for tray_id in 0..self.ams_trays().len() {
+            let tray_bit = tray_id;
             let spool_removed = if let (Some(prev_tray_exist_bits), Some(new_tray_exist_bits)) = (&prev_tray_exist_bits, self.tray_exist_bits()) {
-                (((prev_tray_exist_bits >> tray_id) & 0x01) != 0) && (((new_tray_exist_bits >> tray_id) & 0x01) == 0)
+                (((prev_tray_exist_bits >> tray_bit) & 0x01) != 0) && (((new_tray_exist_bits >> tray_bit) & 0x01) == 0)
             } else {
                 false
             };
@@ -687,7 +698,7 @@ impl BambuPrinter {
                     let Some(ams_bit_index) = ams_info_index_from_id(ams_id as u32) else {
                         continue;
                     };
-                    if ams_bit_index >= 13 {
+                    if ams_bit_index >= 14 {
                         continue;
                     }
                     _derived_ams_exist_bits |= 1u32 << ams_bit_index;
@@ -699,7 +710,7 @@ impl BambuPrinter {
                 None
             };
 
-            if ((protected_tray_mask >> tray_id) & 0x01) != 0 && source_tray.is_none() {
+            if ((protected_tray_mask >> tray_bit) & 0x01) != 0 && source_tray.is_none() {
                 continue;
             }
 
@@ -954,11 +965,12 @@ impl BambuPrinter {
         if tray_id != 255 && tray_id != 254 {
             // AMS tray
             if let Some(tray_exist_bits) = self.tray_exist_bits() {
-                let tray_exist = ((tray_exist_bits >> tray_id) & 0x01) != 0;
+                let tray_bit = tray_id as usize;
+                let tray_exist = ((tray_exist_bits >> tray_bit) & 0x01) != 0;
 
                 if tray_exist {
-                    let tray_reading = self.tray_reading_bits.is_some_and(|x| ((x >> tray_id) & 0x01) != 0);
-                    let tray_read_done = self.tray_read_done_bits().is_some_and(|x| ((x >> tray_id) & 0x01) != 0);
+                    let tray_reading = self.tray_reading_bits.is_some_and(|x| ((x >> tray_bit) & 0x01) != 0);
+                    let tray_read_done = self.tray_read_done_bits().is_some_and(|x| ((x >> tray_bit) & 0x01) != 0);
 
                     let mut new_tray = if let Some(tray_update) = tray_update {
                         if let Ok(tray_update) = self.tray_from_update(tray_update) {

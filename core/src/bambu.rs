@@ -180,12 +180,12 @@ pub struct BambuPrinter {
     protocol_state: ProtocolState,
     // inner_nozzle_diameter: Option<String>,
     inner_extruders: [Extruder; 2],
-    // Canonical trays: 0..15 standard AMS, 16..23 AMS-HT, 24..27 A2L AMS Lite (or other newere firmwares).
+    // Canonical trays: 0..15 standard AMS, 16..23 AMS-HT, 24..27 AMS Lite, 28..36 AMS 3H.
     inner_ams_trays: Vec<Tray>,
     inner_virt_trays: [Tray; 2],
     force_store_state: bool,
     extruders_dirty: bool,
-    ams_trays_dirty: [bool; 28],
+    ams_trays_dirty: [bool; tray::MAX_AMS_TRAYS],
     virt_trays_dirty: bool,
     tray_exist_bits_dirty: bool,
     tray_read_done_bits_dirty: bool,
@@ -198,9 +198,9 @@ pub struct BambuPrinter {
     restart_printer: Rc<embassy_sync::signal::Signal<embassy_sync::blocking_mutex::raw::NoopRawMutex, i32>>,
     observers: Vec<alloc::rc::Weak<RefCell<dyn BambuPrinterObserver>>>,
     app_config: Rc<RefCell<AppConfig>>,
-    inner_tray_exist_bits: Option<u32>,
-    inner_tray_read_done_bits: Option<u32>,
-    tray_reading_bits: Option<u32>,
+    inner_tray_exist_bits: Option<u64>,
+    inner_tray_read_done_bits: Option<u64>,
+    tray_reading_bits: Option<u64>,
     // Protocol presence bits; bit 12 represents A2L AMS Lite (protocol AMS ID 16).
     pub inner_ams_exist_bits: Option<u32>,
     printer_was_disconnected: bool,
@@ -215,7 +215,7 @@ pub struct BambuPrinter {
     tray_pre: [i32; 2],
     pub locked_mode: Option<bool>, // None, unknown, treat as unlocked, false - dev mode, true - locked
     runtime_persistence_request_channel: Rc<PrinterRuntimePersistenceRequestChannel>,
-    // Groups: 0..3 standard AMS, 4..11 AMS-HT, 12 A2L (or other newere firmwares) AMS Lite (ID 16), 13/14 external 254/255.
+    // Groups: 0..3 standard AMS, 4..11 AMS-HT, 12 AMS Lite, 13 AMS 3H, 14/15 external 254/255.
     pub ams_info: Vec<AmsInfo>,
     pub fila_switch: BambuFilaSwitchState,
     pub gcode_state: GcodeState,
@@ -435,9 +435,13 @@ impl BambuPrinter {
             inner_extruders: core::array::from_fn(|_| Extruder::default()),
             extruders_dirty: false,
             relevant_extruder_state_dirty: false,
-            inner_ams_trays: alloc::vec![Tray::default(); 28],
+            inner_ams_trays: {
+                let mut trays = Vec::with_capacity(tray::MAX_AMS_TRAYS); // prepare capabity including AMS3H
+                trays.resize(tray::AMS_3H_TRAY_START, Tray::default()); // but start by default without AMS3H due to O(N^2) on some opeations
+                trays
+            },
             inner_virt_trays: [Tray::default(), Tray::default()],
-            ams_trays_dirty: [false; 28],
+            ams_trays_dirty: [false; tray::MAX_AMS_TRAYS],
             force_store_state: false,
             virt_trays_dirty: false,
             ams_exist_bits_dirty: false,
@@ -471,9 +475,10 @@ impl BambuPrinter {
             },
             runtime_persistence_request_channel,
             ams_info: {
-                let mut ams_info = alloc::vec![AmsInfo::default(); 15]; // 0..3: standard, 4..11: AMS-HT, 12: A2L (or other newere firmwares) AMS Lite, 13: 254, 14: 255
-                ams_info[13] = AmsInfo::external(1); // 254 is left, extruder 1
-                ams_info[14] = AmsInfo::external(0); // 255 is right, extruder 0
+                let mut ams_info = alloc::vec![AmsInfo::default(); 16]; // 0..3: standard, 4..11: AMS-HT, 12: A2L (or other newere firmwares) AMS Lite, 13: AMS-3H,  14: 254, 15: 255
+                ams_info[13].ams_type = BambuAmsType::Ams3h; // AMS ID 32 fallback until its type is reported
+                ams_info[14] = AmsInfo::external(1); // 254 is left, extruder 1
+                ams_info[15] = AmsInfo::external(0); // 255 is right, extruder 0
                 ams_info
             },
             fila_switch: BambuFilaSwitchState::default(),

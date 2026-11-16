@@ -319,7 +319,7 @@ pub async fn fix_k_on_restart(
         bambu_printer.borrow_mut().pending_k_restore_sequence = false;
         return;
     }
-    let mut set_tray_cali_idx: [Option<i32>; 28] = [None; 28];
+    let mut set_tray_cali_idx = alloc::vec![None; prev_ams_trays.len()];
     let mut set_virt_cali_idx: Option<i32> = None;
 
     {
