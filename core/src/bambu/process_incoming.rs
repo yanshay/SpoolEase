@@ -96,9 +96,9 @@ impl BambuPrinter {
         }
     }
 
-    fn ams_info_from_protocol(&self, ams_info: u32) -> (BambuAmsType, Vec<u32>, Option<BambuFilaSwitchPos>) {
+    fn ams_info_from_protocol(&self, ams_info: u64) -> (BambuAmsType, Vec<u32>, Option<BambuFilaSwitchPos>) {
         let ams_type = BambuAmsType::from_protocol((ams_info & 0x0F) as u8);
-        let extruder_id = (ams_info >> 8) & 0x0F;
+        let extruder_id = ((ams_info >> 8) & 0x0F) as u32;
         let switcher_pos = match (ams_info >> 24) & 0x0F {
             0 => Some(BambuFilaSwitchPos::InB),
             1 => Some(BambuFilaSwitchPos::InA),

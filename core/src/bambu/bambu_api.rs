@@ -230,8 +230,8 @@ pub struct PrintAmsData {
     #[serde(default, serialize_with = "option_as_str_se", deserialize_with = "option_as_str_de")]
     pub temp: Option<f32>,
     pub tray: Vec<PrintTray>, // Vector of Trays
-    #[serde(default, serialize_with = "option_u32_as_str_hex_se", deserialize_with = "option_u32_as_str_hex_de")]
-    pub info: Option<u32>,
+    #[serde(default, serialize_with = "option_u64_as_str_hex_se", deserialize_with = "option_u64_as_str_hex_de")]
+    pub info: Option<u64>,
 }
 
 // An AMS Tray
@@ -876,7 +876,7 @@ where
     option.as_deref().map(|s| s.parse::<T>().map_err(serde::de::Error::custom)).transpose()
 }
 
-fn u32_as_str_hex_se<S>(x: &u32, s: S) -> Result<S::Ok, S::Error>
+fn u64_as_str_hex_se<S>(x: &u64, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -884,31 +884,31 @@ where
 }
 
 #[allow(dead_code)]
-fn u32_as_str_hex_de<'de, D>(deserializer: D) -> Result<u32, D::Error>
+fn u64_as_str_hex_de<'de, D>(deserializer: D) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
 {
     let s: &str = Deserialize::deserialize(deserializer)?;
-    u32::from_str_radix(s, 16).map_err(serde::de::Error::custom)
+    u64::from_str_radix(s, 16).map_err(serde::de::Error::custom)
 }
 
-fn option_u32_as_str_hex_se<S>(x: &Option<u32>, s: S) -> Result<S::Ok, S::Error>
+fn option_u64_as_str_hex_se<S>(x: &Option<u64>, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     match x {
-        Some(v) => u32_as_str_hex_se(v, s),
+        Some(v) => u64_as_str_hex_se(v, s),
         None => s.serialize_none(),
     }
 }
 
-fn option_u32_as_str_hex_de<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+fn option_u64_as_str_hex_de<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
 where
     D: Deserializer<'de>,
 {
     let opt: Option<String> = Option::deserialize(deserializer)?;
     opt.as_deref()
-        .map(|s| u32::from_str_radix(s, 16).map_err(serde::de::Error::custom))
+        .map(|s| u64::from_str_radix(s, 16).map_err(serde::de::Error::custom))
         .transpose()
 }
 
