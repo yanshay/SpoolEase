@@ -375,6 +375,7 @@ pub async fn fix_k_on_restart(
                 let nozzle_diameter = bambu_printer.borrow().nozzle_diameter(extruder_id).clone().unwrap_or_default();
                 let original_tray_id = if id == 255 { 254 } else { id };
                 let (ams_id, slot_id) = BambuPrinter::get_ams_and_slot_id(original_tray_id);
+                let command_tray_id = if ams_id == 32 { slot_id } else { original_tray_id };
                 // TODO: (if change) check ams_id against 255
                 if ams_id != 255 && ams_id != 254 {
                     info!("[{}] Updating pressure advance of AMS {} slot {}", printer_number, ams_id, slot_id);
@@ -384,7 +385,7 @@ pub async fn fix_k_on_restart(
                 let mut cmd = ExtrusionCaliSelCommand::new(
                     &nozzle_diameter,
                     ams_id as i32,
-                    original_tray_id as i32, // here we need the original tray_id
+                    command_tray_id as i32,
                     slot_id as i32,
                     &filament_info.tray_info_idx, // tray_info_idx is filament_id in this command
                     *set_tray,

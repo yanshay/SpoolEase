@@ -321,6 +321,10 @@ impl BambuPrinter {
             // AMS Lite
             slot_id = ams_tray_id_for_set_filament as i32;
             original_tray_id = tray_id;
+        } else if ams_id == 32 {
+            // AMS 3H commands use the slot number for both tray_id and slot_id.
+            slot_id = ams_tray_id_for_set_filament as i32;
+            original_tray_id = slot_id;
         } else {
             // external
             ams_tray_id_for_set_filament = 254;
