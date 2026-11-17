@@ -12,6 +12,7 @@ export enum UiSlotState { Unknown, Empty, Occupied, Reading, Ready, InTool, Load
 export enum UiFilamentState { Unknown, Known }
 
 export enum UiPrinterKind { Unknown, Bambu, Fake }
+export enum UiPrinterDisplayLayout { Standard, BambuToolchanger }
 
 export struct Printer {
     id: string,
@@ -382,6 +383,13 @@ export global AppState {
     in-out property <[UiSlotGroup]> slot-groups: [];
     in-out property <[UiSlotGroup]> primary-slot-groups: [];
     in-out property <[UiSlotGroup]> external-slot-groups: [];
+    in-out property <UiPrinterDisplayLayout> printer-display-layout: UiPrinterDisplayLayout.Standard;
+    in-out property <string> toolchanger-main-group-id: "";
+    in-out property <int> toolchanger-slot-count: 0;
+    in-out property <UiSlotGroup> toolchanger-main-group;
+    in-out property <bool> toolchanger-main-group-available: false;
+    in-out property <[UiSlotGroup]> toolchanger-other-groups: [];
+    in-out property <bool> toolchanger-show-other: false;
     in-out property <bool> slot-groups-loading: false;
     in-out property <int> selected-primary-slot-group: 0;
     in-out property <int> displayed-external-slot-group: 0;

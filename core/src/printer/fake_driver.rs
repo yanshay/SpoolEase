@@ -71,6 +71,7 @@ impl FakePrinterRuntime {
             name: display_name.clone(),
             connected: true,
             num_extruders: 1,
+            display_layout: Default::default(),
             slot_groups_known: true,
             print_error_code: None,
             system_error_codes: Vec::new(),

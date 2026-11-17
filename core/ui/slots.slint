@@ -1,13 +1,16 @@
 import { FrameworkState } from "framework/framework.slint";
-import { AppConsts, AppState } from "app.slint";
-import { StandardSlotGroups } from "trays.slint";
+import { AppConsts, AppState, UiPrinterDisplayLayout } from "app.slint";
+import { BambuToolchangerSlotGroups, StandardSlotGroups } from "trays.slint";
 
 export component Slots inherits HorizontalLayout {
     out property <length> slot-width: (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
     width: FrameworkState.display-width;
     spacing: AppConsts.trays-spacing;
 
-    StandardSlotGroups {
+    if AppState.printer-display-layout == UiPrinterDisplayLayout.Standard: StandardSlotGroups {
+        width: parent.width;
+    }
+    if AppState.printer-display-layout == UiPrinterDisplayLayout.BambuToolchanger: BambuToolchangerSlotGroups {
         width: parent.width;
     }
 }

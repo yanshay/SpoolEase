@@ -1450,6 +1450,9 @@ impl ViewModel {
             return;
         };
         let selected_ui_index = borrowed_view_model.ui_index_for_printer_id(&printer_id).unwrap_or(-1);
+        if borrowed_view_model.ui_selected_printer_id.as_ref() != Some(&printer_id) {
+            ui_app_state.set_toolchanger_show_other(false);
+        }
         ui_app_state.invoke_set_curr_printer(selected_ui_index);
         borrowed_view_model.ui_selected_printer_id = Some(printer_id);
         if let Err(err) = borrowed_view_model.printer_manager.borrow_mut().set_selected_index(manager_index) {
@@ -1538,6 +1541,21 @@ impl ViewModel {
     fn update_slot_groups_from_snapshot(&self, snapshot: &printer_domain::PrinterSnapshot) -> bool {
         let ui = self.ui_weak.unwrap();
         let ui_app_state = ui.global::<crate::app::AppState>();
+        let (layout, main_group_id, slot_count) = match &snapshot.display_layout {
+            printer_domain::PrinterDisplayLayout::Standard => (crate::app::UiPrinterDisplayLayout::Standard, "", 0),
+            printer_domain::PrinterDisplayLayout::BambuToolchanger { main_group_id, slot_count } => {
+                (crate::app::UiPrinterDisplayLayout::BambuToolchanger, main_group_id.as_str(), *slot_count as i32)
+            }
+        };
+        let layout_changed = ui_app_state.get_printer_display_layout() != layout
+            || ui_app_state.get_toolchanger_main_group_id().as_str() != main_group_id
+            || ui_app_state.get_toolchanger_slot_count() != slot_count;
+        if layout_changed {
+            ui_app_state.set_printer_display_layout(layout);
+            ui_app_state.set_toolchanger_main_group_id(main_group_id.into());
+            ui_app_state.set_toolchanger_slot_count(slot_count);
+            ui_app_state.set_toolchanger_show_other(false);
+        }
         if !snapshot.slot_groups_known {
             if !ui_app_state.get_slot_groups_loading() {
                 #[cfg(feature = "metrics")]
@@ -1555,7 +1573,7 @@ impl ViewModel {
             framework::metrics::mark_ui_redraw_requested();
             ui_app_state.set_slot_groups_loading(false);
         }
-        if !self.ui_slot_groups_match_snapshot(snapshot, &ui_app_state.get_slot_groups()) {
+        if layout_changed || !self.ui_slot_groups_match_snapshot(snapshot, &ui_app_state.get_slot_groups()) {
             let groups = snapshot
                 .slot_groups
                 .iter()
@@ -1636,6 +1654,15 @@ impl ViewModel {
             .collect::<Vec<_>>();
         let ui = self.ui_weak.unwrap();
         let ui_app_state = ui.global::<crate::app::AppState>();
+        let main_group_id = ui_app_state.get_toolchanger_main_group_id();
+        let toolchanger_main = groups.iter().find(|group| group.id == main_group_id).cloned();
+        let toolchanger_others = primary_groups.iter().filter(|group| group.id != main_group_id).cloned().collect::<Vec<_>>();
+        if toolchanger_others.is_empty() {
+            ui_app_state.set_toolchanger_show_other(false);
+        }
+        ui_app_state.set_toolchanger_main_group_available(toolchanger_main.is_some());
+        ui_app_state.set_toolchanger_main_group(toolchanger_main.unwrap_or_default());
+        ui_app_state.set_toolchanger_other_groups(slint::ModelRc::from(Rc::new(slint::VecModel::from(toolchanger_others))));
 
         #[cfg(feature = "metrics")]
         // Start ui_redraw_request_to_draw_us before writing Slint data (that is known to cause a redraw for sure) due to (only) an MQTT update. Otherwise the metric will be wrong.

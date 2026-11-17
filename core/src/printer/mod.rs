@@ -69,6 +69,13 @@ pub struct PrinterCapabilities {
     pub consumption_tracking: bool,         // Driver can report consumed filament by slot or spool.
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum PrinterDisplayLayout {
+    #[default]
+    Standard,
+    BambuToolchanger { main_group_id: String, slot_count: usize },
+}
+
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct PrinterSnapshot {
     pub id: PrinterId,
@@ -78,6 +85,8 @@ pub struct PrinterSnapshot {
     pub name: String,
     pub connected: bool,
     pub num_extruders: u32,
+    #[serde(skip)]
+    pub display_layout: PrinterDisplayLayout,
     #[serde(default = "default_true")]
     pub slot_groups_known: bool,
     #[serde(default)]

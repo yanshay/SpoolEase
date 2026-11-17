@@ -119,6 +119,7 @@ impl BambuPrinterDriver {
             name: printer.printer_name().clone(),
             connected: printer.printer_connectivity_ok.unwrap_or_default(),
             num_extruders: printer.num_extruders(),
+            display_layout: Self::display_layout(printer),
             slot_groups_known,
             print_error_code: printer.print_error,
             system_error_codes: printer
@@ -129,6 +130,17 @@ impl BambuPrinterDriver {
             slot_groups,
             slot_group_display_groups,
             print: Self::print_from_printer(printer),
+        }
+    }
+
+    fn display_layout(printer: &BambuPrinter) -> super::PrinterDisplayLayout {
+        if printer.model() == crate::bambu::PrinterModel::H3C {
+            super::PrinterDisplayLayout::BambuToolchanger {
+                main_group_id: "bambu:group:13".into(),
+                slot_count: AMS_3H_TRAY_COUNT,
+            }
+        } else {
+            super::PrinterDisplayLayout::Standard
         }
     }
 
@@ -1010,6 +1022,10 @@ impl PrinterDriver for BambuPrinterDriver {
     fn persistent_state_path(&self) -> Option<String> {
         let printer = self.printer.borrow();
         Some(BambuPrinter::printer_state_file_path(&printer.printer_serial))
+    }
+
+    fn adjust_loaded_snapshot(&self, snapshot: &mut PrinterSnapshot) {
+        snapshot.display_layout = Self::display_layout(&self.printer.borrow());
     }
 
     fn private_state_dirty(&self) -> bool {

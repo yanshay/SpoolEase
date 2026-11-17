@@ -10,9 +10,19 @@ import {
     UiSlotGroup,
     UiSlotState,
 } from "app.slint";
-import { MyText } from "framework/widgets.slint";
+import { MyButton, MyText } from "framework/widgets.slint";
+
+export enum TrayDisplayMode { Normal, Compact }
 
 global Helper {
+    public function activate-slot(slot: UiSlot) {
+        if AppState.control-state == ControlState.TraySelect {
+            AppBackend.set-staging-to-slot(slot.id);
+        } else if AppState.control-state == ControlState.Ready || AppState.control-state == ControlState.PostAction {
+            AppState.slot-selected(slot);
+        }
+    }
+
     public pure function representative-color-index(color-count: int) -> int {
         if color-count <= 1 {
             return 0;
@@ -222,6 +232,7 @@ component Spool inherits Rectangle {
     callback clicked;
     in-out property <UiSlot> slot;
     in property <bool> is-in-primary-group;
+    in property <TrayDisplayMode> display-mode: TrayDisplayMode.Normal;
 
     property <bool> has-known-color: slot.filament.state != UiFilamentState.Unknown && (!is-in-primary-group || slot.state != UiSlotState.Empty);
     property <bool> has-spool-id: slot.spool-id != "";
@@ -298,7 +309,7 @@ component Spool inherits Rectangle {
             circle-show-checkerboard-bg: circle-show-checkerboard-bg;
         }
 
-        material := Text {
+        if root.display-mode == TrayDisplayMode.Normal: material := Text {
             height: 18px;
             horizontal-alignment: center;
             font-size: 20px;
@@ -306,12 +317,30 @@ component Spool inherits Rectangle {
             color: has-known-color ? Utils.contrasting_color(root.outer-display-color[0]) : Utils.contrasting_color(root.background);
         }
 
-        k-value := Text {
+        if root.display-mode == TrayDisplayMode.Normal: k-value := Text {
             height: 20px;
             horizontal-alignment: center;
             font-size: 20px;
             text: has-known-color && slot.k != "" ? "K " + slot.k : "";
             color: has-known-color ? Utils.contrasting_color(root.outer-display-color[0]) : Utils.contrasting_color(root.background);
+        }
+    }
+
+    if root.display-mode == TrayDisplayMode.Compact: Rectangle {
+        x: 4px;
+        y: parent.height - self.height - 2px;
+        width: parent.width - 8px;
+        height: 19px;
+        background: #ffffffdd;
+        border-radius: 8px;
+        Text {
+            y: 1px;
+            height: parent.height;
+            text: has-known-color ? slot.filament.material : "??";
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            font-size: 18px;
+            color: black;
         }
     }
 
@@ -345,7 +374,7 @@ component Spool inherits Rectangle {
     }
 
     area := TouchArea {
-        y: parent.y + 20px;
+        y: root.display-mode == TrayDisplayMode.Compact ? 20px : parent.y + 20px;
         width: parent.width;
         height: parent.height - 20px;
         clicked => {
@@ -358,11 +387,13 @@ component SlotCard inherits Rectangle {
     callback clicked;
     in-out property <UiSlot> slot;
     in property <bool> is-in-primary-group;
+    in property <TrayDisplayMode> display-mode: TrayDisplayMode.Normal;
 
     VerticalLayout {
         padding: 0px;
         spacing: 4px;
         Spool {
+            display-mode: root.display-mode;
             is-in-primary-group: is-in-primary-group;
             slot: root.slot;
             clicked => {
@@ -378,6 +409,8 @@ component SlotGroupPanel inherits VerticalLayout {
     in property <UiSlotGroup> group;
     in property <bool> is-primary-group: false;
     in property <bool> reserve-external-area: true;
+    in property <[UiSlotGroup]> primary-groups: AppState.primary-slot-groups;
+    in property <int> primary-group-index: AppState.current-primary-slot-group-index();
 
     spacing: AppConsts.trays-spacing;
 
@@ -400,11 +433,11 @@ component SlotGroupPanel inherits VerticalLayout {
             }
 
             if is-primary-group: HorizontalLayout {
-                for slot-group[idx] in AppState.primary-slot-groups: SlotGroupTab {
+                for slot-group[idx] in root.primary-groups: SlotGroupTab {
                     height: parent.height;
                     group: slot-group;
                     group-index: idx;
-                    active: AppState.current-primary-slot-group-index() == idx;
+                    active: root.primary-group-index == idx;
                 }
             }
 
@@ -429,11 +462,7 @@ component SlotGroupPanel inherits VerticalLayout {
             is-in-primary-group: is-primary-group;
             slot: slot;
             clicked => {
-                if AppState.control-state == ControlState.TraySelect {
-                    AppBackend.set-staging-to-slot(slot.id);
-                } else if AppState.control-state == ControlState.Ready || AppState.control-state == ControlState.PostAction {
-                    AppState.slot-selected(slot);
-                }
+                Helper.activate-slot(slot);
             }
         }
     }
@@ -468,6 +497,101 @@ export component StandardSlotGroups inherits HorizontalLayout {
             if AppState.external-slot-groups.length > 1 {
                 AppState.displayed-external-slot-group = Math.mod(AppState.displayed-external-slot-group + 1, AppState.external-slot-groups.length);
             }
+        }
+    }
+}
+
+component ToolchangerRow inherits Rectangle {
+    in property <UiSlotGroup> group;
+    in property <bool> upper: false;
+    in property <length> tray-width;
+
+    for slot[idx] in group.slots: Rectangle {
+        x: floor(idx / 2) * (root.tray-width + AppConsts.trays-spacing) + (root.upper ? (root.tray-width + AppConsts.trays-spacing) / 2 : 0px);
+        width: root.tray-width;
+        height: parent.height;
+        if Math.mod(idx, 2) == (root.upper ? 1 : 0): Spool {
+            width: parent.width;
+            height: parent.height;
+            display-mode: TrayDisplayMode.Compact;
+            is-in-primary-group: true;
+            slot: slot;
+            clicked => { Helper.activate-slot(slot); }
+        }
+    }
+    if root.upper && AppState.toolchanger-other-groups.length > 0: MyButton {
+        x: parent.width - root.tray-width / 2;
+        width: root.tray-width / 2;
+        height: 50px;
+        text: "AMS";
+        clicked => {
+            AppState.selected-primary-slot-group = 0;
+            AppState.toolchanger-show-other = true;
+        }
+    }
+}
+
+export component BambuToolchangerSlotGroups inherits VerticalLayout {
+    property <length> tray-width: (FrameworkState.display-width - 4 * AppConsts.trays-spacing) / 5;
+    // Match the loaded standard slot area with two compact rows.
+    property <length> compact-height: tray-width + 4px;
+    property <int> other-index: AppState.selected-primary-slot-group >= 0 && AppState.selected-primary-slot-group < AppState.toolchanger-other-groups.length ? AppState.selected-primary-slot-group : 0;
+    width: FrameworkState.display-width;
+    // Keep the slot/control-panel split stable, including while printer data loads.
+    height: 2 * compact-height + AppConsts.trays-spacing;
+    if !AppState.toolchanger-show-other: VerticalLayout {
+        spacing: AppConsts.trays-spacing;
+
+        if AppState.slot-groups-loading: MyText {
+            text: "Fetching printer information...";
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        if !AppState.slot-groups-loading && (!AppState.toolchanger-main-group-available || AppState.toolchanger-main-group.slots.length != AppState.toolchanger-slot-count): MyText {
+            text: "AMS 3H unavailable";
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        if !AppState.slot-groups-loading && AppState.toolchanger-main-group-available && AppState.toolchanger-main-group.slots.length == AppState.toolchanger-slot-count: VerticalLayout {
+            spacing: AppConsts.trays-spacing;
+            ToolchangerRow {
+                group: AppState.toolchanger-main-group;
+                tray-width: root.tray-width;
+                upper: true;
+                height: root.compact-height;
+            }
+            ToolchangerRow {
+                group: AppState.toolchanger-main-group;
+                tray-width: root.tray-width;
+                height: root.compact-height;
+            }
+        }
+
+        if !AppState.slot-groups-loading && (!AppState.toolchanger-main-group-available || AppState.toolchanger-main-group.slots.length != AppState.toolchanger-slot-count) && AppState.toolchanger-other-groups.length > 0: MyButton {
+            height: 50px;
+            text: "Other AMS";
+            clicked => {
+                AppState.selected-primary-slot-group = 0;
+                AppState.toolchanger-show-other = true;
+            }
+        }
+    }
+
+    if AppState.toolchanger-show-other && AppState.toolchanger-other-groups.length > 0: HorizontalLayout {
+        spacing: AppConsts.trays-spacing;
+        SlotGroupPanel {
+            is-primary-group: true;
+            reserve-external-area: true;
+            primary-groups: AppState.toolchanger-other-groups;
+            primary-group-index: root.other-index;
+            group: AppState.toolchanger-other-groups[root.other-index];
+        }
+        MyButton {
+            width: root.tray-width;
+            text: "AMS\n3H";
+            clicked => { AppState.toolchanger-show-other = false; }
         }
     }
 }
