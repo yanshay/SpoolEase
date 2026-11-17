@@ -190,6 +190,9 @@ impl BambuPrinter {
 
     #[allow(non_snake_case)]
     pub fn process_print_message__vir_slots(&mut self, vir_slot: &[PrintTray]) -> (bool, HashMap<usize, SpoolId>) {
+        if self.model() == super::PrinterModel::H3C {
+            return (self.process_h3_virtual_trays(vir_slot), HashMap::new());
+        }
         let mut changed_res = false;
         let mut removed_tag_res = HashMap::new();
         for vt_slot in vir_slot {
@@ -203,6 +206,125 @@ impl BambuPrinter {
             }
         }
         (changed_res, removed_tag_res)
+    }
+
+    fn process_h3_virtual_trays(&mut self, trays: &[PrintTray]) -> bool {
+        let mut changed = false;
+        for update in trays {
+            let Some(id) = update.id.filter(|id| *id <= 255) else {
+                continue;
+            };
+            let index = (255 - id) as usize;
+            if self.inner_virt_trays.len() <= index {
+                self.inner_virt_trays.resize(index + 1, Tray::default());
+                changed = true;
+            }
+            let mut tray = self.virt_trays()[index].clone();
+            let has_filament_update = update.tray_type.is_some()
+                || update.tray_info_idx.is_some()
+                || update.tray_color.is_some()
+                || update.cols.is_some()
+                || update.nozzle_temp_min.is_some()
+                || update.nozzle_temp_max.is_some();
+            if has_filament_update {
+                let mut filament = match &tray.filament {
+                    Filament::Known(filament) => filament.clone(),
+                    Filament::Unknown => FilamentInfo::default(),
+                };
+                if let Some(value) = &update.tray_type {
+                    filament.tray_type = value.clone();
+                }
+                if let Some(value) = &update.tray_info_idx {
+                    filament.tray_info_idx = value.clone();
+                }
+                if update.tray_color.is_some() || update.cols.is_some() {
+                    filament.tray_color = update.tray_colors();
+                }
+                if let Some(value) = update.nozzle_temp_min {
+                    filament.nozzle_temp_min = value;
+                }
+                if let Some(value) = update.nozzle_temp_max {
+                    filament.nozzle_temp_max = value;
+                }
+                tray.filament = if update.tray_type.as_deref() == Some("") {
+                    Filament::Unknown
+                } else {
+                    Filament::Known(filament)
+                };
+            }
+            if update.k.is_some() {
+                tray.k_from_tray = update.k;
+            }
+            if update.cali_idx.is_some() {
+                tray.cali_idx = update.cali_idx;
+            }
+            tray.state = self.get_tray_detailed_ready_state(id as i32);
+            if tray != self.virt_trays()[index] || tray.meta_info != self.virt_trays()[index].meta_info {
+                self.set_virt_tray(index as u32, tray);
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    fn process_h3_tool_states(&mut self, nozzles: &super::bambu_api::PrintDeviceNozzle) -> bool {
+        let old_sources = self.h3_tool_sources.clone();
+        let old_mounted_tool = self.h3_mounted_tool;
+        let mut telemetry_changed = false;
+        for nozzle in &nozzles.info {
+            let address = nozzle.addr_id.and_then(|id| usize::try_from(id).ok()).or_else(|| {
+                if nozzle.id == 0 {
+                    self.h3_mounted_tool
+                } else if (16..=255).contains(&nozzle.id) {
+                    Some((nozzle.id - 16) as usize)
+                } else {
+                    None
+                }
+            });
+            let Some(address) = address.filter(|address| *address <= 255) else {
+                continue;
+            };
+            if self.h3_tool_states.len() <= address {
+                self.h3_tool_states.resize_with(address + 1, Default::default);
+                telemetry_changed = true;
+            }
+            let tool = &mut self.h3_tool_states[address];
+            if nozzle.snow.is_some() && nozzle.snow != tool.snow {
+                tool.snow = nozzle.snow;
+                telemetry_changed = true;
+            }
+            if nozzle.stat.is_some() && nozzle.stat != tool.stat {
+                tool.stat = nozzle.stat;
+                telemetry_changed = true;
+            }
+            if nozzle.id == 0 {
+                self.h3_mounted_tool = Some(address);
+            } else if nozzle.id >= 16 && self.h3_mounted_tool == Some(address) {
+                self.h3_mounted_tool = None;
+            }
+        }
+
+        self.h3_tool_sources.clear();
+        for (address, tool) in self.h3_tool_states.iter().enumerate() {
+            let (Some(snow), Some(stat)) = (tool.snow, tool.stat) else {
+                continue;
+            };
+            let slot = snow & 0xff;
+            if snow < 0 || slot == 0xff || stat & 0x1e0 == 0 {
+                continue;
+            }
+            let ams_id = snow >> 8;
+            let source = if (247..=255).contains(&ams_id) {
+                Some(ams_id)
+            } else {
+                canonical_tray_id_from_ams_slot(ams_id, slot)
+            };
+            if let Some(source) = source {
+                let mounted = self.h3_mounted_tool == Some(address);
+                self.h3_tool_sources.entry(source).and_modify(|current| *current |= mounted).or_insert(mounted);
+            }
+        }
+        telemetry_changed || old_mounted_tool != self.h3_mounted_tool || old_sources != self.h3_tool_sources
     }
 
     #[allow(non_snake_case)]
@@ -396,7 +518,12 @@ impl BambuPrinter {
 
         // Deal with nozzle diameter
         let mut extruders_change_made = false;
+        let is_h3c = self.model() == super::PrinterModel::H3C;
+        let mut h3_tool_states_changed = false;
         if let Some(nozzles) = print.device.as_ref().and_then(|d| d.nozzle.as_ref()) {
+            if is_h3c {
+                h3_tool_states_changed = self.process_h3_tool_states(nozzles);
+            }
             for nozzle in &nozzles.info {
                 if nozzle.id == 0 || nozzle.id == 1 {
                     extruders_change_made |= self.set_extruder_info(nozzle.id as u32, nozzle);
@@ -428,11 +555,11 @@ impl BambuPrinter {
         let mut ams_change_made = false;
         if let Some(ams) = &print.ams {
             (ams_change_made, removed_tags) = self.process_print_message__ams(ams);
-        } else if tray_xxx_change_made {
+        } else if tray_xxx_change_made && !is_h3c {
             // Extruder-only updates can change which ready AMS tray is loaded.
             for tray_id in 0..self.ams_trays().len() {
                 let mut tray = self.ams_trays()[tray_id].clone();
-                if matches!(tray.state, TrayState::Ready | TrayState::Loaded) {
+                if matches!(tray.state, TrayState::Ready | TrayState::InTool | TrayState::Loaded) {
                     let state = self.get_tray_detailed_ready_state(tray_id as i32);
                     if tray.state != state {
                         tray.state = state;
@@ -457,7 +584,7 @@ impl BambuPrinter {
             if let Some(removed_tag) = removed_tag {
                 removed_tags.insert(255, removed_tag);
             }
-        } else if tray_xxx_change_made {
+        } else if tray_xxx_change_made && !is_h3c {
             // I believe this situation can happen only in pre H2D printers ( in H2D always seen vir_slot)
             // Still, let's handle it just in case
             // documenting retroactively: seems like external tray state can change w/o vt_tray in message
@@ -477,6 +604,24 @@ impl BambuPrinter {
                     if let Some(spool_id) = spool_id {
                         removed_tags.insert(external_tray_id as usize, spool_id);
                     }
+                }
+            }
+        }
+        if is_h3c && (h3_tool_states_changed || tray_xxx_change_made) {
+            for tray_id in 0..self.ams_trays().len() {
+                if matches!(self.ams_trays()[tray_id].state, TrayState::Ready | TrayState::InTool | TrayState::Loaded) {
+                    let state = self.get_tray_detailed_ready_state(tray_id as i32);
+                    if self.ams_trays()[tray_id].state != state {
+                        self.update_ams_tray(tray_id, |tray| tray.state = state);
+                        ams_change_made = true;
+                    }
+                }
+            }
+            for index in 0..self.virt_trays().len() {
+                let state = self.get_tray_detailed_ready_state(255 - index as i32);
+                if self.virt_trays()[index].state != state {
+                    self.update_virt_tray(index as u32, |tray| tray.state = state);
+                    vt_tray_change_made = true;
                 }
             }
         }

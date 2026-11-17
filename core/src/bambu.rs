@@ -159,6 +159,13 @@ impl BambuFilaSwitchState {
     }
 }
 
+// Likely relevant to all tool changers, but for now calling it H3
+#[derive(Clone, Default)]
+struct H3ToolState {
+    snow: Option<i32>,
+    stat: Option<i32>,
+}
+
 pub struct BambuPrinter {
     pub bambu_model: Option<Rc<RefCell<Self>>>,
     pub log_filter: log::LevelFilter,
@@ -182,7 +189,10 @@ pub struct BambuPrinter {
     inner_extruders: [Extruder; 2],
     // Canonical trays: 0..15 standard AMS, 16..23 AMS-HT, 24..27 AMS Lite, 28..36 AMS 3H.
     inner_ams_trays: Vec<Tray>,
-    inner_virt_trays: [Tray; 2],
+    inner_virt_trays: Vec<Tray>,
+    h3_tool_states: Vec<H3ToolState>,
+    h3_tool_sources: HashMap<i32, bool>,
+    h3_mounted_tool: Option<usize>,
     force_store_state: bool,
     extruders_dirty: bool,
     ams_trays_dirty: [bool; tray::MAX_AMS_TRAYS],
@@ -287,11 +297,13 @@ impl BambuPrinter {
         if extruder_id != 0 && extruder_id != 1 {
             return false;
         }
-        let new_extruder = Extruder {
-            id: extruder_id,
-            diameter: Some(format!("{:.1}", new_nozzle_info.diameter)),
-            nozzle_type: Some(new_nozzle_info.nozzle_type.clone()),
-        };
+        let mut new_extruder = self.inner_extruders[extruder_id as usize].clone();
+        if let Some(diameter) = new_nozzle_info.diameter {
+            new_extruder.diameter = Some(format!("{diameter:.1}"));
+        }
+        if let Some(nozzle_type) = &new_nozzle_info.nozzle_type {
+            new_extruder.nozzle_type = Some(nozzle_type.clone());
+        }
 
         if new_extruder != self.inner_extruders[extruder_id as usize] {
             info!(
@@ -440,7 +452,10 @@ impl BambuPrinter {
                 trays.resize(tray::AMS_3H_TRAY_START, Tray::default()); // but start by default without AMS3H due to O(N^2) on some opeations
                 trays
             },
-            inner_virt_trays: [Tray::default(), Tray::default()],
+            inner_virt_trays: alloc::vec![Tray::default(); 2],
+            h3_tool_states: Vec::new(),
+            h3_tool_sources: HashMap::new(),
+            h3_mounted_tool: None,
             ams_trays_dirty: [false; tray::MAX_AMS_TRAYS],
             force_store_state: false,
             virt_trays_dirty: false,

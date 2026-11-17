@@ -326,6 +326,7 @@ pub enum SlotState {
     Occupied,
     Reading,
     Ready,
+    InTool,
     Loading,
     Unloading,
     Loaded,

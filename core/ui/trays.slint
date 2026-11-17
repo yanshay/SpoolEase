@@ -31,7 +31,7 @@ component SlotGroupTab inherits Rectangle {
     horizontal-stretch: Math.max(group.slots.length, 1);
 
     function slot-with-spool(slot: UiSlot) -> bool {
-        return slot.state == UiSlotState.Ready || slot.state == UiSlotState.Loading || slot.state == UiSlotState.Loaded || slot.state == UiSlotState.Unloading;
+        return slot.state == UiSlotState.Ready || slot.state == UiSlotState.InTool || slot.state == UiSlotState.Loading || slot.state == UiSlotState.Loaded || slot.state == UiSlotState.Unloading;
     }
 
     function should-show-slot-color(slot: UiSlot) -> bool {

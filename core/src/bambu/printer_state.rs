@@ -21,7 +21,7 @@ pub struct PrinterPersistentState<'a> {
     pub ams_trays: Cow<'a, [Tray]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub virt_tray: Option<Cow<'a, Tray>>, // for Backwards compatibility prior to 0.5.0-b.48
-    pub virt_trays: Option<Cow<'a, [Tray; 2]>>,
+    pub virt_trays: Option<Cow<'a, [Tray]>>,
     pub nozzle_diameter: Option<String>,
     #[serde(default)]
     pub ams_exist_bits: Option<u32>,
@@ -412,6 +412,9 @@ impl BambuPrinter {
         }
         if let Some(mut virt_trays) = state.virt_trays {
             self.inner_virt_trays = core::mem::take(virt_trays.to_mut());
+            if self.inner_virt_trays.len() < 2 {
+                self.inner_virt_trays.resize(2, Tray::default());
+            }
         } else if let Some(mut virt_tray) = state.virt_tray {
             self.inner_virt_trays[0] = core::mem::take(virt_tray.to_mut());
             self.inner_virt_trays[1] = Tray::default();

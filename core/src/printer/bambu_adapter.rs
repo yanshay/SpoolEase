@@ -140,6 +140,13 @@ impl BambuPrinterDriver {
             snapshot.slot_groups_known = true;
             snapshot.slot_groups = state_snapshot.slot_groups.clone();
             snapshot.slot_group_display_groups = state_snapshot.slot_group_display_groups.clone();
+            if printer.model() == crate::bambu::PrinterModel::H3C {
+                snapshot.slot_groups.retain(|group| group.kind != SlotGroupKind::External);
+                let slot_groups = &snapshot.slot_groups;
+                for display_group in &mut snapshot.slot_group_display_groups {
+                    display_group.slot_group_ids.retain(|id| slot_groups.iter().any(|group| group.id == *id));
+                }
+            }
         } else {
             Self::overlay_generic_fields_from_state(&mut snapshot, &state_snapshot);
         }
@@ -320,9 +327,13 @@ impl BambuPrinterDriver {
             }
         }
 
-        groups.push(Self::external_group(printer, 255, 0));
-        if printer.num_extruders() == 2 {
-            groups.push(Self::external_group(printer, 254, 1));
+        // H3C external slots (virt trays) ignored for now. 
+        // Maybe should be supported somehow through the base slots since external is considered possible for every tool, not per extruder
+        if printer.model() != crate::bambu::PrinterModel::H3C {
+            groups.push(Self::external_group(printer, 255, 0));
+            if printer.num_extruders() == 2 {
+                groups.push(Self::external_group(printer, 254, 1));
+            }
         }
 
         groups
@@ -592,6 +603,7 @@ impl BambuPrinterDriver {
             BambuTrayState::Spool => SlotState::Occupied,
             BambuTrayState::Reading => SlotState::Reading,
             BambuTrayState::Ready => SlotState::Ready,
+            BambuTrayState::InTool => SlotState::InTool,
             BambuTrayState::Loading => SlotState::Loading,
             BambuTrayState::Unloading => SlotState::Unloading,
             BambuTrayState::Loaded => SlotState::Loaded,

@@ -184,6 +184,7 @@ pub struct PrintDeviceExtruderInfo {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PrintDeviceNozzle {
+    #[serde(default)]
     pub info: Vec<PrintDeviceNozzleInfo>,
     pub exist: Option<i32>,
     pub state: Option<i32>,
@@ -192,9 +193,12 @@ pub struct PrintDeviceNozzle {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PrintDeviceNozzleInfo {
     pub id: i32,
-    pub diameter: f32,
+    pub diameter: Option<f32>,
     #[serde(rename = "type")] // type is reserved in Rust
-    pub nozzle_type: String,
+    pub nozzle_type: Option<String>,
+    pub addr_id: Option<i32>,
+    pub snow: Option<i32>,
+    pub stat: Option<i32>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

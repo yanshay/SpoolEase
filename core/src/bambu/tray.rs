@@ -101,6 +101,7 @@ pub enum TrayState {
     Spool,     // When a spool is placed into the slot
     Reading,   // Reading - during the process of inserting spool into AMS
     Ready,     // Ready - there is a spool, it is not loaded to the extruder now
+    InTool,    // Filament is in a tool that is not mounted on the extruder
     Loading,   // Loading - during the process of loading into the extruder
     Unloading, // Unloading - during the process of unloading from the extruder
     Loaded,    // Loaded - in the extruder
@@ -243,7 +244,7 @@ impl BambuPrinter {
             self.ams_trays_dirty[index] = true;
         }
     }
-    pub fn virt_trays(&self) -> &[Tray; 2] {
+    pub fn virt_trays(&self) -> &[Tray] {
         &self.inner_virt_trays
     }
     pub fn set_virt_tray(&mut self, extruder_id: u32, tray: Tray) {
@@ -310,6 +311,14 @@ impl BambuPrinter {
     }
 
     pub(crate) fn get_tray_detailed_ready_state(&self, tray_id: i32) -> TrayState {
+        if self.model() == super::PrinterModel::H3C {
+            return match self.h3_tool_sources.get(&tray_id) {
+                Some(true) => TrayState::Loaded,
+                Some(false) => TrayState::InTool,
+                None if (0..MAX_AMS_TRAYS as i32).contains(&tray_id) => TrayState::Ready,
+                None => TrayState::Unknown,
+            };
+        }
         // tray_id: 0..15, 16.., 254, 255
         // To know if a tray is active is different between AMS and external tray.
         // For AMS - Loaded is when it is actually the active extruder, Ready is when filament available in AMS.
@@ -465,9 +474,9 @@ impl BambuPrinter {
         } else if (128..128 + 8).contains(&ams_id) {
             format!("HT-{}", (b'A' + (ams_id - 128) as u8) as char)
         } else if ams_id == 16 {
-            "AMS Lite".into()
+            "AMS-Lite".into()
         } else if ams_id == 32 {
-            "AMS 3H".into()
+            "AMS-3H".into()
         } else if ams_id == 255 {
             if self.num_extruders() == 1 {
                 "External Spool".into()
