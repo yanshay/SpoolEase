@@ -687,9 +687,13 @@ impl BambuPrinter {
             }
         } else if let Some(ams) = &print.ams {
             // old version tray_xxx data
-            Self::update_std_tray_xxx(&mut self.tray_tar[0], &ams.tray_tar, &mut tray_xxx_change_made);
-            Self::update_std_tray_xxx(&mut self.tray_now[0], &ams.tray_now, &mut tray_xxx_change_made);
-            Self::update_std_tray_xxx(&mut self.tray_pre[0], &ams.tray_pre, &mut tray_xxx_change_made);
+            let has_ams_3h = self.has_ams_3h_for_print(print);
+            let tray_tar = ams.tray_tar.map(|value| Self::normalize_ams_tray_xxx(value, has_ams_3h));
+            let tray_now = ams.tray_now.map(|value| Self::normalize_ams_tray_xxx(value, has_ams_3h));
+            let tray_pre = ams.tray_pre.map(|value| Self::normalize_ams_tray_xxx(value, has_ams_3h));
+            Self::update_std_tray_xxx(&mut self.tray_tar[0], &tray_tar, &mut tray_xxx_change_made);
+            Self::update_std_tray_xxx(&mut self.tray_now[0], &tray_now, &mut tray_xxx_change_made);
+            Self::update_std_tray_xxx(&mut self.tray_pre[0], &tray_pre, &mut tray_xxx_change_made);
         }
         tray_xxx_change_made
     }

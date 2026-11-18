@@ -411,6 +411,28 @@ impl BambuPrinter {
         }
     }
 
+    pub(crate) fn has_ams_3h_for_print(&self, print: &super::bambu_api::PrintData) -> bool {
+        if let Some(ams) = &print.ams {
+            if let Some(bits) = &ams.ams_exist_bits
+                && let Ok(bits) = u32::from_str_radix(bits, 16)
+            {
+                return bits & (1 << 13) != 0;
+            }
+            if ams.ams.as_ref().is_some_and(|units| units.iter().any(|unit| unit.id == 32)) {
+                return true;
+            }
+        }
+        self.ams_exist_bits().is_some_and(|bits| bits & (1 << 13) != 0)
+    }
+
+    pub(crate) fn normalize_ams_tray_xxx(value: i32, has_ams_3h: bool) -> i32 {
+        if has_ams_3h && (0..AMS_3H_TRAY_COUNT as i32).contains(&value) {
+            AMS_3H_TRAY_START as i32 + value
+        } else {
+            value
+        }
+    }
+
     pub(crate) fn update_std_tray_xxx(curr_tray_xxx: &mut i32, message_tray_xxx: &Option<i32>, changed: &mut bool) {
         if let Some(new_tray_xxx) = message_tray_xxx.and_then(canonical_tray_id)
             && new_tray_xxx != *curr_tray_xxx

@@ -323,8 +323,9 @@ impl BambuPrinter {
                 new_layer_num = layer_num;
             }
 
+            let has_ams_3h = self.has_ams_3h_for_print(print);
             let curr_tray_active = self.get_tray_active();
-            let new_tray_active = Self::get_print_data_tray_active(print, curr_tray_active);
+            let new_tray_active = Self::get_print_data_tray_active(print, curr_tray_active, has_ams_3h);
             if new_tray_active != curr_tray_active {
                 tray_active_change = true;
             }
@@ -339,6 +340,7 @@ impl BambuPrinter {
                 // }
             } else if let Some(ams) = &print.ams {
                 if let Some(update_tray_tar) = ams.tray_tar {
+                    let update_tray_tar = Self::normalize_ams_tray_xxx(update_tray_tar, has_ams_3h);
                     if update_tray_tar != self.tray_tar[0] && update_tray_tar != self.tray_now[0] {
                         tray_tar_change_from_tray_now = true;
                     }
@@ -864,7 +866,7 @@ impl BambuPrinter {
         let _ = file_store.delete_file(&print_project_path).await;
     }
 
-    fn get_print_data_tray_active(print: &PrintData, current_tray_active: Option<i32>) -> Option<i32> {
+    fn get_print_data_tray_active(print: &PrintData, current_tray_active: Option<i32>, has_ams_3h: bool) -> Option<i32> {
         // the active tray, usually also printing, convention like tray_xxx fields.
         // always a single value, also in multi extruder printers
         if let Some(extruder) = print.device.as_ref().and_then(|d| d.extruder.as_ref()) {
@@ -873,7 +875,7 @@ impl BambuPrinter {
             Self::get_common_tray_active(active_extruder, extruder_snow)
         } else if let Some(tray_now) = &print.ams.as_ref().and_then(|ams| ams.tray_now) {
             // single tray printer w/o extruder field
-            Self::get_common_tray_active(0, *tray_now)
+            Self::get_common_tray_active(0, Self::normalize_ams_tray_xxx(*tray_now, has_ams_3h))
         } else {
             // no change, so return the current
             current_tray_active
