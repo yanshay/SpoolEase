@@ -34,7 +34,8 @@ impl PrinterManager {
     }
 
     pub fn add_snapmaker_u1_printer(&mut self, name: Option<String>, config: &SnapmakerU1PrinterConfig) -> PrinterResult<()> {
-        self.add_driver(Box::new(SnapmakerU1PrinterDriver::new(name, config)?));
+        let printer_number = self.printers.len() + 1;
+        self.add_driver(Box::new(SnapmakerU1PrinterDriver::new(name, config, printer_number)?));
         Ok(())
     }
 

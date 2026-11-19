@@ -484,6 +484,7 @@ impl ViewModel {
         term_mut().subscribe(trait_for_terminal_weak);
 
         let printer_manager = RefCell::new(PrinterManager::new());
+        framework.borrow().mdns_discovery.set_max_listeners(crate::settings::MAX_NUM_PRINTERS);
 
         // Initialize SpoolTag
         let spool_tag_model = if let (Some(spi_device), Some(irq)) = (spi_device, irq) {
@@ -814,6 +815,9 @@ impl ViewModel {
                     if let Err(err) = self.printer_manager.borrow_mut().add_snapmaker_u1_printer(printer_config.name.clone(), config) {
                         term_info!("[{}] Error initializing Snapmaker U1 printer: {:?}", printer_number, err);
                         continue;
+                    }
+                    if let Err(err) = self.printer_manager.borrow_mut().start_at(manager_index, self.framework.clone()) {
+                        error!("Failed to start Snapmaker U1 printer runtime: {err:?}");
                     }
                     if default_printer_ui_index.is_none() && Some(&printer_id.0) == configured_default_printer_id.as_ref() {
                         default_printer_ui_index = Some(available_printers.len());
