@@ -816,6 +816,13 @@ impl ViewModel {
                         term_info!("[{}] Error initializing Snapmaker U1 printer: {:?}", printer_number, err);
                         continue;
                     }
+                    if let Some(view_model_rc) = &self.view_model {
+                        let trait_for_printer_rc: Rc<RefCell<dyn printer_domain::PrinterObserver>> = view_model_rc.clone();
+                        let trait_for_printer_weak: Weak<RefCell<dyn printer_domain::PrinterObserver>> = Rc::downgrade(&trait_for_printer_rc);
+                        if let Err(err) = self.printer_manager.borrow_mut().subscribe_at(manager_index, trait_for_printer_weak) {
+                            error!("Failed to subscribe generic printer observer: {err:?}");
+                        }
+                    }
                     if let Err(err) = self.printer_manager.borrow_mut().start_at(manager_index, self.framework.clone()) {
                         error!("Failed to start Snapmaker U1 printer runtime: {err:?}");
                     }

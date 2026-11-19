@@ -4,6 +4,8 @@ pub mod bambu_adapter;
 pub mod fake_driver;
 pub mod manager;
 pub mod snapmaker_driver;
+mod snapmaker_comm;
+mod snapmaker_state;
 
 use alloc::{
     boxed::Box,
