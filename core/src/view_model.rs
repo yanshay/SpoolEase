@@ -806,6 +806,30 @@ impl ViewModel {
                         kind: crate::app::UiPrinterKind::Fake,
                     });
                 }
+                PrinterDriverConfig::SnapmakerU1(config) => {
+                    let Ok(printer_id) = config.printer_id() else {
+                        term_info!("[{}] Skipping Snapmaker U1 printer with invalid config", printer_number);
+                        continue;
+                    };
+                    if let Err(err) = self.printer_manager.borrow_mut().add_snapmaker_u1_printer(printer_config.name.clone(), config) {
+                        term_info!("[{}] Error initializing Snapmaker U1 printer: {:?}", printer_number, err);
+                        continue;
+                    }
+                    if default_printer_ui_index.is_none() && Some(&printer_id.0) == configured_default_printer_id.as_ref() {
+                        default_printer_ui_index = Some(available_printers.len());
+                    }
+                    let snapshot = self.printer_manager.borrow().snapshot_at(manager_index).unwrap();
+                    available_printers.push(crate::app::Printer {
+                        id: printer_id.0.to_shared_string(),
+                        can_assign_slot: false,
+                        can_set_spool_id: false,
+                        can_clear_slot: false,
+                        can_unassign_slot: false,
+                        connected: false,
+                        name: snapshot.name.to_shared_string(),
+                        kind: crate::app::UiPrinterKind::Unknown,
+                    });
+                }
             }
         }
 

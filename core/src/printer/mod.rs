@@ -3,6 +3,7 @@
 pub mod bambu_adapter;
 pub mod fake_driver;
 pub mod manager;
+pub mod snapmaker_driver;
 
 use alloc::{
     boxed::Box,
@@ -56,6 +57,7 @@ pub enum PrinterDriverKind {
     Unknown,
     Bambu,
     Fake,
+    SnapmakerU1,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

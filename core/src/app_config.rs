@@ -337,11 +337,19 @@ impl PrinterConfig {
         }
     }
 
+    pub fn snapmaker_u1(name: Option<String>, config: SnapmakerU1PrinterConfig) -> Self {
+        Self {
+            name,
+            driver: PrinterDriverConfig::SnapmakerU1(config),
+        }
+    }
+
     #[allow(dead_code)]
     pub fn driver_kind(&self) -> PrinterDriverKind {
         match &self.driver {
             PrinterDriverConfig::Bambu(_) => PrinterDriverKind::Bambu,
             PrinterDriverConfig::Fake(_) => PrinterDriverKind::Fake,
+            PrinterDriverConfig::SnapmakerU1(_) => PrinterDriverKind::SnapmakerU1,
         }
     }
 
@@ -349,6 +357,7 @@ impl PrinterConfig {
         match &self.driver {
             PrinterDriverConfig::Bambu(config) => config.printer_id(),
             PrinterDriverConfig::Fake(config) => config.printer_id(),
+            PrinterDriverConfig::SnapmakerU1(config) => config.printer_id(),
         }
     }
 
@@ -366,6 +375,7 @@ impl PrinterConfig {
 pub enum PrinterDriverConfig {
     Bambu(BambuPrinterConfig),
     Fake(FakePrinterConfig),
+    SnapmakerU1(SnapmakerU1PrinterConfig),
 }
 
 impl Default for PrinterDriverConfig {
@@ -411,6 +421,30 @@ impl BambuPrinterConfig {
             .as_deref()
             .map(Self::printer_id_for_serial)
             .ok_or_else(|| "Missing Bambu printer serial".to_string())
+    }
+}
+
+#[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug, Clone, Default)]
+pub struct SnapmakerU1PrinterConfig {
+    #[serde(default, serialize_with = "serialize_option_ipv4", deserialize_with = "deserialize_option_ipv4")]
+    pub ip: Option<Ipv4Address>,
+    pub serial: Option<String>,
+    pub api_key: Option<String>,
+    pub log_filter: Option<log::LevelFilter>,
+}
+
+impl SnapmakerU1PrinterConfig {
+    pub fn printer_id_for_serial(serial: &str) -> PrinterId {
+        PrinterId::new(format!("snapmaker_u1_printer_{serial}"))
+    }
+
+    pub fn printer_id(&self) -> Result<PrinterId, String> {
+        self.serial
+            .as_deref()
+            .map(str::trim)
+            .filter(|serial| !serial.is_empty())
+            .map(Self::printer_id_for_serial)
+            .ok_or_else(|| "Missing Snapmaker U1 printer serial".to_string())
     }
 }
 
@@ -492,6 +526,15 @@ impl From<LegacyPrinterConfig> for PrinterConfig {
                 },
             ),
             PrinterDriverKind::Fake => Self::fake(v.name, FakePrinterConfig::default()),
+            PrinterDriverKind::SnapmakerU1 => Self::snapmaker_u1(
+                v.name,
+                SnapmakerU1PrinterConfig {
+                    ip: v.ip,
+                    serial: v.serial,
+                    log_filter: v.log_filter,
+                    ..Default::default()
+                },
+            ),
         }
     }
 }
@@ -602,6 +645,13 @@ impl AppConfig {
                 }
                 PrinterDriverConfig::Fake(fake_config) => {
                     if fake_config.printer_id().is_ok() {
+                        missing = false;
+                    } else {
+                        partial_missing = true;
+                    }
+                }
+                PrinterDriverConfig::SnapmakerU1(config) => {
+                    if config.printer_id().is_ok() {
                         missing = false;
                     } else {
                         partial_missing = true;

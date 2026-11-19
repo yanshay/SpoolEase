@@ -38,7 +38,8 @@ use shared::gcode_analysis_task::Fetch3mf;
 use crate::app_config::{
     AiProviderAvailability, AiProviderId, ApiTokenMetadata, AppConfig, BackupConfig, BackupStatus, BambuPrinterConfig, DefaultPrinterConfig,
     DeviceCertificateGenerationRequest, DeviceCertificateLeafRequest, DeviceCertificateStatus, FILAMENT_BRAND_NAMES, FakePrinterConfig,
-    PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, ScaleSourceConfig, UseAmsScan,
+    PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, ScaleSourceConfig, SnapmakerU1PrinterConfig,
+    UseAmsScan,
 };
 use crate::bambu::bambu_api::PrintCommand;
 use crate::bambu::calibration::KInfo;
@@ -1555,6 +1556,37 @@ encrypted_input!(PrinterConfigDTO);
 enum PrinterDriverConfigDTO {
     Bambu(BambuPrinterConfigDTO),
     Fake(FakePrinterConfigDTO),
+    SnapmakerU1(SnapmakerU1PrinterConfigDTO),
+}
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct SnapmakerU1PrinterConfigDTO {
+    ip: Option<String>,
+    serial: Option<String>,
+    api_key: Option<String>,
+    log_filter: Option<log::LevelFilter>,
+}
+
+impl From<SnapmakerU1PrinterConfigDTO> for SnapmakerU1PrinterConfig {
+    fn from(v: SnapmakerU1PrinterConfigDTO) -> Self {
+        Self {
+            ip: v.ip.and_then(|s| s.parse::<Ipv4Addr>().ok()),
+            serial: v.serial,
+            api_key: v.api_key,
+            log_filter: v.log_filter,
+        }
+    }
+}
+
+impl From<&SnapmakerU1PrinterConfig> for SnapmakerU1PrinterConfigDTO {
+    fn from(v: &SnapmakerU1PrinterConfig) -> Self {
+        Self {
+            ip: v.ip.map(|ip| ip.to_string()),
+            serial: v.serial.clone(),
+            api_key: v.api_key.clone(),
+            log_filter: v.log_filter,
+        }
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -1651,6 +1683,7 @@ impl From<PrinterConfigDTO> for PrinterConfig {
         match v.driver {
             PrinterDriverConfigDTO::Bambu(bambu_config) => Self::bambu(v.name, bambu_config.into()),
             PrinterDriverConfigDTO::Fake(fake_config) => Self::fake(v.name, fake_config.into()),
+            PrinterDriverConfigDTO::SnapmakerU1(config) => Self::snapmaker_u1(v.name, config.into()),
         }
     }
 }
@@ -1659,6 +1692,7 @@ impl From<&PrinterConfig> for PrinterConfigDTO {
         let driver = match &v.driver {
             PrinterDriverConfig::Bambu(bambu_config) => PrinterDriverConfigDTO::Bambu(BambuPrinterConfigDTO::from(bambu_config)),
             PrinterDriverConfig::Fake(fake_config) => PrinterDriverConfigDTO::Fake(FakePrinterConfigDTO::from(fake_config)),
+            PrinterDriverConfig::SnapmakerU1(config) => PrinterDriverConfigDTO::SnapmakerU1(SnapmakerU1PrinterConfigDTO::from(config)),
         };
         Self {
             name: v.name.clone(),

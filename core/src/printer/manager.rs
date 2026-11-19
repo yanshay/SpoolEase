@@ -2,7 +2,7 @@ use alloc::{boxed::Box, format, rc::Rc, string::String, vec::Vec};
 use core::cell::RefCell;
 use framework::{debug, framework::Framework};
 
-use crate::app_config::FakePrinterConfig;
+use crate::app_config::{FakePrinterConfig, SnapmakerU1PrinterConfig};
 use crate::bambu::BambuPrinter;
 use crate::store::Store;
 
@@ -10,7 +10,7 @@ use super::{
     DriverSpecificQuery, DriverSpecificQueryResult, PRINTER_STATE_FILE_VERSION, PrinterCapabilities, PrinterCommand, PrinterDriver, PrinterError,
     PrinterId, PrinterObserver, PrinterPersistentStateLoadError, PrinterPersistentStatePayload, PrinterResult, PrinterRuntimePersistenceFuture,
     PrinterRuntimePersistenceRequestKind, PrinterSnapshot, PrinterSnapshotState, PrinterStateFile, SlotId, bambu_adapter::BambuPrinterDriver,
-    fake_driver::FakePrinterDriver, sanitize_loaded_snapshot,
+    fake_driver::FakePrinterDriver, sanitize_loaded_snapshot, snapmaker_driver::SnapmakerU1PrinterDriver,
 };
 
 #[derive(Default)]
@@ -31,6 +31,11 @@ impl PrinterManager {
     pub fn add_fake_printer(&mut self, name: Option<String>, config: &FakePrinterConfig) {
         let printer_number = self.printers.len() + 1;
         self.add_driver(Box::new(FakePrinterDriver::new(name, config, printer_number)));
+    }
+
+    pub fn add_snapmaker_u1_printer(&mut self, name: Option<String>, config: &SnapmakerU1PrinterConfig) -> PrinterResult<()> {
+        self.add_driver(Box::new(SnapmakerU1PrinterDriver::new(name, config)?));
+        Ok(())
     }
 
     fn add_driver(&mut self, driver: Box<dyn PrinterDriver>) {

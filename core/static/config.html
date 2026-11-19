@@ -820,6 +820,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
       // ==========================================
       const BAMBU_DRIVER_KIND = "Bambu";
       const FAKE_DRIVER_KIND = "Fake";
+      const SNAPMAKER_U1_DRIVER_KIND = "SnapmakerU1";
 
       function isBambuDriverKind(driverKind) {
         return (driverKind || BAMBU_DRIVER_KIND) === BAMBU_DRIVER_KIND;
@@ -827,6 +828,10 @@ ProtoPasta 500g - Cardboard - 84g,84"
 
       function isFakeDriverKind(driverKind) {
         return driverKind === FAKE_DRIVER_KIND;
+      }
+
+      function isSnapmakerU1DriverKind(driverKind) {
+        return driverKind === SNAPMAKER_U1_DRIVER_KIND;
       }
 
       function printerIdFromForm(form) {
@@ -839,6 +844,10 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const uniqueId = form.querySelector(".fake-unique-id").value.trim();
           return uniqueId ? `fake_printer_${uniqueId}` : null;
         }
+        if (isSnapmakerU1DriverKind(driverKind)) {
+          const serial = form.querySelector(".serial").value.trim();
+          return serial ? `snapmaker_u1_printer_${serial}` : null;
+        }
         return null;
       }
 
@@ -846,20 +855,22 @@ ProtoPasta 500g - Cardboard - 84g,84"
         const driverKind = form.querySelector(".driver-kind")?.value || BAMBU_DRIVER_KIND;
         const isBambu = isBambuDriverKind(driverKind);
         const isFake = isFakeDriverKind(driverKind);
+        const isSnapmakerU1 = isSnapmakerU1DriverKind(driverKind);
+        const isPhysical = isBambu || isSnapmakerU1;
 
         const serialLabel = form.querySelector(".serial-label-text");
         if (serialLabel) {
-          serialLabel.textContent = isBambu ? "Serial Number: *" : "Printer ID: *";
+          serialLabel.textContent = isPhysical ? "Serial Number: *" : "Printer ID: *";
         }
 
         const serialInput = form.querySelector(".serial");
         if (serialInput) {
-          serialInput.placeholder = isBambu ? "Enter serial number" : "Enter stable printer ID";
+          serialInput.placeholder = isPhysical ? "Enter serial number" : "Enter stable printer ID";
         }
 
         const serialError = form.querySelector(".serial-error");
         if (serialError) {
-          serialError.textContent = isBambu ? "Serial number is required" : "Printer ID is required";
+          serialError.textContent = isPhysical ? "Serial number is required" : "Printer ID is required";
         }
 
         const accessCodeRow = form.querySelector(".access-code-row");
@@ -869,6 +880,14 @@ ProtoPasta 500g - Cardboard - 84g,84"
 
         form.querySelectorAll(".bambu-config-row").forEach((row) => {
           row.style.display = isBambu ? "" : "none";
+        });
+
+        form.querySelectorAll(".physical-printer-row").forEach((row) => {
+          row.style.display = isPhysical ? "" : "none";
+        });
+
+        form.querySelectorAll(".snapmaker-u1-setting-row").forEach((row) => {
+          row.style.display = isSnapmakerU1 ? "" : "none";
         });
 
         form.querySelectorAll(".bambu-setting-row").forEach((row) => {
@@ -904,10 +923,11 @@ ProtoPasta 500g - Cardboard - 84g,84"
                     <select class="driver-kind" onchange="updatePrinterKindFields(this.closest('.printer-form'))" style="width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; font-size: 14px;">
                       <option value="Bambu" selected>Bambu Lab</option>
                       <option value="Fake">Demo</option>
+                      <option value="SnapmakerU1">Snapmaker U1</option>
                     </select>
                 </div>
 
-                <div class="form-row bambu-config-row">
+                <div class="form-row physical-printer-row">
                     <label class="serial-label-text">Serial Number: *</label>
                     <input type="text" class="serial" placeholder="Enter serial number">
                     <div class="error-message serial-error">Serial number is required</div>
@@ -917,6 +937,11 @@ ProtoPasta 500g - Cardboard - 84g,84"
                     <label>Access Code: *</label>
                     <input type="text" class="access-code" placeholder="Enter access code">
                     <div class="error-message access-code-error">Access code is required</div>
+                </div>
+
+                <div class="form-row snapmaker-u1-setting-row" style="display: none;">
+                    <label>Moonraker API Key:</label>
+                    <input type="text" class="moonraker-api-key" placeholder="Enter API key">
                 </div>
 
                 <div class="form-row fake-setting-row" style="display: none;">
@@ -937,7 +962,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
                     <div class="error-message name-error">Name is required when IP is provided</div>
                 </div>
 
-                <div class="form-row bambu-config-row">
+                <div class="form-row physical-printer-row">
                     <label>IP Address:<span>If set, requires also name</span></label>
                     <div class="ip-container">
                         <div class="ip-segment">
@@ -992,7 +1017,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
                   </div>
                   <span>Use only with X1 printer, if it forgets K on restart.</span>
                 </div>
-                <div class = "form-row bambu-setting-row">
+                <div class = "form-row physical-printer-row">
                   <div style="display: flex; align-items: center; margin-bottom: 0px;">
                     <input class="printer-log-filter" type="checkbox" id="printer-log-filter">
                     <label for="printer-log-filter" style="margin-top: 6px; padding-left: 2px;">Enable Extra  Printer  Logs</label>
@@ -1040,6 +1065,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           newPrinterForm.querySelector(".serial").value = driverConfig.serial || "";
           newPrinterForm.querySelector(".access-code").value =
             driverConfig.access_code || "";
+          newPrinterForm.querySelector(".moonraker-api-key").value = driverConfig.api_key || "";
           newPrinterForm.querySelector(".fake-unique-id").value = driverConfig.unique_id || "";
           newPrinterForm.querySelector(".fake-slot-count").value = driverConfig.slot_count || 4;
           newPrinterForm.querySelector(".name").value = printer.name || "";
@@ -1236,6 +1262,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const driverKind = form.querySelector(".driver-kind")?.value || BAMBU_DRIVER_KIND;
           const isBambu = isBambuDriverKind(driverKind);
           const isFake = isFakeDriverKind(driverKind);
+          const isPhysical = isBambu || isSnapmakerU1DriverKind(driverKind);
           const serialInput = form.querySelector(".serial");
           const accessCodeInput = form.querySelector(".access-code");
           const fakeUniqueIdInput = form.querySelector(".fake-unique-id");
@@ -1244,7 +1271,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const ipParts = Array.from(form.querySelectorAll(".ip-part"));
 
           // Check required fields
-          if (isBambu && !serialInput.value.trim()) {
+          if (isPhysical && !serialInput.value.trim()) {
             form.querySelector(".serial-error").style.display = "block";
             isValid = false;
           }
@@ -1272,7 +1299,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const ipFilled = ipParts.every((part) => part.value.trim() !== "");
           const ipEmpty = ipParts.every((part) => part.value.trim() === "");
 
-          if (isBambu && hasIPValue && !ipFilled) {
+          if (isPhysical && hasIPValue && !ipFilled) {
             form.querySelector(".ip-error").textContent =
               "All IP fields must be filled";
             form.querySelector(".ip-error").style.display = "block";
@@ -1280,7 +1307,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           }
 
           // If IP is provided, name is required
-          if (isBambu && hasIPValue && !nameInput.value.trim()) {
+          if (isPhysical && hasIPValue && !nameInput.value.trim()) {
             form.querySelector(".name-error").style.display = "block";
             isValid = false;
           }
@@ -1304,6 +1331,7 @@ ProtoPasta 500g - Cardboard - 84g,84"
           const driverKind = form.querySelector(".driver-kind")?.value || BAMBU_DRIVER_KIND;
           const serial = form.querySelector(".serial").value.trim();
           const accessCode = form.querySelector(".access-code").value.trim();
+          const apiKey = form.querySelector(".moonraker-api-key").value.trim();
           const fakeUniqueId = form.querySelector(".fake-unique-id").value.trim();
           const fakeSlotCount = parseInt(form.querySelector(".fake-slot-count").value, 10);
           const name = form.querySelector(".name").value.trim();
@@ -1328,7 +1356,9 @@ ProtoPasta 500g - Cardboard - 84g,84"
 
           const driverConfig = isBambuDriverKind(driverKind)
             ? { serial: serial, access_code: accessCode }
-            : { unique_id: fakeUniqueId, slot_count: fakeSlotCount };
+            : isSnapmakerU1DriverKind(driverKind)
+              ? { serial: serial, api_key: apiKey || null }
+              : { unique_id: fakeUniqueId, slot_count: fakeSlotCount };
 
           const printer = {
             driver_kind: driverKind,
@@ -1339,13 +1369,13 @@ ProtoPasta 500g - Cardboard - 84g,84"
             printer.name = name;
           }
 
-          if (isBambuDriverKind(driverKind) && ip) {
+          if ((isBambuDriverKind(driverKind) || isSnapmakerU1DriverKind(driverKind)) && ip) {
             driverConfig.ip = ip;
           }
 
-          if (isBambuDriverKind(driverKind) && logFilterEnabled) {
+          if ((isBambuDriverKind(driverKind) || isSnapmakerU1DriverKind(driverKind)) && logFilterEnabled) {
             driverConfig.log_filter = "TRACE";
-          } else if (isBambuDriverKind(driverKind)) {
+          } else if (isBambuDriverKind(driverKind) || isSnapmakerU1DriverKind(driverKind)) {
             driverConfig.log_filter = "WARN";
           }
 
