@@ -812,7 +812,11 @@ impl ViewModel {
                         term_info!("[{}] Skipping Snapmaker U1 printer with invalid config", printer_number);
                         continue;
                     };
-                    if let Err(err) = self.printer_manager.borrow_mut().add_snapmaker_u1_printer(printer_config.name.clone(), config) {
+                    if let Err(err) = self
+                        .printer_manager
+                        .borrow_mut()
+                        .add_snapmaker_u1_printer(printer_config.name.clone(), config)
+                    {
                         term_info!("[{}] Error initializing Snapmaker U1 printer: {:?}", printer_number, err);
                         continue;
                     }
@@ -830,12 +834,13 @@ impl ViewModel {
                         default_printer_ui_index = Some(available_printers.len());
                     }
                     let snapshot = self.printer_manager.borrow().snapshot_at(manager_index).unwrap();
+                    let capabilities = self.printer_manager.borrow().capabilities_at(manager_index).unwrap_or_default();
                     available_printers.push(crate::app::Printer {
                         id: printer_id.0.to_shared_string(),
-                        can_assign_slot: false,
-                        can_set_spool_id: false,
-                        can_clear_slot: false,
-                        can_unassign_slot: false,
+                        can_assign_slot: capabilities.material_slot_assign,
+                        can_set_spool_id: capabilities.material_slot_set_spool_id,
+                        can_clear_slot: capabilities.material_slot_clear,
+                        can_unassign_slot: capabilities.material_slot_unassign_spool,
                         connected: false,
                         name: snapshot.name.to_shared_string(),
                         kind: crate::app::UiPrinterKind::Unknown,
@@ -1578,9 +1583,11 @@ impl ViewModel {
         let ui_app_state = ui.global::<crate::app::AppState>();
         let (layout, main_group_id, slot_count) = match &snapshot.display_layout {
             printer_domain::PrinterDisplayLayout::Standard => (crate::app::UiPrinterDisplayLayout::Standard, "", 0),
-            printer_domain::PrinterDisplayLayout::BambuToolchanger { main_group_id, slot_count } => {
-                (crate::app::UiPrinterDisplayLayout::BambuToolchanger, main_group_id.as_str(), *slot_count as i32)
-            }
+            printer_domain::PrinterDisplayLayout::BambuToolchanger { main_group_id, slot_count } => (
+                crate::app::UiPrinterDisplayLayout::BambuToolchanger,
+                main_group_id.as_str(),
+                *slot_count as i32,
+            ),
         };
         let layout_changed = ui_app_state.get_printer_display_layout() != layout
             || ui_app_state.get_toolchanger_main_group_id().as_str() != main_group_id
@@ -1691,7 +1698,11 @@ impl ViewModel {
         let ui_app_state = ui.global::<crate::app::AppState>();
         let main_group_id = ui_app_state.get_toolchanger_main_group_id();
         let toolchanger_main = groups.iter().find(|group| group.id == main_group_id).cloned();
-        let toolchanger_others = primary_groups.iter().filter(|group| group.id != main_group_id).cloned().collect::<Vec<_>>();
+        let toolchanger_others = primary_groups
+            .iter()
+            .filter(|group| group.id != main_group_id)
+            .cloned()
+            .collect::<Vec<_>>();
         if toolchanger_others.is_empty() {
             ui_app_state.set_toolchanger_show_other(false);
         }
@@ -1873,32 +1884,38 @@ impl ViewModel {
                         if !words.next().is_some_and(|word| word.eq_ignore_ascii_case("Snapmaker"))
                             || !words.next().is_some_and(|word| word.eq_ignore_ascii_case(&spool.material_type))
                             || (!material.is_empty() && !material.eq_ignore_ascii_case(&spool.material_type))
-                        { return None; }
+                        {
+                            return None;
+                        }
                         let remaining = words.collect::<Vec<_>>().join(" ");
                         let profile_subtype = remaining.split('@').next().unwrap_or("").trim();
-                        if !profile_subtype.eq_ignore_ascii_case(&spool.material_subtype) { return None; }
+                        if !profile_subtype.eq_ignore_ascii_case(&spool.material_subtype) {
+                            return None;
+                        }
                         Some(id)
                     })
                 })
             };
-            spool.slicer_filament = custom_match.or_else(|| {
-                self.get_filament_info("", Some(&spool.material_type))
-                    .filter(|info| info.slicer_name.starts_with("Generic "))
-                    .map(|info| info.slicer_code)
-                    .or_else(|| {
-                        let generic_name = format!("Generic {}", spool.material_type);
-                        BASE_FILAMENTS.lines().find_map(|line| {
-                            let mut fields = line.split(',');
-                            let id = fields.next()?;
-                            let name = fields.next()?;
-                            fields.next()?;
-                            fields.next()?;
-                            let material = fields.next()?;
-                            (name.eq_ignore_ascii_case(&generic_name) && material.eq_ignore_ascii_case(&spool.material_type))
-                                .then(|| id.to_string())
+            spool.slicer_filament = custom_match
+                .or_else(|| {
+                    self.get_filament_info("", Some(&spool.material_type))
+                        .filter(|info| info.slicer_name.starts_with("Generic "))
+                        .map(|info| info.slicer_code)
+                        .or_else(|| {
+                            let generic_name = format!("Generic {}", spool.material_type);
+                            BASE_FILAMENTS.lines().find_map(|line| {
+                                let mut fields = line.split(',');
+                                let id = fields.next()?;
+                                let name = fields.next()?;
+                                fields.next()?;
+                                fields.next()?;
+                                let material = fields.next()?;
+                                (name.eq_ignore_ascii_case(&generic_name) && material.eq_ignore_ascii_case(&spool.material_type))
+                                    .then(|| id.to_string())
+                            })
                         })
-                    })
-            }).unwrap_or_default();
+                })
+                .unwrap_or_default();
         }
         Ok(spool)
     }
@@ -2646,7 +2663,10 @@ impl ViewModel {
     ) -> UiSpoolRecordDisplay {
         let mut spool_rec = match tag_definition_type {
             SNAPMAKER_TAG_TYPE => {
-                match serde_json::from_str::<SnapmakerTag>(tag_definition_info).ok().and_then(|tag| self.snapmaker_spool_record(&tag).ok()) {
+                match serde_json::from_str::<SnapmakerTag>(tag_definition_info)
+                    .ok()
+                    .and_then(|tag| self.snapmaker_spool_record(&tag).ok())
+                {
                     Some(spool) => spool,
                     None => return UiSpoolRecordDisplay::default(),
                 }
@@ -2984,8 +3004,12 @@ impl ViewModel {
                     if let Ok(mut spool) = view_model.borrow().snapmaker_spool_record(&tag) {
                         spool.added_full = Some(spool_is_full);
                         (Some(spool), Some(OriginData::SnapmakerTag { snapmaker_tag: tag }))
-                    } else { (None, None) }
-                } else { (None, None) }
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
             }
             BAMBULAB_TAG_TYPE => {
                 if let Ok(bambulab_tag) = serde_json::from_str::<BambuLabTag>(&tag_definition_info) {
@@ -4113,7 +4137,10 @@ impl SpoolTagObserver for ViewModel {
             let page = ui_app_state.get_new_tag_scan_page();
             if page == crate::app::NewTagScanPage::DefinitionSecondTag {
                 if ui_app_state.get_new_tag_link_in_progress() {
-                    if matches!(status, Status::FoundTagNowReading | Status::ReadSuccess(_) | Status::Failure(spool_tag::Failure::TagReadFailure)) {
+                    if matches!(
+                        status,
+                        Status::FoundTagNowReading | Status::ReadSuccess(_) | Status::Failure(spool_tag::Failure::TagReadFailure)
+                    ) {
                         return;
                     }
                 } else {
@@ -4136,7 +4163,10 @@ impl SpoolTagObserver for ViewModel {
                             let (candidate, message) = if tag_id == ui_app_state.get_new_tag_scan_tag_id().as_str() {
                                 (
                                     String::new(),
-                                    format!("First tag rescanned. Already linked to spool ({})", ui_app_state.get_new_tag_scan_spool_id()),
+                                    format!(
+                                        "First tag rescanned. Already linked to spool ({})",
+                                        ui_app_state.get_new_tag_scan_spool_id()
+                                    ),
                                 )
                             } else if let Some(spool) = self.store.get_spool_by_hex_tag(&tag_id) {
                                 let message = if spool.id == ui_app_state.get_new_tag_scan_spool_id().as_str() {
@@ -4145,8 +4175,11 @@ impl SpoolTagObserver for ViewModel {
                                     format!("Tag linked to spool {}. Unlink it first.", spool.id)
                                 };
                                 (String::new(), message)
-                            } else if (ui_app_state.get_new_tag_scan_definition_type().as_str() == BAMBULAB_TAG_TYPE && matches!(result, spool_tag::ReadResult::BambulabTag { data: Some(_), .. }))
-                                || (ui_app_state.get_new_tag_scan_definition_type().as_str() == SNAPMAKER_TAG_TYPE && matches!(result, spool_tag::ReadResult::SnapmakerTag { .. })) {
+                            } else if (ui_app_state.get_new_tag_scan_definition_type().as_str() == BAMBULAB_TAG_TYPE
+                                && matches!(result, spool_tag::ReadResult::BambulabTag { data: Some(_), .. }))
+                                || (ui_app_state.get_new_tag_scan_definition_type().as_str() == SNAPMAKER_TAG_TYPE
+                                    && matches!(result, spool_tag::ReadResult::SnapmakerTag { .. }))
+                            {
                                 (tag_id, "Tag scanned".to_string())
                             } else {
                                 (String::new(), format!("Not a {} tag", ui_app_state.get_new_tag_scan_definition_type()))
@@ -4163,8 +4196,10 @@ impl SpoolTagObserver for ViewModel {
                         _ => {}
                     }
                 }
-            } else if matches!(status, Status::FoundTagNowReading | Status::ReadSuccess(_) | Status::Failure(spool_tag::Failure::TagReadFailure))
-            {
+            } else if matches!(
+                status,
+                Status::FoundTagNowReading | Status::ReadSuccess(_) | Status::Failure(spool_tag::Failure::TagReadFailure)
+            ) {
                 // The wizard owns the current scan until it exits; only its
                 // second-tag page should react to additional reads.
                 return;
@@ -4295,7 +4330,9 @@ impl SpoolTagObserver for ViewModel {
                         let tag = SnapmakerTag::new(&hex_tag, data);
                         if let Ok(tag_json) = serde_json::to_string(&tag) {
                             ui.unwrap().global::<crate::app::AppState>().invoke_new_definition_tag_scanned(
-                                SNAPMAKER_TAG_TYPE.into(), hex_tag.into(), tag_json.into(),
+                                SNAPMAKER_TAG_TYPE.into(),
+                                hex_tag.into(),
+                                tag_json.into(),
                             );
                         }
                     }
@@ -4934,6 +4971,11 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
         let file_store = file_store.lock().await;
         if !file_store.card_installed {
             term_info!("SDCard not installed, won't restore state on restart");
+            let view_model = view_model.borrow();
+            let mut manager = view_model.printer_manager.borrow_mut();
+            for index in 0..manager.len() {
+                manager.persistent_state_restore_finished_at(index);
+            }
             return;
         }
     }
@@ -4964,6 +5006,11 @@ pub async fn printers_scheduled_store_state_task(framework: Rc<RefCell<Framework
                     .message_box("Restore Print State Notice", &message, text2, crate::app::StatusType::Error, 0)
             }
         }
+        view_model
+            .borrow()
+            .printer_manager
+            .borrow_mut()
+            .persistent_state_restore_finished_at(manager_index);
     }
     restore_printer_runtime_states(&framework, &view_model, num_of_printers).await;
 

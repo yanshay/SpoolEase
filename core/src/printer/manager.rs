@@ -142,6 +142,12 @@ impl PrinterManager {
         self.printers.get(index).and_then(|printer| printer.persistent_state_path())
     }
 
+    pub fn persistent_state_restore_finished_at(&mut self, index: usize) {
+        if let Some(printer) = self.printers.get_mut(index) {
+            printer.persistent_state_restore_finished();
+        }
+    }
+
     pub fn persistent_state_paths(&self) -> Vec<(usize, PrinterId, String)> {
         self.printers
             .iter()

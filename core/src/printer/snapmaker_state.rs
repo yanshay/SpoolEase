@@ -1,7 +1,7 @@
 use super::snapmaker_driver::U1Channel;
 use super::{
-    PrintState, PrinterChange, PrinterEvent, PrinterEventKind, PrinterFilament, PrinterFilamentInfo, PrinterId, PrinterObserver,
-    PrinterSnapshotState, SlotState,
+    MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind, PrintState, PrinterChange, PrinterEvent, PrinterEventKind, PrinterFilament,
+    PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterSnapshotState, SlotState,
 };
 use alloc::{
     boxed::Box,
@@ -10,7 +10,10 @@ use alloc::{
     string::ToString,
     vec::Vec,
 };
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
+use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
+use framework::info;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 pub(super) enum U1Message {
@@ -21,12 +24,29 @@ pub(super) enum U1Message {
 
 pub(super) struct U1Runtime {
     pub id: PrinterId,
+    pub number: usize,
     pub state: PrinterSnapshotState,
     pub observers: RefCell<Vec<Weak<RefCell<dyn PrinterObserver>>>>,
+    pub saved: RefCell<U1SavedState>,
+    pub saved_dirty: Cell<bool>,
+    pub pending_dirty: Cell<bool>,
+    pub restore_finished: Signal<NoopRawMutex, ()>,
+}
+
+#[derive(Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+pub(super) struct U1SlotLoaded {
+    feeder: bool,
+    toolhead: bool,
+    loaded: bool,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+pub(super) struct U1SavedState {
+    slots: [U1SlotLoaded; 4],
 }
 
 impl U1Runtime {
-    fn notify(&self, kind: PrinterEventKind) {
+    pub(super) fn notify(&self, kind: PrinterEventKind) {
         let event = PrinterEvent {
             printer_id: self.id.clone(),
             kind,
@@ -48,8 +68,19 @@ impl U1Runtime {
         }
     }
 
-    fn apply(&self, data: &Value) {
+    fn apply(
+        &self,
+        data: &Value,
+        initial: bool,
+        armed: &mut [bool; 4],
+        previous_actions: &mut [Option<alloc::string::String>; 4],
+        previous_operations: &mut [Option<alloc::string::String>; 4],
+    ) {
         let mut snapshot = self.state.clone_snapshot();
+        let mut changes = Vec::new();
+        let mut saved = self.saved.borrow_mut();
+        let mut loaded_changed = false;
+        let mut spool_changed = false;
         if let Some(group) = snapshot.slot_groups.first_mut() {
             for (index, slot) in group.slots.iter_mut().enumerate() {
                 let key = format!("extruder{index}");
@@ -59,10 +90,120 @@ impl U1Runtime {
                     .or_else(|| data.get("filament_feed right").and_then(|v| v.get(&key)));
                 let inlet = feeder.and_then(|v| v.get("filament_detected")).and_then(Value::as_bool);
                 let action = feeder.and_then(|v| v.get("channel_state")).and_then(Value::as_str);
+                let operation = feeder.and_then(|v| v.get("channel_action_state")).and_then(Value::as_str);
                 let sensor = data
                     .get(format!("filament_motion_sensor e{index}_filament"))
                     .and_then(|v| v.get("filament_detected"))
                     .and_then(Value::as_bool);
+                if let Some(inlet) = inlet {
+                    let old = saved.slots[index];
+                    let mut new = old;
+                    let action_changed = action.is_some() && previous_actions[index].as_deref() != action;
+                    let operation_changed = operation.is_some() && previous_operations[index].as_deref() != operation;
+                    let completed = |value| matches!(value, Some("load_finish" | "manual_sta_finish" | "unload_finish"));
+                    let completed_operation = if (initial || action_changed) && completed(action) {
+                        action
+                    } else if (initial || operation_changed) && completed(operation) {
+                        operation
+                    } else {
+                        None
+                    };
+                    if !inlet {
+                        new.feeder = false;
+                    } else if action == Some("preload_finish") && (initial || action_changed) {
+                        new.feeder = true;
+                    }
+                    let auto_feeder = inlet
+                        && feeder.and_then(|v| v.get("module_exist")).and_then(Value::as_bool) == Some(true)
+                        && feeder.and_then(|v| v.get("disable_auto")).and_then(Value::as_bool) == Some(false);
+                    match completed_operation {
+                        Some("load_finish" | "manual_sta_finish") => {
+                            new.toolhead = true;
+                            if auto_feeder {
+                                new.feeder = true;
+                            }
+                        }
+                        Some("unload_finish") => {
+                            new.toolhead = false;
+                            if auto_feeder && (initial || old.toolhead) {
+                                new.feeder = true;
+                            }
+                        }
+                        _ => {}
+                    }
+                    if initial && action == Some("preload_finish") && completed_operation.is_none() {
+                        new.toolhead = false;
+                    }
+                    if !initial {
+                        if let Some(completed_operation) = completed_operation {
+                            info!("[{}] Snapmaker U1 slot {} operation {}", self.number, index + 1, completed_operation);
+                        }
+                        if action_changed && action == Some("preload_finish") && inlet {
+                            info!("[{}] Snapmaker U1 slot {} pre-feeding completed", self.number, index + 1);
+                        }
+                    }
+                    let was_loaded = old.loaded;
+                    // On reconnect, current sensor readings can show a spool was removed while offline.
+                    if initial && !inlet && sensor == Some(false) {
+                        new.toolhead = false;
+                    }
+                    new.loaded = new.feeder || new.toolhead;
+                    let is_loaded = new.loaded;
+                    if initial {
+                        armed[index] = !is_loaded && !loading_in_progress(action);
+                        if !is_loaded && (!inlet && sensor == Some(false) || completed_operation == Some("unload_finish")) && slot.spool_id.is_some()
+                        {
+                            info!(
+                                "[{}] Snapmaker U1 slot {} is empty after connection; clearing spool {}",
+                                self.number,
+                                index + 1,
+                                slot.spool_id.as_deref().unwrap_or_default()
+                            );
+                            slot.clear_spool_id();
+                            slot.consumed_since_load_g = 0.0;
+                            slot.consumed_since_load_saved_g = 0.0;
+                            slot.consumed_since_weight_g = 0.0;
+                            spool_changed = true;
+                        }
+                    } else {
+                        if was_loaded && !is_loaded {
+                            let spool_id = slot.spool_id.clone();
+                            info!("[{}] Snapmaker U1 slot {} filament removed, spool {:?}", self.number, index + 1, spool_id);
+                            slot.clear_spool_id();
+                            slot.consumed_since_load_g = 0.0;
+                            slot.consumed_since_load_saved_g = 0.0;
+                            slot.consumed_since_weight_g = 0.0;
+                            spool_changed |= spool_id.is_some();
+                            changes.push(MaterialSlotPresenceChange {
+                                slot_id: slot.id.clone(),
+                                change: MaterialSlotPresenceChangeKind::Removed,
+                                spool_id,
+                            });
+                        } else if !was_loaded && is_loaded && armed[index] {
+                            info!(
+                                "[{}] Snapmaker U1 slot {} filament loaded ({})",
+                                self.number,
+                                index + 1,
+                                if new.toolhead { "toolhead" } else { "feeder" }
+                            );
+                            changes.push(MaterialSlotPresenceChange {
+                                slot_id: slot.id.clone(),
+                                change: MaterialSlotPresenceChangeKind::Inserted,
+                                spool_id: None,
+                            });
+                            armed[index] = false;
+                        }
+                        if !is_loaded && !loading_in_progress(action) {
+                            armed[index] = true;
+                        }
+                    }
+                    if old != new {
+                        saved.slots[index] = new;
+                        loaded_changed = true;
+                    }
+                    previous_actions[index] = action.map(ToString::to_string);
+                    previous_operations[index] = operation.map(ToString::to_string);
+                }
                 let extruder = if index == 0 {
                     "extruder".to_string()
                 } else {
@@ -132,14 +273,47 @@ impl U1Runtime {
             Some("error") => PrintState::Failed,
             _ => PrintState::Unknown,
         };
+        if loaded_changed {
+            self.saved_dirty.set(true);
+        }
+        drop(saved);
         if snapshot != self.state.clone_snapshot() {
-            self.state.replace(snapshot.clone(), false);
+            self.state.replace(snapshot.clone(), spool_changed);
             self.notify(PrinterEventKind::SnapshotChanged {
                 change: PrinterChange::All,
                 snapshot: Box::new(snapshot),
             });
         }
+        if !changes.is_empty() {
+            self.notify(PrinterEventKind::MaterialSlotPresenceChanged { changes });
+        }
     }
+}
+
+fn loading_in_progress(action: Option<&str>) -> bool {
+    matches!(
+        action,
+        Some(
+            "preload_prepare"
+                | "preload_feeding"
+                | "load_prepare"
+                | "load_homing"
+                | "load_picking"
+                | "load_heating"
+                | "load_feeding"
+                | "load_extruding"
+                | "load_flushing"
+                | "manual_sta_prepare"
+                | "manual_sta_homing"
+                | "manual_sta_picking"
+                | "manual_sta_prepare_finish"
+                | "manual_sta_heating"
+                | "manual_sta_extruding"
+                | "manual_sta_extrude_finish"
+                | "manual_sta_flushing"
+                | "manual_sta_flush_finish"
+        )
+    )
 }
 
 fn merge(dst: &mut Value, src: Value) {
@@ -154,9 +328,13 @@ fn merge(dst: &mut Value, src: Value) {
 }
 
 pub(super) async fn snapmaker_u1_messages_task(runtime: Rc<U1Runtime>, channel: Rc<U1Channel>) {
+    runtime.restore_finished.wait().await;
     let mut current = Value::Object(Map::new());
     let mut pending = Value::Object(Map::new());
     let mut initialized = false;
+    let mut armed = [false; 4];
+    let mut previous_actions = [None, None, None, None];
+    let mut previous_operations = [None, None, None, None];
     loop {
         match channel.receive().await {
             U1Message::Reset => {
@@ -169,13 +347,13 @@ pub(super) async fn snapmaker_u1_messages_task(runtime: Rc<U1Runtime>, channel: 
                 current = status;
                 merge(&mut current, core::mem::replace(&mut pending, Value::Object(Map::new())));
                 initialized = true;
-                runtime.apply(&current);
+                runtime.apply(&current, true, &mut armed, &mut previous_actions, &mut previous_operations);
                 runtime.set_connected(true);
             }
             U1Message::Update(status) => {
                 if initialized {
                     merge(&mut current, status);
-                    runtime.apply(&current);
+                    runtime.apply(&current, false, &mut armed, &mut previous_actions, &mut previous_operations);
                 } else {
                     merge(&mut pending, status);
                 }

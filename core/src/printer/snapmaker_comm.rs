@@ -20,10 +20,13 @@ use edge_ws::{FrameHeader, FrameType};
 use embassy_futures::select::{Either, select};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_io_async::{Read, Write};
-use framework::{error, prelude::Framework, term_error, term_info, utils::random_u32, warn};
+use framework::{debug, error, prelude::Framework, term_error, term_info, utils::random_u32, warn};
 use serde_json::Value;
 
-use super::{snapmaker_driver::U1Channel, snapmaker_state::U1Message};
+use super::{
+    snapmaker_driver::{U1Channel, U1CommandChannel},
+    snapmaker_state::U1Message,
+};
 use crate::app_config::SnapmakerU1PrinterConfig;
 
 const SUBSCRIBE: &str = r#"{"jsonrpc":"2.0","id":2,"method":"printer.objects.subscribe","params":{"objects":{"filament_feed left":null,"filament_feed right":null,"filament_motion_sensor e0_filament":["filament_detected"],"filament_motion_sensor e1_filament":["filament_detected"],"filament_motion_sensor e2_filament":["filament_detected"],"filament_motion_sensor e3_filament":["filament_detected"],"print_task_config":["filament_type","filament_sub_type","filament_vendor","filament_color_rgba","filament_color_multi"],"extruder":["state"],"extruder1":["state"],"extruder2":["state"],"extruder3":["state"],"print_stats":["state"]}}}"#;
@@ -116,6 +119,7 @@ pub(super) async fn snapmaker_u1_comm_task(
     number: usize,
     name: String,
     channel: Rc<U1Channel>,
+    commands: Rc<U1CommandChannel>,
 ) {
     Framework::wait_for_wifi(&framework).await;
     let Some(serial) = config.serial.as_deref().map(str::trim).filter(|v| !v.is_empty()) else {
@@ -178,8 +182,11 @@ pub(super) async fn snapmaker_u1_comm_task(
         } else {
             term_info!("[{}] Snapmaker U1 {:?}: WebSocket connected, checking serial", number, name);
             let (mut socket, _) = conn.release();
-            run_session(&mut socket, serial, number, &name, &mut retry_log, &channel).await
+            run_session(&mut socket, serial, number, &name, &mut retry_log, &channel, &commands).await
         };
+        while commands.try_receive().is_ok() {
+            warn!("[{}] Snapmaker U1 {:?}: discarded unsent configuration after disconnect", number, name);
+        }
         channel.send(U1Message::Reset).await;
         match outcome {
             Outcome::InvalidSerial => {
@@ -209,6 +216,7 @@ async fn run_session<S: Read + Write>(
     name: &str,
     retry_log: &mut RetryLog,
     channel: &U1Channel,
+    commands: &U1CommandChannel,
 ) -> Outcome {
     if send_frame(socket, FrameType::Text(false), IDENTITY.as_bytes()).await.is_err() {
         retry_log.failure(number, name, "failed to send identity request");
@@ -233,6 +241,12 @@ async fn run_session<S: Read + Write>(
         }};
     }
     loop {
+        if initialized && let Ok(command) = commands.try_receive() {
+            debug!("[{}] Snapmaker U1 WebSocket send: {}", number, command);
+            if send_frame(socket, FrameType::Text(false), command.as_bytes()).await.is_err() {
+                retry!("failed to send slot configuration");
+            }
+        }
         let now = Instant::now();
         if request_deadline.is_some_and(|deadline| now >= deadline) {
             retry!("identity or subscription request timed out");

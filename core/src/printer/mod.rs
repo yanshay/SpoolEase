@@ -497,6 +497,7 @@ pub trait PrinterDriver {
         Ok(())
     }
     fn adjust_loaded_snapshot(&self, _snapshot: &mut PrinterSnapshot) {}
+    fn persistent_state_restore_finished(&mut self) {}
     fn prepare_private_state_store(&mut self) -> Result<Option<Value>, String> {
         Ok(None)
     }
