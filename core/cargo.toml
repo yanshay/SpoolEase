@@ -1,7 +1,7 @@
 [package]
 name = "SpoolEase"
 homepage = "SpoolEase.io"
-version = "0.8.0-b.13"
+version = "0.8.2-b.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.88"
@@ -40,10 +40,8 @@ walkdir = "2.5.0"
 #TODO: Important - lock to specific tag when released
 # framework = { package = "esp-hal-app-framework", path = "../../../esp-hal-app/esp-hal-app-framework/", default-features = false, features = ["esp32s3", "extern-random", "improv-jtag-serial"] }
 # framework_macros = { package = "esp-hal-app-framework-macros", path = "../../../esp-hal-app/esp-hal-app-framework-macros/" }
-framework = { package = "esp-hal-app-framework", path = "../../../new-ota-esp-hal-app/esp-hal-app-framework/", default-features = false, features = ["esp32s3", "extern-random", "improv-jtag-serial"] }
-framework_macros = { package = "esp-hal-app-framework-macros", path = "../../../new-ota-esp-hal-app/esp-hal-app-framework-macros/" }
-# framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.13", features = ["esp32s3", "improv-jtag-serial"] }
-# framework_macros = { package = "esp-hal-app-framework-macros", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.6.13" }
+framework = { package = "esp-hal-app-framework", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.7.3", features = ["esp32s3", "improv-jtag-serial"] }
+framework_macros = { package = "esp-hal-app-framework-macros", git = "https://github.com/yanshay/esp-hal-app/", tag = "0.7.3" }
 esp32s3 = { version = "0.34.0" }
 
 # Esp-Hal Crates
@@ -141,8 +139,8 @@ siphasher = { version = "1.0.1", default-features = false }
 num-traits = { version = "0.2.19", default-features = false }
 fnv = { version = "1.0.7", default-features = false }
 hex = {version = "0.4.3", default-features = false, features = ["alloc"]}
-# embedded-sdmmc = { git = "https://github.com/yanshay/embedded-sdmmc-rs", branch = "yanshay_bisync" }
-embedded-sdmmc = { path = "../../../../../../OpenSourceProj/forked/new-ota-embedded-sdmmc-rs" }
+embedded-sdmmc = { git = "https://github.com/yanshay/embedded-sdmmc-rs", branch = "yanshay_bisync_enhanced" }
+# embedded-sdmmc = { path = "../../../../../../OpenSourceProj/forked/new-ota-embedded-sdmmc-rs" }
 # url = { version ="2.5.7", default-features = false }
 percent-encoding = {version = "2.3.2", default-features = false, features = ["alloc"]}
 
