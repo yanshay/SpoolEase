@@ -604,7 +604,8 @@ component SelectSpoolToLoadStep inherits Rectangle {
 }
 
 export component StagingOperations {
-    property <UiSpoolRecordDisplay> spool-display: AppBackend.get-spool-record-display(AppState.spool-staging-info.spool-record.id);
+    // `in` so the design-time preview can inject a mock; firmware never sets it and gets this default binding.
+    in property <UiSpoolRecordDisplay> spool-display: AppBackend.get-spool-record-display(AppState.spool-staging-info.spool-record.id);
     if AppState.staging-operation-page == StagingOperationsPage.SpoolDisplay: SpoolDisplayStep {
         spool-display: spool-display;
     }

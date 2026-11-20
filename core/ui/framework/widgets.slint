@@ -23,6 +23,8 @@ export component MyButton inherits Rectangle {
     in property <color> released-background: white;
     in property <color> text-color: black; 
     in property <TextHorizontalAlignment> horizontal-alignment: center;
+    in property <TextWrap> wrap: word-wrap;
+    in property <TextOverflow> overflow: clip; // Slint's default; opt in to elide per-button
     callback clicked;
     background: (type == ButtonType.Standard) ? (enabled ? @linear-gradient(20deg, #3559E0 0%, #c2cdf6 100%) : @linear-gradient(20deg, #5C5C5C 0%, #CFCFCF 100%)) : ((enabled && area.pressed) || pushed ? pushed-background : released-background);
     Text {
@@ -32,7 +34,8 @@ export component MyButton inherits Rectangle {
         text: root.text;
         font-size: 20px;
         font-weight: 400 + (enabled && area.pressed && type == ButtonType.Standard ? 500 : 0);
-        wrap: word-wrap;
+        wrap: root.wrap;
+        overflow: root.overflow;
         color: enabled ? text-color : #666666;
     }
 
@@ -463,6 +466,7 @@ export component WizardButtons inherits HorizontalLayout {
     callback back-clicked;
     callback cancel-clicked;
     in-out property <string> next-text: "";
+    in-out property <string> back-text: "";
     in-out property <string> cancel-text: "";
     in-out property <bool> back-enabled: false;
     in-out property <bool> next-enabled: false;
@@ -471,7 +475,7 @@ export component WizardButtons inherits HorizontalLayout {
 
     height: 56px;
     MyButton {
-        text: "◀ Back";
+        text: back-text == "" ? "◀ Back" : back-text;
         clicked => {
             back-clicked();
         }
