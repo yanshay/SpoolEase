@@ -29,7 +29,7 @@ use super::{
 };
 use crate::app_config::SnapmakerU1PrinterConfig;
 
-const SUBSCRIBE: &str = r#"{"jsonrpc":"2.0","id":2,"method":"printer.objects.subscribe","params":{"objects":{"filament_feed left":null,"filament_feed right":null,"filament_motion_sensor e0_filament":["filament_detected"],"filament_motion_sensor e1_filament":["filament_detected"],"filament_motion_sensor e2_filament":["filament_detected"],"filament_motion_sensor e3_filament":["filament_detected"],"print_task_config":["filament_type","filament_sub_type","filament_vendor","filament_color_rgba","filament_color_multi"],"extruder":["state"],"extruder1":["state"],"extruder2":["state"],"extruder3":["state"],"print_stats":["state"]}}}"#;
+const SUBSCRIBE: &str = r#"{"jsonrpc":"2.0","id":2,"method":"printer.objects.subscribe","params":{"objects":{"filament_feed left":null,"filament_feed right":null,"filament_motion_sensor e0_filament":["filament_detected"],"filament_motion_sensor e1_filament":["filament_detected"],"filament_motion_sensor e2_filament":["filament_detected"],"filament_motion_sensor e3_filament":["filament_detected"],"print_task_config":["filament_type","filament_sub_type","filament_vendor","filament_color_rgba","filament_color_multi"],"extruder":["state"],"extruder1":["state"],"extruder2":["state"],"extruder3":["state"],"print_stats":["state","filename","info"],"virtual_sdcard":["file_position"]}}}"#;
 const IDENTITY: &str = r#"{"jsonrpc":"2.0","id":1,"method":"machine.system_info"}"#;
 const MAX_FRAME: usize = 32768;
 
@@ -185,7 +185,7 @@ pub(super) async fn snapmaker_u1_comm_task(
             run_session(&mut socket, serial, number, &name, &mut retry_log, &channel, &commands).await
         };
         while commands.try_receive().is_ok() {
-            warn!("[{}] Snapmaker U1 {:?}: discarded unsent configuration after disconnect", number, name);
+            warn!("[{}] Snapmaker U1 {:?}: discarded unsent command after disconnect", number, name);
         }
         channel.send(U1Message::Reset).await;
         match outcome {
@@ -244,7 +244,7 @@ async fn run_session<S: Read + Write>(
         if initialized && let Ok(command) = commands.try_receive() {
             debug!("[{}] Snapmaker U1 WebSocket send: {}", number, command);
             if send_frame(socket, FrameType::Text(false), command.as_bytes()).await.is_err() {
-                retry!("failed to send slot configuration");
+                retry!("failed to send command");
             }
         }
         let now = Instant::now();
@@ -422,6 +422,29 @@ async fn process_message<S: Write>(
         *retry_log = RetryLog::default();
         *initialized = true;
         *deadline = None;
+    } else if message.get("id").and_then(Value::as_u64) == Some(4) && *verified {
+        if let Some(metadata) = message.get("result").filter(|v| v.is_object()) {
+            let metadata = serde_json::json!({
+                "filename": metadata.get("filename"),
+                "gcode_start_byte": metadata.get("gcode_start_byte"),
+                "gcode_end_byte": metadata.get("gcode_end_byte"),
+                "estimated_time": metadata.get("estimated_time"),
+            });
+            if channel.try_send(U1Message::Metadata(metadata)).is_err() {
+                retry!("status processing queue full");
+            }
+        } else {
+            warn!(
+                "[{}] Snapmaker U1 {:?}: print metadata unavailable: {:?}",
+                number,
+                name,
+                message.get("error")
+            );
+        }
+    } else if message.get("id").and_then(Value::as_u64) == Some(5) && *verified {
+        if let Some(err) = message.get("error") {
+            warn!("[{}] Snapmaker U1 {:?}: print command failed: {:?}", number, name, err);
+        }
     } else if *verified {
         match message.get("method").and_then(Value::as_str) {
             Some("notify_status_update") => {

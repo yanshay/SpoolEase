@@ -1,4 +1,4 @@
-use super::snapmaker_driver::U1Channel;
+use super::snapmaker_driver::{U1Channel, U1CommandChannel};
 use super::{
     MaterialSlotPresenceChange, MaterialSlotPresenceChangeKind, PrintState, PrinterChange, PrinterEvent, PrinterEventKind, PrinterFilament,
     PrinterFilamentInfo, PrinterId, PrinterObserver, PrinterSnapshotState, SlotState,
@@ -7,19 +7,20 @@ use alloc::{
     boxed::Box,
     format,
     rc::{Rc, Weak},
-    string::ToString,
+    string::{String, ToString},
     vec::Vec,
 };
 use core::cell::{Cell, RefCell};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, signal::Signal};
 use framework::info;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 pub(super) enum U1Message {
     Reset,
     Initial(Value),
     Update(Value),
+    Metadata(Value),
 }
 
 pub(super) struct U1Runtime {
@@ -273,6 +274,43 @@ impl U1Runtime {
             Some("error") => PrintState::Failed,
             _ => PrintState::Unknown,
         };
+        let stats = data.get("print_stats");
+        snapshot.print.job_name = stats
+            .and_then(|v| v.get("filename"))
+            .and_then(Value::as_str)
+            .filter(|name| !name.is_empty())
+            .map(ToString::to_string);
+        let layer = |name: &str| {
+            stats
+                .and_then(|v| v.get("info"))
+                .and_then(|v| v.get(name))
+                .and_then(Value::as_u64)
+                .and_then(|v| u32::try_from(v).ok())
+        };
+        snapshot.print.current_layer = layer("current_layer");
+        snapshot.print.total_layers = layer("total_layer");
+        snapshot.print.progress_percent = None;
+        snapshot.print.remaining_minutes = None;
+        if matches!(snapshot.print.state, PrintState::Printing | PrintState::Paused) {
+            let position = data.get("virtual_sdcard").and_then(|v| v.get("file_position")).and_then(Value::as_f64);
+            let metadata = data.get("u1_print_metadata");
+            let start = metadata.and_then(|v| v.get("gcode_start_byte")).and_then(Value::as_f64);
+            let end = metadata.and_then(|v| v.get("gcode_end_byte")).and_then(Value::as_f64);
+            if let (Some(position), Some(start), Some(end)) = (position, start, end) {
+                if end > start {
+                    let progress = ((position - start) / (end - start)).clamp(0.0, 1.0);
+                    snapshot.print.progress_percent = Some((progress * 100.0 + 0.5) as u8);
+                    if let Some(seconds) = metadata
+                        .and_then(|v| v.get("estimated_time"))
+                        .and_then(Value::as_f64)
+                        .filter(|v| v.is_finite() && *v > 0.0)
+                    {
+                        let minutes = seconds * (1.0 - progress) / 60.0;
+                        snapshot.print.remaining_minutes = Some((minutes + 0.999_999) as u32);
+                    }
+                }
+            }
+        }
         if loaded_changed {
             self.saved_dirty.set(true);
         }
@@ -327,7 +365,29 @@ fn merge(dst: &mut Value, src: Value) {
     }
 }
 
-pub(super) async fn snapmaker_u1_messages_task(runtime: Rc<U1Runtime>, channel: Rc<U1Channel>) {
+fn request_print_metadata(current: &mut Value, requested: &mut Option<String>, commands: &U1CommandChannel) {
+    let stats = current.get("print_stats");
+    let active = matches!(stats.and_then(|v| v.get("state")).and_then(Value::as_str), Some("printing" | "paused"));
+    let filename = stats
+        .and_then(|v| v.get("filename"))
+        .and_then(Value::as_str)
+        .filter(|name| active && !name.is_empty())
+        .map(ToString::to_string);
+    if *requested != filename {
+        if let Some(object) = current.as_object_mut() {
+            object.remove("u1_print_metadata");
+        }
+        *requested = None;
+        if let Some(filename) = filename {
+            let request = json!({"jsonrpc":"2.0", "id":4, "method":"server.files.metadata", "params":{"filename":filename}}).to_string();
+            if commands.try_send(Box::new(request)).is_ok() {
+                *requested = Some(filename);
+            }
+        }
+    }
+}
+
+pub(super) async fn snapmaker_u1_messages_task(runtime: Rc<U1Runtime>, channel: Rc<U1Channel>, commands: Rc<U1CommandChannel>) {
     runtime.restore_finished.wait().await;
     let mut current = Value::Object(Map::new());
     let mut pending = Value::Object(Map::new());
@@ -335,6 +395,7 @@ pub(super) async fn snapmaker_u1_messages_task(runtime: Rc<U1Runtime>, channel: 
     let mut armed = [false; 4];
     let mut previous_actions = [None, None, None, None];
     let mut previous_operations = [None, None, None, None];
+    let mut requested_metadata = None;
     loop {
         match channel.receive().await {
             U1Message::Reset => {
@@ -342,20 +403,31 @@ pub(super) async fn snapmaker_u1_messages_task(runtime: Rc<U1Runtime>, channel: 
                 current = Value::Object(Map::new());
                 pending = Value::Object(Map::new());
                 initialized = false;
+                requested_metadata = None;
             }
             U1Message::Initial(status) => {
                 current = status;
                 merge(&mut current, core::mem::replace(&mut pending, Value::Object(Map::new())));
                 initialized = true;
+                request_print_metadata(&mut current, &mut requested_metadata, &commands);
                 runtime.apply(&current, true, &mut armed, &mut previous_actions, &mut previous_operations);
                 runtime.set_connected(true);
             }
             U1Message::Update(status) => {
                 if initialized {
                     merge(&mut current, status);
+                    request_print_metadata(&mut current, &mut requested_metadata, &commands);
                     runtime.apply(&current, false, &mut armed, &mut previous_actions, &mut previous_operations);
                 } else {
                     merge(&mut pending, status);
+                }
+            }
+            U1Message::Metadata(metadata) => {
+                if initialized && requested_metadata.is_some() && metadata.get("filename").and_then(Value::as_str) == requested_metadata.as_deref() {
+                    if let Some(object) = current.as_object_mut() {
+                        object.insert("u1_print_metadata".into(), metadata);
+                    }
+                    runtime.apply(&current, false, &mut armed, &mut previous_actions, &mut previous_operations);
                 }
             }
         }

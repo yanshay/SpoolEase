@@ -38,7 +38,7 @@ use crate::api_types::{ApiPrinterSlot, ApiPrinterSlotGroup, ApiPrinterSlotsPrint
 use crate::app::{UiFilament, UiSlot, UiSlotDisplay, UiSlotGroup, UiSlotGroupKind, UiSlotState, UiSpoolRecord, UiSpoolRecordDisplay};
 use crate::app_config::{BAMBU_COLOR_NAMES, BASE_FILAMENTS, BambuPrinterConfig, FILAMENT_BRAND_NAMES, MATERIALS, PrinterDriverConfig};
 use crate::app_ota::{AppOtaProduct, AppOtaRequest, AppOtaRequestChannel, app_ota_task};
-use crate::bambu::bambu_api::{GcodeState, PrintCommand as BambuPrintCommand};
+use crate::bambu::bambu_api::GcodeState;
 use crate::bambu::driver_specific::{
     BambuAddPressureAdvance, BambuDriverCommand, BambuDriverQuery, BambuDriverQueryResult, BambuPressureAdvanceEntry,
 };
@@ -112,6 +112,7 @@ pub enum PrintState {
     Pause,
     Finish,
     Failed,
+    Canceled,
 }
 impl From<GcodeState> for PrintState {
     fn from(value: GcodeState) -> Self {
@@ -157,6 +158,7 @@ pub struct SlotSetDisplayGroup {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrinterInfo {
+    printer_id: String,
     printer_name: String,
     printer_serial: String,
     connected: bool,
@@ -3879,6 +3881,7 @@ impl ViewModel {
                 .count() as u32;
 
             let printer_info = PrinterInfo {
+                printer_id: snapshot.id.0.clone(),
                 printer_name: snapshot.name.clone(),
                 printer_serial: native_id,
                 connected: snapshot.connected,
@@ -3901,13 +3904,9 @@ impl ViewModel {
         printers_info
     }
 
-    pub fn request_printer_command(&self, printer_serial: &str, command: BambuPrintCommand) -> Result<(), String> {
-        let command = PrinterCommand::PrintControl(match command {
-            BambuPrintCommand::Pause => PrintControlCommand::Pause,
-            BambuPrintCommand::Resume => PrintControlCommand::Resume,
-            BambuPrintCommand::Stop => PrintControlCommand::Stop,
-        });
-        let printer_id = BambuPrinterConfig::printer_id_for_serial(printer_serial);
+    pub fn request_printer_command(&self, printer_id: &str, command: PrintControlCommand) -> Result<(), String> {
+        let command = PrinterCommand::PrintControl(command);
+        let printer_id = PrinterId::new(printer_id);
 
         self.printer_manager
             .borrow_mut()
@@ -4091,7 +4090,7 @@ impl ViewModel {
             printer_domain::PrintState::Paused => PrintState::Pause,
             printer_domain::PrintState::Finished => PrintState::Finish,
             printer_domain::PrintState::Failed => PrintState::Failed,
-            printer_domain::PrintState::Canceled => PrintState::Unknown,
+            printer_domain::PrintState::Canceled => PrintState::Canceled,
         }
     }
 

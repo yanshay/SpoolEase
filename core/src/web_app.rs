@@ -41,8 +41,8 @@ use crate::app_config::{
     PrinterConfig, PrinterDriverConfig, PrinterMode, PrintersConfig, SPOOLS_CATALOG, ScaleConfig, ScaleSourceConfig, SnapmakerU1PrinterConfig,
     UseAmsScan,
 };
-use crate::bambu::bambu_api::PrintCommand;
 use crate::bambu::calibration::KInfo;
+use crate::printer::PrintControlCommand;
 use crate::settings;
 use crate::spool_record::{SpoolRecord, SpoolRecordExt};
 use crate::spools_storage::StorageConfig;
@@ -604,12 +604,16 @@ fn handle_printers_status_get(key: &'static RefCell<Vec<u8>>, state: ConsoleAppS
 }
 
 fn handle_printer_command_post(key: &'static RefCell<Vec<u8>>, state: ConsoleAppState, printer_command: PrinterCommandDTO) -> String {
-    let PrinterCommandDTO { printer_serial, command } = printer_command;
-    let command_name = command.get_command().to_string();
+    let PrinterCommandDTO { printer_id, command } = printer_command;
+    let command_name = match command {
+        PrintControlCommand::Pause => "pause",
+        PrintControlCommand::Resume => "resume",
+        PrintControlCommand::Stop => "stop",
+    };
 
-    match state.view_model.borrow().request_printer_command(&printer_serial, command) {
+    match state.view_model.borrow().request_printer_command(&printer_id, command) {
         Ok(()) => GenericResponse {
-            text: format!("Sent {command_name} command to printer {printer_serial}"),
+            text: format!("Sent {command_name} command to printer {printer_id}"),
             error: None,
         }
         .encrypt(&key.borrow()),
@@ -2040,8 +2044,8 @@ encrypted_input!(AddPressureAdvanceDTO);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PrinterCommandDTO {
-    printer_serial: String,
-    command: PrintCommand,
+    printer_id: String,
+    command: PrintControlCommand,
 }
 encrypted_input!(PrinterCommandDTO);
 

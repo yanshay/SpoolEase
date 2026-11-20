@@ -14,8 +14,8 @@ use serde_json::{Value, json};
 use super::snapmaker_comm::snapmaker_u1_comm_task;
 use super::snapmaker_state::{U1Message, U1Runtime, U1SavedState, snapmaker_u1_messages_task};
 use super::{
-    MaterialSlotSnapshot, PrinterCapabilities, PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterFilament, PrinterId,
-    PrinterObserver, PrinterPersistentStateLoadError, PrinterResult, PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner,
+    MaterialSlotSnapshot, PrintControlCommand, PrinterCapabilities, PrinterCommand, PrinterDriver, PrinterDriverKind, PrinterError, PrinterFilament,
+    PrinterId, PrinterObserver, PrinterPersistentStateLoadError, PrinterResult, PrinterSnapshot, PrinterSnapshotState, PrinterSnapshotStateInner,
     SlotAssignMode, SlotGroupKind, SlotGroupSnapshot, SlotId, slot_in_snapshot_mut,
 };
 use crate::app_config::SnapmakerU1PrinterConfig;
@@ -189,6 +189,7 @@ impl PrinterDriver for SnapmakerU1PrinterDriver {
             material_slot_set_spool_id: true,
             material_slot_unassign_spool: true,
             print_status_read: true,
+            print_control: true,
             ..Default::default()
         }
     }
@@ -200,6 +201,22 @@ impl PrinterDriver for SnapmakerU1PrinterDriver {
     }
     fn dispatch(&mut self, command: PrinterCommand) -> PrinterResult<()> {
         match command {
+            PrinterCommand::PrintControl(command) => {
+                if !self.runtime.state.with_snapshot(|snapshot| snapshot.connected) {
+                    return Err(PrinterError::PrinterUnavailable("Snapmaker U1 disconnected".into()));
+                }
+                let method = match command {
+                    PrintControlCommand::Pause => "printer.print.pause",
+                    PrintControlCommand::Resume => "printer.print.resume",
+                    PrintControlCommand::Stop => "printer.print.cancel",
+                };
+                let request = json!({"jsonrpc":"2.0", "id":5, "method":method, "params":{}}).to_string();
+                self.commands
+                    .try_send(Box::new(request))
+                    .map_err(|err| PrinterError::DriverError(format!("Failed to queue U1 print command: {err:?}")))?;
+                info!("[{}] Snapmaker U1 print command {} queued", self.printer_number, method);
+                Ok(())
+            }
             PrinterCommand::AssignMaterialToSlot { slot_id, spool, mode, .. } => {
                 let index = Self::slot_index(&slot_id)?;
                 if !self.runtime.state.with_snapshot(|snapshot| snapshot.connected) {
@@ -264,7 +281,7 @@ impl PrinterDriver for SnapmakerU1PrinterDriver {
         let channel = Rc::new(U1Channel::new());
         let spawner = framework.borrow().spawner;
         let name = self.display_name();
-        if let Err(err) = spawner.spawn_heap(snapmaker_u1_messages_task(self.runtime.clone(), channel.clone())) {
+        if let Err(err) = spawner.spawn_heap(snapmaker_u1_messages_task(self.runtime.clone(), channel.clone(), self.commands.clone())) {
             warn!(
                 "[{}] Snapmaker U1 {:?}: failed to start message task: {:?}",
                 self.printer_number, name, err
